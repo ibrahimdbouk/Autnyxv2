@@ -86,6 +86,18 @@ return [
             'handler' => NullHandler::class,
         ],
 
+        // Laravel Cloud injects LOG_CHANNEL=laravel-cloud-socket; define it
+        // so the app doesn't crash if that env var ever comes back.
+        'laravel-cloud-socket' => [
+            'driver' => 'monolog',
+            'level' => env('LOG_LEVEL', 'debug'),
+            'handler' => StreamHandler::class,
+            'handler_with' => [
+                'stream' => 'php://stderr',
+            ],
+            'processors' => [PsrLogMessageProcessor::class],
+        ],
+
         'emergency' => [
             'path' => storage_path('logs/laravel.log'),
         ],
