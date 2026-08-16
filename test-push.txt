@@ -1,1 +1,1 @@
-Auto-push pipeline test — written by Claude, pushed automatically.
+Pipeline verified — auto-push working cleanly.
