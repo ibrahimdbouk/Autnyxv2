@@ -94,3 +94,6 @@ To https://github.com/ibrahimdbouk/Autnyxv2.git
  * [new branch]      main -> main
 branch 'main' set up to track 'origin/main'.
 [Sun 08/16/2026 23:37:26] Push FAILED - check above 
+remote: Invalid username or token. Password authentication is not supported for Git operations.
+fatal: Authentication failed for 'https://github.com/ibrahimdbouk/Autnyxv2.git/'
+[Sun 08/16/2026 23:38:26] Push FAILED - check above 
