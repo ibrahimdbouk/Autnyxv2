@@ -1,1 +1,1 @@
-Pipeline verified — auto-push working cleanly.
+Full pipeline test — new PAT, auto-push scheduler, no secrets in commits.
