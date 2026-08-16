@@ -17,3 +17,15 @@ yarn-error.log
 /.fleet
 /.idea
 /.vscode
+
+# Auto-push tooling (not part of the Laravel app)
+store-credentials.bat
+setup-git.ps1
+setup-startup.ps1
+start-watcher.ps1
+watcher.ps1
+push.ps1
+autopush.bat
+setup-scheduler.ps1
+.watcher.log
+test-push.txt
