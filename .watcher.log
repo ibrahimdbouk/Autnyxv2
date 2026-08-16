@@ -100,3 +100,6 @@ fatal: Authentication failed for 'https://github.com/ibrahimdbouk/Autnyxv2.git/'
 remote: Invalid username or token. Password authentication is not supported for Git operations.
 fatal: Authentication failed for 'https://github.com/ibrahimdbouk/Autnyxv2.git/'
 [Sun 08/16/2026 23:39:26] Push FAILED - check above 
+remote: Invalid username or token. Password authentication is not supported for Git operations.
+fatal: Authentication failed for 'https://github.com/ibrahimdbouk/Autnyxv2.git/'
+[Sun 08/16/2026 23:40:26] Push FAILED - check above 
