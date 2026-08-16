@@ -1,14 +1,13 @@
 $taskName = "AutnyxV2 Auto-Push"
-$batFile  = "C:\Users\user\Desktop\AutnyxV2\autopush.bat"
+$vbsFile  = "C:\Users\user\Desktop\AutnyxV2\autopush.vbs"
 
 Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
 
-$action   = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$batFile`""
+$action   = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "//B //NoLogo `"$vbsFile`""
 $trigger  = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 1) -Once -At (Get-Date)
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 1) -StartWhenAvailable
 
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -RunLevel Highest -Force | Out-Null
 
 Write-Host ""
-Write-Host "Done! autopush.bat will run silently every minute." -ForegroundColor Green
-Write-Host "Check .watcher.log to see push history." -ForegroundColor Cyan
+Write-Host "Done! Auto-push now runs silently every minute - no more CMD flashes." -ForegroundColor Green
