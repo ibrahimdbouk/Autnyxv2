@@ -18,7 +18,7 @@ class TenantResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-building-office';
 
-    protected static ?string $navigationGroup = 'Administration';
+    protected static \UnitEnum|string|null $navigationGroup = 'Administration';
 
     protected static ?int $navigationSort = 1;
 
