@@ -16,7 +16,7 @@ class ViewImport extends Page
 
     protected static string $resource = ImportResource::class;
 
-    protected static string $view = 'filament.resources.import-resource.pages.view-import';
+    protected string $view = 'filament.resources.import-resource.pages.view-import';
 
     protected static ?string $title = 'Import Details';
 

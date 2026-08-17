@@ -18,7 +18,7 @@ class CreateImport extends Page
 {
     protected static string $resource = ImportResource::class;
 
-    protected static string $view = 'filament.resources.import-resource.pages.create-import';
+    protected string $view = 'filament.resources.import-resource.pages.create-import';
 
     protected static ?string $title = 'Upload Data File';
 

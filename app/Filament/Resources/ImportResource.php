@@ -5,7 +5,6 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\ImportResource\Pages;
 use App\Models\Import;
 use Filament\Resources\Resource;
-use Filament\Tables\Columns\BadgeColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Filament\Tables\Actions\Action;

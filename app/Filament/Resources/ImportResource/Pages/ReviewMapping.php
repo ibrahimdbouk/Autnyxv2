@@ -16,7 +16,7 @@ class ReviewMapping extends Page
 {
     protected static string $resource = ImportResource::class;
 
-    protected static string $view = 'filament.resources.import-resource.pages.review-mapping';
+    protected string $view = 'filament.resources.import-resource.pages.review-mapping';
 
     protected static ?string $title = 'Review Column Mapping';
 
