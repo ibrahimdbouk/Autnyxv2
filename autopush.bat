@@ -1,5 +1,10 @@
 @echo off
 cd /d C:\Users\user\Desktop\AutnyxV2
+
+rem Clear any stale git lock files before starting
+if exist .git\index.lock del /f .git\index.lock >nul 2>&1
+if exist .git\HEAD.lock del /f .git\HEAD.lock >nul 2>&1
+
 git add -A >nul 2>&1
 git rm --cached .watcher.log >nul 2>&1
 git restore --staged test-push.txt >nul 2>&1
