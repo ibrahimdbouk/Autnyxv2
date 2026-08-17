@@ -7,7 +7,7 @@ use App\Models\Import;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
-use Filament\Tables\Actions\Action;
+use Filament\Actions\Action;
 
 class ImportResource extends Resource
 {
