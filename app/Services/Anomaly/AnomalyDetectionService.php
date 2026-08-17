@@ -15,6 +15,10 @@ use Illuminate\Support\Facades\Log;
 
 class AnomalyDetectionService
 {
+    public function __construct(
+        private readonly BaselineCalculatorService $baselines
+    ) {}
+
     /**
      * Run all enabled rules for a tenant and store results in the anomalies table.
      */
@@ -107,10 +111,25 @@ class AnomalyDetectionService
             $histQty = (float)($historical->get($sku) ?? 0);
             if ($histQty <= 0) continue;
 
-            $avgQty    = $histQty / $periods;
-            $changePct = (($recentQty - $avgQty) / $avgQty) * 100;
+            $avgQty = $histQty / $periods;
 
-            if ($changePct >= $pct) {
+            // Adaptive: use z-score when a baseline exists; fall back to fixed-pct
+            $baseline = $this->baselines->getBaseline($tenantId, $sku, 'sales_spike', 'daily_sales_qty');
+            if ($baseline) {
+                $dailyRecent = $recentQty / max(1, $days);
+                $z = $this->baselines->zScore($dailyRecent, $baseline);
+                if ($z <= $baseline->sensitivity_multiplier) continue;
+                $this->flag($tenantId, 'sales_spike', 'low', $sku, null, null,
+                    "SKU {$sku} daily sales rate (" . round($dailyRecent, 1) . " units/day) is "
+                    . round($z, 1) . " standard deviations above the 90-day baseline mean of "
+                    . round($baseline->baseline_mean, 1) . " units/day.",
+                    ['recent_daily' => round($dailyRecent, 2), 'baseline_mean' => round($baseline->baseline_mean, 2),
+                     'baseline_stddev' => round($baseline->baseline_stddev, 2), 'z_score' => round($z, 2),
+                     'sensitivity' => $baseline->sensitivity_multiplier, 'days' => $days]
+                );
+            } else {
+                $changePct = (($recentQty - $avgQty) / $avgQty) * 100;
+                if ($changePct < $pct) continue;
                 $this->flag($tenantId, 'sales_spike', 'low', $sku, null, null,
                     "SKU {$sku} sales spiked " . round($changePct) . "% above its {$days}-day average "
                     . "(recent: " . round($recentQty) . " units, avg: " . round($avgQty) . " units).",
@@ -132,10 +151,26 @@ class AnomalyDetectionService
             $recentQty = (float)($recent->get($sku) ?? 0);
             if ($histQty <= 0) continue;
 
-            $avgQty    = $histQty / $periods;
-            $changePct = (($avgQty - $recentQty) / $avgQty) * 100;
+            $avgQty = $histQty / $periods;
 
-            if ($changePct >= $pct) {
+            // Adaptive: use z-score when a baseline exists; fall back to fixed-pct
+            $baseline = $this->baselines->getBaseline($tenantId, $sku, 'sales_drop', 'daily_sales_qty');
+            if ($baseline) {
+                $dailyRecent = $recentQty / max(1, $days);
+                // For a drop, z = (mean - value) / stddev — positive when below mean
+                $z = ($baseline->baseline_mean - $dailyRecent) / max(0.001, $baseline->baseline_stddev);
+                if ($z <= $baseline->sensitivity_multiplier) continue;
+                $this->flag($tenantId, 'sales_drop', 'medium', $sku, null, null,
+                    "SKU {$sku} daily sales rate (" . round($dailyRecent, 1) . " units/day) is "
+                    . round($z, 1) . " standard deviations below the 90-day baseline mean of "
+                    . round($baseline->baseline_mean, 1) . " units/day.",
+                    ['recent_daily' => round($dailyRecent, 2), 'baseline_mean' => round($baseline->baseline_mean, 2),
+                     'baseline_stddev' => round($baseline->baseline_stddev, 2), 'z_score' => round($z, 2),
+                     'sensitivity' => $baseline->sensitivity_multiplier, 'days' => $days]
+                );
+            } else {
+                $changePct = (($avgQty - $recentQty) / $avgQty) * 100;
+                if ($changePct < $pct) continue;
                 $this->flag($tenantId, 'sales_drop', 'medium', $sku, null, null,
                     "SKU {$sku} sales dropped " . round($changePct) . "% below its {$days}-day average "
                     . "(recent: " . round($recentQty) . " units, avg: " . round($avgQty) . " units).",
@@ -681,25 +716,52 @@ class AnomalyDetectionService
             $avg = $avgPrices->get($sku);
             if (!$avg) continue;
 
-            $worst = null;
-            $worstDeviation = 0;
+            $baseline = $this->baselines->getBaseline($tenantId, $sku, 'price_anomaly', 'unit_price');
+
+            $worst          = null;
+            $worstDeviation = 0.0;
+            $worstZ         = 0.0;
 
             foreach ($txs as $tx) {
-                $deviation = abs(((float) $tx->unit_price - $avg) / $avg) * 100;
-                if ($deviation >= $pct && $deviation > $worstDeviation) {
-                    $worst          = $tx;
-                    $worstDeviation = $deviation;
+                $price = (float) $tx->unit_price;
+
+                if ($baseline) {
+                    $z = abs($this->baselines->zScore($price, $baseline));
+                    if ($z > $baseline->sensitivity_multiplier && $z > $worstZ) {
+                        $worst  = $tx;
+                        $worstZ = $z;
+                        $worstDeviation = abs(($price - $avg) / max(0.001, $avg)) * 100;
+                    }
+                } else {
+                    $deviation = abs(($price - $avg) / $avg) * 100;
+                    if ($deviation >= $pct && $deviation > $worstDeviation) {
+                        $worst          = $tx;
+                        $worstDeviation = $deviation;
+                    }
                 }
             }
 
             if ($worst) {
                 $direction = (float) $worst->unit_price > $avg ? 'above' : 'below';
-                $count     = $txs->filter(fn ($tx) => abs(((float) $tx->unit_price - $avg) / $avg) * 100 >= $pct)->count();
-                $this->flag($tenantId, 'price_anomaly', 'low', $sku, $worst->store_id, $worst->product_id,
-                    "SKU {$sku} has {$count} recent transaction(s) with price anomalies — worst: "
-                    . round($worst->unit_price, 2) . " is " . round($worstDeviation) . "% {$direction} the avg of " . round($avg, 2) . ".",
-                    ['avg_price' => round($avg, 4), 'worst_price' => $worst->unit_price, 'deviation_pct' => round($worstDeviation, 1), 'count' => $count]
-                );
+                if ($baseline) {
+                    $anomalyCount = $txs->filter(function ($tx) use ($baseline) {
+                        return abs($this->baselines->zScore((float) $tx->unit_price, $baseline)) > $baseline->sensitivity_multiplier;
+                    })->count();
+                    $this->flag($tenantId, 'price_anomaly', 'low', $sku, $worst->store_id, $worst->product_id,
+                        "SKU {$sku} has {$anomalyCount} recent price anomaly(ies) — worst: \$"
+                        . round($worst->unit_price, 2) . " (" . round($worstZ, 1) . "σ "
+                        . $direction . " baseline mean \$" . round($baseline->baseline_mean, 2) . ").",
+                        ['baseline_mean' => round($baseline->baseline_mean, 4), 'worst_price' => $worst->unit_price,
+                         'z_score' => round($worstZ, 2), 'count' => $anomalyCount, 'sensitivity' => $baseline->sensitivity_multiplier]
+                    );
+                } else {
+                    $count = $txs->filter(fn ($tx) => abs(((float) $tx->unit_price - $avg) / $avg) * 100 >= $pct)->count();
+                    $this->flag($tenantId, 'price_anomaly', 'low', $sku, $worst->store_id, $worst->product_id,
+                        "SKU {$sku} has {$count} recent transaction(s) with price anomalies — worst: "
+                        . round($worst->unit_price, 2) . " is " . round($worstDeviation) . "% {$direction} the avg of " . round($avg, 2) . ".",
+                        ['avg_price' => round($avg, 4), 'worst_price' => $worst->unit_price, 'deviation_pct' => round($worstDeviation, 1), 'count' => $count]
+                    );
+                }
             }
         }
     }
@@ -861,11 +923,25 @@ class AnomalyDetectionService
             $avg  = $qtys->average();
             if ($avg <= 0) continue;
 
-            foreach ($rows as $row) {
-                $qty     = (float) $row->qty;
-                $dropPct = (($avg - $qty) / $avg) * 100;
+            $baseline = $this->baselines->getBaseline($tenantId, $sku, 'store_outlier', 'location_qty');
 
-                if ($dropPct >= $pct) {
+            foreach ($rows as $row) {
+                $qty = (float) $row->qty;
+
+                if ($baseline) {
+                    // z = (mean - value) / stddev — large positive z means far below expected
+                    $z = ($baseline->baseline_mean - $qty) / max(0.001, $baseline->baseline_stddev);
+                    if ($z <= $baseline->sensitivity_multiplier) continue;
+                    $this->flag($tenantId, 'store_outlier', 'medium', $sku, null, null,
+                        "SKU {$sku} at '{$row->location}' sold " . round($qty) . " units over the period — "
+                        . round($z, 1) . "σ below the baseline mean of " . round($baseline->baseline_mean, 1) . " units.",
+                        ['location' => $row->location, 'location_qty' => $qty,
+                         'baseline_mean' => round($baseline->baseline_mean, 1),
+                         'z_score' => round($z, 2), 'sensitivity' => $baseline->sensitivity_multiplier, 'days' => $days]
+                    );
+                } else {
+                    $dropPct = (($avg - $qty) / $avg) * 100;
+                    if ($dropPct < $pct) continue;
                     $this->flag($tenantId, 'store_outlier', 'medium', $sku, null, null,
                         "SKU {$sku} at '{$row->location}' sold " . round($qty) . " units in the last {$days} days — "
                         . round($dropPct) . "% below the cross-location average of " . round($avg) . " units.",

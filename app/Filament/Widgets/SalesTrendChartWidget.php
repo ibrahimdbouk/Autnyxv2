@@ -34,11 +34,11 @@ class SalesTrendChartWidget extends BaseChartWidget
         $rows = SalesTransaction::where('tenant_id', $tenantId)
             ->where('date', '>=', $from)
             ->select(
-                DB::raw("strftime('%Y-%m-%d', date) as day"),
+                DB::raw("TO_CHAR(date::date, 'YYYY-MM-DD') as day"),
                 DB::raw('SUM(total_amount) as total'),
                 DB::raw('SUM(CASE WHEN quantity > 0 THEN quantity ELSE 0 END) as units'),
             )
-            ->groupBy('day')
+            ->groupByRaw("TO_CHAR(date::date, 'YYYY-MM-DD')")
             ->orderBy('day')
             ->get()
             ->keyBy('day');

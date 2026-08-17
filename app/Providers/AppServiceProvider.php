@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Console\Commands\ComputeBaselinesCommand;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -33,6 +35,13 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        // Schedule nightly baseline computation (M9 adaptive thresholds)
+        $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
+            $schedule->command(ComputeBaselinesCommand::class)
+                ->dailyAt('02:00')
+                ->withoutOverlapping()
+                ->runInBackground()
+                ->appendOutputTo(storage_path('logs/baselines.log'));
+        });
     }
 }

@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\AnomalyResource\Pages;
 use App\Models\Anomaly;
 use App\Models\AnomalySetting;
+use App\Services\Anomaly\BaselineCalculatorService;
 use Filament\Actions\Action;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
@@ -143,8 +144,16 @@ class AnomalyResource extends Resource
                     ->requiresConfirmation()
                     ->visible(fn (Anomaly $record) => !$record->isDismissed())
                     ->action(function (Anomaly $record) {
+                        $dismissedAt = now();
+
+                        // False-positive feedback: dismiss within 10 min of detection
+                        if ($record->detected_at && $dismissedAt->diffInMinutes($record->detected_at) < 10) {
+                            app(BaselineCalculatorService::class)
+                                ->recordFalsePositive($record->tenant_id, $record->rule_type, $record->sku);
+                        }
+
                         $record->update([
-                            'dismissed_at' => now(),
+                            'dismissed_at' => $dismissedAt,
                             'dismissed_by' => auth()->id(),
                         ]);
                     }),
