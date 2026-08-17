@@ -19,6 +19,11 @@ class TenantResource extends Resource
 
     protected static \UnitEnum|string|null $navigationGroup = 'Administration';
 
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->is_super_admin ?? false;
+    }
+
     protected static ?int $navigationSort = 1;
 
     protected static ?string $label = 'Organization';

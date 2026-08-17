@@ -10,9 +10,11 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
+use Filament\Tables\Columns\BadgeColumn;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class UserResource extends Resource
 {
@@ -24,11 +26,53 @@ class UserResource extends Resource
 
     protected static ?int $navigationSort = 2;
 
+    // ---------- Permissions ----------
+
+    public static function canViewAny(): bool
+    {
+        $user = auth()->user();
+        return $user && ($user->is_super_admin || $user->is_tenant_admin);
+    }
+
+    public static function canCreate(): bool
+    {
+        $user = auth()->user();
+        return $user && ($user->is_super_admin || $user->is_tenant_admin);
+    }
+
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        $user = auth()->user();
+        return $user && ($user->is_super_admin || $user->is_tenant_admin);
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        // Prevent deleting yourself
+        return auth()->id() !== $record->id
+            && (auth()->user()?->is_super_admin || auth()->user()?->is_tenant_admin);
+    }
+
+    // Scope listing: tenant admins only see users within their tenant
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+
+        if (! auth()->user()?->is_super_admin) {
+            $query->where('tenant_id', Filament::getTenant()?->id);
+        }
+
+        return $query;
+    }
+
+    // ---------- Form ----------
+
     public static function form(Schema $form): Schema
     {
-        $isSuperAdmin = auth()->user()?->is_super_admin ?? false;
+        $isSuperAdmin   = auth()->user()?->is_super_admin ?? false;
+        $isTenantAdmin  = auth()->user()?->is_tenant_admin ?? false;
 
-        return $form->schema([
+        return $form->components([
             TextInput::make('name')
                 ->required()
                 ->maxLength(255),
@@ -49,6 +93,7 @@ class UserResource extends Resource
                     ? 'Password'
                     : 'New Password (leave blank to keep current)'),
 
+            // Super admin can assign users to any tenant
             Select::make('tenant_id')
                 ->label('Organization')
                 ->relationship('tenant', 'name')
@@ -57,12 +102,23 @@ class UserResource extends Resource
                 ->visible($isSuperAdmin)
                 ->default(fn (): ?int => Filament::getTenant()?->id),
 
+            // Tenant admins and super admins can promote users to tenant admin
+            Toggle::make('is_tenant_admin')
+                ->label('Tenant Admin')
+                ->helperText('Tenant admins can manage users and imports within their organization.')
+                ->visible($isSuperAdmin || $isTenantAdmin)
+                ->default(false),
+
+            // Only super admins can grant super admin status
             Toggle::make('is_super_admin')
                 ->label('Super Admin')
                 ->helperText('Super admins can access and manage all organizations.')
-                ->visible($isSuperAdmin),
+                ->visible($isSuperAdmin)
+                ->default(false),
         ]);
     }
+
+    // ---------- Table ----------
 
     public static function table(Table $table): Table
     {
@@ -80,10 +136,19 @@ class UserResource extends Resource
                     ->sortable()
                     ->toggleable(),
 
-                IconColumn::make('is_super_admin')
-                    ->label('Super Admin')
-                    ->boolean()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('role')
+                    ->label('Role')
+                    ->getStateUsing(fn (User $record): string => match (true) {
+                        $record->is_super_admin  => 'Super Admin',
+                        $record->is_tenant_admin => 'Tenant Admin',
+                        default                  => 'User',
+                    })
+                    ->badge()
+                    ->color(fn (string $state): string => match ($state) {
+                        'Super Admin'  => 'danger',
+                        'Tenant Admin' => 'warning',
+                        default        => 'gray',
+                    }),
 
                 TextColumn::make('created_at')
                     ->dateTime()

@@ -21,6 +21,12 @@ class ImportResource extends Resource
 
     protected static ?int $navigationSort = 1;
 
+    public static function canViewAny(): bool
+    {
+        $user = auth()->user();
+        return $user && ($user->is_super_admin || $user->is_tenant_admin);
+    }
+
     public static function table(Table $table): Table
     {
         return $table
