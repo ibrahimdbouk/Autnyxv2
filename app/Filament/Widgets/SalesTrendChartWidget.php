@@ -14,8 +14,6 @@ class SalesTrendChartWidget extends BaseChartWidget
 
     protected int | string | array $columnSpan = 'full';
 
-    protected string $dataChecksum = '';
-
     protected function getType(): string
     {
         return 'line';
