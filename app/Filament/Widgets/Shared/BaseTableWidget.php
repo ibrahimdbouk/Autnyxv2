@@ -12,7 +12,7 @@ use Filament\Widgets\TableWidget;
  * Override table() in the subclass to define columns, filters, and actions.
  *
  * Usage:
- *   protected function table(Tables\Table $table): Tables\Table
+ *   public function table(Tables\Table $table): Tables\Table   // must be public in Filament v5
  *   {
  *       return $table
  *           ->query(...)
