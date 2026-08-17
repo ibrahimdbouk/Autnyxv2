@@ -37,7 +37,7 @@ class AnomalySettingResource extends Resource
     public static function canCreate(): bool    { return false; }
     public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool { return false; }
 
-    // Auto-seed the 10 rules if missing when listing
+    // Auto-seed all rules if missing when listing
     public static function getEloquentQuery(): Builder
     {
         $tenantId = Filament::getTenant()?->id;
@@ -49,6 +49,31 @@ class AnomalySettingResource extends Resource
 
     public static function form(Schema $form): Schema
     {
+        // Rules that expose each threshold type
+        $pctRules = [
+            'sales_spike', 'sales_drop', 'demand_seasonality_breach',
+            'cannibalization_signal', 'return_rate_spike', 'channel_mix_shift',
+            'inventory_shrinkage', 'receiving_discrepancy', 'supplier_lead_time_drift',
+            'cost_spike', 'price_anomaly', 'revenue_concentration_risk', 'slow_moving_capital',
+            'store_outlier',
+        ];
+
+        $daysRules = [
+            'sales_spike', 'sales_drop', 'cannibalization_signal',
+            'return_rate_spike', 'channel_mix_shift', 'dead_stock',
+            'reorder_point_staleness', 'revenue_concentration_risk',
+            'slow_moving_capital', 'import_frequency_gap', 'location_proliferation',
+            'store_outlier',
+        ];
+
+        $minValueRules = ['slow_moving_capital'];
+
+        $noThresholdRules = [
+            'stockout_risk', 'safety_stock_breach', 'phantom_inventory',
+            'multi_location_imbalance', 'po_overdue', 'margin_erosion',
+            'discount_signal', 'duplicate_transaction_ids', 'sku_master_drift',
+        ];
+
         return $form->components([
             Placeholder::make('rule_label')
                 ->label('Rule')
@@ -68,12 +93,9 @@ class AnomalySettingResource extends Resource
                 ->helperText('Flag anomalies that deviate by more than this percentage.')
                 ->numeric()
                 ->minValue(1)
-                ->maxValue(100)
+                ->maxValue(500)
                 ->suffix('%')
-                ->visible(fn (?AnomalySetting $record) => $record && in_array($record->rule_type, [
-                    'sales_spike', 'sales_drop', 'price_anomaly',
-                    'receiving_discrepancy', 'inventory_shrinkage', 'store_outlier',
-                ])),
+                ->visible(fn (?AnomalySetting $record) => $record && in_array($record->rule_type, $pctRules)),
 
             TextInput::make('thresholds.days')
                 ->label('Lookback period (days)')
@@ -81,16 +103,20 @@ class AnomalySettingResource extends Resource
                 ->numeric()
                 ->minValue(1)
                 ->suffix('days')
-                ->visible(fn (?AnomalySetting $record) => $record && in_array($record->rule_type, [
-                    'sales_spike', 'sales_drop', 'dead_stock', 'store_outlier',
-                ])),
+                ->visible(fn (?AnomalySetting $record) => $record && in_array($record->rule_type, $daysRules)),
+
+            TextInput::make('thresholds.min_value')
+                ->label('Minimum inventory value ($)')
+                ->helperText('Only flag if total inventory value (qty × unit cost) exceeds this amount.')
+                ->numeric()
+                ->minValue(0)
+                ->prefix('$')
+                ->visible(fn (?AnomalySetting $record) => $record && in_array($record->rule_type, $minValueRules)),
 
             Placeholder::make('no_thresholds')
                 ->label('Thresholds')
                 ->content('This rule has no configurable thresholds — it fires whenever the condition is met.')
-                ->visible(fn (?AnomalySetting $record) => $record && in_array($record->rule_type, [
-                    'stockout_risk', 'po_overdue', 'margin_erosion',
-                ])),
+                ->visible(fn (?AnomalySetting $record) => $record && in_array($record->rule_type, $noThresholdRules)),
         ]);
     }
 
