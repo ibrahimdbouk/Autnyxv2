@@ -11,7 +11,7 @@ use Filament\Widgets\ChartWidget;
  * Override getData() and getType() in the subclass.
  *
  * Usage:
- *   protected static ?string $heading = 'Sales Trend';
+ *   protected ?string $heading = 'Sales Trend';   // non-static in Filament v5
  *
  *   protected function getData(): array { ... }   // return Chart.js dataset format
  *   protected function getType(): string { return 'line'; }

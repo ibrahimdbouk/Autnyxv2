@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 
 class InventoryHealthChartWidget extends BaseChartWidget
 {
-    protected static ?string $heading = 'Inventory Health by Location';
+    protected ?string $heading = 'Inventory Health by Location';
 
     protected int | string | array $columnSpan = 1;
 

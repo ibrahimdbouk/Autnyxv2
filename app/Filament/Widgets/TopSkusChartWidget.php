@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 
 class TopSkusChartWidget extends BaseChartWidget
 {
-    protected static ?string $heading = 'Top 10 SKUs by Revenue';
+    protected ?string $heading = 'Top 10 SKUs by Revenue';
 
     protected int | string | array $columnSpan = 1;
 
