@@ -8,9 +8,9 @@ use App\Services\Import\ColumnMappingService;
 use App\Services\Import\FileReaderService;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
+use Filament\Schemas\Schema;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 
@@ -26,10 +26,10 @@ class CreateImport extends Page
 
     public bool $processing = false;
 
-    public function form(Form $form): Form
+    public function form(Schema $schema): Schema
     {
-        return $form
-            ->schema([
+        return $schema
+            ->components([
                 Select::make('data_type')
                     ->label('Data Type')
                     ->options(Import::dataTypeLabels())
