@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 
 class SalesTrendChartWidget extends BaseChartWidget
 {
-    protected static ?string $heading = 'Sales Trend';
+    protected ?string $heading = 'Sales Trend';
 
     protected int | string | array $columnSpan = 'full';
 
