@@ -8,7 +8,6 @@ use App\Models\AnomalySetting;
 use Filament\Actions\Action;
 use Filament\Resources\Resource;
 use Filament\Tables\Actions\Action as TableAction;
-use Filament\Tables\Columns\BadgeColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
