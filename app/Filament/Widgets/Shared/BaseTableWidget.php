@@ -21,7 +21,7 @@ use Filament\Widgets\TableWidget;
  */
 abstract class BaseTableWidget extends TableWidget
 {
-    protected static ?string $pollingInterval = null;
+    protected ?string $pollingInterval = null;
 
     protected int | string | array $columnSpan = 'full';
 

@@ -21,6 +21,7 @@ class User extends Authenticatable implements FilamentUser, HasTenants
         'password',
         'tenant_id',
         'is_super_admin',
+        'is_tenant_admin',
     ];
 
     protected $hidden = [
@@ -34,6 +35,7 @@ class User extends Authenticatable implements FilamentUser, HasTenants
             'email_verified_at' => 'datetime',
             'password'          => 'hashed',
             'is_super_admin'    => 'boolean',
+            'is_tenant_admin'   => 'boolean',
         ];
     }
 
@@ -44,11 +46,55 @@ class User extends Authenticatable implements FilamentUser, HasTenants
         return $this->belongsTo(Tenant::class);
     }
 
+    // ---------- Role Helpers ----------
+
+    /**
+     * Platform-level super admin: can access and manage all tenants.
+     */
+    public function isSuperAdmin(): bool
+    {
+        return (bool) $this->is_super_admin;
+    }
+
+    /**
+     * Tenant-level admin: can manage users and imports within their tenant.
+     */
+    public function isTenantAdmin(): bool
+    {
+        return (bool) $this->is_tenant_admin;
+    }
+
+    /**
+     * Can manage users (create, edit, assign roles within their scope).
+     */
+    public function canManageUsers(): bool
+    {
+        return $this->is_super_admin || $this->is_tenant_admin;
+    }
+
+    /**
+     * Can manage imports (upload, review mappings, approve/reject rows).
+     */
+    public function canManageImports(): bool
+    {
+        return $this->is_super_admin || $this->is_tenant_admin;
+    }
+
+    /**
+     * Human-readable role label.
+     */
+    public function roleLabel(): string
+    {
+        if ($this->is_super_admin) return 'Super Admin';
+        if ($this->is_tenant_admin) return 'Tenant Admin';
+        return 'User';
+    }
+
     // ---------- Filament Contracts ----------
 
     /**
      * All authenticated users may access the panel.
-     * Tenant scoping controls what they see inside it.
+     * Resource-level permissions control what they see inside it.
      */
     public function canAccessPanel(Panel $panel): bool
     {

@@ -7,7 +7,6 @@ use App\Models\Anomaly;
 use App\Models\AnomalySetting;
 use Filament\Actions\Action;
 use Filament\Resources\Resource;
-use Filament\Tables\Actions\Action as TableAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
@@ -110,7 +109,7 @@ class AnomalyResource extends Resource
                     ->toggle(),
             ])
             ->actions([
-                TableAction::make('dismiss')
+                Action::make('dismiss')
                     ->label('Dismiss')
                     ->icon('heroicon-o-x-mark')
                     ->color('gray')

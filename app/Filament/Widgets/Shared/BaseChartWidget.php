@@ -18,7 +18,7 @@ use Filament\Widgets\ChartWidget;
  */
 abstract class BaseChartWidget extends ChartWidget
 {
-    protected static ?string $pollingInterval = null;
+    protected ?string $pollingInterval = null;
 
     protected int | string | array $columnSpan = 'full';
 
