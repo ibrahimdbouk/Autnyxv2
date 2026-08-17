@@ -16,7 +16,7 @@ class RecentAnomaliesWidget extends BaseTableWidget
 
     protected int | string | array $columnSpan = 'full';
 
-    protected function table(Table $table): Table
+    public function table(Table $table): Table
     {
         $tenantId = Filament::getTenant()?->id;
 
