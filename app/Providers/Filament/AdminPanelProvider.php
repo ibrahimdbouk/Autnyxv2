@@ -2,11 +2,17 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Pages\Dashboard;
+use App\Filament\Widgets\InventoryHealthChartWidget;
+use App\Filament\Widgets\OverviewStatsWidget;
+use App\Filament\Widgets\PoFulfillmentStatsWidget;
+use App\Filament\Widgets\RecentAnomaliesWidget;
+use App\Filament\Widgets\SalesTrendChartWidget;
+use App\Filament\Widgets\TopSkusChartWidget;
 use App\Models\Tenant;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
-use Filament\Pages;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
@@ -36,10 +42,17 @@ class AdminPanelProvider extends PanelProvider
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([
-                Pages\Dashboard::class,
+                Dashboard::class,
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
-            ->widgets([])
+            ->widgets([
+                OverviewStatsWidget::class,
+                SalesTrendChartWidget::class,
+                TopSkusChartWidget::class,
+                InventoryHealthChartWidget::class,
+                PoFulfillmentStatsWidget::class,
+                RecentAnomaliesWidget::class,
+            ])
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
