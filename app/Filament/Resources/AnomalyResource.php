@@ -85,6 +85,26 @@ class AnomalyResource extends Resource
                     ->wrap()
                     ->limit(120),
 
+                TextColumn::make('investigation_status')
+                    ->label('Investigation')
+                    ->badge()
+                    ->formatStateUsing(fn (?string $state): string => match ($state) {
+                        'investigating'     => 'Investigating',
+                        'cause_established' => 'Cause Established',
+                        'action_taken'      => 'Action Taken',
+                        'resolved'          => 'Resolved',
+                        'unresolved'        => 'Unresolved',
+                        default             => 'Not Started',
+                    })
+                    ->color(fn (?string $state): string => match ($state) {
+                        'investigating'     => 'warning',
+                        'cause_established' => 'info',
+                        'action_taken'      => 'warning',
+                        'resolved'          => 'success',
+                        'unresolved'        => 'danger',
+                        default             => 'gray',
+                    }),
+
                 TextColumn::make('detected_at')
                     ->label('Detected')
                     ->since()
@@ -109,7 +129,14 @@ class AnomalyResource extends Resource
                     ->toggle(),
             ])
             ->actions([
-                Action::make('dismiss')
+                \Filament\Tables\Actions\Action::make('investigate')
+                    ->label('Investigate')
+                    ->icon('heroicon-o-cpu-chip')
+                    ->color('primary')
+                    ->url(fn (Anomaly $record): string => static::getUrl('investigate', ['record' => $record]))
+                    ->visible(fn (Anomaly $record) => !$record->isDismissed()),
+
+                \Filament\Tables\Actions\Action::make('dismiss')
                     ->label('Dismiss')
                     ->icon('heroicon-o-x-mark')
                     ->color('gray')
@@ -132,7 +159,8 @@ class AnomalyResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListAnomalies::route('/'),
+            'index'       => Pages\ListAnomalies::route('/'),
+            'investigate' => Pages\InvestigateAnomaly::route('/{record}/investigate'),
         ];
     }
 }
