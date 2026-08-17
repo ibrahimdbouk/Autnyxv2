@@ -14,7 +14,7 @@ class Dashboard extends BaseDashboard
 {
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-home';
 
-    protected static \UnitEnum|string|null $navigationLabel = 'Dashboard';
+    protected static ?string $navigationLabel = 'Dashboard';
 
     protected static ?int $navigationSort = -2;
 
