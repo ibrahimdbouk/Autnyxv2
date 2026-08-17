@@ -13,7 +13,7 @@ class InvestigateAnomaly extends Page
 {
     protected static string $resource = AnomalyResource::class;
 
-    protected static string $view = 'filament.resources.anomaly-resource.pages.investigate-anomaly';
+    protected string $view = 'filament.resources.anomaly-resource.pages.investigate-anomaly';
 
     public Anomaly $record;
 
