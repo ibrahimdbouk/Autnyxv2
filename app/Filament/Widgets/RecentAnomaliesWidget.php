@@ -12,7 +12,7 @@ use Filament\Tables\Table;
 
 class RecentAnomaliesWidget extends BaseTableWidget
 {
-    protected ?string $heading = 'Recent Anomalies';
+    protected static ?string $heading = 'Recent Anomalies';
 
     protected int | string | array $columnSpan = 'full';
 
