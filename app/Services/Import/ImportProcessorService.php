@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\PurchaseOrder;
 use App\Models\SalesTransaction;
 use App\Models\Store;
+use App\Services\Anomaly\AnomalyDetectionService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -70,6 +71,13 @@ class ImportProcessorService
                 'imported_rows' => $imported,
                 'failed_rows'   => $failed,
             ]);
+
+            // Run anomaly detection after every completed import
+            try {
+                app(AnomalyDetectionService::class)->runForTenant($import->tenant_id);
+            } catch (\Throwable $e) {
+                Log::error('Anomaly detection failed after import', ['import_id' => $import->id, 'error' => $e->getMessage()]);
+            }
         } catch (\Throwable $e) {
             Log::error('Import processing failed', ['import_id' => $import->id, 'error' => $e->getMessage()]);
             $import->update(['status' => Import::STATUS_FAILED, 'error_message' => $e->getMessage()]);

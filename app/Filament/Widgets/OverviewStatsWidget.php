@@ -2,6 +2,7 @@
 
 namespace App\Filament\Widgets;
 
+use App\Models\Anomaly;
 use App\Models\Import;
 use App\Models\InventoryLevel;
 use App\Models\Product;
@@ -31,15 +32,31 @@ class OverviewStatsWidget extends BaseWidget
             ->whereColumn('on_hand_qty', '<=', 'reorder_point')
             ->count();
 
-        $purchaseOrders = PurchaseOrder::where('tenant_id', $tenantId)->count();
-
         $stores = Store::where('tenant_id', $tenantId)->count();
+
+        $purchaseOrders = PurchaseOrder::where('tenant_id', $tenantId)->count();
 
         $pendingImports = Import::where('tenant_id', $tenantId)
             ->whereIn('status', [Import::STATUS_UPLOADED, Import::STATUS_MAPPING_REVIEW, Import::STATUS_IMPORTING])
             ->count();
 
+        $highAnomalies   = Anomaly::where('tenant_id', $tenantId)->whereNull('dismissed_at')->where('severity', 'high')->count();
+        $mediumAnomalies = Anomaly::where('tenant_id', $tenantId)->whereNull('dismissed_at')->where('severity', 'medium')->count();
+        $totalAnomalies  = Anomaly::where('tenant_id', $tenantId)->whereNull('dismissed_at')->count();
+
+        $anomalyDesc = match (true) {
+            $highAnomalies > 0   => "{$highAnomalies} high severity",
+            $mediumAnomalies > 0 => "{$mediumAnomalies} medium severity",
+            $totalAnomalies > 0  => "{$totalAnomalies} low severity",
+            default              => 'No open anomalies',
+        };
+
         return [
+            Stat::make('Open Anomalies', number_format($totalAnomalies))
+                ->description($anomalyDesc)
+                ->descriptionIcon($totalAnomalies > 0 ? 'heroicon-m-exclamation-triangle' : 'heroicon-m-check-circle')
+                ->color($highAnomalies > 0 ? 'danger' : ($mediumAnomalies > 0 ? 'warning' : ($totalAnomalies > 0 ? 'info' : 'success'))),
+
             Stat::make('Products', number_format($products))
                 ->description('Total SKUs loaded')
                 ->descriptionIcon('heroicon-m-cube')
@@ -56,7 +73,7 @@ class OverviewStatsWidget extends BaseWidget
                 ->color($lowStockCount > 0 ? 'danger' : 'success'),
 
             Stat::make('Stores', number_format($stores))
-                ->description('Locations loaded from imports')
+                ->description('Locations from imports')
                 ->descriptionIcon('heroicon-m-building-storefront')
                 ->color('info'),
 
