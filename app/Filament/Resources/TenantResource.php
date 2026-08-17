@@ -5,9 +5,8 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\TenantResource\Pages;
 use App\Models\Tenant;
 use Filament\Forms\Components\TextInput;
-use Filament\Forms\Form;
-use Filament\Forms\Set;
 use Filament\Resources\Resource;
+use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Support\Str;
@@ -38,14 +37,14 @@ class TenantResource extends Resource
         return auth()->user()?->is_super_admin ?? false;
     }
 
-    public static function form(Form $form): Form
+    public static function form(Schema $form): Schema
     {
         return $form->schema([
             TextInput::make('name')
                 ->required()
                 ->maxLength(255)
                 ->live(onBlur: true)
-                ->afterStateUpdated(function (string $operation, $state, Set $set) {
+                ->afterStateUpdated(function (string $operation, $state, $set) {
                     if ($operation === 'create') {
                         $set('slug', Str::slug($state));
                     }
