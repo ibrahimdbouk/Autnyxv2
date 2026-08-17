@@ -23,7 +23,7 @@ abstract class BaseStatsWidget extends StatsOverviewWidget
     /**
      * How often (in seconds) to auto-refresh. null = no polling.
      */
-    protected static ?string $pollingInterval = null;
+    protected ?string $pollingInterval = null;
 
     /**
      * Full width by default so stats span the page.
