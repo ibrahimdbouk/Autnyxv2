@@ -7,13 +7,14 @@ use App\Models\InventoryLevel;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
 use App\Models\SalesTransaction;
+use App\Models\Store;
 use Filament\Facades\Filament;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 
 class OverviewStatsWidget extends BaseWidget
 {
-    protected string $pollingInterval = '60s';
+    protected ?string $pollingInterval = '60s';
 
     protected function getStats(): array
     {
@@ -31,6 +32,8 @@ class OverviewStatsWidget extends BaseWidget
             ->count();
 
         $purchaseOrders = PurchaseOrder::where('tenant_id', $tenantId)->count();
+
+        $stores = Store::where('tenant_id', $tenantId)->count();
 
         $pendingImports = Import::where('tenant_id', $tenantId)
             ->whereIn('status', [Import::STATUS_UPLOADED, Import::STATUS_MAPPING_REVIEW, Import::STATUS_IMPORTING])
@@ -51,6 +54,11 @@ class OverviewStatsWidget extends BaseWidget
                 ->description($lowStockCount > 0 ? "{$lowStockCount} below reorder point" : 'All levels healthy')
                 ->descriptionIcon($lowStockCount > 0 ? 'heroicon-m-exclamation-triangle' : 'heroicon-m-check-circle')
                 ->color($lowStockCount > 0 ? 'danger' : 'success'),
+
+            Stat::make('Stores', number_format($stores))
+                ->description('Locations loaded from imports')
+                ->descriptionIcon('heroicon-m-building-storefront')
+                ->color('info'),
 
             Stat::make('Purchase Orders', number_format($purchaseOrders))
                 ->description('Total PO lines')

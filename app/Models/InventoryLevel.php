@@ -9,6 +9,7 @@ class InventoryLevel extends Model
 {
     protected $fillable = [
         'tenant_id',
+        'store_id',
         'product_id',
         'sku',
         'location',
@@ -26,6 +27,11 @@ class InventoryLevel extends Model
     public function tenant(): BelongsTo
     {
         return $this->belongsTo(Tenant::class);
+    }
+
+    public function store(): BelongsTo
+    {
+        return $this->belongsTo(Store::class);
     }
 
     public function product(): BelongsTo

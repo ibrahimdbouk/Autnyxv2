@@ -9,6 +9,7 @@ use App\Models\InventoryLevel;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
 use App\Models\SalesTransaction;
+use App\Models\Store;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -94,16 +95,23 @@ class ImportProcessorService
     {
         $this->requireFields($data, ['date', 'sku', 'quantity'], $row);
 
+        $location = $data['location'] ?? null;
+
         $attrs = [
             'tenant_id'      => $import->tenant_id,
             'date'           => $this->parseDate($data['date'], $row),
             'sku'            => $this->str($data['sku'] ?? null, 'sku', $row),
-            'location'       => $data['location'] ?? null,
+            'location'       => $location,
             'quantity'       => $this->numeric($data['quantity'] ?? null, 'quantity', $row),
             'unit_price'     => isset($data['unit_price'])  ? $this->numericOrNull($data['unit_price'])  : null,
             'total_amount'   => isset($data['total_amount']) ? $this->numericOrNull($data['total_amount']) : null,
             'transaction_id' => $data['transaction_id'] ?? null,
         ];
+
+        // Resolve store from location string
+        if ($location) {
+            $attrs['store_id'] = $this->resolveStore($import->tenant_id, $location);
+        }
 
         // Try to resolve product_id from SKU
         $product = Product::where('tenant_id', $import->tenant_id)->where('sku', $attrs['sku'])->first();
@@ -125,14 +133,21 @@ class ImportProcessorService
     {
         $this->requireFields($data, ['sku', 'on_hand_qty'], $row);
 
+        $location = $data['location'] ?? null;
+
         $attrs = [
             'tenant_id'     => $import->tenant_id,
             'sku'           => $this->str($data['sku'], 'sku', $row),
-            'location'      => $data['location'] ?? null,
+            'location'      => $location,
             'on_hand_qty'   => $this->numeric($data['on_hand_qty'], 'on_hand_qty', $row),
             'reorder_point' => isset($data['reorder_point']) ? $this->numericOrNull($data['reorder_point']) : null,
             'as_of_date'    => isset($data['as_of_date']) ? $this->parseDateOrNull($data['as_of_date']) : null,
         ];
+
+        // Resolve store from location string
+        if ($location) {
+            $attrs['store_id'] = $this->resolveStore($import->tenant_id, $location);
+        }
 
         $product = Product::where('tenant_id', $import->tenant_id)->where('sku', $attrs['sku'])->first();
         if ($product) {
@@ -290,5 +305,19 @@ class ImportProcessorService
             throw new \InvalidArgumentException("Row {$row}: required field '{$field}' is empty.");
         }
         return $trimmed;
+    }
+
+    /**
+     * Resolve (or create) a Store by name for the given tenant.
+     * Returns the store's primary key.
+     */
+    private function resolveStore(int $tenantId, string $locationName): int
+    {
+        $store = Store::firstOrCreate(
+            ['tenant_id' => $tenantId, 'name' => trim($locationName)],
+            ['tenant_id' => $tenantId, 'name' => trim($locationName)]
+        );
+
+        return $store->id;
     }
 }

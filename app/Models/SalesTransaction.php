@@ -9,6 +9,7 @@ class SalesTransaction extends Model
 {
     protected $fillable = [
         'tenant_id',
+        'store_id',
         'product_id',
         'transaction_id',
         'date',
@@ -29,6 +30,11 @@ class SalesTransaction extends Model
     public function tenant(): BelongsTo
     {
         return $this->belongsTo(Tenant::class);
+    }
+
+    public function store(): BelongsTo
+    {
+        return $this->belongsTo(Store::class);
     }
 
     public function product(): BelongsTo
