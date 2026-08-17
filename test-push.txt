@@ -1,1 +1,0 @@
-Full pipeline test — new PAT, auto-push scheduler, no secrets in commits.

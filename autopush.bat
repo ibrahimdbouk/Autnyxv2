@@ -1,6 +1,8 @@
 @echo off
 cd /d C:\Users\user\Desktop\AutnyxV2
 git add -A >nul 2>&1
+git rm --cached .watcher.log >nul 2>&1
+git restore --staged test-push.txt >nul 2>&1
 git diff --cached --quiet >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
     git commit -m "Auto-push: %date% %time:~0,5%" >nul 2>&1
