@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Anomaly extends Model
 {
@@ -33,6 +34,7 @@ class Anomaly extends Model
 
     protected $fillable = [
         'tenant_id',
+        'investigation_id',  // FK to investigations — set by InvestigationCorrelationService
         'rule_type',
         'severity',
         'sku',
@@ -96,6 +98,16 @@ class Anomaly extends Model
     public function dismissedByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'dismissed_by');
+    }
+
+    public function investigation(): BelongsTo
+    {
+        return $this->belongsTo(Investigation::class);
+    }
+
+    public function investigationEntities(): HasMany
+    {
+        return $this->hasMany(InvestigationEntity::class);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

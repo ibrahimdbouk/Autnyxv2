@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Tenant;
 use App\Services\Anomaly\AnomalyDetectionService;
+use App\Services\Anomaly\InvestigationCorrelationService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -11,16 +12,20 @@ class DetectAnomaliesCommand extends Command
 {
     protected $signature = 'anomalies:detect {--tenant= : Specific tenant ID}';
 
-    protected $description = 'Run all anomaly detection rules for every tenant (or a specific one)';
+    protected $description = 'Run all anomaly detection rules for every tenant (or a specific one), then correlate into Investigations';
 
-    public function handle(AnomalyDetectionService $service): int
-    {
+    public function handle(
+        AnomalyDetectionService $detector,
+        InvestigationCorrelationService $correlator
+    ): int {
         $tenantId = $this->option('tenant');
 
         if ($tenantId) {
             $this->info("Detecting anomalies for tenant {$tenantId}…");
             try {
-                $service->runForTenant((int) $tenantId);
+                $detector->runForTenant((int) $tenantId);
+                $this->info('Detection done. Correlating into investigations…');
+                $correlator->correlateForTenant((int) $tenantId);
                 $this->info('Done.');
             } catch (\Throwable $e) {
                 $this->error("Failed: {$e->getMessage()}");
@@ -44,7 +49,8 @@ class DetectAnomaliesCommand extends Command
         $errors = 0;
         foreach ($tenants as $tenant) {
             try {
-                $service->runForTenant($tenant->id);
+                $detector->runForTenant($tenant->id);
+                $correlator->correlateForTenant($tenant->id);
             } catch (\Throwable $e) {
                 $errors++;
                 Log::error("[anomalies:detect] Tenant {$tenant->id}: {$e->getMessage()}");
