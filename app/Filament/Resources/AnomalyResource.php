@@ -8,7 +8,7 @@ use App\Models\AnomalySetting;
 use App\Services\Anomaly\BaselineCalculatorService;
 use Filament\Actions\Action;
 use Filament\Resources\Resource;
-use Filament\Tables\Actions\BulkAction;
+use Filament\Actions\BulkAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;

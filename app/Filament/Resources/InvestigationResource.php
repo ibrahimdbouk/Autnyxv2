@@ -7,7 +7,7 @@ use App\Models\Investigation;
 use App\Models\Team;
 use Filament\Facades\Filament;
 use Filament\Resources\Resource;
-use Filament\Tables\Actions\BulkActionGroup;
+use Filament\Actions\BulkActionGroup;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
