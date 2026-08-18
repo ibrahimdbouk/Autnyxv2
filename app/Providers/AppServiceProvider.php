@@ -15,6 +15,24 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // Ensure required storage subdirectories exist.
+        // On Laravel Cloud the persistent storage volume is mounted over storage/ at
+        // runtime, which wipes any subdirectories that were created during the build
+        // step (framework/views, framework/cache, etc.).  Creating them here — in
+        // register(), before any database or view code fires — guarantees they are
+        // always present regardless of deploy order.
+        foreach ([
+            storage_path('framework/views'),
+            storage_path('framework/cache/data'),
+            storage_path('framework/sessions'),
+            storage_path('logs'),
+            storage_path('app/public'),
+        ] as $dir) {
+            if (! is_dir($dir)) {
+                mkdir($dir, 0775, true);
+            }
+        }
+
         // Ensure the SQLite database file exists before any connection is attempted.
         // Laravel Cloud (and any containerised environment) starts with a clean
         // filesystem; the storage directory is a persistent volume, but the file
