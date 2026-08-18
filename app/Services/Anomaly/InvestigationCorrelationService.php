@@ -7,6 +7,7 @@ use App\Models\AnomalySetting;
 use App\Models\Investigation;
 use App\Models\InvestigationEntity;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -76,6 +77,13 @@ class InvestigationCorrelationService
         // Sync count and escalate priority if this anomaly is more severe
         $investigation->syncAnomalyCount();
         $this->escalatePriorityIfNeeded($investigation, $anomaly);
+
+        // Collect evidence for this anomaly (M17)
+        try {
+            App::make(EvidenceCollectorService::class)->collectForInvestigation($investigation);
+        } catch (\Throwable $e) {
+            Log::error("[M16/evidence] investigation={$investigation->id}: {$e->getMessage()}");
+        }
 
         return $investigation;
     }
