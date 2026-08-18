@@ -143,7 +143,7 @@ class InvestigationResource extends Resource
                         ->toArray()),
             ])
             ->actions([
-                \Filament\Tables\Actions\Action::make('investigate')
+                \Filament\Actions\Action::make('investigate')
                     ->label('Investigate')
                     ->icon('heroicon-o-magnifying-glass')
                     ->url(fn (Investigation $record) => static::getUrl('investigate', ['record' => $record]))
