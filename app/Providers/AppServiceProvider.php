@@ -55,28 +55,31 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // Nightly automation pipeline (M9 + M10 + M11)
+        // Nightly automation pipeline (M9 + M10 + M11 + M15 corrected order)
+        //
+        // IMPORTANT: baselines must run BEFORE detection so that detection
+        // consumes the latest z-score thresholds, not yesterday's.
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
-            // 01:00 — Run all 27 anomaly detection rules for every tenant
-            $schedule->command(DetectAnomaliesCommand::class)
+            // 01:00 — Recompute adaptive baselines (z-score thresholds) — MUST be first
+            $schedule->command(ComputeBaselinesCommand::class)
                 ->dailyAt('01:00')
+                ->withoutOverlapping()
+                ->runInBackground()
+                ->appendOutputTo(storage_path('logs/baselines.log'));
+
+            // 02:00 — Run all detection rules for every tenant (consumes fresh baselines)
+            $schedule->command(DetectAnomaliesCommand::class)
+                ->dailyAt('02:00')
                 ->withoutOverlapping()
                 ->runInBackground()
                 ->appendOutputTo(storage_path('logs/anomaly-detect.log'));
 
-            // 01:30 — Send digest emails for new anomalies
+            // 02:30 — Send digest emails for new anomalies
             $schedule->command(NotifyAnomaliesCommand::class)
-                ->dailyAt('01:30')
+                ->dailyAt('02:30')
                 ->withoutOverlapping()
                 ->runInBackground()
                 ->appendOutputTo(storage_path('logs/anomaly-notify.log'));
-
-            // 02:00 — Recompute adaptive baselines (z-score thresholds)
-            $schedule->command(ComputeBaselinesCommand::class)
-                ->dailyAt('02:00')
-                ->withoutOverlapping()
-                ->runInBackground()
-                ->appendOutputTo(storage_path('logs/baselines.log'));
         });
     }
 }

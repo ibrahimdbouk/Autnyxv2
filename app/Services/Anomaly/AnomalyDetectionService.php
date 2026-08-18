@@ -1115,6 +1115,10 @@ class AnomalyDetectionService
 
         // For SKU-based rules, look for an existing open anomaly to update rather than recreate.
         // This preserves investigation work (ai_what, ai_why, action_notes, etc.) when a condition persists overnight.
+        //
+        // M15 dedup key fix: store_id is ALWAYS part of the dedup key.
+        // Store A stockout and Store B stockout are separate operational incidents.
+        // NULL store_id is a valid distinct key (non-store-specific rules stay grouped).
         if ($sku !== null) {
             $query = Anomaly::where('tenant_id', $tenantId)
                 ->where('rule_type', $ruleType)
@@ -1123,6 +1127,8 @@ class AnomalyDetectionService
 
             if ($storeId !== null) {
                 $query->where('store_id', $storeId);
+            } else {
+                $query->whereNull('store_id');
             }
 
             $anomaly = $query->first();

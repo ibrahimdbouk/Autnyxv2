@@ -9,6 +9,7 @@ class SkuBaseline extends Model
     protected $fillable = [
         'tenant_id',
         'sku',
+        'store_id',        // null = retailer-wide fallback; non-null = store-level preferred
         'rule_type',
         'metric',
         'baseline_mean',
