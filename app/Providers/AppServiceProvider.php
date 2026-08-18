@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Console\Commands\ComputeBaselinesCommand;
 use App\Console\Commands\DetectAnomaliesCommand;
+use App\Console\Commands\EscalateInvestigationsCommand;
 use App\Console\Commands\NotifyAnomaliesCommand;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\ServiceProvider;
@@ -80,6 +81,13 @@ class AppServiceProvider extends ServiceProvider
                 ->withoutOverlapping()
                 ->runInBackground()
                 ->appendOutputTo(storage_path('logs/anomaly-notify.log'));
+
+            // 03:00 — Evaluate escalation rules against all open investigations
+            $schedule->command(EscalateInvestigationsCommand::class)
+                ->dailyAt('03:00')
+                ->withoutOverlapping()
+                ->runInBackground()
+                ->appendOutputTo(storage_path('logs/escalation.log'));
         });
     }
 }

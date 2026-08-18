@@ -95,6 +95,26 @@ class Investigation extends Model
         return $this->hasMany(InvestigationEntity::class);
     }
 
+    public function evidence(): HasMany
+    {
+        return $this->hasMany(InvestigationEvidence::class);
+    }
+
+    public function actions(): HasMany
+    {
+        return $this->hasMany(Action::class);
+    }
+
+    public function escalationEvents(): HasMany
+    {
+        return $this->hasMany(EscalationEvent::class);
+    }
+
+    public function auditLogs(): HasMany
+    {
+        return $this->hasMany(AuditLog::class);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     public function isOpen(): bool
