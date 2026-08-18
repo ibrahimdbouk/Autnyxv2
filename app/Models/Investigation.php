@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Investigation extends Model
 {
@@ -113,6 +114,11 @@ class Investigation extends Model
     public function auditLogs(): HasMany
     {
         return $this->hasMany(AuditLog::class);
+    }
+
+    public function outcome(): HasOne
+    {
+        return $this->hasOne(InvestigationOutcome::class);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

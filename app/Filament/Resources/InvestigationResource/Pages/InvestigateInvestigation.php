@@ -5,13 +5,17 @@ namespace App\Filament\Resources\InvestigationResource\Pages;
 use App\Filament\Resources\InvestigationResource;
 use App\Models\Action as InvestigationAction;
 use App\Models\Investigation;
+use App\Models\InvestigationOutcome;
 use App\Services\AuditLogger;
 use App\Services\InvestigationNarratorService;
+use App\Services\OutcomeService;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
 
@@ -35,6 +39,7 @@ class InvestigateInvestigation extends Page
             'assignedTeam',
             'assignedUser',
             'escalationEvents.escalationRule',
+            'outcome.recordedBy',
         ])->findOrFail($record);
 
         abort_unless(
@@ -178,6 +183,85 @@ class InvestigateInvestigation extends Page
                     AuditLogger::statusChanged($this->record, $old, Investigation::STATUS_CLOSED);
                     $this->record = $this->record->fresh(['anomalies', 'evidence', 'actions.assignedTo', 'actions.assignedTeam', 'auditLogs.user', 'assignedTeam', 'assignedUser']);
                     Notification::make()->title('Investigation closed')->success()->send();
+                }),
+
+            // Record / update outcome
+            Action::make('record_outcome')
+                ->label(fn () => $this->record->outcome ? 'Update Outcome' : 'Record Outcome')
+                ->icon('heroicon-o-currency-dollar')
+                ->color('success')
+                ->visible(fn () => in_array($this->record->status, [
+                    Investigation::STATUS_RESOLVED,
+                    Investigation::STATUS_CLOSED,
+                ]))
+                ->fillForm(fn () => $this->record->outcome ? $this->record->outcome->toArray() : [
+                    'outcome_type'    => InvestigationOutcome::TYPE_RESOLVED,
+                    'revenue_at_risk' => $this->record->revenue_at_risk,
+                ])
+                ->form([
+                    Select::make('outcome_type')
+                        ->label('Outcome Type')
+                        ->options(InvestigationOutcome::TYPE_LABELS)
+                        ->default(InvestigationOutcome::TYPE_RESOLVED)
+                        ->required(),
+
+                    TextInput::make('revenue_at_risk')
+                        ->label('Revenue at Risk ($)')
+                        ->numeric()
+                        ->prefix('$')
+                        ->helperText('AI estimate — adjust if needed'),
+
+                    TextInput::make('observed_recovery')
+                        ->label('Observed Recovery ($)')
+                        ->numeric()
+                        ->prefix('$')
+                        ->helperText('Actual revenue recovered or loss prevented'),
+
+                    TextInput::make('cost_to_resolve')
+                        ->label('Cost to Resolve ($)')
+                        ->numeric()
+                        ->prefix('$')
+                        ->helperText('Internal time + remediation cost estimate'),
+
+                    Select::make('recovery_method')
+                        ->label('Recovery Method')
+                        ->options(InvestigationOutcome::RECOVERY_METHOD_LABELS)
+                        ->placeholder('How was recovery measured?'),
+
+                    DatePicker::make('recovery_measured_from')
+                        ->label('Recovery Period From'),
+
+                    DatePicker::make('recovery_measured_to')
+                        ->label('Recovery Period To'),
+
+                    Textarea::make('confirmed_root_cause')
+                        ->label('Confirmed Root Cause')
+                        ->rows(2)
+                        ->helperText('Analyst conclusion — may differ from AI suggestion'),
+
+                    Toggle::make('ai_root_cause_correct')
+                        ->label('AI Root Cause Was Correct')
+                        ->inline(false),
+
+                    Toggle::make('was_false_positive')
+                        ->label('Mark as False Positive')
+                        ->helperText('Sends feedback to the detection engine')
+                        ->inline(false),
+
+                    Textarea::make('recovery_notes')
+                        ->label('Notes')
+                        ->rows(2),
+                ])
+                ->action(function (array $data) {
+                    app(OutcomeService::class)->record($this->record, $data);
+
+                    $this->record = $this->record->fresh([
+                        'anomalies', 'evidence', 'actions.assignedTo',
+                        'actions.assignedTeam', 'auditLogs.user',
+                        'assignedTeam', 'assignedUser', 'outcome',
+                    ]);
+
+                    Notification::make()->title('Outcome recorded')->success()->send();
                 }),
 
             // Back to list

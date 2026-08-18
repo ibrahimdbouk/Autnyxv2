@@ -238,6 +238,69 @@
             </div>
             @endif
 
+            {{-- Financial Outcome --}}
+            @if($record->outcome)
+            @php $outcome = $record->outcome; @endphp
+            <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm overflow-hidden">
+                <div class="px-5 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2">
+                    <x-heroicon-o-currency-dollar class="w-4 h-4 text-green-500" />
+                    <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">Financial Outcome</h3>
+                    @php
+                        $otColors = [
+                            'resolved'          => 'bg-green-100 text-green-700',
+                            'false_positive'    => 'bg-gray-100 text-gray-600',
+                            'duplicate'         => 'bg-gray-100 text-gray-600',
+                            'escalated_to_ops'  => 'bg-amber-100 text-amber-700',
+                            'no_action_needed'  => 'bg-blue-100 text-blue-700',
+                        ];
+                    @endphp
+                    <span class="ml-auto inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold {{ $otColors[$outcome->outcome_type] ?? 'bg-gray-100 text-gray-600' }}">
+                        {{ $outcome->getOutcomeTypeLabel() }}
+                    </span>
+                </div>
+                <div class="px-5 py-4 space-y-3">
+                    <div class="grid grid-cols-3 gap-3 text-center">
+                        <div>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">At Risk</p>
+                            <p class="text-lg font-bold text-red-600 dark:text-red-400">
+                                @if($outcome->revenue_at_risk) ${{ number_format($outcome->revenue_at_risk, 2) }} @else <span class="text-gray-400">—</span> @endif
+                            </p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Recovered</p>
+                            <p class="text-lg font-bold text-green-600 dark:text-green-400">
+                                @if($outcome->observed_recovery) ${{ number_format($outcome->observed_recovery, 2) }} @else <span class="text-gray-400">—</span> @endif
+                            </p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Recovery Rate</p>
+                            <p class="text-lg font-bold text-blue-600 dark:text-blue-400">
+                                @if($outcome->getRecoveryRate() !== null) {{ $outcome->getRecoveryRate() }}% @else <span class="text-gray-400">—</span> @endif
+                            </p>
+                        </div>
+                    </div>
+
+                    @if($outcome->confirmed_root_cause)
+                    <div class="border-t border-gray-100 dark:border-gray-700 pt-3">
+                        <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Confirmed Root Cause</p>
+                        <p class="text-xs text-gray-800 dark:text-gray-200">{{ $outcome->confirmed_root_cause }}</p>
+                        @if($outcome->ai_root_cause_correct !== null)
+                        <p class="text-xs mt-1 {{ $outcome->ai_root_cause_correct ? 'text-green-600' : 'text-amber-600' }}">
+                            AI root cause: {{ $outcome->ai_root_cause_correct ? '✓ Correct' : '✗ Incorrect' }}
+                        </p>
+                        @endif
+                    </div>
+                    @endif
+
+                    @if($outcome->recovery_method)
+                    <p class="text-xs text-gray-400">Method: {{ $outcome->getRecoveryMethodLabel() }}</p>
+                    @endif
+
+                    <p class="text-xs text-gray-400">Recorded by {{ $outcome->recordedBy?->name ?? 'System' }} · {{ $outcome->recorded_at?->diffForHumans() }}</p>
+                </div>
+            </div>
+            @endif
+
         </div>
     </div>
 

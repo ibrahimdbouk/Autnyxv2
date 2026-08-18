@@ -169,6 +169,24 @@ class AuditLogger
         ]);
     }
 
+    /**
+     * Generic log entry — use when no specific method fits.
+     */
+    public static function log(
+        Investigation $investigation,
+        string $eventType,
+        string $description,
+        ?int $userId = null
+    ): void {
+        self::write([
+            'tenant_id'        => $investigation->tenant_id,
+            'investigation_id' => $investigation->id,
+            'user_id'          => $userId ?? Auth::id(),
+            'event_type'       => $eventType,
+            'description'      => $description,
+        ]);
+    }
+
     // ── Internal ──────────────────────────────────────────────────────────────
 
     private static function write(array $attrs): void
