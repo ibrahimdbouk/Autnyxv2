@@ -1,50 +1,43 @@
 <x-filament-widgets::widget>
     @php $data = $this->getViewData(); @endphp
+    <div style="display:flex; flex-wrap:wrap; gap:1rem; width:100%;">
 
-    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-
-        {{-- Open --}}
-        <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 shadow-sm text-center">
-            <p class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Open</p>
-            <p class="mt-1 text-3xl font-bold text-amber-600 dark:text-amber-400">{{ $data['open'] }}</p>
+        <div style="flex:1; min-width:130px; border-radius:0.75rem; border:1px solid #fde68a; background:#fffbeb; padding:1rem; text-align:center;">
+            <p style="font-size:0.7rem; font-weight:600; color:#d97706; text-transform:uppercase; letter-spacing:0.05em; margin:0;">Open</p>
+            <p style="font-size:1.75rem; font-weight:700; color:#92400e; margin:0.25rem 0;">{{ $data['open'] }}</p>
+            <p style="font-size:0.7rem; color:#d97706; margin:0;">Awaiting action</p>
         </div>
 
-        {{-- In Progress --}}
-        <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 shadow-sm text-center">
-            <p class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">In Progress</p>
-            <p class="mt-1 text-3xl font-bold text-blue-600 dark:text-blue-400">{{ $data['inProgress'] }}</p>
+        <div style="flex:1; min-width:130px; border-radius:0.75rem; border:1px solid #bfdbfe; background:#eff6ff; padding:1rem; text-align:center;">
+            <p style="font-size:0.7rem; font-weight:600; color:#2563eb; text-transform:uppercase; letter-spacing:0.05em; margin:0;">In Progress</p>
+            <p style="font-size:1.75rem; font-weight:700; color:#1e40af; margin:0.25rem 0;">{{ $data['inProgress'] }}</p>
+            <p style="font-size:0.7rem; color:#3b82f6; margin:0;">Being investigated</p>
         </div>
 
-        {{-- Critical --}}
-        <div class="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-4 shadow-sm text-center">
-            <p class="text-xs font-medium text-red-500 dark:text-red-400 uppercase tracking-wide">Critical</p>
-            <p class="mt-1 text-3xl font-bold text-red-700 dark:text-red-400">{{ $data['critical'] }}</p>
+        <div style="flex:1; min-width:130px; border-radius:0.75rem; border:1px solid #fecaca; background:#fff1f2; padding:1rem; text-align:center;">
+            <p style="font-size:0.7rem; font-weight:600; color:#dc2626; text-transform:uppercase; letter-spacing:0.05em; margin:0;">Critical</p>
+            <p style="font-size:1.75rem; font-weight:700; color:#991b1b; margin:0.25rem 0;">{{ $data['critical'] }}</p>
+            <p style="font-size:0.7rem; color:#ef4444; margin:0;">Open or in progress</p>
         </div>
 
-        {{-- High --}}
-        <div class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-4 shadow-sm text-center">
-            <p class="text-xs font-medium text-amber-600 dark:text-amber-400 uppercase tracking-wide">High Priority</p>
-            <p class="mt-1 text-3xl font-bold text-amber-700 dark:text-amber-400">{{ $data['high'] }}</p>
+        <div style="flex:1; min-width:130px; border-radius:0.75rem; border:1px solid #fde68a; background:#fffbeb; padding:1rem; text-align:center;">
+            <p style="font-size:0.7rem; font-weight:600; color:#d97706; text-transform:uppercase; letter-spacing:0.05em; margin:0;">High Priority</p>
+            <p style="font-size:1.75rem; font-weight:700; color:#92400e; margin:0.25rem 0;">{{ $data['high'] }}</p>
+            <p style="font-size:0.7rem; color:#d97706; margin:0;">Open or in progress</p>
         </div>
 
-        {{-- Resolved (7 days) --}}
-        <div class="rounded-xl border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30 p-4 shadow-sm text-center">
-            <p class="text-xs font-medium text-green-600 dark:text-green-400 uppercase tracking-wide">Resolved (7d)</p>
-            <p class="mt-1 text-3xl font-bold text-green-700 dark:text-green-400">{{ $data['recentlyResolved'] }}</p>
+        <div style="flex:1; min-width:130px; border-radius:0.75rem; border:1px solid #bbf7d0; background:#f0fdf4; padding:1rem; text-align:center;">
+            <p style="font-size:0.7rem; font-weight:600; color:#16a34a; text-transform:uppercase; letter-spacing:0.05em; margin:0;">Resolved 7d</p>
+            <p style="font-size:1.75rem; font-weight:700; color:#14532d; margin:0.25rem 0;">{{ $data['recentlyResolved'] }}</p>
+            <p style="font-size:0.7rem; color:#22c55e; margin:0;">Last 7 days</p>
         </div>
 
-        {{-- Avg Age --}}
-        <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 shadow-sm text-center">
-            <p class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Avg Age</p>
-            @if($data['avgOpenHours'] !== null)
-                @if($data['avgOpenHours'] >= 24)
-                    <p class="mt-1 text-2xl font-bold text-gray-900 dark:text-white">{{ round($data['avgOpenHours'] / 24, 1) }}<span class="text-sm font-normal text-gray-400 ml-1">d</span></p>
-                @else
-                    <p class="mt-1 text-2xl font-bold text-gray-900 dark:text-white">{{ $data['avgOpenHours'] }}<span class="text-sm font-normal text-gray-400 ml-1">h</span></p>
-                @endif
-            @else
-                <p class="mt-1 text-2xl font-bold text-gray-400">—</p>
-            @endif
+        <div style="flex:1; min-width:130px; border-radius:0.75rem; border:1px solid #e5e7eb; background:#ffffff; padding:1rem; text-align:center;">
+            <p style="font-size:0.7rem; font-weight:600; color:#6b7280; text-transform:uppercase; letter-spacing:0.05em; margin:0;">Avg Age</p>
+            <p style="font-size:1.75rem; font-weight:700; color:#374151; margin:0.25rem 0;">
+                @if($data['avgOpenHours'] !== null){{ $data['avgOpenHours'] }}h@else—@endif
+            </p>
+            <p style="font-size:0.7rem; color:#9ca3af; margin:0;">Open investigations</p>
         </div>
 
     </div>
