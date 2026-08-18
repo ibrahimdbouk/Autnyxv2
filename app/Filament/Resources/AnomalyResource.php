@@ -8,11 +8,13 @@ use App\Models\AnomalySetting;
 use App\Services\Anomaly\BaselineCalculatorService;
 use Filament\Actions\Action;
 use Filament\Resources\Resource;
+use Filament\Tables\Actions\BulkAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 
 class AnomalyResource extends Resource
 {
@@ -124,6 +126,17 @@ class AnomalyResource extends Resource
                     ->label('Rule')
                     ->options($ruleOptions),
 
+                SelectFilter::make('investigation_status')
+                    ->label('Investigation')
+                    ->options([
+                        'not_started'       => 'Not Started',
+                        'investigating'     => 'Investigating',
+                        'cause_established' => 'Cause Established',
+                        'action_taken'      => 'Action Taken',
+                        'resolved'          => 'Resolved',
+                        'unresolved'        => 'Unresolved',
+                    ]),
+
                 Filter::make('dismissed')
                     ->label('Show dismissed')
                     ->query(fn (Builder $query) => $query->withoutGlobalScopes()->whereNotNull('dismissed_at'))
@@ -155,6 +168,51 @@ class AnomalyResource extends Resource
                         $record->update([
                             'dismissed_at' => $dismissedAt,
                             'dismissed_by' => auth()->id(),
+                        ]);
+                    }),
+            ])
+            ->bulkActions([
+                BulkAction::make('export_csv')
+                    ->label('Export CSV')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->deselectRecordsAfterCompletion()
+                    ->action(function (Collection $records) {
+                        $filename = 'anomalies-export-' . now()->format('Y-m-d') . '.csv';
+
+                        return response()->streamDownload(function () use ($records) {
+                            $out = fopen('php://output', 'w');
+
+                            fputcsv($out, [
+                                'ID',
+                                'Severity',
+                                'Rule',
+                                'SKU',
+                                'Description',
+                                'Investigation Status',
+                                'Action Notes',
+                                'Resolution Notes',
+                                'Detected At',
+                                'Resolved At',
+                            ]);
+
+                            foreach ($records as $r) {
+                                fputcsv($out, [
+                                    $r->id,
+                                    $r->severity,
+                                    AnomalySetting::RULES[$r->rule_type]['label'] ?? $r->rule_type,
+                                    $r->sku ?? '',
+                                    $r->description,
+                                    $r->investigation_status ?? 'not_started',
+                                    $r->action_notes ?? '',
+                                    $r->resolution_notes ?? '',
+                                    $r->detected_at?->format('Y-m-d H:i') ?? '',
+                                    $r->resolved_at?->format('Y-m-d H:i') ?? '',
+                                ]);
+                            }
+
+                            fclose($out);
+                        }, $filename, [
+                            'Content-Type' => 'text/csv',
                         ]);
                     }),
             ]);

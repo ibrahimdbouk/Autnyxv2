@@ -54,6 +54,14 @@ class InvestigateAnomaly extends Page
                         ->send();
                 }),
 
+            Action::make('download_pdf')
+                ->label('Download PDF')
+                ->icon('heroicon-o-arrow-down-tray')
+                ->color('gray')
+                ->visible(fn () => $this->record->isInvestigated())
+                ->url(fn () => route('anomaly.report.pdf', $this->record->id))
+                ->openUrlInNewTab(),
+
             Action::make('mark_action_taken')
                 ->label('Mark Action Taken')
                 ->icon('heroicon-o-check-circle')

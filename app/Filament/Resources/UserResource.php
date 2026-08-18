@@ -4,17 +4,15 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\UserResource\Pages;
 use App\Models\User;
-use Filament\Facades\Filament;
-use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Section;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\BadgeColumn;
-use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Hash;
 
 class UserResource extends Resource
 {
@@ -24,101 +22,79 @@ class UserResource extends Resource
 
     protected static \UnitEnum|string|null $navigationGroup = 'Administration';
 
-    protected static ?int $navigationSort = 2;
+    protected static ?string $navigationLabel = 'Users';
 
-    // ---------- Permissions ----------
+    protected static ?int $navigationSort = 2;
 
     public static function canViewAny(): bool
     {
-        $user = auth()->user();
-        return $user && ($user->is_super_admin || $user->is_tenant_admin);
+        return auth()->user()?->canManageUsers() ?? false;
     }
 
     public static function canCreate(): bool
     {
-        $user = auth()->user();
-        return $user && ($user->is_super_admin || $user->is_tenant_admin);
+        return auth()->user()?->canManageUsers() ?? false;
     }
 
     public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
     {
-        $user = auth()->user();
-        return $user && ($user->is_super_admin || $user->is_tenant_admin);
+        return auth()->user()?->canManageUsers() ?? false;
     }
 
     public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
     {
-        // Prevent deleting yourself
-        return auth()->id() !== $record->id
-            && (auth()->user()?->is_super_admin || auth()->user()?->is_tenant_admin);
+        // Prevent self-deletion and super-admin deletion by non-super-admins
+        $user = auth()->user();
+        if (!$user || $record->id === $user->id) return false;
+        if ($record->is_super_admin && !$user->is_super_admin) return false;
+        return $user->canManageUsers();
     }
-
-    // Scope listing: tenant admins only see users within their tenant
-    public static function getEloquentQuery(): Builder
-    {
-        $query = parent::getEloquentQuery();
-
-        if (! auth()->user()?->is_super_admin) {
-            $query->where('tenant_id', Filament::getTenant()?->id);
-        }
-
-        return $query;
-    }
-
-    // ---------- Form ----------
 
     public static function form(Schema $form): Schema
     {
-        $isSuperAdmin   = auth()->user()?->is_super_admin ?? false;
-        $isTenantAdmin  = auth()->user()?->is_tenant_admin ?? false;
+        return $form->schema([
+            Section::make('Account Details')->schema([
+                TextInput::make('name')
+                    ->required()
+                    ->maxLength(255),
 
-        return $form->components([
-            TextInput::make('name')
-                ->required()
-                ->maxLength(255),
+                TextInput::make('email')
+                    ->email()
+                    ->required()
+                    ->unique(ignoreRecord: true)
+                    ->maxLength(255),
+            ])->columns(2),
 
-            TextInput::make('email')
-                ->email()
-                ->required()
-                ->unique(ignoreRecord: true)
-                ->maxLength(255),
+            Section::make('Password')->schema([
+                TextInput::make('password')
+                    ->password()
+                    ->revealable()
+                    ->required(fn (string $operation) => $operation === 'create')
+                    ->minLength(8)
+                    ->dehydrateStateUsing(fn (?string $state) => $state ? Hash::make($state) : null)
+                    ->dehydrated(fn (?string $state) => filled($state))
+                    ->helperText(fn (string $operation) => $operation === 'edit'
+                        ? 'Leave blank to keep the current password.'
+                        : null),
+            ]),
 
-            TextInput::make('password')
-                ->password()
-                ->revealable()
-                ->required(fn (string $operation): bool => $operation === 'create')
-                ->dehydrateStateUsing(fn (string $state): string => bcrypt($state))
-                ->dehydrated(fn (?string $state): bool => filled($state))
-                ->label(fn (string $operation): string => $operation === 'create'
-                    ? 'Password'
-                    : 'New Password (leave blank to keep current)'),
+            Section::make('Role')->schema([
+                Toggle::make('is_tenant_admin')
+                    ->label('Tenant Admin')
+                    ->helperText('Tenant admins can manage users, imports, and settings within this organisation.')
+                    ->default(false)
+                    ->visible(fn () => !auth()->user()?->is_super_admin
+                        ? true  // tenant admins can toggle this
+                        : true),
 
-            // Super admin can assign users to any tenant
-            Select::make('tenant_id')
-                ->label('Organization')
-                ->relationship('tenant', 'name')
-                ->searchable()
-                ->preload()
-                ->visible($isSuperAdmin)
-                ->default(fn (): ?int => Filament::getTenant()?->id),
-
-            // Tenant admins and super admins can promote users to tenant admin
-            Toggle::make('is_tenant_admin')
-                ->label('Tenant Admin')
-                ->helperText('Tenant admins can manage users and imports within their organization.')
-                ->visible($isSuperAdmin || $isTenantAdmin)
-                ->default(false),
-
-            // Only super admins can grant super admin status
-            Toggle::make('is_super_admin')
-                ->label('Super Admin')
-                ->helperText('Super admins can access and manage all organizations.')
-                ->visible($isSuperAdmin)
-                ->default(false),
+                Toggle::make('is_super_admin')
+                    ->label('Super Admin')
+                    ->helperText('Super admins have full access to all organisations and platform settings.')
+                    ->default(false)
+                    ->visible(fn () => auth()->user()?->is_super_admin ?? false),
+            ]),
         ]);
     }
-
-    // ---------- Table ----------
 
     public static function table(Table $table): Table
     {
@@ -129,33 +105,28 @@ class UserResource extends Resource
                     ->sortable(),
 
                 TextColumn::make('email')
-                    ->searchable(),
-
-                TextColumn::make('tenant.name')
-                    ->label('Organization')
-                    ->sortable()
-                    ->toggleable(),
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('role')
                     ->label('Role')
-                    ->getStateUsing(fn (User $record): string => match (true) {
-                        $record->is_super_admin  => 'Super Admin',
-                        $record->is_tenant_admin => 'Tenant Admin',
-                        default                  => 'User',
-                    })
                     ->badge()
+                    ->getStateUsing(fn (User $record): string => $record->roleLabel())
                     ->color(fn (string $state): string => match ($state) {
-                        'Super Admin'  => 'danger',
-                        'Tenant Admin' => 'warning',
-                        default        => 'gray',
+                        'Super Admin'   => 'danger',
+                        'Tenant Admin'  => 'warning',
+                        default         => 'gray',
                     }),
 
                 TextColumn::make('created_at')
-                    ->dateTime()
+                    ->label('Joined')
+                    ->since()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
-            ->defaultSort('name');
+            ->defaultSort('name')
+            ->emptyStateHeading('No users yet')
+            ->emptyStateDescription('Add your first team member using the button above.');
     }
 
     public static function getRelations(): array

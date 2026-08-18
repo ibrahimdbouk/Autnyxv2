@@ -20,7 +20,14 @@ class AnomalyDetectionService
     ) {}
 
     /**
+     * Tracks anomaly IDs touched by the current rule run.
+     * Used to delete stale anomalies (condition resolved) while preserving investigation work.
+     */
+    private array $touchedAnomalyIds = [];
+
+    /**
      * Run all enabled rules for a tenant and store results in the anomalies table.
+     * Existing open anomalies are upserted (investigation fields preserved); stale ones are deleted.
      */
     public function runForTenant(int $tenantId): void
     {
@@ -79,19 +86,32 @@ class AnomalyDetectionService
                 continue;
             }
 
-            Anomaly::where('tenant_id', $tenantId)
-                ->where('rule_type', $ruleType)
-                ->whereNull('dismissed_at')
-                ->delete();
+            $this->touchedAnomalyIds = [];
+            $succeeded = false;
 
             try {
                 $detector();
+                $succeeded = true;
             } catch (\Throwable $e) {
                 Log::error("Anomaly detection failed [{$ruleType}]", [
                     'tenant_id' => $tenantId,
                     'error'     => $e->getMessage(),
                     'trace'     => $e->getTraceAsString(),
                 ]);
+            }
+
+            // Only clean up stale anomalies if the rule ran without errors.
+            // This prevents wiping valid anomalies when the detector throws.
+            if ($succeeded) {
+                $q = Anomaly::where('tenant_id', $tenantId)
+                    ->where('rule_type', $ruleType)
+                    ->whereNull('dismissed_at');
+
+                if (!empty($this->touchedAnomalyIds)) {
+                    $q->whereNotIn('id', $this->touchedAnomalyIds);
+                }
+
+                $q->delete();
             }
         }
     }
@@ -1076,6 +1096,11 @@ class AnomalyDetectionService
         return [$recent, $historical, $numPeriods];
     }
 
+    /**
+     * Upsert an anomaly: update description/context/severity on existing open anomaly (by rule+sku+store),
+     * preserving all investigation fields. Creates fresh if none found.
+     * Tracks the anomaly ID so stale anomalies can be removed after the rule runs.
+     */
     private function flag(
         int $tenantId,
         string $ruleType,
@@ -1086,16 +1111,46 @@ class AnomalyDetectionService
         string $description,
         array $context = []
     ): void {
-        Anomaly::create([
-            'tenant_id'   => $tenantId,
-            'rule_type'   => $ruleType,
-            'severity'    => $severity,
-            'sku'         => $sku,
-            'store_id'    => $storeId,
-            'product_id'  => $productId,
-            'description' => $description,
-            'context'     => $context,
-            'detected_at' => now(),
-        ]);
+        $anomaly = null;
+
+        // For SKU-based rules, look for an existing open anomaly to update rather than recreate.
+        // This preserves investigation work (ai_what, ai_why, action_notes, etc.) when a condition persists overnight.
+        if ($sku !== null) {
+            $query = Anomaly::where('tenant_id', $tenantId)
+                ->where('rule_type', $ruleType)
+                ->where('sku', $sku)
+                ->whereNull('dismissed_at');
+
+            if ($storeId !== null) {
+                $query->where('store_id', $storeId);
+            }
+
+            $anomaly = $query->first();
+        }
+
+        if ($anomaly) {
+            // Update detection fields only — never overwrite investigation fields
+            $anomaly->update([
+                'severity'    => $severity,
+                'description' => $description,
+                'context'     => $context,
+                'product_id'  => $productId,
+                'store_id'    => $storeId,
+            ]);
+        } else {
+            $anomaly = Anomaly::create([
+                'tenant_id'   => $tenantId,
+                'rule_type'   => $ruleType,
+                'severity'    => $severity,
+                'sku'         => $sku,
+                'store_id'    => $storeId,
+                'product_id'  => $productId,
+                'description' => $description,
+                'context'     => $context,
+                'detected_at' => now(),
+            ]);
+        }
+
+        $this->touchedAnomalyIds[] = $anomaly->id;
     }
 }
