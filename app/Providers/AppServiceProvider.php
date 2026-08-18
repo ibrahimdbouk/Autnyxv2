@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Console\Commands\ComputeBaselinesCommand;
 use App\Console\Commands\DetectAnomaliesCommand;
 use App\Console\Commands\EscalateInvestigationsCommand;
+use App\Console\Commands\NarrateInvestigationsCommand;
 use App\Console\Commands\NotifyAnomaliesCommand;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\ServiceProvider;
@@ -88,6 +89,13 @@ class AppServiceProvider extends ServiceProvider
                 ->withoutOverlapping()
                 ->runInBackground()
                 ->appendOutputTo(storage_path('logs/escalation.log'));
+
+            // 03:30 — Generate AI narratives for investigations with new/missing evidence
+            $schedule->command(NarrateInvestigationsCommand::class)
+                ->dailyAt('03:30')
+                ->withoutOverlapping()
+                ->runInBackground()
+                ->appendOutputTo(storage_path('logs/narrate.log'));
         });
     }
 }
