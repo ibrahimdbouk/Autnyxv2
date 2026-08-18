@@ -24,6 +24,58 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
  */
 class ImportProcessorService
 {
+    /**
+     * Retry a specific set of failed ImportRow records.
+     * Uses the already-mapped data stored on the row so the file doesn't need to be re-read.
+     * Successfully retried rows are deleted; persistent failures update the error message.
+     */
+    public function retryRows(Import $import, \Illuminate\Support\Collection $rows): array
+    {
+        $retried = 0;
+        $stillFailed = 0;
+
+        foreach ($rows as $importRow) {
+            $mappedData = $importRow->mapped_data ?? [];
+
+            try {
+                DB::beginTransaction();
+                $this->writeMappedData($import, $mappedData, $importRow->row_number);
+                DB::commit();
+                $importRow->delete();
+                $retried++;
+            } catch (\Throwable $e) {
+                DB::rollBack();
+                $importRow->update(['error_message' => $e->getMessage()]);
+                $stillFailed++;
+            }
+        }
+
+        // Recompute failed_rows count
+        $remaining = ImportRow::where('import_id', $import->id)->count();
+        $status = $remaining === 0 ? Import::STATUS_COMPLETED : Import::STATUS_COMPLETED_WITH_ERRORS;
+        $import->update([
+            'failed_rows' => $remaining,
+            'imported_rows' => $import->imported_rows + $retried,
+            'status' => $status,
+        ]);
+
+        return ['retried' => $retried, 'still_failed' => $stillFailed];
+    }
+
+    /**
+     * Mark an import stuck in "importing" for more than $minutes as failed.
+     * Call from a scheduled command or health check.
+     */
+    public static function recoverStuckImports(int $minutes = 10): int
+    {
+        return Import::where('status', Import::STATUS_IMPORTING)
+            ->where('updated_at', '<', now()->subMinutes($minutes))
+            ->update([
+                'status'        => Import::STATUS_FAILED,
+                'error_message' => 'Import timed out or the process was interrupted.',
+            ]);
+    }
+
     public function process(Import $import): void
     {
         $import->update(['status' => Import::STATUS_IMPORTING]);
@@ -85,6 +137,20 @@ class ImportProcessorService
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Write already-mapped data (used by retryRows to avoid re-reading the file).
+     */
+    private function writeMappedData(Import $import, array $data, int $rowNumber): void
+    {
+        match ($import->data_type) {
+            Import::TYPE_SALES           => $this->writeSalesTransaction($import, $data, $rowNumber),
+            Import::TYPE_INVENTORY       => $this->writeInventoryLevel($import, $data, $rowNumber),
+            Import::TYPE_PRODUCTS        => $this->writeProduct($import, $data, $rowNumber),
+            Import::TYPE_PURCHASE_ORDERS => $this->writePurchaseOrder($import, $data, $rowNumber),
+            default                      => throw new \InvalidArgumentException("Unknown data type: {$import->data_type}"),
+        };
+    }
 
     private function writeRow(Import $import, $columnMap, array $rawRow, int $rowNumber): void
     {

@@ -7,6 +7,7 @@ use App\Console\Commands\DetectAnomaliesCommand;
 use App\Console\Commands\EscalateInvestigationsCommand;
 use App\Console\Commands\NarrateInvestigationsCommand;
 use App\Console\Commands\NotifyAnomaliesCommand;
+use App\Services\Import\ImportProcessorService;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\ServiceProvider;
 
@@ -62,6 +63,12 @@ class AppServiceProvider extends ServiceProvider
         // IMPORTANT: baselines must run BEFORE detection so that detection
         // consumes the latest z-score thresholds, not yesterday's.
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
+            // Every 5 min — recover imports stuck in "importing" status for > 10 min
+            $schedule->call(fn () => ImportProcessorService::recoverStuckImports(10))
+                ->everyFiveMinutes()
+                ->name('recover-stuck-imports')
+                ->withoutOverlapping();
+
             // 01:00 — Recompute adaptive baselines (z-score thresholds) — MUST be first
             $schedule->command(ComputeBaselinesCommand::class)
                 ->dailyAt('01:00')
