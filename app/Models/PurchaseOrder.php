@@ -10,8 +10,9 @@ class PurchaseOrder extends Model
     protected $fillable = [
         'tenant_id',
         'product_id',
+        'supplier_id',
         'po_number',
-        'supplier',
+        'supplier',      // legacy free-text — kept until supplier_id is fully back-populated
         'sku',
         'qty_ordered',
         'qty_received',
@@ -38,5 +39,10 @@ class PurchaseOrder extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
+    }
+
+    public function supplier(): BelongsTo
+    {
+        return $this->belongsTo(Supplier::class);
     }
 }

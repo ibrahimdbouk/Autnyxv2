@@ -5,13 +5,16 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\AnomalyResource\Pages;
 use App\Models\Anomaly;
 use App\Models\AnomalySetting;
+use App\Services\Anomaly\BaselineCalculatorService;
 use Filament\Actions\Action;
 use Filament\Resources\Resource;
+use Filament\Actions\BulkAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 
 class AnomalyResource extends Resource
 {
@@ -123,29 +126,93 @@ class AnomalyResource extends Resource
                     ->label('Rule')
                     ->options($ruleOptions),
 
+                SelectFilter::make('investigation_status')
+                    ->label('Investigation')
+                    ->options([
+                        'not_started'       => 'Not Started',
+                        'investigating'     => 'Investigating',
+                        'cause_established' => 'Cause Established',
+                        'action_taken'      => 'Action Taken',
+                        'resolved'          => 'Resolved',
+                        'unresolved'        => 'Unresolved',
+                    ]),
+
                 Filter::make('dismissed')
                     ->label('Show dismissed')
                     ->query(fn (Builder $query) => $query->withoutGlobalScopes()->whereNotNull('dismissed_at'))
                     ->toggle(),
             ])
             ->actions([
-                \Filament\Tables\Actions\Action::make('investigate')
+                Action::make('investigate')
                     ->label('Investigate')
                     ->icon('heroicon-o-cpu-chip')
                     ->color('primary')
                     ->url(fn (Anomaly $record): string => static::getUrl('investigate', ['record' => $record]))
                     ->visible(fn (Anomaly $record) => !$record->isDismissed()),
 
-                \Filament\Tables\Actions\Action::make('dismiss')
+                Action::make('dismiss')
                     ->label('Dismiss')
                     ->icon('heroicon-o-x-mark')
                     ->color('gray')
                     ->requiresConfirmation()
                     ->visible(fn (Anomaly $record) => !$record->isDismissed())
                     ->action(function (Anomaly $record) {
+                        $dismissedAt = now();
+
+                        // False-positive feedback: dismiss within 10 min of detection
+                        if ($record->detected_at && $dismissedAt->diffInMinutes($record->detected_at) < 10) {
+                            app(BaselineCalculatorService::class)
+                                ->recordFalsePositive($record->tenant_id, $record->rule_type, $record->sku);
+                        }
+
                         $record->update([
-                            'dismissed_at' => now(),
+                            'dismissed_at' => $dismissedAt,
                             'dismissed_by' => auth()->id(),
+                        ]);
+                    }),
+            ])
+            ->bulkActions([
+                BulkAction::make('export_csv')
+                    ->label('Export CSV')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->deselectRecordsAfterCompletion()
+                    ->action(function (Collection $records) {
+                        $filename = 'anomalies-export-' . now()->format('Y-m-d') . '.csv';
+
+                        return response()->streamDownload(function () use ($records) {
+                            $out = fopen('php://output', 'w');
+
+                            fputcsv($out, [
+                                'ID',
+                                'Severity',
+                                'Rule',
+                                'SKU',
+                                'Description',
+                                'Investigation Status',
+                                'Action Notes',
+                                'Resolution Notes',
+                                'Detected At',
+                                'Resolved At',
+                            ]);
+
+                            foreach ($records as $r) {
+                                fputcsv($out, [
+                                    $r->id,
+                                    $r->severity,
+                                    AnomalySetting::RULES[$r->rule_type]['label'] ?? $r->rule_type,
+                                    $r->sku ?? '',
+                                    $r->description,
+                                    $r->investigation_status ?? 'not_started',
+                                    $r->action_notes ?? '',
+                                    $r->resolution_notes ?? '',
+                                    $r->detected_at?->format('Y-m-d H:i') ?? '',
+                                    $r->resolved_at?->format('Y-m-d H:i') ?? '',
+                                ]);
+                            }
+
+                            fclose($out);
+                        }, $filename, [
+                            'Content-Type' => 'text/csv',
                         ]);
                     }),
             ]);

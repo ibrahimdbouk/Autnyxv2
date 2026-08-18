@@ -1,0 +1,72 @@
+<?php
+
+namespace App\Console\Commands;
+
+use App\Models\Tenant;
+use App\Services\Anomaly\AnomalyDetectionService;
+use App\Services\Anomaly\InvestigationCorrelationService;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
+
+class DetectAnomaliesCommand extends Command
+{
+    protected $signature = 'anomalies:detect {--tenant= : Specific tenant ID}';
+
+    protected $description = 'Run all anomaly detection rules for every tenant (or a specific one), then correlate into Investigations';
+
+    public function handle(
+        AnomalyDetectionService $detector,
+        InvestigationCorrelationService $correlator
+    ): int {
+        $tenantId = $this->option('tenant');
+
+        if ($tenantId) {
+            $this->info("Detecting anomalies for tenant {$tenantId}…");
+            try {
+                $detector->runForTenant((int) $tenantId);
+                $this->info('Detection done. Correlating into investigations…');
+                $correlator->correlateForTenant((int) $tenantId);
+                $this->info('Done.');
+            } catch (\Throwable $e) {
+                $this->error("Failed: {$e->getMessage()}");
+                Log::error('[anomalies:detect] ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+                return Command::FAILURE;
+            }
+            return Command::SUCCESS;
+        }
+
+        $tenants = Tenant::all();
+
+        if ($tenants->isEmpty()) {
+            $this->warn('No tenants found.');
+            return Command::SUCCESS;
+        }
+
+        $this->info("Running anomaly detection for {$tenants->count()} tenant(s)…");
+        $bar = $this->output->createProgressBar($tenants->count());
+        $bar->start();
+
+        $errors = 0;
+        foreach ($tenants as $tenant) {
+            try {
+                $detector->runForTenant($tenant->id);
+                $correlator->correlateForTenant($tenant->id);
+            } catch (\Throwable $e) {
+                $errors++;
+                Log::error("[anomalies:detect] Tenant {$tenant->id}: {$e->getMessage()}");
+            }
+            $bar->advance();
+        }
+
+        $bar->finish();
+        $this->newLine();
+
+        if ($errors > 0) {
+            $this->warn("{$errors} tenant(s) failed — check logs.");
+            return Command::FAILURE;
+        }
+
+        $this->info('All tenants processed successfully.');
+        return Command::SUCCESS;
+    }
+}

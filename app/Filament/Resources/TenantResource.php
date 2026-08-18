@@ -4,7 +4,9 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\TenantResource\Pages;
 use App\Models\Tenant;
+use Filament\Schemas\Components\Section;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
@@ -37,6 +39,21 @@ class TenantResource extends Resource
         return auth()->user()?->is_super_admin ?? false;
     }
 
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->is_super_admin ?? false;
+    }
+
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->is_super_admin ?? false;
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->is_super_admin ?? false;
+    }
+
     public static function form(Schema $form): Schema
     {
         return $form->schema([
@@ -57,6 +74,27 @@ class TenantResource extends Resource
                 ->rules(['alpha_dash'])
                 ->helperText('Used in the URL. Only letters, numbers, hyphens and underscores.')
                 ->dehydrateStateUsing(fn (string $state) => Str::slug($state)),
+
+            Section::make('Anomaly Notifications')
+                ->description('Send an email digest when new anomalies are detected. Leave blank to disable.')
+                ->collapsed()
+                ->schema([
+                    TextInput::make('notification_email')
+                        ->label('Notification Email')
+                        ->email()
+                        ->nullable()
+                        ->maxLength(255)
+                        ->placeholder('ops@yourcompany.com')
+                        ->helperText('Leave blank to disable email notifications.'),
+
+                    Toggle::make('notify_on_high')
+                        ->label('Notify on High Severity')
+                        ->default(true),
+
+                    Toggle::make('notify_on_medium')
+                        ->label('Notify on Medium Severity')
+                        ->default(false),
+                ]),
         ]);
     }
 
@@ -70,6 +108,11 @@ class TenantResource extends Resource
 
                 TextColumn::make('slug')
                     ->searchable(),
+
+                TextColumn::make('notification_email')
+                    ->label('Alert Email')
+                    ->placeholder('—')
+                    ->toggleable(),
 
                 TextColumn::make('users_count')
                     ->counts('users')

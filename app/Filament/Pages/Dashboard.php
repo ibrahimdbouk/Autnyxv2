@@ -2,7 +2,9 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Widgets\FinancialSummaryWidget;
 use App\Filament\Widgets\InventoryHealthChartWidget;
+use App\Filament\Widgets\InvestigationsOverviewWidget;
 use App\Filament\Widgets\OverviewStatsWidget;
 use App\Filament\Widgets\PoFulfillmentStatsWidget;
 use App\Filament\Widgets\RecentAnomaliesWidget;
@@ -21,6 +23,8 @@ class Dashboard extends BaseDashboard
     public function getWidgets(): array
     {
         return [
+            InvestigationsOverviewWidget::class,
+            FinancialSummaryWidget::class,
             OverviewStatsWidget::class,
             SalesTrendChartWidget::class,
             TopSkusChartWidget::class,
