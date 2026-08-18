@@ -130,14 +130,14 @@ class AnomalyResource extends Resource
                     ->toggle(),
             ])
             ->actions([
-                \Filament\Tables\Actions\Action::make('investigate')
+                Action::make('investigate')
                     ->label('Investigate')
                     ->icon('heroicon-o-cpu-chip')
                     ->color('primary')
                     ->url(fn (Anomaly $record): string => static::getUrl('investigate', ['record' => $record]))
                     ->visible(fn (Anomaly $record) => !$record->isDismissed()),
 
-                \Filament\Tables\Actions\Action::make('dismiss')
+                Action::make('dismiss')
                     ->label('Dismiss')
                     ->icon('heroicon-o-x-mark')
                     ->color('gray')
