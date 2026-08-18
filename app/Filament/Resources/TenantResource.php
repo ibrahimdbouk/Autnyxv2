@@ -39,6 +39,21 @@ class TenantResource extends Resource
         return auth()->user()?->is_super_admin ?? false;
     }
 
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->is_super_admin ?? false;
+    }
+
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->is_super_admin ?? false;
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->is_super_admin ?? false;
+    }
+
     public static function form(Schema $form): Schema
     {
         return $form->schema([

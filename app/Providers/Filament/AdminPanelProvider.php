@@ -3,7 +3,9 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Pages\Dashboard;
+use App\Filament\Widgets\FinancialSummaryWidget;
 use App\Filament\Widgets\InventoryHealthChartWidget;
+use App\Filament\Widgets\InvestigationsOverviewWidget;
 use App\Filament\Widgets\OverviewStatsWidget;
 use App\Filament\Widgets\PoFulfillmentStatsWidget;
 use App\Filament\Widgets\RecentAnomaliesWidget;
@@ -46,6 +48,8 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([
+                InvestigationsOverviewWidget::class,
+                FinancialSummaryWidget::class,
                 OverviewStatsWidget::class,
                 SalesTrendChartWidget::class,
                 TopSkusChartWidget::class,
