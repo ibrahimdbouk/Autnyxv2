@@ -43,6 +43,7 @@ class Anomaly extends Model
         'detected_at',
         'dismissed_at',
         'dismissed_by',
+        'notified_at',
         // Investigation fields
         'investigation_status',
         'ai_what',

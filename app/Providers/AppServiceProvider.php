@@ -3,6 +3,8 @@
 namespace App\Providers;
 
 use App\Console\Commands\ComputeBaselinesCommand;
+use App\Console\Commands\DetectAnomaliesCommand;
+use App\Console\Commands\NotifyAnomaliesCommand;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\ServiceProvider;
 
@@ -35,8 +37,23 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // Schedule nightly baseline computation (M9 adaptive thresholds)
+        // Nightly automation pipeline (M9 + M10 + M11)
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
+            // 01:00 — Run all 27 anomaly detection rules for every tenant
+            $schedule->command(DetectAnomaliesCommand::class)
+                ->dailyAt('01:00')
+                ->withoutOverlapping()
+                ->runInBackground()
+                ->appendOutputTo(storage_path('logs/anomaly-detect.log'));
+
+            // 01:30 — Send digest emails for new anomalies
+            $schedule->command(NotifyAnomaliesCommand::class)
+                ->dailyAt('01:30')
+                ->withoutOverlapping()
+                ->runInBackground()
+                ->appendOutputTo(storage_path('logs/anomaly-notify.log'));
+
+            // 02:00 — Recompute adaptive baselines (z-score thresholds)
             $schedule->command(ComputeBaselinesCommand::class)
                 ->dailyAt('02:00')
                 ->withoutOverlapping()
