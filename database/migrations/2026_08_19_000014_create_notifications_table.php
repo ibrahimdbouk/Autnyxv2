@@ -23,7 +23,10 @@ return new class extends Migration
             $table->uuid('id')->primary();
             $table->string('type');
             $table->morphs('notifiable');
-            $table->text('data');
+            // MUST be json (not Laravel's default text) — Filament's database
+            // notifications component reads this column with the Postgres JSON
+            // ->> operator, which errors on a text column (SQLSTATE 42883).
+            $table->json('data');
             $table->timestamp('read_at')->nullable();
             $table->timestamps();
         });
