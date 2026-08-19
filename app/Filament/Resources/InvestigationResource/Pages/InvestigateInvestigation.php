@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\InvestigationResource\Pages;
 
+use App\Filament\Concerns\ResolvesRecordKey;
 use App\Filament\Resources\InvestigationResource;
 use App\Models\Action as InvestigationAction;
 use App\Models\Investigation;
@@ -30,6 +31,8 @@ use Filament\Resources\Pages\Page;
 
 class InvestigateInvestigation extends Page
 {
+    use ResolvesRecordKey;
+
     protected static string $resource = InvestigationResource::class;
 
     protected string $view = 'filament.resources.investigation-resource.pages.investigate-investigation';
@@ -38,12 +41,9 @@ class InvestigateInvestigation extends Page
 
     public function mount(int|string $record): void
     {
-        // Filament v5 / Livewire 3 may pass the serialised model JSON as the
-        // route parameter in some binding contexts — extract the raw ID.
-        if (is_string($record) && str_starts_with(trim($record), '{')) {
-            $decoded = json_decode($record, true);
-            $record  = $decoded['id'] ?? $record;
-        }
+        // Filament v5 / Livewire may pass the serialised model JSON as the
+        // route parameter in some binding contexts — extract the raw key.
+        $record = $this->resolveRecordKey($record);
 
         $this->record = Investigation::with([
             'anomalies',

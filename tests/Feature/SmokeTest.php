@@ -98,6 +98,61 @@ class SmokeTest extends TestCase
         $this->assertLessThan(500, $status, "/ returned HTTP $status");
     }
 
+    /**
+     * Record-bound investigate pages must render WITH a real record.
+     *
+     * The index smoke tests never exercise these — they need a {record}. This
+     * seeds one linked anomaly + investigation and boots both investigate pages.
+     * Regression guard for the count()-collision and bigint route-binding 500s.
+     */
+    public function test_investigate_record_pages_do_not_500(): void
+    {
+        $investigation = \App\Models\Investigation::factory()->create([
+            'tenant_id'   => $this->tenant->id,
+            'primary_sku' => 'SKU-SMOKE',
+        ]);
+        $anomaly = \App\Models\Anomaly::factory()->create([
+            'tenant_id'        => $this->tenant->id,
+            'investigation_id' => $investigation->id,
+            'sku'              => 'SKU-SMOKE',
+        ]);
+
+        $invUrl = \App\Filament\Resources\InvestigationResource::getUrl(
+            'investigate',
+            ['record' => $investigation->id, 'tenant' => $this->tenant]
+        );
+        $this->assertLessThan(
+            500,
+            $this->get($invUrl)->baseResponse->getStatusCode(),
+            "InvestigateInvestigation page 500'd at $invUrl"
+        );
+
+        $anomUrl = \App\Filament\Resources\AnomalyResource::getUrl(
+            'investigate',
+            ['record' => $anomaly->id, 'tenant' => $this->tenant]
+        );
+        $this->assertLessThan(
+            500,
+            $this->get($anomUrl)->baseResponse->getStatusCode(),
+            "InvestigateAnomaly page 500'd at $anomUrl"
+        );
+    }
+
+    /**
+     * The investigation list page must render both empty AND with a row selected
+     * in the side panel (the state that exposed the $selected count() collision).
+     */
+    public function test_investigation_list_with_selection_does_not_500(): void
+    {
+        $investigation = \App\Models\Investigation::factory()->create([
+            'tenant_id' => $this->tenant->id,
+        ]);
+
+        \Livewire\Livewire::test(\App\Filament\Resources\InvestigationResource\Pages\ListInvestigations::class)
+            ->call('selectInvestigation', $investigation->id)
+            ->assertOk();
+    }
+
     /* ---------- data providers ---------------------------------------- */
 
     public static function resourceProvider(): array
@@ -115,6 +170,7 @@ class SmokeTest extends TestCase
                 'PurchaseOrderResource',
                 'SalesTransactionResource',
                 'StoreResource',
+                'SuppressionResource',
                 'TeamResource',
                 'TenantResource',
                 'UserResource',
@@ -130,6 +186,9 @@ class SmokeTest extends TestCase
             [
                 'Dashboard',
                 'ActionCenter',
+                'DataHealthCenter',
+                'WatchedInvestigations',
+                'QualityCenter',
             ]
         );
     }

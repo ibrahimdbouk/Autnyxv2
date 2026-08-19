@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\AnomalyResource\Pages;
 
+use App\Filament\Concerns\ResolvesRecordKey;
 use App\Filament\Resources\AnomalyResource;
 use App\Filament\Resources\InvestigationResource;
 use App\Models\Anomaly;
@@ -10,6 +11,8 @@ use Filament\Resources\Pages\Page;
 
 class InvestigateAnomaly extends Page
 {
+    use ResolvesRecordKey;
+
     protected static string $resource = AnomalyResource::class;
 
     protected string $view = 'filament.resources.anomaly-resource.pages.investigate-anomaly';
@@ -18,6 +21,9 @@ class InvestigateAnomaly extends Page
 
     public function mount(int|string $record): void
     {
+        // Guard against Filament/Livewire passing a serialized model as {record}.
+        $record = $this->resolveRecordKey($record);
+
         $this->record = Anomaly::with(['investigation.assignedTeam', 'investigation.assignedUser'])
             ->findOrFail($record);
 

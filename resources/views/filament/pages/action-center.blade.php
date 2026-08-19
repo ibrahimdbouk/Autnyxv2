@@ -441,7 +441,7 @@ $acDueLabel = static function(?string $due): string {
     <div class="ac-content-area">
 
         {{-- Feature 7 — Action Center bulk toolbar --}}
-        @php $acSel = count($selectedActions); $acMatching = $this->getMatchingActionCount(); $acEff = $selectAllMatchingActions ? $acMatching : $acSel; @endphp
+        @php $acSel = count($this->selectedActions); $acMatching = $this->getMatchingActionCount(); $acEff = $this->selectAllMatchingActions ? $acMatching : $acSel; @endphp
         <style>
             .ac-bulkbar { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; background:#eef2ff; border:1px solid #c7d2fe; border-radius:.6rem; padding:.55rem .75rem; margin-bottom:.75rem; font-size:.78rem; }
             .ac-bulkbar .cnt { font-weight:700; color:#3730a3; }
@@ -453,9 +453,9 @@ $acDueLabel = static function(?string $due): string {
         @if($acEff > 0)
         <div class="ac-bulkbar">
             <span class="cnt">{{ number_format($acEff) }} selected</span>
-            @if(! $selectAllMatchingActions && $acSel > 0 && $acMatching > $acSel)
+            @if(! $this->selectAllMatchingActions && $acSel > 0 && $acMatching > $acSel)
                 <button type="button" class="allmatch" wire:click="toggleSelectAllMatchingActions">Select all {{ number_format($acMatching) }} matching</button>
-            @elseif($selectAllMatchingActions)
+            @elseif($this->selectAllMatchingActions)
                 <span style="color:#4338ca;">All matching selected</span>
             @endif
 
@@ -529,7 +529,7 @@ $acDueLabel = static function(?string $due): string {
                     <td class="ac-check" wire:click.stop>
                         <input type="checkbox"
                             wire:click.stop="toggleSelectedAction({{ $act->id }})"
-                            @checked($selectAllMatchingActions || in_array($act->id, $selectedActions))
+                            @checked($this->selectAllMatchingActions || in_array($act->id, $this->selectedActions))
                         />
                     </td>
                     <td style="max-width:240px">

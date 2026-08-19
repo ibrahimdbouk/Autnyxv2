@@ -838,7 +838,9 @@ if ($selected) {
         </div>
 
         {{-- Feature 7 — Bulk action toolbar --}}
-        @php $selCount = count($selected); $matchingCount = $this->getMatchingCount(); $effCount = $selectAllMatching ? $matchingCount : $selCount; @endphp
+        {{-- NOTE: use $this->selected (the Livewire id array). The blade-local
+             $selected above holds the side-panel Investigation model (or null). --}}
+        @php $selCount = count($this->selected); $matchingCount = $this->getMatchingCount(); $effCount = $this->selectAllMatching ? $matchingCount : $selCount; @endphp
         <style>
             .invs-bulkbar { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; background:#eef2ff; border:1px solid #c7d2fe; border-radius:.6rem; padding:.55rem .75rem; margin-bottom:.75rem; font-size:.78rem; }
             .invs-bulkbar .cnt { font-weight:700; color:#3730a3; }
@@ -852,9 +854,9 @@ if ($selected) {
         @if($effCount > 0)
         <div class="invs-bulkbar">
             <span class="cnt">{{ number_format($effCount) }} selected</span>
-            @if(! $selectAllMatching && $selCount > 0 && $matchingCount > $selCount)
+            @if(! $this->selectAllMatching && $selCount > 0 && $matchingCount > $selCount)
                 <button type="button" class="allmatch" wire:click="toggleSelectAllMatching">Select all {{ number_format($matchingCount) }} matching</button>
-            @elseif($selectAllMatching)
+            @elseif($this->selectAllMatching)
                 <span style="color:#4338ca;">All matching selected</span>
             @endif
 
@@ -926,7 +928,7 @@ if ($selected) {
                 <label class="invs-check" wire:click.stop>
                     <input type="checkbox"
                         wire:click.stop="toggleSelected({{ $inv->id }})"
-                        @checked($selectAllMatching || in_array($inv->id, $selected))
+                        @checked($this->selectAllMatching || in_array($inv->id, $this->selected))
                     />
                 </label>
 
