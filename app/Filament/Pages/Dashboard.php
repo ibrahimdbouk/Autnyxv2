@@ -24,6 +24,11 @@ class Dashboard extends BaseDashboard
 
     protected string $view = 'filament.pages.dashboard';
 
+    public function getMaxContentWidth(): \Filament\Support\Enums\MaxWidth | string | null
+    {
+        return \Filament\Support\Enums\MaxWidth::Full;
+    }
+
     public function getTitle(): string
     {
         return 'Dashboard';
