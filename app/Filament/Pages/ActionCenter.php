@@ -195,7 +195,7 @@ class ActionCenter extends Page
         return $query;
     }
 
-    public function getActions(): LengthAwarePaginator
+    public function getPaginatedActions(): LengthAwarePaginator
     {
         $query = $this->baseQuery();
 

@@ -8,7 +8,7 @@ $tabCounts   = $this->getTabCounts();
 $slaData     = $this->getSlaComplianceData();
 $byType      = $this->getActionsByType();
 $deadlines   = $this->getUpcomingDeadlines();
-$actions     = $this->getActions();
+$actions     = $this->getPaginatedActions();
 $assignees   = $this->getAvailableAssignees();
 $selectedAct = $this->getSelectedAction();
 
