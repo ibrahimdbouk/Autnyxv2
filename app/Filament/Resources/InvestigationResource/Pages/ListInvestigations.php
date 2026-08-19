@@ -16,11 +16,6 @@ class ListInvestigations extends ListRecords
 
     protected string $view = 'filament.resources.investigation-resource.pages.list-investigations';
 
-    public function getMaxContentWidth(): \Filament\Support\Enums\MaxWidth | string | null
-    {
-        return \Filament\Support\Enums\MaxWidth::Full;
-    }
-
     // ── Panel state ────────────────────────────────────────────────────────────
     public ?int $selectedInvestigationId = null;
 

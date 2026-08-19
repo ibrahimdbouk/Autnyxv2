@@ -25,11 +25,6 @@ class InvestigateInvestigation extends Page
 
     protected string $view = 'filament.resources.investigation-resource.pages.investigate-investigation';
 
-    public function getMaxContentWidth(): \Filament\Support\Enums\MaxWidth | string | null
-    {
-        return \Filament\Support\Enums\MaxWidth::Full;
-    }
-
     public Investigation $record;
 
     public function mount(int|string $record): void

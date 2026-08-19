@@ -22,11 +22,6 @@ class ActionCenter extends Page
 
     protected string $view = 'filament.pages.action-center';
 
-    public function getMaxContentWidth(): \Filament\Support\Enums\MaxWidth | string | null
-    {
-        return \Filament\Support\Enums\MaxWidth::Full;
-    }
-
     public function getTitle(): string
     {
         return 'Action Center';
