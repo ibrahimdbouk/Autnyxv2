@@ -329,7 +329,7 @@ class ActionCenter extends Page
         $tenantId = Filament::getTenant()?->id;
         if (!$tenantId) return [];
 
-        return User::whereHas('tenants', fn ($q) => $q->where('tenants.id', $tenantId))
+        return User::where('tenant_id', $tenantId)
             ->orderBy('name')
             ->pluck('name', 'id')
             ->toArray();

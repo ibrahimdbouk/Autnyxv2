@@ -311,7 +311,7 @@ $ruleKpiMap = [
     'overstock_risk'       => ['Inventory Turnover Rate','Weeks of Supply','Sell-Through Rate'],
     'po_delay'             => ['PO Fill Rate','Delivery Lead Time','Supplier On-Time %'],
     'return_spike'         => ['Return Rate','Net Sales Volume','Customer Satisfaction'],
-    default                => ['Revenue at Risk','Anomaly Recurrence Rate','Resolution Time (hrs)'],
+    'default'              => ['Revenue at Risk','Anomaly Recurrence Rate','Resolution Time (hrs)'],
 ];
 $ruleType = $primaryAnomaly?->rule_type ?? 'default';
 $kpiList  = $ruleKpiMap[$ruleType] ?? $ruleKpiMap['default'];
