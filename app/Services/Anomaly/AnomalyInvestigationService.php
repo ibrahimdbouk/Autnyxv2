@@ -130,6 +130,10 @@ class AnomalyInvestigationService
     {
         $context   = json_encode($anomaly->context ?? [], JSON_PRETTY_PRINT);
         $ruleLabel = $anomaly->getRuleLabel();
+        // Pre-compute nullable values: the `??` operator is not valid inside
+        // heredoc `{$...}` interpolation (parse error). See scripts/check-blade.
+        $skuLabel   = $anomaly->sku ?? 'N/A';
+        $storeLabel = $anomaly->store_id ?? 'N/A';
 
         $relatedSummary = $related->isEmpty()
             ? 'None.'
@@ -145,8 +149,8 @@ You are an AI analyst for a retail inventory management system. Investigate the 
 === ANOMALY ===
 Rule: {$ruleLabel} ({$anomaly->rule_type})
 Severity: {$anomaly->severity}
-SKU: {$anomaly->sku ?? 'N/A'}
-Store ID: {$anomaly->store_id ?? 'N/A'}
+SKU: {$skuLabel}
+Store ID: {$storeLabel}
 Description: {$anomaly->description}
 Detected: {$anomaly->detected_at?->toDateTimeString()}
 Context data:
