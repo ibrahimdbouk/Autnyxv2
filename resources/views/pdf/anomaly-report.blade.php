@@ -264,155 +264,140 @@
         <div class="detected-at">Detected: {{ $anomaly->detected_at?->format('d M Y, H:i') ?? '—' }}</div>
     </div>
 
-    {{-- ── AI Investigation ─────────────────────────────────────────────── --}}
-    @if($anomaly->isInvestigated())
-        <div class="section-title">AI Investigation</div>
-        <div class="steps">
+    {{-- ── Investigation Narrative ─────────────────────────────────────── --}}
+    <div class="section-title">Investigation Narrative</div>
 
-            {{-- Step 1 --}}
-            <div class="step">
-                <div class="step-num"><div class="step-circle sc-blue">1</div></div>
-                <div class="step-body">
-                    <div class="step-label">What changed?</div>
-                    <div class="step-text">{{ $anomaly->ai_what ?? '—' }}</div>
-                </div>
-            </div>
+    @if($investigation)
+        @php
+            $invStatus = ucwords(str_replace('_', ' ', $investigation->status));
+            $invStatusClass = match($investigation->status) {
+                'open'        => 'badge-yellow',
+                'in_progress' => 'badge-blue',
+                'resolved'    => 'badge-green',
+                'closed'      => 'badge-gray',
+                default       => 'badge-gray',
+            };
+            $confClass = match($investigation->ai_confidence) {
+                'established' => 'badge-green',
+                'probable'    => 'badge-blue',
+                'suspected'   => 'badge-yellow',
+                default       => 'badge-gray',
+            };
+        @endphp
 
-            {{-- Step 2 --}}
-            <div class="step">
-                <div class="step-num"><div class="step-circle sc-violet">2</div></div>
-                <div class="step-body">
-                    <div class="step-label">
-                        Why did it change?
-                        &nbsp;
-                        @php
-                            $confClass = match($anomaly->ai_confidence) {
-                                'established' => 'badge-green',
-                                'probable'    => 'badge-blue',
-                                'suspected'   => 'badge-yellow',
-                                default       => 'badge-gray',
-                            };
-                        @endphp
-                        <span class="badge {{ $confClass }}">{{ $anomaly->getConfidenceLabel() }}</span>
-                    </div>
-                    <div class="step-text">{{ $anomaly->ai_why ?? '—' }}</div>
-                </div>
-            </div>
-
-            {{-- Step 3 --}}
-            <div class="step">
-                <div class="step-num"><div class="step-circle sc-orange">3</div></div>
-                <div class="step-body">
-                    <div class="step-label">
-                        How big is the problem?
-                        &nbsp;
-                        @php
-                            $trajClass = match($anomaly->ai_trajectory) {
-                                'widening'  => 'badge-red',
-                                'stable'    => 'badge-yellow',
-                                'narrowing' => 'badge-green',
-                                default     => 'badge-gray',
-                            };
-                        @endphp
-                        <span class="badge {{ $trajClass }}">{{ ucfirst($anomaly->ai_trajectory ?? 'unknown') }}</span>
-                    </div>
-                    <div class="step-text">{{ $anomaly->ai_how_big ?? '—' }}</div>
-                </div>
-            </div>
-
-            {{-- Step 4 --}}
-            <div class="step">
-                <div class="step-num"><div class="step-circle sc-red">4</div></div>
-                <div class="step-body">
-                    <div class="step-label">
-                        What should we do?
-                        &nbsp;
-                        @php
-                            $gateClass = match($anomaly->ai_recommendation_gate) {
-                                'act'         => 'badge-red',
-                                'investigate' => 'badge-yellow',
-                                default       => 'badge-blue',
-                            };
-                        @endphp
-                        <span class="badge {{ $gateClass }}">{{ $anomaly->getGateLabel() }}</span>
-                    </div>
-                    <div class="step-text">{{ $anomaly->ai_action ?? '—' }}</div>
-                </div>
-            </div>
-
-            {{-- Step 5 --}}
-            <div class="step">
-                <div class="step-num"><div class="step-circle sc-teal">5</div></div>
-                <div class="step-body">
-                    <div class="step-label">
-                        Pattern or one-off?
-                        &nbsp;
-                        <span class="badge {{ $anomaly->ai_is_recurring ? 'badge-yellow' : 'badge-green' }}">
-                            {{ $anomaly->ai_is_recurring ? 'Recurring' : 'One-off' }}
-                        </span>
-                    </div>
-                    <div class="step-text">{{ $anomaly->ai_pattern ?? '—' }}</div>
-                </div>
-            </div>
-
-            {{-- Step 6 --}}
-            <div class="step">
-                <div class="step-num"><div class="step-circle sc-indigo">6</div></div>
-                <div class="step-body">
-                    <div class="step-label">What else is connected?</div>
-                    <div class="step-text">
-                        {{ $anomaly->ai_related_summary ?? 'No connected anomalies found.' }}
-                        @if(!empty($anomaly->ai_related_anomaly_ids))
-                            &nbsp;({{ count($anomaly->ai_related_anomaly_ids) }} related open anomaly/anomalies)
-                        @endif
-                    </div>
-                </div>
-            </div>
-
-            {{-- Step 7 --}}
-            <div class="step">
-                <div class="step-num"><div class="step-circle sc-green">7</div></div>
-                <div class="step-body">
-                    <div class="step-label">Did it work?</div>
-                    <div class="step-text">
-                        {{ $anomaly->ai_outcome ?? ($anomaly->action_taken_at ? 'Action taken on ' . $anomaly->action_taken_at->toDateString() . '. Outcome not yet recorded.' : 'No action taken yet.') }}
-                    </div>
-
-                    @if($anomaly->action_notes)
-                        <div class="action-box">
-                            <div class="action-box-label">Action taken</div>
-                            <div class="action-box-text">{{ $anomaly->action_notes }}</div>
-                            @if($anomaly->action_taken_at)
-                                <div class="action-box-date">{{ $anomaly->action_taken_at->format('d M Y, H:i') }}</div>
-                            @endif
-                        </div>
-                    @endif
-
-                    @if($anomaly->resolved_at)
-                        @if($anomaly->investigation_status === 'resolved')
-                            <div class="resolved-box">
-                                <div class="resolved-label">✓ Resolved — {{ $anomaly->resolved_at->toDateString() }}</div>
-                                @if($anomaly->resolution_notes)
-                                    <div class="resolved-text">{{ $anomaly->resolution_notes }}</div>
-                                @endif
-                            </div>
-                        @else
-                            <div class="unresolved-box">
-                                <div class="unresolved-label">✗ Unresolved — {{ $anomaly->resolved_at->toDateString() }}</div>
-                                @if($anomaly->resolution_notes)
-                                    <div class="unresolved-text">{{ $anomaly->resolution_notes }}</div>
-                                @endif
-                            </div>
-                        @endif
-                    @endif
-                </div>
-            </div>
-
+        {{-- Investigation metadata --}}
+        <div style="margin-bottom:14px;">
+            <span class="badge {{ $invStatusClass }}">{{ $invStatus }}</span>
+            <span class="badge badge-gray">{{ ucfirst($investigation->priority) }} Priority</span>
+            @if($investigation->ai_confidence)
+                <span class="badge {{ $confClass }}">{{ ucfirst($investigation->ai_confidence) }} Confidence</span>
+            @endif
+            @if($investigation->assignedTeam)
+                <span class="badge badge-gray">{{ $investigation->assignedTeam->name }}</span>
+            @endif
+            @if($investigation->anomaly_count > 1)
+                <span class="badge badge-gray">{{ $investigation->anomaly_count }} correlated anomalies</span>
+            @endif
+        </div>
+        <div style="font-size:9px; color:#6b7280; margin-bottom:14px; font-style:italic;">
+            Investigation #{{ $investigation->id }} · {{ $investigation->title }}
+            @if($investigation->ai_generated_at)
+                · Narrative generated {{ $investigation->ai_generated_at->format('d M Y H:i') }}
+            @endif
         </div>
 
+        @if($investigation->ai_summary)
+            <div class="steps">
+
+                {{-- Summary --}}
+                <div class="step">
+                    <div class="step-num"><div class="step-circle sc-blue">1</div></div>
+                    <div class="step-body">
+                        <div class="step-label">Summary</div>
+                        <div class="step-text">{{ $investigation->ai_summary }}</div>
+                    </div>
+                </div>
+
+                {{-- Root cause --}}
+                <div class="step">
+                    <div class="step-num"><div class="step-circle sc-violet">2</div></div>
+                    <div class="step-body">
+                        <div class="step-label">
+                            Root Cause &nbsp;
+                            @if($investigation->ai_confidence)
+                                <span class="badge {{ $confClass }}">{{ ucfirst($investigation->ai_confidence) }}</span>
+                            @endif
+                        </div>
+                        <div class="step-text">{{ $investigation->ai_root_cause ?? '—' }}</div>
+                    </div>
+                </div>
+
+                {{-- Recommended action --}}
+                <div class="step">
+                    <div class="step-num"><div class="step-circle sc-red">3</div></div>
+                    <div class="step-body">
+                        <div class="step-label">Recommended Action</div>
+                        <div class="step-text">{{ $investigation->ai_recommended_action ?? '—' }}</div>
+                    </div>
+                </div>
+
+                @if($investigation->revenue_at_risk)
+                {{-- Revenue at risk --}}
+                <div class="step">
+                    <div class="step-num"><div class="step-circle sc-orange">4</div></div>
+                    <div class="step-body">
+                        <div class="step-label">Revenue at Risk (AI Estimate)</div>
+                        <div class="step-text">${{ number_format($investigation->revenue_at_risk, 2) }}</div>
+                    </div>
+                </div>
+                @endif
+
+                {{-- Outcome --}}
+                @if($investigation->outcome)
+                    @php $outcome = $investigation->outcome; @endphp
+                    <div class="step">
+                        <div class="step-num"><div class="step-circle sc-green">{{ $investigation->revenue_at_risk ? 5 : 4 }}</div></div>
+                        <div class="step-body">
+                            <div class="step-label">Financial Outcome</div>
+                            <div class="step-text">
+                                Type: {{ $outcome->outcome_type }}
+                                @if($outcome->observed_recovery)
+                                    · Recovery: ${{ number_format($outcome->observed_recovery, 2) }}
+                                @endif
+                                @if($outcome->confirmed_root_cause)
+                                    · {{ $outcome->confirmed_root_cause }}
+                                @endif
+                            </div>
+                        </div>
+                    </div>
+                @endif
+
+                {{-- Resolution --}}
+                @if($investigation->status === 'resolved' || $investigation->status === 'closed')
+                    <div @if($investigation->status === 'resolved') class="resolved-box" @else class="action-box" @endif>
+                        <div @if($investigation->status === 'resolved') class="resolved-label" @else class="action-box-label" @endif>
+                            {{ $investigation->status === 'resolved' ? '✓ Resolved' : '✓ Closed' }}
+                            @if($investigation->resolved_at) — {{ $investigation->resolved_at->format('d M Y') }} @endif
+                        </div>
+                        @if($investigation->resolution_notes)
+                            <div @if($investigation->status === 'resolved') class="resolved-text" @else class="action-box-text" @endif>
+                                {{ $investigation->resolution_notes }}
+                            </div>
+                        @endif
+                    </div>
+                @endif
+
+            </div>
+        @else
+            <p style="color:#6b7280; font-style:italic; margin-bottom:20px;">
+                Investigation is open but the AI narrative has not yet been generated. It will be produced automatically during the nightly pipeline at 03:30 AM.
+            </p>
+        @endif
+
     @else
-        <div class="section-title">AI Investigation</div>
-        <p style="color:#6b7280; font-style:italic; margin-bottom:20px;">No investigation has been run for this anomaly yet.</p>
+        <p style="color:#6b7280; font-style:italic; margin-bottom:20px;">
+            This anomaly has not yet been correlated into an investigation. Investigation correlation runs nightly at 02:00 AM. Once an investigation is created, the AI narrative will be generated and available in this report.
+        </p>
     @endif
 
     {{-- ── Raw context ───────────────────────────────────────────────────── --}}

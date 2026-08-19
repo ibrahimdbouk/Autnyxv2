@@ -6,6 +6,18 @@ use App\Models\Anomaly;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * @deprecated since M19 — Use InvestigationNarratorService instead.
+ *
+ * This class implements the original M8 "7-question" sequential AI flow operating
+ * on individual Anomaly records. It is superseded by the M19 architecture in which:
+ *   - Anomalies are correlated into Investigations (InvestigationCorrelationService)
+ *   - Evidence is collected per Investigation (EvidenceCollectorService)
+ *   - One Claude call with the full evidence package generates a structured narrative
+ *     stored on the Investigation model (InvestigationNarratorService)
+ *
+ * Retained for historical reference only. Do NOT call from new code.
+ */
 class AnomalyInvestigationService
 {
     private const HAIKU_MODEL = 'claude-haiku-4-5';

@@ -6,8 +6,8 @@ use App\Filament\Widgets\Shared\BaseTableWidget;
 use App\Models\Anomaly;
 use App\Models\AnomalySetting;
 use App\Services\Anomaly\BaselineCalculatorService;
-use Filament\Actions\Action;
 use Filament\Facades\Filament;
+use Filament\Tables\Actions\Action;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 

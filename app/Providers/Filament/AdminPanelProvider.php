@@ -10,6 +10,8 @@ use App\Filament\Widgets\OverviewStatsWidget;
 use App\Filament\Widgets\PoFulfillmentStatsWidget;
 use App\Filament\Widgets\RecentAnomaliesWidget;
 use App\Filament\Widgets\SalesTrendChartWidget;
+use App\Filament\Widgets\AnomalyTrendChartWidget;
+use App\Filament\Widgets\StoreComparisonWidget;
 use App\Filament\Widgets\TopSkusChartWidget;
 use App\Models\Tenant;
 use Filament\Http\Middleware\Authenticate;
@@ -56,6 +58,8 @@ class AdminPanelProvider extends PanelProvider
                 InventoryHealthChartWidget::class,
                 PoFulfillmentStatsWidget::class,
                 RecentAnomaliesWidget::class,
+                AnomalyTrendChartWidget::class,
+                StoreComparisonWidget::class,
             ])
             ->middleware([
                 EncryptCookies::class,

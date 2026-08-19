@@ -9,6 +9,8 @@ use App\Filament\Widgets\OverviewStatsWidget;
 use App\Filament\Widgets\PoFulfillmentStatsWidget;
 use App\Filament\Widgets\RecentAnomaliesWidget;
 use App\Filament\Widgets\SalesTrendChartWidget;
+use App\Filament\Widgets\AnomalyTrendChartWidget;
+use App\Filament\Widgets\StoreComparisonWidget;
 use App\Filament\Widgets\TopSkusChartWidget;
 use Filament\Pages\Dashboard as BaseDashboard;
 
@@ -31,6 +33,8 @@ class Dashboard extends BaseDashboard
             InventoryHealthChartWidget::class,
             PoFulfillmentStatsWidget::class,
             RecentAnomaliesWidget::class,
+            AnomalyTrendChartWidget::class,
+            StoreComparisonWidget::class,
         ];
     }
 

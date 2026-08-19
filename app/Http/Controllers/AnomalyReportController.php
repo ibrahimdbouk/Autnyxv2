@@ -12,16 +12,22 @@ class AnomalyReportController extends Controller
 {
     public function download(int $id): Response
     {
-        $anomaly = Anomaly::findOrFail($id);
+        $anomaly = Anomaly::with([
+            'investigation',
+            'investigation.assignedTeam',
+            'investigation.evidence',
+            'investigation.outcome',
+        ])->findOrFail($id);
 
         // Tenant scope: user must belong to this anomaly's tenant
         $user = auth()->user();
         abort_unless($user && $user->canAccessTenant($anomaly->tenant), 403);
 
         $pdf = Pdf::loadView('pdf.anomaly-report', [
-            'anomaly'   => $anomaly,
-            'ruleLabel' => AnomalySetting::RULES[$anomaly->rule_type]['label'] ?? $anomaly->rule_type,
-            'generatedAt' => now()->format('d M Y, H:i'),
+            'anomaly'       => $anomaly,
+            'investigation' => $anomaly->investigation,
+            'ruleLabel'     => AnomalySetting::RULES[$anomaly->rule_type]['label'] ?? $anomaly->rule_type,
+            'generatedAt'   => now()->format('d M Y, H:i'),
         ])->setPaper('a4', 'portrait');
 
         $filename = 'anomaly-report-' . $anomaly->id . '-' . now()->format('Ymd') . '.pdf';

@@ -5,6 +5,7 @@ namespace App\Models;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Models\Contracts\HasTenants;
 use Filament\Panel;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -13,7 +14,7 @@ use Illuminate\Support\Collection;
 
 class User extends Authenticatable implements FilamentUser, HasTenants
 {
-    use Notifiable;
+    use HasFactory, Notifiable;
 
     protected $fillable = [
         'name',
@@ -76,6 +77,56 @@ class User extends Authenticatable implements FilamentUser, HasTenants
      * Can manage imports (upload, review mappings, approve/reject rows).
      */
     public function canManageImports(): bool
+    {
+        return $this->is_super_admin || $this->is_tenant_admin;
+    }
+
+    // Anomaly management
+
+    public function canDismissAnomalies(): bool
+    {
+        return $this->is_super_admin || $this->is_tenant_admin;
+    }
+
+    public function canChangeAnomalyThresholds(): bool
+    {
+        return $this->is_super_admin || $this->is_tenant_admin;
+    }
+
+    // Investigation management
+
+    public function canReassignInvestigation(): bool
+    {
+        return $this->is_super_admin || $this->is_tenant_admin;
+    }
+
+    public function canCloseInvestigation(): bool
+    {
+        return $this->is_super_admin || $this->is_tenant_admin;
+    }
+
+    public function canChangeInvestigationStatus(): bool
+    {
+        return $this->is_super_admin || $this->is_tenant_admin;
+    }
+
+    // Financial outcomes
+
+    public function canRecordOutcomes(): bool
+    {
+        return $this->is_super_admin || $this->is_tenant_admin;
+    }
+
+    // Data exports
+
+    public function canExportData(): bool
+    {
+        return true; // All authenticated users can export
+    }
+
+    // Audit logs
+
+    public function canViewAuditLogs(): bool
     {
         return $this->is_super_admin || $this->is_tenant_admin;
     }

@@ -147,7 +147,7 @@ class AnomalyResource extends Resource
                     ->label('Investigate')
                     ->icon('heroicon-o-cpu-chip')
                     ->color('primary')
-                    ->url(fn (Anomaly $record): string => static::getUrl('investigate', ['record' => $record]))
+                    ->url(fn (Anomaly $record): string => static::getUrl('investigate', ['record' => $record->getKey()]))
                     ->visible(fn (Anomaly $record) => !$record->isDismissed()),
 
                 Action::make('dismiss')
@@ -155,7 +155,7 @@ class AnomalyResource extends Resource
                     ->icon('heroicon-o-x-mark')
                     ->color('gray')
                     ->requiresConfirmation()
-                    ->visible(fn (Anomaly $record) => !$record->isDismissed())
+                    ->visible(fn (Anomaly $record) => !$record->isDismissed() && auth()->user()?->canDismissAnomalies())
                     ->action(function (Anomaly $record) {
                         $dismissedAt = now();
 

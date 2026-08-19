@@ -721,7 +721,7 @@ class AnomalyDetectionService
             ->where('unit_price', '>', 0)
             ->selectRaw('sku, AVG(unit_price) as avg_price, COUNT(*) as cnt')
             ->groupBy('sku')
-            ->having('cnt', '>=', 3)
+            ->havingRaw('COUNT(*) >= 3')   // PostgreSQL does not support alias references in HAVING
             ->pluck('avg_price', 'sku')
             ->map(fn ($v) => (float) $v);
 
@@ -1010,7 +1010,7 @@ class AnomalyDetectionService
             ->whereNotNull('transaction_id')
             ->selectRaw('transaction_id, COUNT(*) as cnt, MIN(sku) as sku')
             ->groupBy('transaction_id')
-            ->having('cnt', '>', 1)
+            ->havingRaw('COUNT(*) > 1')    // PostgreSQL does not support alias references in HAVING
             ->get();
 
         foreach ($duplicates as $dup) {

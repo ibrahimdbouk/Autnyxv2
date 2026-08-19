@@ -35,6 +35,7 @@ class AnomalySettingResource extends Resource
     }
 
     public static function canCreate(): bool    { return false; }
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool   { return auth()->user()?->canChangeAnomalyThresholds() ?? false; }
     public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool { return false; }
 
     // Auto-seed all rules if missing when listing

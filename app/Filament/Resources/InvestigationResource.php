@@ -146,8 +146,31 @@ class InvestigationResource extends Resource
                 \Filament\Actions\Action::make('investigate')
                     ->label('Investigate')
                     ->icon('heroicon-o-magnifying-glass')
-                    ->url(fn (Investigation $record) => static::getUrl('investigate', ['record' => $record]))
+                    ->url(fn (Investigation $record) => static::getUrl('investigate', ['record' => $record->getKey()]))
                     ->color('primary'),
+
+                \Filament\Actions\Action::make('reassign')
+                    ->label('Reassign')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('gray')
+                    ->visible(fn () => auth()->user()?->canReassignInvestigation() ?? false)
+                    ->form([
+                        \Filament\Forms\Components\Select::make('assigned_team_id')
+                            ->label('Team')
+                            ->options(fn () => Team::where('tenant_id', Filament::getTenant()?->id)->pluck('name', 'id'))
+                            ->nullable(),
+                    ])
+                    ->action(fn (Investigation $record, array $data) => $record->update([
+                        'assigned_team_id' => $data['assigned_team_id'],
+                    ])),
+
+                \Filament\Actions\Action::make('close')
+                    ->label('Close')
+                    ->icon('heroicon-o-lock-closed')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->visible(fn (Investigation $record) => $record->status !== Investigation::STATUS_CLOSED && (auth()->user()?->canCloseInvestigation() ?? false))
+                    ->action(fn (Investigation $record) => $record->update(['status' => Investigation::STATUS_CLOSED])),
             ])
             ->bulkActions([
                 BulkActionGroup::make([]),
