@@ -29,6 +29,13 @@ class InvestigateInvestigation extends Page
 
     public function mount(int|string $record): void
     {
+        // Filament v5 / Livewire 3 may pass the serialised model JSON as the
+        // route parameter in some binding contexts — extract the raw ID.
+        if (is_string($record) && str_starts_with(trim($record), '{')) {
+            $decoded = json_decode($record, true);
+            $record  = $decoded['id'] ?? $record;
+        }
+
         $this->record = Investigation::with([
             'anomalies',
             'entities',
