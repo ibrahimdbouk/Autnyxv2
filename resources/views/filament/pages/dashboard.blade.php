@@ -186,25 +186,25 @@ $categoryTop = $tenantId
         ->first()
     : null;
 
-/* ── Format helpers ────────────────────────────────────────────────────── */
-function dbFormatMoney(float $val): string {
+/* ── Format helpers (closures — safe for multi-render Livewire cycles) ── */
+$dbFormatMoney = static function(float $val): string {
     if ($val >= 1_000_000) return '$'.number_format($val/1_000_000,2).'M';
     if ($val >= 1_000)     return '$'.number_format($val/1_000,1).'K';
     return '$'.number_format($val,0);
-}
+};
 
-function dbTrend(float $current, float $prev): array {
+$dbTrend = static function(float $current, float $prev): array {
     if ($prev == 0) return ['pct' => null, 'dir' => 'flat'];
     $pct = round((($current - $prev) / abs($prev)) * 100, 1);
     return ['pct' => abs($pct), 'dir' => $pct > 0 ? 'up' : ($pct < 0 ? 'down' : 'flat')];
-}
+};
 
-$riskTrend   = dbTrend((float)$revenueAtRisk, (float)$prevRevenueAtRisk);
-$openTrend   = dbTrend((float)$openCount, (float)$prevOpenCount);
-$highTrend   = dbTrend((float)$highPriorityCount, (float)$prevHighCount);
-$recTrend    = dbTrend((float)$recoveredMTD, (float)$prevRecoveredMTD);
+$riskTrend   = $dbTrend((float)$revenueAtRisk, (float)$prevRevenueAtRisk);
+$openTrend   = $dbTrend((float)$openCount, (float)$prevOpenCount);
+$highTrend   = $dbTrend((float)$highPriorityCount, (float)$prevHighCount);
+$recTrend    = $dbTrend((float)$recoveredMTD, (float)$prevRecoveredMTD);
 
-function dbRuleLabel(string $ruleType): string {
+$dbRuleLabel = static function(string $ruleType): string {
     $map = [
         'sales_velocity_drop'       => 'Sales Velocity Drop',
         'stockout_risk'             => 'Stockout Risk',
@@ -218,9 +218,9 @@ function dbRuleLabel(string $ruleType): string {
         'replenishment_miss'        => 'Replenishment Miss',
     ];
     return $map[$ruleType] ?? ucwords(str_replace('_',' ',$ruleType));
-}
+};
 
-function dbStatusLabel(string $s): string {
+$dbStatusLabel = static function(string $s): string {
     return match($s) {
         'open'        => 'Open',
         'in_progress' => 'In Progress',
@@ -228,10 +228,10 @@ function dbStatusLabel(string $s): string {
         'closed'      => 'Closed',
         default       => ucfirst($s),
     };
-}
+};
 
 /* ── Sparkline SVG generator ───────────────────────────────────────────── */
-function dbSparkline(array $values, string $color = '#6d28d9', int $w = 80, int $h = 28): string {
+$dbSparkline = static function(array $values, string $color = '#6d28d9', int $w = 80, int $h = 28): string {
     if (count($values) < 2) {
         return "<svg width='{$w}' height='{$h}'><line x1='0' y1='" . ($h/2) . "' x2='{$w}' y2='" . ($h/2) . "' stroke='$color' stroke-width='1.5' opacity='.4'/></svg>";
     }
@@ -246,7 +246,6 @@ function dbSparkline(array $values, string $color = '#6d28d9', int $w = 80, int 
         $pts[] = round($x,1).','.round($y,1);
     }
     $poly = implode(' ',$pts);
-    // filled area
     $first = $pts[0]; $last = $pts[count($pts)-1];
     [$lx,$ly] = explode(',',$last);
     [$fx,$fy] = explode(',',$first);
@@ -255,7 +254,7 @@ function dbSparkline(array $values, string $color = '#6d28d9', int $w = 80, int 
       <polygon points='$areaPoly' fill='$color' opacity='.12'/>
       <polyline points='$poly' fill='none' stroke='$color' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/>
     </svg>";
-}
+};
 
 // Simple sparklines: status distribution values
 $statusValues = array_values($statusBreakdown ?: [0]);
@@ -488,12 +487,12 @@ $recSparkData   = array_slice($chartRecovered, -7);
     {{-- Revenue at Risk --}}
     <div class="db-kpi">
         <div class="db-kpi-label">Revenue at Risk</div>
-        <div class="db-kpi-value">{{ dbFormatMoney((float)$revenueAtRisk) }}</div>
+        <div class="db-kpi-value">{{ $dbFormatMoney((float)$revenueAtRisk) }}</div>
         <div class="db-kpi-trend {{ $riskTrend['dir'] === 'up' ? 'db-trend-up' : ($riskTrend['dir'] === 'down' ? 'db-trend-down' : 'db-trend-flat') }}">
             @if($riskTrend['dir'] === 'up') ↑ @elseif($riskTrend['dir'] === 'down') ↓ @else — @endif
             @if($riskTrend['pct'] !== null) {{ $riskTrend['pct'] }}% vs prev period @else New metric @endif
         </div>
-        <div class="db-kpi-spark">{!! dbSparkline($riskSparkData, '#dc2626') !!}</div>
+        <div class="db-kpi-spark">{!! $dbSparkline($riskSparkData, '#dc2626') !!}</div>
     </div>
 
     {{-- Open Investigations --}}
@@ -504,7 +503,7 @@ $recSparkData   = array_slice($chartRecovered, -7);
             @if($openTrend['dir'] === 'up') ↑ @elseif($openTrend['dir'] === 'down') ↓ @else — @endif
             @if($openTrend['pct'] !== null) {{ $openTrend['pct'] }}% vs prev period @else No prior data @endif
         </div>
-        <div class="db-kpi-spark">{!! dbSparkline(array_values(array_slice($statusBreakdown ?: [0], 0, 7)), '#3b82f6') !!}</div>
+        <div class="db-kpi-spark">{!! $dbSparkline(array_values(array_slice($statusBreakdown ?: [0], 0, 7)), '#3b82f6') !!}</div>
     </div>
 
     {{-- High Priority --}}
@@ -515,7 +514,7 @@ $recSparkData   = array_slice($chartRecovered, -7);
             @if($highTrend['dir'] === 'up') ↑ @elseif($highTrend['dir'] === 'down') ↓ @else — @endif
             @if($highTrend['pct'] !== null) {{ $highTrend['pct'] }}% vs prev period @else No prior data @endif
         </div>
-        <div class="db-kpi-spark">{!! dbSparkline(array_values(array_slice($chartAtRisk, -7)), '#f59e0b') !!}</div>
+        <div class="db-kpi-spark">{!! $dbSparkline(array_values(array_slice($chartAtRisk, -7)), '#f59e0b') !!}</div>
     </div>
 
     {{-- Overdue Actions --}}
@@ -523,18 +522,18 @@ $recSparkData   = array_slice($chartRecovered, -7);
         <div class="db-kpi-label">Overdue Actions</div>
         <div class="db-kpi-value" style="{{ $overdueCount > 0 ? 'color:#dc2626' : '' }}">{{ $overdueCount }}</div>
         <div class="db-kpi-trend db-trend-flat">Actions pending &gt;48h</div>
-        <div class="db-kpi-spark">{!! dbSparkline([$overdueCount, $overdueCount], '#dc2626') !!}</div>
+        <div class="db-kpi-spark">{!! $dbSparkline([$overdueCount, $overdueCount], '#dc2626') !!}</div>
     </div>
 
     {{-- Recovered MTD --}}
     <div class="db-kpi">
         <div class="db-kpi-label">Recovered MTD</div>
-        <div class="db-kpi-value" style="color:#16a34a">{{ dbFormatMoney((float)$recoveredMTD) }}</div>
+        <div class="db-kpi-value" style="color:#16a34a">{{ $dbFormatMoney((float)$recoveredMTD) }}</div>
         <div class="db-kpi-trend {{ $recTrend['dir'] === 'up' ? 'db-trend-up' : ($recTrend['dir'] === 'down' ? 'db-trend-down' : 'db-trend-flat') }}">
             @if($recTrend['dir'] === 'up') ↑ @elseif($recTrend['dir'] === 'down') ↓ @else — @endif
             @if($recTrend['pct'] !== null) {{ $recTrend['pct'] }}% vs prev month @else Month to date @endif
         </div>
-        <div class="db-kpi-spark">{!! dbSparkline($recSparkData, '#16a34a') !!}</div>
+        <div class="db-kpi-spark">{!! $dbSparkline($recSparkData, '#16a34a') !!}</div>
     </div>
 
 </div>
@@ -591,7 +590,7 @@ $recSparkData   = array_slice($chartRecovered, -7);
                 @php $pct = round(($driver->cnt / $totalDriverAnomalies) * 100); @endphp
                 <tr>
                     <td style="width:40%">
-                        <span class="db-driver-name">{{ dbRuleLabel($driver->rule_type) }}</span>
+                        <span class="db-driver-name">{{ $dbRuleLabel($driver->rule_type) }}</span>
                     </td>
                     <td style="width:40%">
                         <div class="db-driver-bar-wrap">
@@ -668,12 +667,12 @@ $recSparkData   = array_slice($chartRecovered, -7);
                         @endif
                     </td>
                     <td style="font-size:.775rem;color:#6b7280">
-                        {{ $primaryAnomaly ? dbRuleLabel($primaryAnomaly->rule_type) : '—' }}
+                        {{ $primaryAnomaly ? $dbRuleLabel($primaryAnomaly->rule_type) : '—' }}
                     </td>
                     <td style="font-weight:700;color:#dc2626;white-space:nowrap;font-size:.8rem">
-                        {{ $inv->revenue_at_risk ? dbFormatMoney((float)$inv->revenue_at_risk) : '—' }}
+                        {{ $inv->revenue_at_risk ? $dbFormatMoney((float)$inv->revenue_at_risk) : '—' }}
                     </td>
-                    <td><span class="db-badge {{ $stBadge }}">{{ dbStatusLabel($inv->status) }}</span></td>
+                    <td><span class="db-badge {{ $stBadge }}">{{ $dbStatusLabel($inv->status) }}</span></td>
                 </tr>
                 @endforeach
                 </tbody>
@@ -753,7 +752,7 @@ $recSparkData   = array_slice($chartRecovered, -7);
                 <div class="db-insight-body">
                     <div class="db-insight-icon">🔁</div>
                     <div class="db-insight-label">Recurring Pattern</div>
-                    <div class="db-insight-title">{{ dbRuleLabel($recurringTop->rule_type) }}</div>
+                    <div class="db-insight-title">{{ $dbRuleLabel($recurringTop->rule_type) }}</div>
                     <div class="db-insight-desc">
                         This issue has recurred <strong>{{ $recurringTop->cnt }}</strong> time(s). Consider a systemic fix rather than one-off actions.
                     </div>
@@ -783,7 +782,7 @@ $recSparkData   = array_slice($chartRecovered, -7);
                 <div class="db-insight-body">
                     <div class="db-insight-icon">📈</div>
                     <div class="db-insight-label">Top Category This Month</div>
-                    <div class="db-insight-title">{{ dbRuleLabel($categoryTop->rule_type) }}</div>
+                    <div class="db-insight-title">{{ $dbRuleLabel($categoryTop->rule_type) }}</div>
                     <div class="db-insight-desc">
                         The most common anomaly this month with <strong>{{ $categoryTop->cnt }}</strong> occurrences. Review thresholds if this is expected behaviour.
                     </div>
@@ -800,8 +799,8 @@ $recSparkData   = array_slice($chartRecovered, -7);
                     <div class="db-insight-label">Period Summary</div>
                     <div class="db-insight-title">{{ $openCount }} open · {{ $highPriorityCount }} high priority</div>
                     <div class="db-insight-desc">
-                        {{ dbFormatMoney((float)$revenueAtRisk) }} revenue currently at risk.
-                        @if($recoveredMTD > 0) {{ dbFormatMoney((float)$recoveredMTD) }} recovered this month. @endif
+                        {{ $dbFormatMoney((float)$revenueAtRisk) }} revenue currently at risk.
+                        @if($recoveredMTD > 0) {{ $dbFormatMoney((float)$recoveredMTD) }} recovered this month. @endif
                     </div>
                     <a href="{{ \App\Filament\Resources\InvestigationResource::getUrl('index') }}" class="db-insight-link">Open investigations →</a>
                 </div>
