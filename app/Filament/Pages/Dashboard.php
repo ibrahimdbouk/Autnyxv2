@@ -22,6 +22,13 @@ class Dashboard extends BaseDashboard
 
     protected static ?int $navigationSort = -2;
 
+    protected string $view = 'filament.pages.dashboard';
+
+    public function getTitle(): string
+    {
+        return 'Dashboard';
+    }
+
     public function getWidgets(): array
     {
         return [
@@ -36,10 +43,5 @@ class Dashboard extends BaseDashboard
             AnomalyTrendChartWidget::class,
             StoreComparisonWidget::class,
         ];
-    }
-
-    public function getColumns(): int | array
-    {
-        return 2;
     }
 }

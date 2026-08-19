@@ -1,19 +1,22 @@
 @echo off
-cd /d C:\Users\user\Desktop\AutnyxV2
+cd /d "C:\Users\user\Desktop\AutnyxV2"
 
-rem Clear any stale git lock files before starting
-if exist .git\index.lock del /f .git\index.lock >nul 2>&1
-if exist .git\HEAD.lock del /f .git\HEAD.lock >nul 2>&1
+:: Clear any stale git lock files (silent - no error if missing)
+if exist .git\index.lock       del /f /q .git\index.lock
+if exist .git\HEAD.lock        del /f /q .git\HEAD.lock
+if exist .git\config.lock      del /f /q .git\config.lock
+if exist .git\config.lock.bak  del /f /q .git\config.lock.bak
 
-git add -A >nul 2>&1
-git rm --cached .watcher.log >nul 2>&1
-git restore --staged test-push.txt >nul 2>&1
-git diff --cached --quiet >nul 2>&1
-if %ERRORLEVEL% NEQ 0 (
-    git commit -m "Auto-push: %date% %time:~0,5%" >nul 2>&1
-    git push -u origin main >> C:\Users\user\Desktop\AutnyxV2\.watcher.log 2>&1 && (
-        echo [%date% %time:~0,8%] Pushed OK >> C:\Users\user\Desktop\AutnyxV2\.watcher.log
-    ) || (
-        echo [%date% %time:~0,8%] Push FAILED - check above >> C:\Users\user\Desktop\AutnyxV2\.watcher.log
-    )
+:: Stage all changes
+git add -A 2>nul
+
+:: Commit only if something is staged
+git diff --cached --quiet 2>nul
+if %errorlevel% neq 0 (
+    git -c user.email="ibrahim.dbouk@gmail.com" -c user.name="Ibrahim" commit -m "auto: sync changes"
 )
+
+:: Always push - handles commits made by other means too
+git push origin main 2>nul
+
+exit /b 0
