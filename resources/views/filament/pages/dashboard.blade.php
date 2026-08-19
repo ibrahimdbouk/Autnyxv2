@@ -1,15 +1,8 @@
 <x-filament-panels::page>
 
 @php
-use App\Models\Investigation;
-use App\Models\Anomaly;
-use App\Models\Action as InvestigationAction;
-use App\Models\InvestigationOutcome;
-use App\Models\Store;
-use Filament\Facades\Filament;
-
 /* ── Tenant & time anchors ─────────────────────────────────────────────── */
-$tenantId    = Filament::getTenant()?->id;
+$tenantId    = \Filament\Facades\Filament::getTenant()?->id;
 $now         = now();
 $monthStart  = $now->copy()->startOfMonth();
 $weekAgo     = $now->copy()->subDays(7);
@@ -17,12 +10,12 @@ $twoWeeksAgo = $now->copy()->subDays(14);
 
 /* ── KPI: Revenue at Risk ──────────────────────────────────────────────── */
 $revenueAtRisk = $tenantId
-    ? (Investigation::where('tenant_id',$tenantId)
+    ? (\App\Models\Investigation::where('tenant_id',$tenantId)
         ->whereIn('status',['open','in_progress'])
         ->sum('revenue_at_risk') ?? 0)
     : 0;
 $prevRevenueAtRisk = $tenantId
-    ? (Investigation::where('tenant_id',$tenantId)
+    ? (\App\Models\Investigation::where('tenant_id',$tenantId)
         ->where('opened_at','>=',$twoWeeksAgo)
         ->where('opened_at','<',$weekAgo)
         ->sum('revenue_at_risk') ?? 0)
@@ -30,23 +23,23 @@ $prevRevenueAtRisk = $tenantId
 
 /* ── KPI: Open Investigations ──────────────────────────────────────────── */
 $openCount = $tenantId
-    ? Investigation::where('tenant_id',$tenantId)
+    ? \App\Models\Investigation::where('tenant_id',$tenantId)
         ->whereIn('status',['open','in_progress'])->count()
     : 0;
 $prevOpenCount = $tenantId
-    ? Investigation::where('tenant_id',$tenantId)
+    ? \App\Models\Investigation::where('tenant_id',$tenantId)
         ->where('opened_at','>=',$twoWeeksAgo)
         ->where('opened_at','<',$weekAgo)->count()
     : 0;
 
 /* ── KPI: High Priority ────────────────────────────────────────────────── */
 $highPriorityCount = $tenantId
-    ? Investigation::where('tenant_id',$tenantId)
+    ? \App\Models\Investigation::where('tenant_id',$tenantId)
         ->whereIn('status',['open','in_progress'])
         ->whereIn('priority',['high','critical'])->count()
     : 0;
 $prevHighCount = $tenantId
-    ? Investigation::where('tenant_id',$tenantId)
+    ? \App\Models\Investigation::where('tenant_id',$tenantId)
         ->where('opened_at','>=',$twoWeeksAgo)
         ->where('opened_at','<',$weekAgo)
         ->whereIn('priority',['high','critical'])->count()
@@ -54,7 +47,7 @@ $prevHighCount = $tenantId
 
 /* ── KPI: Overdue Actions ──────────────────────────────────────────────── */
 $overdueCount = $tenantId
-    ? InvestigationAction::whereHas('investigation', fn($q) =>
+    ? \App\Models\Action::whereHas('investigation', fn($q) =>
         $q->where('tenant_id',$tenantId)->whereIn('status',['open','in_progress']))
         ->where('status','pending')
         ->where('created_at','<', $now->copy()->subHours(48))->count()
@@ -62,13 +55,13 @@ $overdueCount = $tenantId
 
 /* ── KPI: Recovered MTD ────────────────────────────────────────────────── */
 $recoveredMTD = $tenantId
-    ? (InvestigationOutcome::whereHas('investigation', fn($q) =>
+    ? (\App\Models\InvestigationOutcome::whereHas('investigation', fn($q) =>
         $q->where('tenant_id',$tenantId))
         ->where('created_at','>=',$monthStart)
         ->sum('observed_recovery') ?? 0)
     : 0;
 $prevRecoveredMTD = $tenantId
-    ? (InvestigationOutcome::whereHas('investigation', fn($q) =>
+    ? (\App\Models\InvestigationOutcome::whereHas('investigation', fn($q) =>
         $q->where('tenant_id',$tenantId))
         ->where('created_at','>=',$now->copy()->subMonth()->startOfMonth())
         ->where('created_at','<',$monthStart)
@@ -77,7 +70,7 @@ $prevRecoveredMTD = $tenantId
 
 /* ── Status breakdown (for donut chart) ───────────────────────────────── */
 $statusBreakdown = $tenantId
-    ? Investigation::where('tenant_id',$tenantId)
+    ? \App\Models\Investigation::where('tenant_id',$tenantId)
         ->selectRaw('status, count(*) as cnt')
         ->groupBy('status')
         ->pluck('cnt','status')
@@ -86,7 +79,7 @@ $statusBreakdown = $tenantId
 
 /* ── Revenue daily for 30-day chart ───────────────────────────────────── */
 $revenueDailyRaw = $tenantId
-    ? Investigation::where('tenant_id',$tenantId)
+    ? \App\Models\Investigation::where('tenant_id',$tenantId)
         ->where('opened_at','>=', $now->copy()->subDays(29)->startOfDay())
         ->whereNotNull('revenue_at_risk')
         ->selectRaw("TO_CHAR(opened_at::date,'YYYY-MM-DD') as date, SUM(revenue_at_risk) as total")
@@ -96,7 +89,7 @@ $revenueDailyRaw = $tenantId
     : [];
 
 $recoveryDailyRaw = $tenantId
-    ? InvestigationOutcome::whereHas('investigation', fn($q) =>
+    ? \App\Models\InvestigationOutcome::whereHas('investigation', fn($q) =>
         $q->where('tenant_id',$tenantId))
         ->where('created_at','>=',$now->copy()->subDays(29)->startOfDay())
         ->whereNotNull('observed_recovery')
@@ -118,7 +111,7 @@ for ($i = 29; $i >= 0; $i--) {
 
 /* ── Top drivers ───────────────────────────────────────────────────────── */
 $topDrivers = $tenantId
-    ? Anomaly::where('tenant_id',$tenantId)
+    ? \App\Models\Anomaly::where('tenant_id',$tenantId)
         ->whereNull('dismissed_at')
         ->selectRaw('rule_type, count(*) as cnt')
         ->groupBy('rule_type')
@@ -130,7 +123,7 @@ $totalDriverAnomalies = $topDrivers->sum('cnt') ?: 1;
 
 /* ── Recent high-priority investigations ───────────────────────────────── */
 $recentHighPriority = $tenantId
-    ? Investigation::where('tenant_id',$tenantId)
+    ? \App\Models\Investigation::where('tenant_id',$tenantId)
         ->whereIn('priority',['critical','high'])
         ->whereIn('status',['open','in_progress'])
         ->with(['assignedTeam','anomalies'])
@@ -141,7 +134,7 @@ $recentHighPriority = $tenantId
 
 /* ── Pending actions ───────────────────────────────────────────────────── */
 $pendingActions = $tenantId
-    ? InvestigationAction::whereHas('investigation', fn($q) =>
+    ? \App\Models\Action::whereHas('investigation', fn($q) =>
         $q->where('tenant_id',$tenantId)->whereIn('status',['open','in_progress']))
         ->where('status','pending')
         ->with(['investigation'])
@@ -152,7 +145,7 @@ $pendingActions = $tenantId
 
 /* ── Insights ──────────────────────────────────────────────────────────── */
 $recurringTop = $tenantId
-    ? Anomaly::where('tenant_id',$tenantId)
+    ? \App\Models\Anomaly::where('tenant_id',$tenantId)
         ->where('ai_is_recurring', true)
         ->whereNull('dismissed_at')
         ->selectRaw('rule_type, count(*) as cnt')
@@ -163,7 +156,7 @@ $recurringTop = $tenantId
 
 $storeAlertData = null;
 if ($tenantId) {
-    $storeAgg = Anomaly::where('tenant_id',$tenantId)
+    $storeAgg = \App\Models\Anomaly::where('tenant_id',$tenantId)
         ->whereNull('dismissed_at')
         ->whereNotNull('store_id')
         ->where('detected_at','>=',$twoWeeksAgo)
@@ -172,12 +165,12 @@ if ($tenantId) {
         ->orderByDesc('cnt')
         ->first();
     if ($storeAgg) {
-        $storeAlertData = ['store' => Store::find($storeAgg->store_id), 'cnt' => $storeAgg->cnt];
+        $storeAlertData = ['store' => \App\Models\Store::find($storeAgg->store_id), 'cnt' => $storeAgg->cnt];
     }
 }
 
 $categoryTop = $tenantId
-    ? Anomaly::where('tenant_id',$tenantId)
+    ? \App\Models\Anomaly::where('tenant_id',$tenantId)
         ->whereNull('dismissed_at')
         ->where('detected_at','>=',$monthStart)
         ->selectRaw('rule_type, count(*) as cnt')

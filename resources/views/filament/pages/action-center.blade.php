@@ -1,8 +1,5 @@
 <x-filament-panels::page>
 @php
-use App\Models\Action;
-use App\Filament\Resources\InvestigationResource;
-
 $kpis        = $this->getKpis();
 $tabCounts   = $this->getTabCounts();
 $slaData     = $this->getSlaComplianceData();
