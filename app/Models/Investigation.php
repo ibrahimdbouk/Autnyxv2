@@ -54,6 +54,12 @@ class Investigation extends Model
         'resolved_at',
         'closed_at',
         'anomaly_count',
+        // M23 / Feature 6 — Snooze
+        'snoozed_until',
+        'snooze_reason',
+        'snooze_notes',
+        'snoozed_by',
+        'snoozed_at',
     ];
 
     protected $casts = [
@@ -65,6 +71,8 @@ class Investigation extends Model
         'assigned_at'       => 'datetime',
         'resolved_at'       => 'datetime',
         'closed_at'         => 'datetime',
+        'snoozed_until'     => 'datetime',
+        'snoozed_at'        => 'datetime',
     ];
 
     // ── Relationships ─────────────────────────────────────────────────────────
@@ -124,11 +132,36 @@ class Investigation extends Model
         return $this->hasOne(InvestigationOutcome::class);
     }
 
+    public function watches(): HasMany
+    {
+        return $this->hasMany(InvestigationWatch::class);
+    }
+
+    public function comments(): HasMany
+    {
+        return $this->hasMany(InvestigationComment::class);
+    }
+
+    public function outcomeMeasurements(): HasMany
+    {
+        return $this->hasMany(OutcomeMeasurement::class);
+    }
+
+    public function snoozedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'snoozed_by');
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     public function isOpen(): bool
     {
         return in_array($this->status, [self::STATUS_OPEN, self::STATUS_IN_PROGRESS]);
+    }
+
+    public function isSnoozed(): bool
+    {
+        return $this->snoozed_until !== null && $this->snoozed_until->isFuture();
     }
 
     public function getStatusColor(): string

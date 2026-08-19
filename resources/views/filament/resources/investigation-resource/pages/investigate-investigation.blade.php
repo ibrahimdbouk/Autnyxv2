@@ -687,4 +687,82 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
 
 </div>
 
+{{-- ═══ M23 — Data-health caveats + Watch/Snooze status + Collaboration ═══ --}}
+<style>
+    .col-wrap { display:flex; flex-direction:column; gap:1.25rem; margin-top:1.25rem; }
+    .col-caveat { background:#fffbeb; border:1px solid #fde68a; border-radius:.75rem; padding:.9rem 1.15rem; color:#92400e; font-size:.82rem; }
+    .col-caveat strong { display:block; margin-bottom:.3rem; }
+    .col-status-row { display:flex; flex-wrap:wrap; gap:.75rem; }
+    .col-chip { display:inline-flex; align-items:center; gap:.4rem; padding:.35rem .75rem; border-radius:9999px; font-size:.75rem; font-weight:600; }
+    .col-chip.watch { background:#dbeafe; color:#1e40af; }
+    .col-chip.snooze { background:#fef3c7; color:#92400e; }
+    .col-card { background:#fff; border:1px solid #e5e7eb; border-radius:.875rem; box-shadow:0 1px 4px rgba(0,0,0,.07); overflow:hidden; }
+    .col-card-head { display:flex; align-items:center; gap:.5rem; padding:.75rem 1.25rem; border-bottom:1px solid #f3f4f6; font-weight:700; font-size:.9rem; color:#111827; }
+    .col-card-body { padding:1rem 1.25rem; display:flex; flex-direction:column; gap:.9rem; }
+    .col-comment { display:flex; flex-direction:column; gap:.25rem; padding-bottom:.85rem; border-bottom:1px dashed #f3f4f6; }
+    .col-comment:last-child { border-bottom:none; padding-bottom:0; }
+    .col-comment-meta { font-size:.72rem; color:#9ca3af; }
+    .col-comment-author { font-weight:700; color:#374151; }
+    .col-comment-body { font-size:.85rem; color:#1f2937; line-height:1.55; white-space:pre-wrap; }
+    .col-empty { color:#9ca3af; font-size:.82rem; }
+    .dark .col-card { background:#1f2937; border-color:#374151; }
+    .dark .col-card-head { background:#111827; border-color:#374151; color:#d1d5db; }
+</style>
+
+<div class="col-wrap">
+
+    @php $caveats = $this->dataHealthCaveats(); @endphp
+    @if(!empty($caveats))
+    <div class="col-caveat">
+        <strong>Data-health limitations may affect this investigation's evidence:</strong>
+        <ul style="margin:0;padding-left:1.1rem;">
+            @foreach($caveats as $caveat)
+                <li>{{ $caveat }}</li>
+            @endforeach
+        </ul>
+    </div>
+    @endif
+
+    @php $activeWatches = $record->watches->where('active', true); @endphp
+    @if($record->isSnoozed() || $activeWatches->count())
+    <div class="col-status-row">
+        @if($record->isSnoozed())
+            <span class="col-chip snooze">
+                Snoozed until {{ $record->snoozed_until->format('M j, Y') }}
+                @if($record->snooze_reason)· {{ \App\Models\Suppression::REASON_LABELS[$record->snooze_reason] ?? $record->snooze_reason }}@endif
+            </span>
+        @endif
+        @if($activeWatches->count())
+            <span class="col-chip watch">
+                {{ $activeWatches->count() }} watcher(s): {{ $activeWatches->map(fn($w) => $w->getWatcherLabel())->take(3)->implode(', ') }}
+            </span>
+        @endif
+    </div>
+    @endif
+
+    {{-- Collaboration --}}
+    <div class="col-card">
+        <div class="col-card-head">
+            Collaboration
+            <span style="margin-left:auto;font-weight:500;color:#9ca3af;font-size:.75rem;">{{ $record->comments->count() }} comment(s)</span>
+        </div>
+        <div class="col-card-body">
+            @php $comments = $record->comments->whereNull('parent_id'); @endphp
+            @forelse($comments as $comment)
+                <div class="col-comment">
+                    <div class="col-comment-meta">
+                        <span class="col-comment-author">{{ $comment->getAuthorLabel() }}</span>
+                        · {{ $comment->created_at->diffForHumans() }}
+                        @if($comment->wasEdited()) · edited @endif
+                    </div>
+                    <div class="col-comment-body">{{ $comment->body }}</div>
+                </div>
+            @empty
+                <div class="col-empty">No comments yet. Use the “Comment” button above to add context — mentions notify teammates.</div>
+            @endforelse
+        </div>
+    </div>
+
+</div>
+
 </x-filament-panels::page>

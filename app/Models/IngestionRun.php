@@ -36,12 +36,23 @@ class IngestionRun extends Model
         'error_message',
         'error_sample',
         'import_id',
+        // M23 / Feature 4 — Data Health validation
+        'validation_score',
+        'warnings',
+        'rejected_sample',
+        'duplicate_count',
+        'referential_issue_count',
     ];
 
     protected $casts = [
-        'error_sample'  => 'array',
-        'started_at'    => 'datetime',
-        'completed_at'  => 'datetime',
+        'error_sample'            => 'array',
+        'warnings'                => 'array',
+        'rejected_sample'         => 'array',
+        'validation_score'        => 'float',
+        'duplicate_count'         => 'integer',
+        'referential_issue_count' => 'integer',
+        'started_at'              => 'datetime',
+        'completed_at'            => 'datetime',
     ];
 
     // ── Relationships ─────────────────────────────────────────────────────────

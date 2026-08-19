@@ -837,6 +837,53 @@ if ($selected) {
             </div>
         </div>
 
+        {{-- Feature 7 — Bulk action toolbar --}}
+        @php $selCount = count($selected); $matchingCount = $this->getMatchingCount(); $effCount = $selectAllMatching ? $matchingCount : $selCount; @endphp
+        <style>
+            .invs-bulkbar { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; background:#eef2ff; border:1px solid #c7d2fe; border-radius:.6rem; padding:.55rem .75rem; margin-bottom:.75rem; font-size:.78rem; }
+            .invs-bulkbar .cnt { font-weight:700; color:#3730a3; }
+            .invs-bulkbar select, .invs-bulkbar button { font-size:.75rem; border-radius:.4rem; border:1px solid #c7d2fe; padding:.25rem .5rem; background:#fff; cursor:pointer; }
+            .invs-bulkbar button:hover { background:#eef2ff; }
+            .invs-bulkbar .danger { border-color:#fecaca; color:#b91c1c; }
+            .invs-bulkbar .allmatch { color:#4338ca; text-decoration:underline; cursor:pointer; background:none; border:none; }
+            .invs-check { display:flex; align-items:center; padding-right:.25rem; }
+            .invs-check input { width:1rem; height:1rem; cursor:pointer; }
+        </style>
+        @if($effCount > 0)
+        <div class="invs-bulkbar">
+            <span class="cnt">{{ number_format($effCount) }} selected</span>
+            @if(! $selectAllMatching && $selCount > 0 && $matchingCount > $selCount)
+                <button type="button" class="allmatch" wire:click="toggleSelectAllMatching">Select all {{ number_format($matchingCount) }} matching</button>
+            @elseif($selectAllMatching)
+                <span style="color:#4338ca;">All matching selected</span>
+            @endif
+
+            <button type="button" wire:click="bulkAssignToMe">Assign to me</button>
+
+            <select wire:model="bulkTeamId">
+                <option value="">Team…</option>
+                @foreach($this->getAvailableTeams() as $tid => $tname)
+                    <option value="{{ $tid }}">{{ $tname }}</option>
+                @endforeach
+            </select>
+            <button type="button" wire:click="bulkReassignTeam">Reassign</button>
+
+            <select wire:model="bulkPriority">
+                <option value="">Priority…</option>
+                <option value="critical">Critical</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+            </select>
+            <button type="button" wire:click="bulkChangePriority">Set priority</button>
+
+            <button type="button" wire:click="bulkSnooze">Snooze 7d</button>
+            <button type="button" class="danger" wire:click="bulkDismiss" wire:confirm="Dismiss {{ number_format($effCount) }} investigation(s)?">Dismiss</button>
+            <button type="button" wire:click="bulkExport">Export CSV</button>
+            <button type="button" wire:click="clearSelection">Clear</button>
+        </div>
+        @endif
+
         {{-- Cards --}}
         <div class="invs-cards">
             @forelse($investigations as $inv)
@@ -876,6 +923,13 @@ if ($selected) {
                 wire:click="selectInvestigation({{ $inv->id }})"
                 wire:key="inv-{{ $inv->id }}"
             >
+                <label class="invs-check" wire:click.stop>
+                    <input type="checkbox"
+                        wire:click.stop="toggleSelected({{ $inv->id }})"
+                        @checked($selectAllMatching || in_array($inv->id, $selected))
+                    />
+                </label>
+
                 <div class="invs-card-icon" style="background:{{ $iconBg }}">
                     <svg style="width:1.125rem;height:1.125rem;color:{{ $iconColor }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>

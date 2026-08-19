@@ -2,11 +2,13 @@
 
 namespace App\Filament\Pages;
 
+use App\Jobs\BulkActionCenterJob;
 use App\Models\Action;
 use App\Models\Investigation;
 use App\Models\User;
 use App\Models\Team;
 use Filament\Facades\Filament;
+use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Pagination\LengthAwarePaginator;
 
@@ -132,6 +134,127 @@ class ActionCenter extends Page
             'status'       => Action::STATUS_CANCELLED,
             'cancelled_at' => now(),
         ]);
+    }
+
+    // ── Feature 7 — bulk selection ──────────────────────────────────────────────
+    /** @var array<int,int> */
+    public array $selectedActions = [];
+    public bool $selectAllMatchingActions = false;
+    public ?int $bulkAssigneeId = null;
+    public ?int $bulkTeamIdAc = null;
+    public string $bulkPriorityAc = '';
+
+    const AC_BULK_INLINE_THRESHOLD = 150;
+
+    public function toggleSelectedAction(int $id): void
+    {
+        if (in_array($id, $this->selectedActions, true)) {
+            $this->selectedActions = array_values(array_diff($this->selectedActions, [$id]));
+            $this->selectAllMatchingActions = false;
+        } else {
+            $this->selectedActions[] = $id;
+        }
+    }
+
+    public function clearActionSelection(): void
+    {
+        $this->selectedActions = [];
+        $this->selectAllMatchingActions = false;
+    }
+
+    public function toggleSelectAllMatchingActions(): void
+    {
+        $this->selectAllMatchingActions = ! $this->selectAllMatchingActions;
+        if (! $this->selectAllMatchingActions) {
+            $this->selectedActions = [];
+        }
+    }
+
+    public function getMatchingActionCount(): int
+    {
+        return $this->baseQuery()->count();
+    }
+
+    public function getActionSelectionCount(): int
+    {
+        return $this->selectAllMatchingActions ? $this->getMatchingActionCount() : count($this->selectedActions);
+    }
+
+    /** @return array<int> */
+    protected function targetActionIds(): array
+    {
+        if ($this->selectAllMatchingActions) {
+            return $this->baseQuery()->pluck('actions.id')->map(fn ($i) => (int) $i)->all();
+        }
+        return array_map('intval', $this->selectedActions);
+    }
+
+    protected function runActionBulk(string $action, array $params = []): void
+    {
+        $tenantId = Filament::getTenant()?->id;
+        $user     = auth()->user();
+        if (! $tenantId || ! $user) {
+            return;
+        }
+
+        $ids = $this->targetActionIds();
+        if (empty($ids)) {
+            Notification::make()->title('Nothing selected')->warning()->send();
+            return;
+        }
+
+        if (count($ids) > self::AC_BULK_INLINE_THRESHOLD) {
+            BulkActionCenterJob::dispatch($tenantId, $user->id, $action, $ids, $params);
+            Notification::make()->title('Bulk action queued')->body(count($ids) . ' actions queued.')->success()->send();
+        } else {
+            $result = BulkActionCenterJob::apply($tenantId, $user->id, $action, $ids, $params);
+            $msg = "{$result['succeeded']} updated" . ($result['failed'] ? ", {$result['failed']} failed" : '');
+            Notification::make()->title('Bulk action complete')->body($msg)->color($result['failed'] ? 'warning' : 'success')->send();
+        }
+
+        $this->clearActionSelection();
+    }
+
+    public function bulkAssignActions(): void
+    {
+        if (! $this->bulkAssigneeId) {
+            Notification::make()->title('Choose an assignee first')->warning()->send();
+            return;
+        }
+        $this->runActionBulk('assign', ['assigned_to' => (int) $this->bulkAssigneeId]);
+        $this->bulkAssigneeId = null;
+    }
+
+    public function bulkReassignActionTeam(): void
+    {
+        if (! $this->bulkTeamIdAc) {
+            Notification::make()->title('Choose a team first')->warning()->send();
+            return;
+        }
+        $this->runActionBulk('reassign_team', ['team_id' => (int) $this->bulkTeamIdAc]);
+        $this->bulkTeamIdAc = null;
+    }
+
+    public function bulkChangeActionPriority(): void
+    {
+        if (! $this->bulkPriorityAc) {
+            Notification::make()->title('Choose a priority first')->warning()->send();
+            return;
+        }
+        $this->runActionBulk('change_priority', ['priority' => $this->bulkPriorityAc]);
+        $this->bulkPriorityAc = '';
+    }
+
+    public function bulkEscalateActions(): void
+    {
+        $this->runActionBulk('escalate');
+    }
+
+    public function getAvailableTeams(): array
+    {
+        $tenantId = Filament::getTenant()?->id;
+        if (! $tenantId) return [];
+        return Team::where('tenant_id', $tenantId)->orderBy('name')->pluck('name', 'id')->toArray();
     }
 
     // ── Data helpers ──────────────────────────────────────────────────────────

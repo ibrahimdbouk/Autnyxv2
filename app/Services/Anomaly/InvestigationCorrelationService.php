@@ -43,15 +43,30 @@ class InvestigationCorrelationService
             ->whereNull('dismissed_at')
             ->get();
 
+        // Feature 6 — suppression is enforced HERE, at surfacing time. Suppressed
+        // anomalies remain detected/recorded (history + FP learning preserved) but
+        // are not correlated into investigations and do not notify.
+        $suppressionService = App::make(\App\Services\Noise\SuppressionService::class);
+
+        $correlated = 0;
+        $suppressed = 0;
         foreach ($unlinked as $anomaly) {
             try {
+                $match = $suppressionService->matchFor($anomaly);
+                if ($match) {
+                    $suppressionService->recordMatch($match);
+                    $suppressed++;
+                    continue;
+                }
+
                 $this->correlate($anomaly);
+                $correlated++;
             } catch (\Throwable $e) {
                 Log::error("[M16/correlate] anomaly {$anomaly->id}: {$e->getMessage()}");
             }
         }
 
-        Log::info("[M16] Correlated {$unlinked->count()} anomalies for tenant {$tenantId}");
+        Log::info("[M16] Correlated {$correlated} anomalies ({$suppressed} suppressed) for tenant {$tenantId}");
     }
 
     /**

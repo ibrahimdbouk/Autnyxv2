@@ -3,8 +3,12 @@
 namespace App\Providers;
 
 use App\Console\Commands\ComputeBaselinesCommand;
+use App\Console\Commands\ComputeDataHealthCommand;
 use App\Console\Commands\DetectAnomaliesCommand;
 use App\Console\Commands\EscalateInvestigationsCommand;
+use App\Console\Commands\EvaluateWatchesCommand;
+use App\Console\Commands\ExpireNoiseCommand;
+use App\Console\Commands\MeasureOutcomesCommand;
 use App\Console\Commands\NarrateInvestigationsCommand;
 use App\Console\Commands\NotifyAnomaliesCommand;
 use App\Services\Import\ImportProcessorService;
@@ -103,6 +107,36 @@ class AppServiceProvider extends ServiceProvider
                 ->withoutOverlapping()
                 ->runInBackground()
                 ->appendOutputTo(storage_path('logs/narrate.log'));
+
+            // ── M23 (Features 4–10) additions ──────────────────────────────
+
+            // 00:30 — Return expired snoozes + expire due suppressions (Feature 6)
+            $schedule->command(ExpireNoiseCommand::class)
+                ->dailyAt('00:30')
+                ->withoutOverlapping()
+                ->runInBackground()
+                ->appendOutputTo(storage_path('logs/noise-expire.log'));
+
+            // 03:45 — Evaluate investigation watches (Feature 5) — after narrate
+            $schedule->command(EvaluateWatchesCommand::class)
+                ->dailyAt('03:45')
+                ->withoutOverlapping()
+                ->runInBackground()
+                ->appendOutputTo(storage_path('logs/watch-eval.log'));
+
+            // 04:00 — Recompute Data Health snapshots + critical alerts (Feature 4)
+            $schedule->command(ComputeDataHealthCommand::class)
+                ->dailyAt('04:00')
+                ->withoutOverlapping()
+                ->runInBackground()
+                ->appendOutputTo(storage_path('logs/data-health.log'));
+
+            // 04:15 — Measure post-action outcomes (Feature 8)
+            $schedule->command(MeasureOutcomesCommand::class)
+                ->dailyAt('04:15')
+                ->withoutOverlapping()
+                ->runInBackground()
+                ->appendOutputTo(storage_path('logs/outcome-measure.log'));
         });
     }
 }

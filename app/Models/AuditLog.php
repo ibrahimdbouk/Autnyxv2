@@ -20,6 +20,15 @@ class AuditLog extends Model
     const EVENT_AI_GENERATED       = 'ai_generated';
     const EVENT_FP_DISMISSED       = 'fp_dismissed';
     const EVENT_PRIORITY_CHANGED   = 'priority_changed';
+    // M23
+    const EVENT_WATCH_STARTED      = 'watch_started';
+    const EVENT_WATCH_ENDED        = 'watch_ended';
+    const EVENT_SNOOZED            = 'snoozed';
+    const EVENT_UNSNOOZED          = 'unsnoozed';
+    const EVENT_SUPPRESSED         = 'suppressed';
+    const EVENT_SUPPRESSION_ENDED  = 'suppression_ended';
+    const EVENT_BULK_ACTION        = 'bulk_action';
+    const EVENT_OUTCOME_MEASURED   = 'outcome_measured';
 
     // Append-only — no updated_at
     public $timestamps  = false;

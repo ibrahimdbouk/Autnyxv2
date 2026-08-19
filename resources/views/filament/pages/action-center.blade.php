@@ -440,11 +440,61 @@ $acDueLabel = static function(?string $due): string {
     {{-- LEFT: table + detail panel --}}
     <div class="ac-content-area">
 
+        {{-- Feature 7 — Action Center bulk toolbar --}}
+        @php $acSel = count($selectedActions); $acMatching = $this->getMatchingActionCount(); $acEff = $selectAllMatchingActions ? $acMatching : $acSel; @endphp
+        <style>
+            .ac-bulkbar { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; background:#eef2ff; border:1px solid #c7d2fe; border-radius:.6rem; padding:.55rem .75rem; margin-bottom:.75rem; font-size:.78rem; }
+            .ac-bulkbar .cnt { font-weight:700; color:#3730a3; }
+            .ac-bulkbar select, .ac-bulkbar button { font-size:.75rem; border-radius:.4rem; border:1px solid #c7d2fe; padding:.25rem .5rem; background:#fff; cursor:pointer; }
+            .ac-bulkbar button:hover { background:#eef2ff; }
+            .ac-bulkbar .allmatch { color:#4338ca; text-decoration:underline; cursor:pointer; background:none; border:none; }
+            .ac-check input { width:1rem; height:1rem; cursor:pointer; }
+        </style>
+        @if($acEff > 0)
+        <div class="ac-bulkbar">
+            <span class="cnt">{{ number_format($acEff) }} selected</span>
+            @if(! $selectAllMatchingActions && $acSel > 0 && $acMatching > $acSel)
+                <button type="button" class="allmatch" wire:click="toggleSelectAllMatchingActions">Select all {{ number_format($acMatching) }} matching</button>
+            @elseif($selectAllMatchingActions)
+                <span style="color:#4338ca;">All matching selected</span>
+            @endif
+
+            <select wire:model="bulkAssigneeId">
+                <option value="">Assign to…</option>
+                @foreach($assignees as $uid => $name)
+                    <option value="{{ $uid }}">{{ $name }}</option>
+                @endforeach
+            </select>
+            <button type="button" wire:click="bulkAssignActions">Assign</button>
+
+            <select wire:model="bulkTeamIdAc">
+                <option value="">Team…</option>
+                @foreach($this->getAvailableTeams() as $tid => $tname)
+                    <option value="{{ $tid }}">{{ $tname }}</option>
+                @endforeach
+            </select>
+            <button type="button" wire:click="bulkReassignActionTeam">Reassign</button>
+
+            <select wire:model="bulkPriorityAc">
+                <option value="">Priority…</option>
+                @foreach(\App\Models\Action::PRIORITY_LABELS as $val => $label)
+                    <option value="{{ $val }}">{{ $label }}</option>
+                @endforeach
+            </select>
+            <button type="button" wire:click="bulkChangeActionPriority">Set priority</button>
+
+            <button type="button" wire:click="bulkEscalateActions">Escalate</button>
+            <button type="button" wire:click="exportCsv">Export CSV</button>
+            <button type="button" wire:click="clearActionSelection">Clear</button>
+        </div>
+        @endif
+
         {{-- Table card --}}
         <div class="ac-card">
             <table class="ac-table">
                 <thead>
                     <tr>
+                        <th style="width:2rem;"></th>
                         <th wire:click="$set('sortField','priority')"
                             class="{{ $this->sortField === 'priority' ? 'sorted' : '' }}">
                             Action
@@ -476,6 +526,12 @@ $acDueLabel = static function(?string $due): string {
                 @endphp
                 <tr wire:click="selectAction({{ $act->id }})"
                     class="{{ $this->selectedActionId === $act->id ? 'ac-row-selected' : '' }}">
+                    <td class="ac-check" wire:click.stop>
+                        <input type="checkbox"
+                            wire:click.stop="toggleSelectedAction({{ $act->id }})"
+                            @checked($selectAllMatchingActions || in_array($act->id, $selectedActions))
+                        />
+                    </td>
                     <td style="max-width:240px">
                         <div class="ac-action-cell">
                             <span class="ac-pri-dot {{ $acPriClass($act->priority) }}"></span>
@@ -536,7 +592,7 @@ $acDueLabel = static function(?string $due): string {
                 </tr>
                 @empty
                 <tr>
-                    <td colspan="7">
+                    <td colspan="8">
                         <div class="ac-empty">
                             <div class="ac-empty-icon">✅</div>
                             No actions found for this view.

@@ -6,12 +6,21 @@ use App\Filament\Resources\InvestigationResource;
 use App\Models\Action as InvestigationAction;
 use App\Models\Investigation;
 use App\Models\InvestigationOutcome;
+use App\Models\InvestigationWatch;
+use App\Models\Team;
+use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\Collaboration\CommentService;
+use App\Services\DataHealth\DataHealthService;
 use App\Services\InvestigationNarratorService;
+use App\Services\Noise\SnoozeService;
 use App\Services\OutcomeService;
+use App\Services\Watch\WatchService;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -47,12 +56,49 @@ class InvestigateInvestigation extends Page
             'assignedUser',
             'escalationEvents.escalationRule',
             'outcome.recordedBy',
+            'comments' => fn ($q) => $q->with('user')->orderBy('created_at'),
+            'watches.user',
+            'watches.team',
+            'snoozedByUser',
         ])->findOrFail($record);
 
         abort_unless(
             $this->record->tenant_id === Filament::getTenant()?->id,
             403
         );
+    }
+
+    /** Fields to eager-load when refreshing the record after an action. */
+    protected function refreshRelations(): array
+    {
+        return [
+            'anomalies', 'evidence', 'actions.assignedTo', 'actions.assignedTeam',
+            'auditLogs.user', 'assignedTeam', 'assignedUser', 'outcome.recordedBy',
+            'comments' => fn ($q) => $q->with('user')->orderBy('created_at'),
+            'watches.user', 'watches.team', 'snoozedByUser',
+        ];
+    }
+
+    protected function reloadRecord(): void
+    {
+        $this->record = $this->record->fresh($this->refreshRelations());
+    }
+
+    // ── Feature 5/6/10 helpers ─────────────────────────────────────────────────
+
+    public function isWatchedByMe(): bool
+    {
+        return app(WatchService::class)->isWatchedByUser($this->record, auth()->id());
+    }
+
+    /** @return array<int,string> */
+    public function dataHealthCaveats(): array
+    {
+        try {
+            return app(DataHealthService::class)->evidenceCaveats($this->record);
+        } catch (\Throwable) {
+            return [];
+        }
     }
 
     protected function getHeaderActions(): array
@@ -269,6 +315,137 @@ class InvestigateInvestigation extends Page
                     ]);
 
                     Notification::make()->title('Outcome recorded')->success()->send();
+                }),
+
+            // ── Feature 5 — Watch / Unwatch ────────────────────────────────
+            Action::make('watch')
+                ->label('Watch')
+                ->icon('heroicon-o-eye')
+                ->color('info')
+                ->visible(fn () => ! $this->isWatchedByMe())
+                ->form([
+                    Select::make('mode')
+                        ->label('Watch')
+                        ->options([
+                            InvestigationWatch::MODE_UNTIL_RESOLVED => 'Until resolved',
+                            InvestigationWatch::MODE_UNTIL_DATE      => 'Until a date',
+                            InvestigationWatch::MODE_INDEFINITE      => 'Indefinitely',
+                        ])
+                        ->default(InvestigationWatch::MODE_UNTIL_RESOLVED)
+                        ->live()
+                        ->required(),
+                    DateTimePicker::make('watch_until')
+                        ->label('Watch until')
+                        ->visible(fn ($get) => $get('mode') === InvestigationWatch::MODE_UNTIL_DATE)
+                        ->minDate(now()),
+                    CheckboxList::make('triggers')
+                        ->label('Notify me on')
+                        ->options(InvestigationWatch::TRIGGER_LABELS)
+                        ->default(InvestigationWatch::DEFAULT_TRIGGERS)
+                        ->columns(2),
+                    Select::make('team_id')
+                        ->label('Watch as team (optional)')
+                        ->options(fn () => Team::where('tenant_id', $this->record->tenant_id)->pluck('name', 'id'))
+                        ->placeholder('Just me')
+                        ->helperText('Team watches notify all members.'),
+                ])
+                ->action(function (array $data) {
+                    $service = app(WatchService::class);
+                    $until   = ! empty($data['watch_until']) ? \Illuminate\Support\Carbon::parse($data['watch_until']) : null;
+                    if (! empty($data['team_id'])) {
+                        $service->watchForTeam($this->record, (int) $data['team_id'], $data['mode'], $until, $data['triggers'] ?? null, auth()->id());
+                    } else {
+                        $service->watchForUser($this->record, auth()->id(), $data['mode'], $until, $data['triggers'] ?? null);
+                    }
+                    $this->reloadRecord();
+                    Notification::make()->title('Watching investigation')->success()->send();
+                }),
+
+            Action::make('unwatch')
+                ->label('Unwatch')
+                ->icon('heroicon-o-eye-slash')
+                ->color('gray')
+                ->visible(fn () => $this->isWatchedByMe())
+                ->action(function () {
+                    app(WatchService::class)->unwatchForUser($this->record, auth()->id());
+                    $this->reloadRecord();
+                    Notification::make()->title('Stopped watching')->success()->send();
+                }),
+
+            // ── Feature 6 — Snooze / Unsnooze ──────────────────────────────
+            Action::make('snooze')
+                ->label('Snooze')
+                ->icon('heroicon-o-clock')
+                ->color('warning')
+                ->visible(fn () => ! $this->record->isSnoozed())
+                ->form([
+                    Select::make('duration')
+                        ->label('Snooze for')
+                        ->options(SnoozeService::DURATIONS)
+                        ->default('7d')
+                        ->live()
+                        ->required(),
+                    DatePicker::make('custom_date')
+                        ->label('Until')
+                        ->visible(fn ($get) => $get('duration') === 'custom')
+                        ->minDate(now()),
+                    Select::make('reason')
+                        ->label('Reason')
+                        ->options(SnoozeService::REASONS)
+                        ->required(),
+                    Textarea::make('notes')->label('Notes')->rows(2),
+                ])
+                ->action(function (array $data) {
+                    $service = app(SnoozeService::class);
+                    $until = $service->resolveUntil($data['duration'], $data['custom_date'] ?? null);
+                    $service->snooze($this->record, $until, $data['reason'], $data['notes'] ?? null, auth()->id());
+                    $this->reloadRecord();
+                    Notification::make()->title('Investigation snoozed')->success()->send();
+                }),
+
+            Action::make('unsnooze')
+                ->label('Unsnooze')
+                ->icon('heroicon-o-bell-alert')
+                ->color('gray')
+                ->visible(fn () => $this->record->isSnoozed())
+                ->action(function () {
+                    app(SnoozeService::class)->unsnooze($this->record, auth()->id());
+                    $this->reloadRecord();
+                    Notification::make()->title('Snooze cleared')->success()->send();
+                }),
+
+            // ── Feature 10 — Add comment ───────────────────────────────────
+            Action::make('add_comment')
+                ->label('Comment')
+                ->icon('heroicon-o-chat-bubble-left-right')
+                ->color('gray')
+                ->form([
+                    Textarea::make('body')
+                        ->label('Comment')
+                        ->required()
+                        ->rows(3)
+                        ->placeholder('Add context, a decision, or a question…'),
+                    Select::make('mentioned_user_ids')
+                        ->label('Mention users')
+                        ->multiple()
+                        ->options(fn () => User::where('tenant_id', $this->record->tenant_id)->orderBy('name')->pluck('name', 'id'))
+                        ->searchable(),
+                    Select::make('mentioned_team_ids')
+                        ->label('Mention teams')
+                        ->multiple()
+                        ->options(fn () => Team::where('tenant_id', $this->record->tenant_id)->orderBy('name')->pluck('name', 'id'))
+                        ->searchable(),
+                ])
+                ->action(function (array $data) {
+                    app(CommentService::class)->post(
+                        $this->record,
+                        auth()->id(),
+                        $data['body'],
+                        array_map('intval', $data['mentioned_user_ids'] ?? []),
+                        array_map('intval', $data['mentioned_team_ids'] ?? []),
+                    );
+                    $this->reloadRecord();
+                    Notification::make()->title('Comment added')->success()->send();
                 }),
 
             // Back to list

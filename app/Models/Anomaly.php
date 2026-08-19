@@ -48,6 +48,7 @@ class Anomaly extends Model
         'detected_at',
         'dismissed_at',
         'dismissed_by',
+        'is_false_positive',
         'notified_at',
         // Investigation fields
         'investigation_status',
@@ -74,6 +75,7 @@ class Anomaly extends Model
         'context'               => 'array',
         'ai_related_anomaly_ids'=> 'array',
         'ai_is_recurring'       => 'boolean',
+        'is_false_positive'     => 'boolean',
         'detected_at'           => 'datetime',
         'dismissed_at'          => 'datetime',
         'ai_generated_at'       => 'datetime',
