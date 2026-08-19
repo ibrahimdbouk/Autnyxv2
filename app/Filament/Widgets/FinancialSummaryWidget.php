@@ -8,7 +8,7 @@ use Filament\Widgets\Widget;
 
 class FinancialSummaryWidget extends Widget
 {
-    protected static string $view = 'filament.widgets.financial-summary-widget';
+    protected string $view = 'filament.widgets.financial-summary-widget';
 
     protected int|string|array $columnSpan = 'full';
 

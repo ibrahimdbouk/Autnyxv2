@@ -8,7 +8,7 @@ use Filament\Widgets\Widget;
 
 class InvestigationsOverviewWidget extends Widget
 {
-    protected static string $view = 'filament.widgets.investigations-overview-widget';
+    protected string $view = 'filament.widgets.investigations-overview-widget';
 
     protected int|string|array $columnSpan = 'full';
 
