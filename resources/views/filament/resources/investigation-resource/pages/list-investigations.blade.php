@@ -728,9 +728,6 @@
 </style>
 
 @php
-use Illuminate\Support\Str;
-use App\Filament\Resources\InvestigationResource;
-
 $investigations = $this->getInvestigations();
 $openCount      = $this->getOpenCount();
 $selected       = $this->getSelectedInvestigation();
@@ -793,7 +790,7 @@ if ($selected) {
         ->sortByDesc(fn($e) => ['strong'=>3,'moderate'=>2,'weak'=>1][$e->strength] ?? 0)
         ->take(4);
 
-    $expandUrl = InvestigationResource::getUrl('investigate', ['record' => $selected->id]);
+    $expandUrl = \App\Filament\Resources\InvestigationResource::getUrl('investigate', ['record' => $selected->id]);
 }
 @endphp
 
@@ -889,7 +886,7 @@ if ($selected) {
                     <div class="invs-card-entity">{{ $entityName }}</div>
                     <div class="invs-card-type">{{ $ruleLabel }}</div>
                     @if($inv->description)
-                    <div class="invs-card-desc">{{ Str::limit($inv->description, 65) }}</div>
+                    <div class="invs-card-desc">{{ \Illuminate\Support\Str::limit($inv->description, 65) }}</div>
                     @endif
                 </div>
 
@@ -1089,7 +1086,7 @@ if ($selected) {
                         <div style="font-weight:700;color:#92400e;margin-bottom:.375rem">Investigation Incomplete</div>
                         <p style="font-size:.875rem;color:#78350f;margin:.25rem 0">
                             {{ $selected->ai_summary
-                                ? Str::limit($selected->ai_summary, 120)
+                                ? \Illuminate\Support\Str::limit($selected->ai_summary, 120)
                                 : 'Sales decline confirmed, but available data does not establish a reliable primary driver.' }}
                         </p>
                         <div style="font-size:.8125rem;font-weight:700;color:#92400e;margin-top:.625rem">Next Best Step</div>

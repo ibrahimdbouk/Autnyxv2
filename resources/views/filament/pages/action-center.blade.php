@@ -480,7 +480,7 @@ $acDueLabel = static function(?string $due): string {
                         <div class="ac-action-cell">
                             <span class="ac-pri-dot {{ $acPriClass($act->priority) }}"></span>
                             <div>
-                                <div class="ac-action-title">{{ Str::limit($act->title, 55) }}</div>
+                                <div class="ac-action-title">{{ \Illuminate\Support\Str::limit($act->title, 55) }}</div>
                                 @if($act->investigation?->primary_sku)
                                 <div class="ac-action-sub">SKU: {{ $act->investigation->primary_sku }}</div>
                                 @endif
@@ -490,7 +490,7 @@ $acDueLabel = static function(?string $due): string {
                     <td>
                         @if($act->investigation)
                         <div style="font-size:.775rem;font-weight:500;color:#111827">
-                            {{ Str::limit($act->investigation->title ?? 'Investigation #'.$act->investigation_id, 36) }}
+                            {{ \Illuminate\Support\Str::limit($act->investigation->title ?? 'Investigation #'.$act->investigation_id, 36) }}
                         </div>
                         @if($act->investigation->primaryStore)
                         <div class="ac-action-sub">{{ $act->investigation->primaryStore->name }}</div>
@@ -606,7 +606,7 @@ $acDueLabel = static function(?string $due): string {
                         <a href="{{ \App\Filament\Resources\InvestigationResource::getUrl('investigate', ['record' => $selectedAct->investigation_id]) }}"
                            class="ac-detail-val" style="color:#6d28d9;text-decoration:none"
                            onclick="event.stopPropagation()">
-                            {{ Str::limit($selectedAct->investigation->title ?? '#'.$selectedAct->investigation_id, 45) }} →
+                            {{ \Illuminate\Support\Str::limit($selectedAct->investigation->title ?? '#'.$selectedAct->investigation_id, 45) }} →
                         </a>
                         @else
                         <span class="ac-detail-val">—</span>
@@ -668,7 +668,7 @@ $acDueLabel = static function(?string $due): string {
                     @foreach($selectedAct->investigation->anomalies->take(3) as $anom)
                     <div class="ac-detail-row">
                         <span class="ac-detail-key">{{ ucfirst($anom->severity ?? 'anomaly') }}</span>
-                        <span class="ac-detail-val">{{ Str::limit($anom->getRuleLabel() ?? $anom->rule_type, 40) }}</span>
+                        <span class="ac-detail-val">{{ \Illuminate\Support\Str::limit($anom->getRuleLabel() ?? $anom->rule_type, 40) }}</span>
                     </div>
                     @endforeach
                 </div>
