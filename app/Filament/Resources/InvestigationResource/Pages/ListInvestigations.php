@@ -13,6 +13,7 @@ use Filament\Facades\Filament;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Livewire\Attributes\Url;
 
 class ListInvestigations extends ListRecords
 {
@@ -24,10 +25,17 @@ class ListInvestigations extends ListRecords
     public ?int $selectedInvestigationId = null;
 
     // ── Filter / search / sort state ──────────────────────────────────────────
+    // Filter props are URL-bound so the dashboard KPI cards can deep-link with a
+    // pre-applied filter (e.g. ?status=open&priority=high_critical).
+    #[Url(as: 'q')]
     public string $search        = '';
+    #[Url(as: 'status')]
     public string $statusFilter  = 'open';
+    #[Url(as: 'priority')]
     public string $priorityFilter= '';
+    #[Url(as: 'rule')]
     public string $ruleFilter    = '';
+    #[Url(as: 'store')]
     public string $storeFilter   = '';
     public string $sortField     = 'opened_at';
     public string $sortDir       = 'desc';
@@ -245,7 +253,11 @@ class ListInvestigations extends ListRecords
             $query->where('status', $this->statusFilter);
         }
 
-        if ($this->priorityFilter) {
+        if ($this->priorityFilter === 'high_critical') {
+            // Deep-link value used by the dashboard "High Priority" KPI card
+            // (high + critical open investigations).
+            $query->whereIn('priority', ['high', 'critical']);
+        } elseif ($this->priorityFilter) {
             $query->where('priority', $this->priorityFilter);
         }
 

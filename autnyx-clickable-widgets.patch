@@ -1,0 +1,1113 @@
+From 350b9933a33d5fc746297248027c953b463338aa Mon Sep 17 00:00:00 2001
+From: "Claude (Cowork)" <claude@anthropic.com>
+Date: Thu, 20 Aug 2026 02:30:10 +0000
+Subject: [PATCH] Make dashboard widgets/KPIs clickable + financial drill-down
+ page
+
+---
+ app/Filament/Pages/ActionCenter.php           |   8 +
+ app/Filament/Pages/FinancialBreakdown.php     | 396 ++++++++++++++++++
+ .../Pages/ListInvestigations.php              |  14 +-
+ app/Filament/Widgets/OverviewStatsWidget.php  |  37 +-
+ .../views/filament/pages/dashboard.blade.php  |  55 ++-
+ .../pages/financial-breakdown.blade.php       | 142 +++++++
+ .../pages/list-investigations.blade.php       |   1 +
+ .../financial-summary-widget.blade.php        |  76 ++--
+ .../investigations-overview-widget.blade.php  | 101 +++--
+ tests/Feature/SmokeTest.php                   |  39 ++
+ 10 files changed, 773 insertions(+), 96 deletions(-)
+ create mode 100644 app/Filament/Pages/FinancialBreakdown.php
+ create mode 100644 resources/views/filament/pages/financial-breakdown.blade.php
+
+diff --git a/app/Filament/Pages/ActionCenter.php b/app/Filament/Pages/ActionCenter.php
+index 2266d8f..dc3c843 100644
+--- a/app/Filament/Pages/ActionCenter.php
++++ b/app/Filament/Pages/ActionCenter.php
+@@ -11,6 +11,7 @@ use Filament\Facades\Filament;
+ use Filament\Notifications\Notification;
+ use Filament\Pages\Page;
+ use Illuminate\Pagination\LengthAwarePaginator;
++use Livewire\Attributes\Url;
+ 
+ class ActionCenter extends Page
+ {
+@@ -30,10 +31,17 @@ class ActionCenter extends Page
+     }
+ 
+     // ── Filter / tab / sort state ─────────────────────────────────────────────
++    // Tab / filter props are URL-bound so the dashboard "Overdue Actions" KPI
++    // card can deep-link straight to the matching tab (e.g. ?tab=overdue).
++    #[Url(as: 'tab')]
+     public string $activeTab     = 'all';
++    #[Url(as: 'q')]
+     public string $search        = '';
++    #[Url(as: 'type')]
+     public string $typeFilter    = '';
++    #[Url(as: 'assignee')]
+     public string $assigneeFilter= '';
++    #[Url(as: 'priority')]
+     public string $priorityFilter= '';
+     public string $sortField     = 'due_at';
+     public string $sortDir       = 'asc';
+diff --git a/app/Filament/Pages/FinancialBreakdown.php b/app/Filament/Pages/FinancialBreakdown.php
+new file mode 100644
+index 0000000..3266b23
+--- /dev/null
++++ b/app/Filament/Pages/FinancialBreakdown.php
+@@ -0,0 +1,396 @@
++<?php
++
++namespace App\Filament\Pages;
++
++use App\Models\Investigation;
++use App\Models\InvestigationOutcome;
++use App\Services\OutcomeService;
++use App\Services\Outcome\RecoveryReportService;
++use Filament\Facades\Filament;
++use Filament\Pages\Page;
++use Livewire\Attributes\Url;
++
++/**
++ * FinancialBreakdown — deterministic drill-down for the dashboard's aggregate
++ * financial KPIs (Revenue at Risk, Recovered MTD, Observed Recovery, Recovery
++ * Rate, False Positives).
++ *
++ * Every figure shown here is derived from the same models/services that produce
++ * the headline number on the dashboard — no new or ad-hoc financial math. The
++ * page explains HOW each number is built: the formula, the component figures,
++ * and the exact contributing investigations/outcomes (each linked to its
++ * investigate page). AI never invents figures; all values are DB aggregates.
++ *
++ * Reached by query string (?metric=…) from the dashboard KPI cards and the
++ * financial widgets. Not registered in navigation — it is a drill-down target.
++ */
++class FinancialBreakdown extends Page
++{
++    protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-banknotes';
++
++    protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';
++
++    protected static ?string $slug = 'financial-breakdown';
++
++    protected string $view = 'filament.pages.financial-breakdown';
++
++    /** Which figure to explain. Deep-linked from the dashboard/widgets. */
++    #[Url]
++    public string $metric = 'revenue_at_risk';
++
++    /** Valid metrics this page can derive. */
++    public const METRICS = [
++        'revenue_at_risk',   // open/in-progress investigations' AI-estimated risk (dashboard KPI)
++        'recovered_mtd',     // observed recovery recorded this calendar month (dashboard KPI)
++        'outcome_at_risk',   // revenue at risk snapshotted across ALL recorded outcomes (widget)
++        'observed_recovery', // analyst-confirmed recovery across ALL outcomes (widget)
++        'recovery_rate',     // recovered / at-risk across outcomes (widget)
++        'false_positives',   // investigations closed as false positive (widget)
++    ];
++
++    /** Keep out of the sidebar — this is a drill-down, reached via links. */
++    public static function shouldRegisterNavigation(): bool
++    {
++        return false;
++    }
++
++    public function getTitle(): string
++    {
++        return 'Financial Breakdown — ' . $this->metricLabel();
++    }
++
++    public function mount(): void
++    {
++        if (! in_array($this->metric, self::METRICS, true)) {
++            $this->metric = 'revenue_at_risk';
++        }
++    }
++
++    private function metricLabel(): string
++    {
++        return match ($this->metric) {
++            'recovered_mtd'     => 'Recovered This Month',
++            'outcome_at_risk'   => 'Revenue at Risk (Outcomes)',
++            'observed_recovery' => 'Observed Recovery',
++            'recovery_rate'     => 'Recovery Rate',
++            'false_positives'   => 'False Positives',
++            default             => 'Revenue at Risk',
++        };
++    }
++
++    /**
++     * Build the full deterministic breakdown for the selected metric.
++     *
++     * @return array<string,mixed>
++     */
++    public function getBreakdown(): array
++    {
++        $tenantId = Filament::getTenant()?->id;
++
++        if (! $tenantId) {
++            return [
++                'metric'      => $this->metric,
++                'label'       => $this->metricLabel(),
++                'value'       => '—',
++                'formula'     => '',
++                'components'  => [],
++                'rows'        => [],
++                'rowsHeader'  => [],
++                'amountLabel' => '',
++                'empty'       => 'No tenant context.',
++            ];
++        }
++
++        return match ($this->metric) {
++            'recovered_mtd'     => $this->recoveredMtd($tenantId),
++            'outcome_at_risk'   => $this->outcomeAtRisk($tenantId),
++            'observed_recovery' => $this->observedRecovery($tenantId),
++            'recovery_rate'     => $this->recoveryRate($tenantId),
++            'false_positives'   => $this->falsePositives($tenantId),
++            default             => $this->revenueAtRisk($tenantId),
++        };
++    }
++
++    /** Links back to the four metric tabs, so the page is self-navigable. */
++    public function getTabs(): array
++    {
++        return [
++            ['metric' => 'revenue_at_risk',   'label' => 'Revenue at Risk'],
++            ['metric' => 'recovered_mtd',     'label' => 'Recovered MTD'],
++            ['metric' => 'observed_recovery', 'label' => 'Observed Recovery'],
++            ['metric' => 'recovery_rate',     'label' => 'Recovery Rate'],
++            ['metric' => 'false_positives',   'label' => 'False Positives'],
++        ];
++    }
++
++    public function setMetric(string $metric): void
++    {
++        if (in_array($metric, self::METRICS, true)) {
++            $this->metric = $metric;
++        }
++    }
++
++    // ── Metric derivations ──────────────────────────────────────────────────
++
++    /**
++     * Dashboard "Revenue at Risk" card: SUM(revenue_at_risk) over open /
++     * in-progress investigations. Same query the dashboard blade runs.
++     */
++    private function revenueAtRisk(int $tenantId): array
++    {
++        $base = Investigation::where('tenant_id', $tenantId)
++            ->whereIn('status', [Investigation::STATUS_OPEN, Investigation::STATUS_IN_PROGRESS]);
++
++        $total = (float) ((clone $base)->sum('revenue_at_risk') ?? 0);
++        $count = (clone $base)->count();
++        $withRisk = (clone $base)->whereNotNull('revenue_at_risk')->where('revenue_at_risk', '>', 0)->count();
++
++        $rows = (clone $base)
++            ->whereNotNull('revenue_at_risk')
++            ->where('revenue_at_risk', '>', 0)
++            ->orderByDesc('revenue_at_risk')
++            ->limit(200)
++            ->get(['id', 'title', 'primary_sku', 'status', 'priority', 'revenue_at_risk']);
++
++        return [
++            'metric'      => $this->metric,
++            'label'       => 'Revenue at Risk',
++            'value'       => $this->money($total),
++            'formula'     => 'Σ revenue_at_risk for every investigation whose status is Open or In Progress. Revenue at risk is the AI narrator\'s estimate captured per investigation.',
++            'components'  => [
++                ['label' => 'Open / in-progress investigations', 'value' => number_format($count)],
++                ['label' => 'With a revenue-at-risk estimate',   'value' => number_format($withRisk)],
++                ['label' => 'Total revenue at risk',             'value' => $this->money($total)],
++            ],
++            'amountLabel' => 'Revenue at Risk',
++            'rowsHeader'  => ['Investigation', 'SKU', 'Status', 'Revenue at Risk'],
++            'rows'        => $this->investigationRows($rows, 'revenue_at_risk'),
++            'empty'       => 'No open investigations carry a revenue-at-risk estimate yet.',
++        ];
++    }
++
++    /**
++     * Dashboard "Recovered MTD" card: SUM(observed_recovery) over outcomes
++     * recorded this calendar month. Same query the dashboard blade runs.
++     */
++    private function recoveredMtd(int $tenantId): array
++    {
++        $monthStart = now()->startOfMonth();
++
++        $base = InvestigationOutcome::where('tenant_id', $tenantId)
++            ->where('created_at', '>=', $monthStart)
++            ->whereNotNull('observed_recovery')
++            ->where('observed_recovery', '>', 0);
++
++        $total = (float) ((clone $base)->sum('observed_recovery') ?? 0);
++        $count = (clone $base)->count();
++
++        $outcomes = (clone $base)
++            ->with('investigation')
++            ->orderByDesc('observed_recovery')
++            ->limit(200)
++            ->get();
++
++        return [
++            'metric'      => $this->metric,
++            'label'       => 'Recovered This Month',
++            'value'       => $this->money($total),
++            'formula'     => 'Σ observed_recovery for every outcome recorded since ' . $monthStart->format('M j, Y') . '. Observed recovery is analyst-confirmed after an investigation is resolved.',
++            'components'  => [
++                ['label' => 'Outcomes recorded this month', 'value' => number_format($count)],
++                ['label' => 'Total observed recovery',      'value' => $this->money($total)],
++            ],
++            'amountLabel' => 'Observed Recovery',
++            'rowsHeader'  => ['Investigation', 'SKU', 'Recovery Method', 'Observed Recovery'],
++            'rows'        => $this->outcomeRows($outcomes, 'observed_recovery'),
++            'empty'       => 'No recovery has been recorded this month.',
++        ];
++    }
++
++    /**
++     * Widget "Revenue at Risk": SUM(revenue_at_risk) across all recorded
++     * outcomes — sourced from OutcomeService::tenantSummary (deterministic).
++     */
++    private function outcomeAtRisk(int $tenantId): array
++    {
++        $summary = app(OutcomeService::class)->tenantSummary($tenantId);
++
++        $outcomes = InvestigationOutcome::where('tenant_id', $tenantId)
++            ->with('investigation')
++            ->whereNotNull('revenue_at_risk')
++            ->orderByDesc('revenue_at_risk')
++            ->limit(200)
++            ->get();
++
++        return [
++            'metric'      => $this->metric,
++            'label'       => 'Revenue at Risk (Recorded Outcomes)',
++            'value'       => $this->money((float) $summary['total_at_risk']),
++            'formula'     => 'Σ revenue_at_risk snapshotted across every recorded investigation outcome (OutcomeService::tenantSummary).',
++            'components'  => [
++                ['label' => 'Recorded outcomes', 'value' => number_format($outcomes->count())],
++                ['label' => 'Total revenue at risk', 'value' => $this->money((float) $summary['total_at_risk'])],
++            ],
++            'amountLabel' => 'Revenue at Risk',
++            'rowsHeader'  => ['Investigation', 'SKU', 'Outcome', 'Revenue at Risk'],
++            'rows'        => $this->outcomeRows($outcomes, 'revenue_at_risk'),
++            'empty'       => 'No outcomes have been recorded yet.',
++        ];
++    }
++
++    /** Widget "Observed Recovery": SUM(observed_recovery) across all outcomes. */
++    private function observedRecovery(int $tenantId): array
++    {
++        $summary = app(OutcomeService::class)->tenantSummary($tenantId);
++        $report  = app(RecoveryReportService::class)->summary($tenantId);
++
++        $outcomes = InvestigationOutcome::where('tenant_id', $tenantId)
++            ->with('investigation')
++            ->whereNotNull('observed_recovery')
++            ->where('observed_recovery', '>', 0)
++            ->orderByDesc('observed_recovery')
++            ->limit(200)
++            ->get();
++
++        return [
++            'metric'      => $this->metric,
++            'label'       => 'Observed Recovery',
++            'value'       => $this->money((float) $summary['total_recovered']),
++            'formula'     => 'Σ observed_recovery across every recorded outcome (analyst-confirmed). ' . (int) $report['investigations_resolved'] . ' investigations resolved to date.',
++            'components'  => [
++                ['label' => 'Total revenue at risk',  'value' => $this->money((float) $summary['total_at_risk'])],
++                ['label' => 'Total observed recovery', 'value' => $this->money((float) $summary['total_recovered'])],
++                ['label' => 'Investigations resolved', 'value' => number_format((int) $report['investigations_resolved'])],
++            ],
++            'amountLabel' => 'Observed Recovery',
++            'rowsHeader'  => ['Investigation', 'SKU', 'Recovery Method', 'Observed Recovery'],
++            'rows'        => $this->outcomeRows($outcomes, 'observed_recovery'),
++            'empty'       => 'No recovery has been recorded yet.',
++        ];
++    }
++
++    /** Widget "Recovery Rate": observed_recovery / revenue_at_risk across outcomes. */
++    private function recoveryRate(int $tenantId): array
++    {
++        $summary = app(OutcomeService::class)->tenantSummary($tenantId);
++
++        $atRisk    = (float) $summary['total_at_risk'];
++        $recovered = (float) $summary['total_recovered'];
++        $rate      = $summary['recovery_rate'];
++
++        $outcomes = InvestigationOutcome::where('tenant_id', $tenantId)
++            ->with('investigation')
++            ->whereNotNull('revenue_at_risk')
++            ->orderByDesc('observed_recovery')
++            ->limit(200)
++            ->get();
++
++        return [
++            'metric'      => $this->metric,
++            'label'       => 'Recovery Rate',
++            'value'       => $rate !== null ? $rate . '%' : '—',
++            'formula'     => 'Observed Recovery ÷ Revenue at Risk × 100, summed across all recorded outcomes.',
++            'components'  => [
++                ['label' => 'Total observed recovery', 'value' => $this->money($recovered)],
++                ['label' => 'Total revenue at risk',   'value' => $this->money($atRisk)],
++                ['label' => 'Recovery rate',           'value' => $rate !== null ? $rate . '%' : '—'],
++            ],
++            'amountLabel' => 'Observed Recovery',
++            'rowsHeader'  => ['Investigation', 'SKU', 'Revenue at Risk', 'Observed Recovery'],
++            'rows'        => $this->outcomeRows($outcomes, 'observed_recovery', 'revenue_at_risk'),
++            'empty'       => 'No outcomes have been recorded yet.',
++        ];
++    }
++
++    /** Widget "False Positives": outcomes flagged was_false_positive. */
++    private function falsePositives(int $tenantId): array
++    {
++        $summary = app(OutcomeService::class)->tenantSummary($tenantId);
++
++        $outcomes = InvestigationOutcome::where('tenant_id', $tenantId)
++            ->with('investigation')
++            ->where('was_false_positive', true)
++            ->orderByDesc('recorded_at')
++            ->limit(200)
++            ->get();
++
++        return [
++            'metric'      => $this->metric,
++            'label'       => 'False Positives',
++            'value'       => number_format((int) $summary['fp_count']),
++            'formula'     => 'Count of recorded outcomes flagged was_false_positive. Each also sends a false-positive signal back to the detection engine and marks its linked anomalies.',
++            'components'  => [
++                ['label' => 'Investigations closed as false positive', 'value' => number_format((int) $summary['fp_count'])],
++            ],
++            'amountLabel' => 'Revenue at Risk (avoided)',
++            'rowsHeader'  => ['Investigation', 'SKU', 'Recorded', 'Revenue at Risk'],
++            'rows'        => $this->outcomeRows($outcomes, 'revenue_at_risk'),
++            'empty'       => 'No investigations have been closed as false positives.',
++        ];
++    }
++
++    // ── Row builders ────────────────────────────────────────────────────────
++
++    /**
++     * @param  \Illuminate\Support\Collection<int,Investigation>  $investigations
++     * @return array<int,array<string,mixed>>
++     */
++    private function investigationRows($investigations, string $amountField): array
++    {
++        return $investigations->map(function (Investigation $inv) use ($amountField) {
++            return [
++                'id'       => $inv->id,
++                'url'      => $this->investigateUrl($inv->id),
++                'title'    => $inv->title ?: ('Investigation #' . $inv->id),
++                'sku'      => $inv->primary_sku ?: '—',
++                'meta'     => ucfirst(str_replace('_', ' ', (string) $inv->status)),
++                'amount'   => $this->money((float) ($inv->{$amountField} ?? 0)),
++            ];
++        })->all();
++    }
++
++    /**
++     * @param  \Illuminate\Support\Collection<int,InvestigationOutcome>  $outcomes
++     * @return array<int,array<string,mixed>>
++     */
++    private function outcomeRows($outcomes, string $amountField, ?string $metaAmountField = null): array
++    {
++        return $outcomes->map(function (InvestigationOutcome $o) use ($amountField, $metaAmountField) {
++            $inv = $o->investigation;
++            $invId = $o->investigation_id;
++
++            if ($metaAmountField !== null) {
++                $meta = $this->money((float) ($o->{$metaAmountField} ?? 0));
++            } else {
++                $meta = $o->recovery_method
++                    ? ucwords(str_replace('_', ' ', (string) $o->recovery_method))
++                    : ($o->recorded_at ? $o->recorded_at->format('M j, Y') : '—');
++            }
++
++            return [
++                'id'     => $invId,
++                'url'    => $invId ? $this->investigateUrl($invId) : null,
++                'title'  => $inv?->title ?: ('Investigation #' . $invId),
++                'sku'    => $inv?->primary_sku ?: '—',
++                'meta'   => $meta,
++                'amount' => $this->money((float) ($o->{$amountField} ?? 0)),
++            ];
++        })->all();
++    }
++
++    private function investigateUrl(int $investigationId): string
++    {
++        return \App\Filament\Resources\InvestigationResource::getUrl('investigate', ['record' => $investigationId]);
++    }
++
++    private function money(float $val): string
++    {
++        if (abs($val) >= 1_000_000) {
++            return '$' . number_format($val / 1_000_000, 2) . 'M';
++        }
++        if (abs($val) >= 1_000) {
++            return '$' . number_format($val / 1_000, 1) . 'K';
++        }
++        return '$' . number_format($val, 0);
++    }
++}
+diff --git a/app/Filament/Resources/InvestigationResource/Pages/ListInvestigations.php b/app/Filament/Resources/InvestigationResource/Pages/ListInvestigations.php
+index 3cb0e8b..942d603 100644
+--- a/app/Filament/Resources/InvestigationResource/Pages/ListInvestigations.php
++++ b/app/Filament/Resources/InvestigationResource/Pages/ListInvestigations.php
+@@ -13,6 +13,7 @@ use Filament\Facades\Filament;
+ use Filament\Notifications\Notification;
+ use Filament\Resources\Pages\ListRecords;
+ use Illuminate\Pagination\LengthAwarePaginator;
++use Livewire\Attributes\Url;
+ 
+ class ListInvestigations extends ListRecords
+ {
+@@ -24,10 +25,17 @@ class ListInvestigations extends ListRecords
+     public ?int $selectedInvestigationId = null;
+ 
+     // ── Filter / search / sort state ──────────────────────────────────────────
++    // Filter props are URL-bound so the dashboard KPI cards can deep-link with a
++    // pre-applied filter (e.g. ?status=open&priority=high_critical).
++    #[Url(as: 'q')]
+     public string $search        = '';
++    #[Url(as: 'status')]
+     public string $statusFilter  = 'open';
++    #[Url(as: 'priority')]
+     public string $priorityFilter= '';
++    #[Url(as: 'rule')]
+     public string $ruleFilter    = '';
++    #[Url(as: 'store')]
+     public string $storeFilter   = '';
+     public string $sortField     = 'opened_at';
+     public string $sortDir       = 'desc';
+@@ -245,7 +253,11 @@ class ListInvestigations extends ListRecords
+             $query->where('status', $this->statusFilter);
+         }
+ 
+-        if ($this->priorityFilter) {
++        if ($this->priorityFilter === 'high_critical') {
++            // Deep-link value used by the dashboard "High Priority" KPI card
++            // (high + critical open investigations).
++            $query->whereIn('priority', ['high', 'critical']);
++        } elseif ($this->priorityFilter) {
+             $query->where('priority', $this->priorityFilter);
+         }
+ 
+diff --git a/app/Filament/Widgets/OverviewStatsWidget.php b/app/Filament/Widgets/OverviewStatsWidget.php
+index 6f33f94..85b0f2a 100644
+--- a/app/Filament/Widgets/OverviewStatsWidget.php
++++ b/app/Filament/Widgets/OverviewStatsWidget.php
+@@ -51,41 +51,64 @@ class OverviewStatsWidget extends BaseWidget
+             default              => 'No open anomalies',
+         };
+ 
++        // Deep-link each stat to the resource that lists its underlying rows.
++        $anomaliesUrl = \App\Filament\Resources\AnomalyResource::getUrl('index');
++        $productsUrl  = \App\Filament\Resources\ProductResource::getUrl('index');
++        $salesUrl     = \App\Filament\Resources\SalesTransactionResource::getUrl('index');
++        $inventoryUrl = \App\Filament\Resources\InventoryLevelResource::getUrl('index');
++        $storesUrl    = \App\Filament\Resources\StoreResource::getUrl('index');
++        $poUrl        = \App\Filament\Resources\PurchaseOrderResource::getUrl('index');
++        $importsUrl   = \App\Filament\Resources\ImportResource::getUrl('index');
++
+         return [
+             Stat::make('Open Anomalies', number_format($totalAnomalies))
+                 ->description($anomalyDesc)
+                 ->descriptionIcon($totalAnomalies > 0 ? 'heroicon-m-exclamation-triangle' : 'heroicon-m-check-circle')
+-                ->color($highAnomalies > 0 ? 'danger' : ($mediumAnomalies > 0 ? 'warning' : ($totalAnomalies > 0 ? 'info' : 'success'))),
++                ->color($highAnomalies > 0 ? 'danger' : ($mediumAnomalies > 0 ? 'warning' : ($totalAnomalies > 0 ? 'info' : 'success')))
++                ->url($anomaliesUrl)
++                ->extraAttributes(['class' => 'cursor-pointer']),
+ 
+             Stat::make('Products', number_format($products))
+                 ->description('Total SKUs loaded')
+                 ->descriptionIcon('heroicon-m-cube')
+-                ->color('primary'),
++                ->color('primary')
++                ->url($productsUrl)
++                ->extraAttributes(['class' => 'cursor-pointer']),
+ 
+             Stat::make('Sales Records', number_format($salesRows))
+                 ->description('Transaction rows')
+                 ->descriptionIcon('heroicon-m-shopping-cart')
+-                ->color('success'),
++                ->color('success')
++                ->url($salesUrl)
++                ->extraAttributes(['class' => 'cursor-pointer']),
+ 
+             Stat::make('Inventory Records', number_format($inventoryRecords))
+                 ->description($lowStockCount > 0 ? "{$lowStockCount} below reorder point" : 'All levels healthy')
+                 ->descriptionIcon($lowStockCount > 0 ? 'heroicon-m-exclamation-triangle' : 'heroicon-m-check-circle')
+-                ->color($lowStockCount > 0 ? 'danger' : 'success'),
++                ->color($lowStockCount > 0 ? 'danger' : 'success')
++                ->url($inventoryUrl)
++                ->extraAttributes(['class' => 'cursor-pointer']),
+ 
+             Stat::make('Stores', number_format($stores))
+                 ->description('Locations from imports')
+                 ->descriptionIcon('heroicon-m-building-storefront')
+-                ->color('info'),
++                ->color('info')
++                ->url($storesUrl)
++                ->extraAttributes(['class' => 'cursor-pointer']),
+ 
+             Stat::make('Purchase Orders', number_format($purchaseOrders))
+                 ->description('Total PO lines')
+                 ->descriptionIcon('heroicon-m-truck')
+-                ->color('warning'),
++                ->color('warning')
++                ->url($poUrl)
++                ->extraAttributes(['class' => 'cursor-pointer']),
+ 
+             Stat::make('Pending Imports', number_format($pendingImports))
+                 ->description('Awaiting processing')
+                 ->descriptionIcon('heroicon-m-arrow-up-tray')
+-                ->color($pendingImports > 0 ? 'warning' : 'gray'),
++                ->color($pendingImports > 0 ? 'warning' : 'gray')
++                ->url($importsUrl)
++                ->extraAttributes(['class' => 'cursor-pointer']),
+         ];
+     }
+ }
+diff --git a/resources/views/filament/pages/dashboard.blade.php b/resources/views/filament/pages/dashboard.blade.php
+index e66a5ff..bcc9558 100644
+--- a/resources/views/filament/pages/dashboard.blade.php
++++ b/resources/views/filament/pages/dashboard.blade.php
+@@ -253,6 +253,13 @@ $dbSparkline = static function(array $values, string $color = '#6d28d9', int $w
+ $statusValues = array_values($statusBreakdown ?: [0]);
+ $riskSparkData  = array_slice($chartAtRisk, -7);
+ $recSparkData   = array_slice($chartRecovered, -7);
++
++/* ── Drill-down URLs for the KPI cards ─────────────────────────────────── */
++$urlRevenueAtRisk = \App\Filament\Pages\FinancialBreakdown::getUrl(['metric' => 'revenue_at_risk']);
++$urlRecoveredMtd  = \App\Filament\Pages\FinancialBreakdown::getUrl(['metric' => 'recovered_mtd']);
++$urlOpenInv       = \App\Filament\Resources\InvestigationResource::getUrl('index', ['status' => 'open']);
++$urlHighPriority  = \App\Filament\Resources\InvestigationResource::getUrl('index', ['status' => 'open', 'priority' => 'high_critical']);
++$urlOverdue       = \App\Filament\Pages\ActionCenter::getUrl(['tab' => 'overdue']);
+ @endphp
+ 
+ <style>
+@@ -280,6 +287,24 @@ $recSparkData   = array_slice($chartRecovered, -7);
+     display:flex; flex-direction:column; gap:.375rem;
+     overflow:hidden;
+ }
++/* ── Clickable KPI card (anchor) ──────────────────────────────────────── */
++a.db-kpi {
++    text-decoration:none; color:inherit; position:relative;
++    cursor:pointer;
++    transition:box-shadow .15s ease, transform .15s ease, border-color .15s ease;
++}
++a.db-kpi:hover {
++    box-shadow:0 6px 18px rgba(109,40,217,.16);
++    transform:translateY(-2px);
++    border-color:#c4b5fd;
++}
++a.db-kpi::after {
++    content:'↗'; position:absolute; top:.7rem; right:.85rem;
++    font-size:.8rem; color:#c4b5fd; opacity:0; transition:opacity .15s ease;
++}
++a.db-kpi:hover::after { opacity:1; }
++.dark a.db-kpi:hover { box-shadow:0 6px 18px rgba(0,0,0,.4); border-color:#6d28d9; }
++
+ .db-kpi-label {
+     font-size:.6875rem; font-weight:700;
+     text-transform:uppercase; letter-spacing:.055em; color:#9ca3af;
+@@ -334,6 +359,9 @@ $recSparkData   = array_slice($chartRecovered, -7);
+ .db-driver-table { width:100%; border-collapse:collapse; }
+ .db-driver-table td { padding:.45rem .25rem; font-size:.8rem; color:#374151; vertical-align:middle; }
+ .db-driver-table tr:last-child td { border-bottom:none; }
++.db-driver-table tr.db-driver-link { cursor:pointer; transition:background .12s ease; }
++.db-driver-table tr.db-driver-link:hover td { background:#faf5ff; }
++.dark .db-driver-table tr.db-driver-link:hover td { background:#2e1065; }
+ .db-driver-name  { font-weight:600; color:#111827; white-space:nowrap; }
+ .db-driver-bar-wrap { width:100%; background:#f3f4f6; border-radius:9999px; height:.45rem; overflow:hidden; }
+ .db-driver-bar   { height:100%; border-radius:9999px; background:linear-gradient(90deg,#6d28d9,#8b5cf6); }
+@@ -478,7 +506,7 @@ $recSparkData   = array_slice($chartRecovered, -7);
+ <div class="db-kpi-grid">
+ 
+     {{-- Revenue at Risk --}}
+-    <div class="db-kpi">
++    <a href="{{ $urlRevenueAtRisk }}" class="db-kpi" title="See how Revenue at Risk is derived">
+         <div class="db-kpi-label">Revenue at Risk</div>
+         <div class="db-kpi-value">{{ $dbFormatMoney((float)$revenueAtRisk) }}</div>
+         <div class="db-kpi-trend {{ $riskTrend['dir'] === 'up' ? 'db-trend-up' : ($riskTrend['dir'] === 'down' ? 'db-trend-down' : 'db-trend-flat') }}">
+@@ -486,10 +514,10 @@ $recSparkData   = array_slice($chartRecovered, -7);
+             @if($riskTrend['pct'] !== null) {{ $riskTrend['pct'] }}% vs prev period @else New metric @endif
+         </div>
+         <div class="db-kpi-spark">{!! $dbSparkline($riskSparkData, '#dc2626') !!}</div>
+-    </div>
++    </a>
+ 
+     {{-- Open Investigations --}}
+-    <div class="db-kpi">
++    <a href="{{ $urlOpenInv }}" class="db-kpi" title="View open investigations">
+         <div class="db-kpi-label">Open Investigations</div>
+         <div class="db-kpi-value">{{ $openCount }}</div>
+         <div class="db-kpi-trend {{ $openTrend['dir'] === 'up' ? 'db-trend-up' : ($openTrend['dir'] === 'down' ? 'db-trend-down' : 'db-trend-flat') }}">
+@@ -497,10 +525,10 @@ $recSparkData   = array_slice($chartRecovered, -7);
+             @if($openTrend['pct'] !== null) {{ $openTrend['pct'] }}% vs prev period @else No prior data @endif
+         </div>
+         <div class="db-kpi-spark">{!! $dbSparkline(array_values(array_slice($statusBreakdown ?: [0], 0, 7)), '#3b82f6') !!}</div>
+-    </div>
++    </a>
+ 
+     {{-- High Priority --}}
+-    <div class="db-kpi">
++    <a href="{{ $urlHighPriority }}" class="db-kpi" title="View high &amp; critical priority investigations">
+         <div class="db-kpi-label">High Priority</div>
+         <div class="db-kpi-value" style="color:#f59e0b">{{ $highPriorityCount }}</div>
+         <div class="db-kpi-trend {{ $highTrend['dir'] === 'up' ? 'db-trend-up' : ($highTrend['dir'] === 'down' ? 'db-trend-down' : 'db-trend-flat') }}">
+@@ -508,18 +536,18 @@ $recSparkData   = array_slice($chartRecovered, -7);
+             @if($highTrend['pct'] !== null) {{ $highTrend['pct'] }}% vs prev period @else No prior data @endif
+         </div>
+         <div class="db-kpi-spark">{!! $dbSparkline(array_values(array_slice($chartAtRisk, -7)), '#f59e0b') !!}</div>
+-    </div>
++    </a>
+ 
+     {{-- Overdue Actions --}}
+-    <div class="db-kpi">
++    <a href="{{ $urlOverdue }}" class="db-kpi" title="View overdue actions in the Action Center">
+         <div class="db-kpi-label">Overdue Actions</div>
+         <div class="db-kpi-value" style="{{ $overdueCount > 0 ? 'color:#dc2626' : '' }}">{{ $overdueCount }}</div>
+         <div class="db-kpi-trend db-trend-flat">Actions pending &gt;48h</div>
+         <div class="db-kpi-spark">{!! $dbSparkline([$overdueCount, $overdueCount], '#dc2626') !!}</div>
+-    </div>
++    </a>
+ 
+     {{-- Recovered MTD --}}
+-    <div class="db-kpi">
++    <a href="{{ $urlRecoveredMtd }}" class="db-kpi" title="See how Recovered MTD is derived">
+         <div class="db-kpi-label">Recovered MTD</div>
+         <div class="db-kpi-value" style="color:#16a34a">{{ $dbFormatMoney((float)$recoveredMTD) }}</div>
+         <div class="db-kpi-trend {{ $recTrend['dir'] === 'up' ? 'db-trend-up' : ($recTrend['dir'] === 'down' ? 'db-trend-down' : 'db-trend-flat') }}">
+@@ -527,7 +555,7 @@ $recSparkData   = array_slice($chartRecovered, -7);
+             @if($recTrend['pct'] !== null) {{ $recTrend['pct'] }}% vs prev month @else Month to date @endif
+         </div>
+         <div class="db-kpi-spark">{!! $dbSparkline($recSparkData, '#16a34a') !!}</div>
+-    </div>
++    </a>
+ 
+ </div>
+ 
+@@ -580,8 +608,11 @@ $recSparkData   = array_slice($chartRecovered, -7);
+             <table class="db-driver-table">
+                 <tbody>
+                 @foreach($topDrivers as $driver)
+-                @php $pct = round(($driver->cnt / $totalDriverAnomalies) * 100); @endphp
+-                <tr>
++                @php
++                    $pct = round(($driver->cnt / $totalDriverAnomalies) * 100);
++                    $driverUrl = \App\Filament\Resources\AnomalyResource::getUrl('index', ['tableFilters' => ['rule_type' => ['value' => $driver->rule_type]]]);
++                @endphp
++                <tr class="db-driver-link" onclick="window.location.href='{{ $driverUrl }}'" title="View {{ $dbRuleLabel($driver->rule_type) }} anomalies">
+                     <td style="width:40%">
+                         <span class="db-driver-name">{{ $dbRuleLabel($driver->rule_type) }}</span>
+                     </td>
+diff --git a/resources/views/filament/pages/financial-breakdown.blade.php b/resources/views/filament/pages/financial-breakdown.blade.php
+new file mode 100644
+index 0000000..c4f6337
+--- /dev/null
++++ b/resources/views/filament/pages/financial-breakdown.blade.php
+@@ -0,0 +1,142 @@
++<x-filament-panels::page>
++
++@php
++    $fb = $this->getBreakdown();
++@endphp
++
++<style>
++.fb-tabs { display:flex; flex-wrap:wrap; gap:.5rem; margin-bottom:1.25rem; }
++.fb-tab {
++    padding:.4rem .85rem; border-radius:9999px; font-size:.775rem; font-weight:600;
++    border:1px solid #e5e7eb; background:#fff; color:#374151; cursor:pointer;
++    text-decoration:none; white-space:nowrap; transition:all .12s ease;
++}
++.fb-tab:hover { border-color:#c4b5fd; background:#faf5ff; color:#6d28d9; }
++.fb-tab-active { background:#6d28d9; border-color:#6d28d9; color:#fff; }
++.fb-tab-active:hover { background:#5b21b6; color:#fff; }
++
++.fb-hero {
++    background:#fff; border:1px solid #e5e7eb; border-radius:1rem;
++    box-shadow:0 1px 4px rgba(0,0,0,.06); padding:1.5rem 1.75rem; margin-bottom:1.25rem;
++}
++.fb-hero-label { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:#9ca3af; }
++.fb-hero-value { font-size:2.5rem; font-weight:800; color:#111827; line-height:1.1; margin:.35rem 0 .6rem; }
++.fb-hero-formula { font-size:.85rem; color:#6b7280; line-height:1.6; max-width:70ch; }
++
++.fb-components { display:grid; grid-template-columns:1fr; gap:.75rem; margin-bottom:1.25rem; }
++@media(min-width:640px){ .fb-components { grid-template-columns:repeat(3,1fr); } }
++.fb-comp {
++    background:#f9fafb; border:1px solid #e5e7eb; border-radius:.75rem; padding:.9rem 1.1rem;
++}
++.fb-comp-label { font-size:.7rem; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:#9ca3af; }
++.fb-comp-value { font-size:1.35rem; font-weight:700; color:#111827; margin-top:.2rem; }
++
++.fb-card { background:#fff; border:1px solid #e5e7eb; border-radius:1rem; box-shadow:0 1px 4px rgba(0,0,0,.06); overflow:hidden; }
++.fb-card-head {
++    padding:.75rem 1.25rem; border-bottom:1px solid #e5e7eb; background:#f9fafb;
++    font-size:.775rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#374151;
++}
++.fb-table { width:100%; border-collapse:collapse; font-size:.825rem; }
++.fb-table th {
++    padding:.55rem 1.25rem; font-size:.68rem; font-weight:700; text-transform:uppercase;
++    letter-spacing:.05em; color:#9ca3af; border-bottom:1px solid #e5e7eb; background:#f9fafb; text-align:left;
++}
++.fb-table th:last-child, .fb-table td:last-child { text-align:right; }
++.fb-table td { padding:.65rem 1.25rem; border-bottom:1px solid #f3f4f6; color:#374151; vertical-align:middle; }
++.fb-table tr:last-child td { border-bottom:none; }
++.fb-table tr.fb-row-link { cursor:pointer; }
++.fb-table tr.fb-row-link:hover td { background:#faf5ff; }
++.fb-inv-id { font-family:monospace; font-size:.75rem; color:#6d28d9; font-weight:700; text-decoration:none; }
++.fb-inv-title { font-weight:600; color:#111827; }
++.fb-amount { font-weight:700; color:#111827; white-space:nowrap; }
++.fb-empty { padding:2rem 1.25rem; text-align:center; font-size:.85rem; color:#9ca3af; }
++.fb-note {
++    margin-top:1rem; font-size:.75rem; color:#9ca3af; display:flex; align-items:center; gap:.4rem;
++}
++
++.dark .fb-hero, .dark .fb-card { background:#1f2937; border-color:#374151; }
++.dark .fb-hero-value, .dark .fb-comp-value, .dark .fb-inv-title, .dark .fb-amount { color:#f9fafb; }
++.dark .fb-comp { background:#111827; border-color:#374151; }
++.dark .fb-card-head, .dark .fb-table th { background:#111827; border-color:#374151; color:#9ca3af; }
++.dark .fb-table td { color:#d1d5db; border-color:#374151; }
++.dark .fb-table tr.fb-row-link:hover td { background:#2e1065; }
++.dark .fb-tab { background:#1f2937; border-color:#374151; color:#d1d5db; }
++.dark .fb-tab:hover { background:#2e1065; }
++.dark .fb-inv-id { color:#a78bfa; }
++</style>
++
++{{-- Metric switcher --}}
++<div class="fb-tabs">
++    @foreach($this->getTabs() as $tab)
++        <a
++            href="{{ \App\Filament\Pages\FinancialBreakdown::getUrl(['metric' => $tab['metric']]) }}"
++            class="fb-tab {{ $this->metric === $tab['metric'] ? 'fb-tab-active' : '' }}"
++        >{{ $tab['label'] }}</a>
++    @endforeach
++</div>
++
++{{-- Headline + formula --}}
++<div class="fb-hero">
++    <div class="fb-hero-label">{{ $fb['label'] }}</div>
++    <div class="fb-hero-value">{{ $fb['value'] }}</div>
++    <div class="fb-hero-formula">{{ $fb['formula'] }}</div>
++</div>
++
++{{-- Component figures --}}
++@if(!empty($fb['components']))
++<div class="fb-components">
++    @foreach($fb['components'] as $comp)
++    <div class="fb-comp">
++        <div class="fb-comp-label">{{ $comp['label'] }}</div>
++        <div class="fb-comp-value">{{ $comp['value'] }}</div>
++    </div>
++    @endforeach
++</div>
++@endif
++
++{{-- Contributing rows --}}
++<div class="fb-card">
++    <div class="fb-card-head">Contributing Investigations &amp; Outcomes</div>
++    @if(!empty($fb['rows']))
++    <div style="overflow-x:auto">
++        <table class="fb-table">
++            <thead>
++                <tr>
++                    @foreach($fb['rowsHeader'] as $h)
++                        <th>{{ $h }}</th>
++                    @endforeach
++                </tr>
++            </thead>
++            <tbody>
++                @foreach($fb['rows'] as $row)
++                <tr class="{{ $row['url'] ? 'fb-row-link' : '' }}"
++                    @if($row['url']) onclick="window.location.href='{{ $row['url'] }}'" @endif>
++                    <td>
++                        @if($row['url'])
++                            <a href="{{ $row['url'] }}" class="fb-inv-id" onclick="event.stopPropagation()">#{{ $row['id'] }}</a>
++                        @else
++                            <span class="fb-inv-id">#{{ $row['id'] }}</span>
++                        @endif
++                        <div class="fb-inv-title">{{ \Illuminate\Support\Str::limit($row['title'], 60) }}</div>
++                    </td>
++                    <td>{{ $row['sku'] }}</td>
++                    <td>{{ $row['meta'] }}</td>
++                    <td class="fb-amount">{{ $row['amount'] }}</td>
++                </tr>
++                @endforeach
++            </tbody>
++        </table>
++    </div>
++    @else
++    <div class="fb-empty">{{ $fb['empty'] ?? 'Nothing to show.' }}</div>
++    @endif
++</div>
++
++<div class="fb-note">
++    <svg style="width:.9rem;height:.9rem" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
++        <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
++    </svg>
++    All figures are deterministic database aggregates derived from recorded investigations and outcomes — no estimates are generated on this page. Showing up to the top 200 contributors.
++</div>
++
++</x-filament-panels::page>
+diff --git a/resources/views/filament/resources/investigation-resource/pages/list-investigations.blade.php b/resources/views/filament/resources/investigation-resource/pages/list-investigations.blade.php
+index 397d836..8a80070 100644
+--- a/resources/views/filament/resources/investigation-resource/pages/list-investigations.blade.php
++++ b/resources/views/filament/resources/investigation-resource/pages/list-investigations.blade.php
+@@ -816,6 +816,7 @@ if ($selected) {
+             <div class="invs-filter-row">
+                 <select wire:model.live="priorityFilter" class="invs-select">
+                     <option value="">Severity</option>
++                    <option value="high_critical">High + Critical</option>
+                     <option value="critical">Critical</option>
+                     <option value="high">High</option>
+                     <option value="medium">Medium</option>
+diff --git a/resources/views/filament/widgets/financial-summary-widget.blade.php b/resources/views/filament/widgets/financial-summary-widget.blade.php
+index 7391545..8d03c90 100644
+--- a/resources/views/filament/widgets/financial-summary-widget.blade.php
++++ b/resources/views/filament/widgets/financial-summary-widget.blade.php
+@@ -1,32 +1,44 @@
+-<x-filament-widgets::widget>
+-    @php $data = $this->getViewData(); @endphp
+-    <div style="display:flex; flex-wrap:wrap; gap:1rem; width:100%;">
+-
+-        <div style="flex:1; min-width:150px; border-radius:0.75rem; border:1px solid #fecaca; background:#fff1f2; padding:1rem; text-align:center;">
+-            <p style="font-size:0.7rem; font-weight:600; color:#dc2626; text-transform:uppercase; letter-spacing:0.05em; margin:0;">Revenue at Risk</p>
+-            <p style="font-size:1.75rem; font-weight:700; color:#991b1b; margin:0.25rem 0;">${{ number_format($data['total_at_risk'], 0) }}</p>
+-            <p style="font-size:0.7rem; color:#ef4444; margin:0;">AI-estimated across all outcomes</p>
+-        </div>
+-
+-        <div style="flex:1; min-width:150px; border-radius:0.75rem; border:1px solid #bbf7d0; background:#f0fdf4; padding:1rem; text-align:center;">
+-            <p style="font-size:0.7rem; font-weight:600; color:#16a34a; text-transform:uppercase; letter-spacing:0.05em; margin:0;">Observed Recovery</p>
+-            <p style="font-size:1.75rem; font-weight:700; color:#14532d; margin:0.25rem 0;">${{ number_format($data['total_recovered'], 0) }}</p>
+-            <p style="font-size:0.7rem; color:#22c55e; margin:0;">Analyst-confirmed</p>
+-        </div>
+-
+-        <div style="flex:1; min-width:150px; border-radius:0.75rem; border:1px solid #bfdbfe; background:#eff6ff; padding:1rem; text-align:center;">
+-            <p style="font-size:0.7rem; font-weight:600; color:#2563eb; text-transform:uppercase; letter-spacing:0.05em; margin:0;">Recovery Rate</p>
+-            <p style="font-size:1.75rem; font-weight:700; color:#1e40af; margin:0.25rem 0;">
+-                @if($data['recovery_rate'] !== null){{ $data['recovery_rate'] }}%@else—@endif
+-            </p>
+-            <p style="font-size:0.7rem; color:#3b82f6; margin:0;">Recovered / at risk</p>
+-        </div>
+-
+-        <div style="flex:1; min-width:150px; border-radius:0.75rem; border:1px solid #e5e7eb; background:#ffffff; padding:1rem; text-align:center;">
+-            <p style="font-size:0.7rem; font-weight:600; color:#6b7280; text-transform:uppercase; letter-spacing:0.05em; margin:0;">False Positives</p>
+-            <p style="font-size:1.75rem; font-weight:700; color:#374151; margin:0.25rem 0;">{{ $data['fp_count'] }}</p>
+-            <p style="font-size:0.7rem; color:#9ca3af; margin:0;">Investigations closed as FP</p>
+-        </div>
+-
+-    </div>
+-</x-filament-widgets::widget>
++<x-filament-widgets::widget>
++    @php
++        $data = $this->getViewData();
++        $urlAtRisk    = \App\Filament\Pages\FinancialBreakdown::getUrl(['metric' => 'outcome_at_risk']);
++        $urlRecovered = \App\Filament\Pages\FinancialBreakdown::getUrl(['metric' => 'observed_recovery']);
++        $urlRate      = \App\Filament\Pages\FinancialBreakdown::getUrl(['metric' => 'recovery_rate']);
++        $urlFp        = \App\Filament\Pages\FinancialBreakdown::getUrl(['metric' => 'false_positives']);
++    @endphp
++
++    <style>
++        a.wstat { text-decoration:none; cursor:pointer; transition:transform .15s ease, box-shadow .15s ease; display:block; }
++        a.wstat:hover { transform:translateY(-2px); box-shadow:0 6px 16px rgba(0,0,0,.10); }
++    </style>
++
++    <div style="display:flex; flex-wrap:wrap; gap:1rem; width:100%;">
++
++        <a href="{{ $urlAtRisk }}" class="wstat" style="flex:1; min-width:150px; border-radius:0.75rem; border:1px solid #fecaca; background:#fff1f2; padding:1rem; text-align:center;">
++            <p style="font-size:0.7rem; font-weight:600; color:#dc2626; text-transform:uppercase; letter-spacing:0.05em; margin:0;">Revenue at Risk</p>
++            <p style="font-size:1.75rem; font-weight:700; color:#991b1b; margin:0.25rem 0;">${{ number_format($data['total_at_risk'], 0) }}</p>
++            <p style="font-size:0.7rem; color:#ef4444; margin:0;">AI-estimated across all outcomes</p>
++        </a>
++
++        <a href="{{ $urlRecovered }}" class="wstat" style="flex:1; min-width:150px; border-radius:0.75rem; border:1px solid #bbf7d0; background:#f0fdf4; padding:1rem; text-align:center;">
++            <p style="font-size:0.7rem; font-weight:600; color:#16a34a; text-transform:uppercase; letter-spacing:0.05em; margin:0;">Observed Recovery</p>
++            <p style="font-size:1.75rem; font-weight:700; color:#14532d; margin:0.25rem 0;">${{ number_format($data['total_recovered'], 0) }}</p>
++            <p style="font-size:0.7rem; color:#22c55e; margin:0;">Analyst-confirmed</p>
++        </a>
++
++        <a href="{{ $urlRate }}" class="wstat" style="flex:1; min-width:150px; border-radius:0.75rem; border:1px solid #bfdbfe; background:#eff6ff; padding:1rem; text-align:center;">
++            <p style="font-size:0.7rem; font-weight:600; color:#2563eb; text-transform:uppercase; letter-spacing:0.05em; margin:0;">Recovery Rate</p>
++            <p style="font-size:1.75rem; font-weight:700; color:#1e40af; margin:0.25rem 0;">
++                @if($data['recovery_rate'] !== null){{ $data['recovery_rate'] }}%@else—@endif
++            </p>
++            <p style="font-size:0.7rem; color:#3b82f6; margin:0;">Recovered / at risk</p>
++        </a>
++
++        <a href="{{ $urlFp }}" class="wstat" style="flex:1; min-width:150px; border-radius:0.75rem; border:1px solid #e5e7eb; background:#ffffff; padding:1rem; text-align:center;">
++            <p style="font-size:0.7rem; font-weight:600; color:#6b7280; text-transform:uppercase; letter-spacing:0.05em; margin:0;">False Positives</p>
++            <p style="font-size:1.75rem; font-weight:700; color:#374151; margin:0.25rem 0;">{{ $data['fp_count'] }}</p>
++            <p style="font-size:0.7rem; color:#9ca3af; margin:0;">Investigations closed as FP</p>
++        </a>
++
++    </div>
++</x-filament-widgets::widget>
+diff --git a/resources/views/filament/widgets/investigations-overview-widget.blade.php b/resources/views/filament/widgets/investigations-overview-widget.blade.php
+index e7f1e65..906b25a 100644
+--- a/resources/views/filament/widgets/investigations-overview-widget.blade.php
++++ b/resources/views/filament/widgets/investigations-overview-widget.blade.php
+@@ -1,44 +1,57 @@
+-<x-filament-widgets::widget>
+-    @php $data = $this->getViewData(); @endphp
+-    <div style="display:flex; flex-wrap:wrap; gap:1rem; width:100%;">
+-
+-        <div style="flex:1; min-width:130px; border-radius:0.75rem; border:1px solid #fde68a; background:#fffbeb; padding:1rem; text-align:center;">
+-            <p style="font-size:0.7rem; font-weight:600; color:#d97706; text-transform:uppercase; letter-spacing:0.05em; margin:0;">Open</p>
+-            <p style="font-size:1.75rem; font-weight:700; color:#92400e; margin:0.25rem 0;">{{ $data['open'] }}</p>
+-            <p style="font-size:0.7rem; color:#d97706; margin:0;">Awaiting action</p>
+-        </div>
+-
+-        <div style="flex:1; min-width:130px; border-radius:0.75rem; border:1px solid #bfdbfe; background:#eff6ff; padding:1rem; text-align:center;">
+-            <p style="font-size:0.7rem; font-weight:600; color:#2563eb; text-transform:uppercase; letter-spacing:0.05em; margin:0;">In Progress</p>
+-            <p style="font-size:1.75rem; font-weight:700; color:#1e40af; margin:0.25rem 0;">{{ $data['inProgress'] }}</p>
+-            <p style="font-size:0.7rem; color:#3b82f6; margin:0;">Being investigated</p>
+-        </div>
+-
+-        <div style="flex:1; min-width:130px; border-radius:0.75rem; border:1px solid #fecaca; background:#fff1f2; padding:1rem; text-align:center;">
+-            <p style="font-size:0.7rem; font-weight:600; color:#dc2626; text-transform:uppercase; letter-spacing:0.05em; margin:0;">Critical</p>
+-            <p style="font-size:1.75rem; font-weight:700; color:#991b1b; margin:0.25rem 0;">{{ $data['critical'] }}</p>
+-            <p style="font-size:0.7rem; color:#ef4444; margin:0;">Open or in progress</p>
+-        </div>
+-
+-        <div style="flex:1; min-width:130px; border-radius:0.75rem; border:1px solid #fde68a; background:#fffbeb; padding:1rem; text-align:center;">
+-            <p style="font-size:0.7rem; font-weight:600; color:#d97706; text-transform:uppercase; letter-spacing:0.05em; margin:0;">High Priority</p>
+-            <p style="font-size:1.75rem; font-weight:700; color:#92400e; margin:0.25rem 0;">{{ $data['high'] }}</p>
+-            <p style="font-size:0.7rem; color:#d97706; margin:0;">Open or in progress</p>
+-        </div>
+-
+-        <div style="flex:1; min-width:130px; border-radius:0.75rem; border:1px solid #bbf7d0; background:#f0fdf4; padding:1rem; text-align:center;">
+-            <p style="font-size:0.7rem; font-weight:600; color:#16a34a; text-transform:uppercase; letter-spacing:0.05em; margin:0;">Resolved 7d</p>
+-            <p style="font-size:1.75rem; font-weight:700; color:#14532d; margin:0.25rem 0;">{{ $data['recentlyResolved'] }}</p>
+-            <p style="font-size:0.7rem; color:#22c55e; margin:0;">Last 7 days</p>
+-        </div>
+-
+-        <div style="flex:1; min-width:130px; border-radius:0.75rem; border:1px solid #e5e7eb; background:#ffffff; padding:1rem; text-align:center;">
+-            <p style="font-size:0.7rem; font-weight:600; color:#6b7280; text-transform:uppercase; letter-spacing:0.05em; margin:0;">Avg Age</p>
+-            <p style="font-size:1.75rem; font-weight:700; color:#374151; margin:0.25rem 0;">
+-                @if($data['avgOpenHours'] !== null){{ $data['avgOpenHours'] }}h@else—@endif
+-            </p>
+-            <p style="font-size:0.7rem; color:#9ca3af; margin:0;">Open investigations</p>
+-        </div>
+-
+-    </div>
+-</x-filament-widgets::widget>
++<x-filament-widgets::widget>
++    @php
++        $data = $this->getViewData();
++        $urlOpen       = \App\Filament\Resources\InvestigationResource::getUrl('index', ['status' => 'open']);
++        $urlInProgress = \App\Filament\Resources\InvestigationResource::getUrl('index', ['status' => 'in_progress']);
++        $urlCritical   = \App\Filament\Resources\InvestigationResource::getUrl('index', ['status' => 'open', 'priority' => 'critical']);
++        $urlHigh       = \App\Filament\Resources\InvestigationResource::getUrl('index', ['status' => 'open', 'priority' => 'high']);
++        $urlResolved   = \App\Filament\Resources\InvestigationResource::getUrl('index', ['status' => 'resolved']);
++    @endphp
++
++    <style>
++        a.wstat { text-decoration:none; cursor:pointer; transition:transform .15s ease, box-shadow .15s ease; display:block; }
++        a.wstat:hover { transform:translateY(-2px); box-shadow:0 6px 16px rgba(0,0,0,.10); }
++    </style>
++
++    <div style="display:flex; flex-wrap:wrap; gap:1rem; width:100%;">
++
++        <a href="{{ $urlOpen }}" class="wstat" style="flex:1; min-width:130px; border-radius:0.75rem; border:1px solid #fde68a; background:#fffbeb; padding:1rem; text-align:center;">
++            <p style="font-size:0.7rem; font-weight:600; color:#d97706; text-transform:uppercase; letter-spacing:0.05em; margin:0;">Open</p>
++            <p style="font-size:1.75rem; font-weight:700; color:#92400e; margin:0.25rem 0;">{{ $data['open'] }}</p>
++            <p style="font-size:0.7rem; color:#d97706; margin:0;">Awaiting action</p>
++        </a>
++
++        <a href="{{ $urlInProgress }}" class="wstat" style="flex:1; min-width:130px; border-radius:0.75rem; border:1px solid #bfdbfe; background:#eff6ff; padding:1rem; text-align:center;">
++            <p style="font-size:0.7rem; font-weight:600; color:#2563eb; text-transform:uppercase; letter-spacing:0.05em; margin:0;">In Progress</p>
++            <p style="font-size:1.75rem; font-weight:700; color:#1e40af; margin:0.25rem 0;">{{ $data['inProgress'] }}</p>
++            <p style="font-size:0.7rem; color:#3b82f6; margin:0;">Being investigated</p>
++        </a>
++
++        <a href="{{ $urlCritical }}" class="wstat" style="flex:1; min-width:130px; border-radius:0.75rem; border:1px solid #fecaca; background:#fff1f2; padding:1rem; text-align:center;">
++            <p style="font-size:0.7rem; font-weight:600; color:#dc2626; text-transform:uppercase; letter-spacing:0.05em; margin:0;">Critical</p>
++            <p style="font-size:1.75rem; font-weight:700; color:#991b1b; margin:0.25rem 0;">{{ $data['critical'] }}</p>
++            <p style="font-size:0.7rem; color:#ef4444; margin:0;">Open or in progress</p>
++        </a>
++
++        <a href="{{ $urlHigh }}" class="wstat" style="flex:1; min-width:130px; border-radius:0.75rem; border:1px solid #fde68a; background:#fffbeb; padding:1rem; text-align:center;">
++            <p style="font-size:0.7rem; font-weight:600; color:#d97706; text-transform:uppercase; letter-spacing:0.05em; margin:0;">High Priority</p>
++            <p style="font-size:1.75rem; font-weight:700; color:#92400e; margin:0.25rem 0;">{{ $data['high'] }}</p>
++            <p style="font-size:0.7rem; color:#d97706; margin:0;">Open or in progress</p>
++        </a>
++
++        <a href="{{ $urlResolved }}" class="wstat" style="flex:1; min-width:130px; border-radius:0.75rem; border:1px solid #bbf7d0; background:#f0fdf4; padding:1rem; text-align:center;">
++            <p style="font-size:0.7rem; font-weight:600; color:#16a34a; text-transform:uppercase; letter-spacing:0.05em; margin:0;">Resolved 7d</p>
++            <p style="font-size:1.75rem; font-weight:700; color:#14532d; margin:0.25rem 0;">{{ $data['recentlyResolved'] }}</p>
++            <p style="font-size:0.7rem; color:#22c55e; margin:0;">Last 7 days</p>
++        </a>
++
++        <a href="{{ $urlOpen }}" class="wstat" style="flex:1; min-width:130px; border-radius:0.75rem; border:1px solid #e5e7eb; background:#ffffff; padding:1rem; text-align:center;">
++            <p style="font-size:0.7rem; font-weight:600; color:#6b7280; text-transform:uppercase; letter-spacing:0.05em; margin:0;">Avg Age</p>
++            <p style="font-size:1.75rem; font-weight:700; color:#374151; margin:0.25rem 0;">
++                @if($data['avgOpenHours'] !== null){{ $data['avgOpenHours'] }}h@else—@endif
++            </p>
++            <p style="font-size:0.7rem; color:#9ca3af; margin:0;">Open investigations</p>
++        </a>
++
++    </div>
++</x-filament-widgets::widget>
+diff --git a/tests/Feature/SmokeTest.php b/tests/Feature/SmokeTest.php
+index 7904d23..92bbdeb 100644
+--- a/tests/Feature/SmokeTest.php
++++ b/tests/Feature/SmokeTest.php
+@@ -153,6 +153,44 @@ class SmokeTest extends TestCase
+             ->assertOk();
+     }
+ 
++    /**
++     * The financial drill-down page must render for EVERY supported metric,
++     * both on an empty tenant and with a recorded outcome contributing a figure.
++     */
++    public function test_financial_breakdown_all_metrics_do_not_500(): void
++    {
++        // Empty tenant — every metric renders with zeros.
++        foreach (\App\Filament\Pages\FinancialBreakdown::METRICS as $metric) {
++            \Livewire\Livewire::test(\App\Filament\Pages\FinancialBreakdown::class)
++                ->set('metric', $metric)
++                ->assertOk();
++        }
++
++        // With a resolved investigation + recorded outcome, so the row lists,
++        // formula and component figures all exercise real data.
++        $investigation = \App\Models\Investigation::factory()->create([
++            'tenant_id'       => $this->tenant->id,
++            'status'          => \App\Models\Investigation::STATUS_RESOLVED,
++            'primary_sku'     => 'SKU-FIN',
++            'revenue_at_risk' => 5000,
++        ]);
++        \App\Models\InvestigationOutcome::create([
++            'investigation_id'   => $investigation->id,
++            'tenant_id'          => $this->tenant->id,
++            'revenue_at_risk'    => 5000,
++            'observed_recovery'  => 3200,
++            'was_false_positive' => false,
++            'recovery_method'    => 'markdown_recovery',
++            'recorded_at'        => now(),
++        ]);
++
++        foreach (\App\Filament\Pages\FinancialBreakdown::METRICS as $metric) {
++            \Livewire\Livewire::test(\App\Filament\Pages\FinancialBreakdown::class)
++                ->set('metric', $metric)
++                ->assertOk();
++        }
++    }
++
+     /* ---------- data providers ---------------------------------------- */
+ 
+     public static function resourceProvider(): array
+@@ -189,6 +227,7 @@ class SmokeTest extends TestCase
+                 'DataHealthCenter',
+                 'WatchedInvestigations',
+                 'QualityCenter',
++                'FinancialBreakdown',
+             ]
+         );
+     }
+-- 
+2.43.0
+

@@ -51,41 +51,64 @@ class OverviewStatsWidget extends BaseWidget
             default              => 'No open anomalies',
         };
 
+        // Deep-link each stat to the resource that lists its underlying rows.
+        $anomaliesUrl = \App\Filament\Resources\AnomalyResource::getUrl('index');
+        $productsUrl  = \App\Filament\Resources\ProductResource::getUrl('index');
+        $salesUrl     = \App\Filament\Resources\SalesTransactionResource::getUrl('index');
+        $inventoryUrl = \App\Filament\Resources\InventoryLevelResource::getUrl('index');
+        $storesUrl    = \App\Filament\Resources\StoreResource::getUrl('index');
+        $poUrl        = \App\Filament\Resources\PurchaseOrderResource::getUrl('index');
+        $importsUrl   = \App\Filament\Resources\ImportResource::getUrl('index');
+
         return [
             Stat::make('Open Anomalies', number_format($totalAnomalies))
                 ->description($anomalyDesc)
                 ->descriptionIcon($totalAnomalies > 0 ? 'heroicon-m-exclamation-triangle' : 'heroicon-m-check-circle')
-                ->color($highAnomalies > 0 ? 'danger' : ($mediumAnomalies > 0 ? 'warning' : ($totalAnomalies > 0 ? 'info' : 'success'))),
+                ->color($highAnomalies > 0 ? 'danger' : ($mediumAnomalies > 0 ? 'warning' : ($totalAnomalies > 0 ? 'info' : 'success')))
+                ->url($anomaliesUrl)
+                ->extraAttributes(['class' => 'cursor-pointer']),
 
             Stat::make('Products', number_format($products))
                 ->description('Total SKUs loaded')
                 ->descriptionIcon('heroicon-m-cube')
-                ->color('primary'),
+                ->color('primary')
+                ->url($productsUrl)
+                ->extraAttributes(['class' => 'cursor-pointer']),
 
             Stat::make('Sales Records', number_format($salesRows))
                 ->description('Transaction rows')
                 ->descriptionIcon('heroicon-m-shopping-cart')
-                ->color('success'),
+                ->color('success')
+                ->url($salesUrl)
+                ->extraAttributes(['class' => 'cursor-pointer']),
 
             Stat::make('Inventory Records', number_format($inventoryRecords))
                 ->description($lowStockCount > 0 ? "{$lowStockCount} below reorder point" : 'All levels healthy')
                 ->descriptionIcon($lowStockCount > 0 ? 'heroicon-m-exclamation-triangle' : 'heroicon-m-check-circle')
-                ->color($lowStockCount > 0 ? 'danger' : 'success'),
+                ->color($lowStockCount > 0 ? 'danger' : 'success')
+                ->url($inventoryUrl)
+                ->extraAttributes(['class' => 'cursor-pointer']),
 
             Stat::make('Stores', number_format($stores))
                 ->description('Locations from imports')
                 ->descriptionIcon('heroicon-m-building-storefront')
-                ->color('info'),
+                ->color('info')
+                ->url($storesUrl)
+                ->extraAttributes(['class' => 'cursor-pointer']),
 
             Stat::make('Purchase Orders', number_format($purchaseOrders))
                 ->description('Total PO lines')
                 ->descriptionIcon('heroicon-m-truck')
-                ->color('warning'),
+                ->color('warning')
+                ->url($poUrl)
+                ->extraAttributes(['class' => 'cursor-pointer']),
 
             Stat::make('Pending Imports', number_format($pendingImports))
                 ->description('Awaiting processing')
                 ->descriptionIcon('heroicon-m-arrow-up-tray')
-                ->color($pendingImports > 0 ? 'warning' : 'gray'),
+                ->color($pendingImports > 0 ? 'warning' : 'gray')
+                ->url($importsUrl)
+                ->extraAttributes(['class' => 'cursor-pointer']),
         ];
     }
 }

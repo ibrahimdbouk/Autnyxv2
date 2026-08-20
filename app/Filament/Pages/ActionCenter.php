@@ -11,6 +11,7 @@ use Filament\Facades\Filament;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Livewire\Attributes\Url;
 
 class ActionCenter extends Page
 {
@@ -30,10 +31,17 @@ class ActionCenter extends Page
     }
 
     // ── Filter / tab / sort state ─────────────────────────────────────────────
+    // Tab / filter props are URL-bound so the dashboard "Overdue Actions" KPI
+    // card can deep-link straight to the matching tab (e.g. ?tab=overdue).
+    #[Url(as: 'tab')]
     public string $activeTab     = 'all';
+    #[Url(as: 'q')]
     public string $search        = '';
+    #[Url(as: 'type')]
     public string $typeFilter    = '';
+    #[Url(as: 'assignee')]
     public string $assigneeFilter= '';
+    #[Url(as: 'priority')]
     public string $priorityFilter= '';
     public string $sortField     = 'due_at';
     public string $sortDir       = 'asc';

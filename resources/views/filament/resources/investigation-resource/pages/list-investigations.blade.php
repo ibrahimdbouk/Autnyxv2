@@ -816,6 +816,7 @@ if ($selected) {
             <div class="invs-filter-row">
                 <select wire:model.live="priorityFilter" class="invs-select">
                     <option value="">Severity</option>
+                    <option value="high_critical">High + Critical</option>
                     <option value="critical">Critical</option>
                     <option value="high">High</option>
                     <option value="medium">Medium</option>

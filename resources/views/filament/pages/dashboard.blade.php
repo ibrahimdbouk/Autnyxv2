@@ -253,6 +253,13 @@ $dbSparkline = static function(array $values, string $color = '#6d28d9', int $w 
 $statusValues = array_values($statusBreakdown ?: [0]);
 $riskSparkData  = array_slice($chartAtRisk, -7);
 $recSparkData   = array_slice($chartRecovered, -7);
+
+/* ── Drill-down URLs for the KPI cards ─────────────────────────────────── */
+$urlRevenueAtRisk = \App\Filament\Pages\FinancialBreakdown::getUrl(['metric' => 'revenue_at_risk']);
+$urlRecoveredMtd  = \App\Filament\Pages\FinancialBreakdown::getUrl(['metric' => 'recovered_mtd']);
+$urlOpenInv       = \App\Filament\Resources\InvestigationResource::getUrl('index', ['status' => 'open']);
+$urlHighPriority  = \App\Filament\Resources\InvestigationResource::getUrl('index', ['status' => 'open', 'priority' => 'high_critical']);
+$urlOverdue       = \App\Filament\Pages\ActionCenter::getUrl(['tab' => 'overdue']);
 @endphp
 
 <style>
@@ -280,6 +287,24 @@ $recSparkData   = array_slice($chartRecovered, -7);
     display:flex; flex-direction:column; gap:.375rem;
     overflow:hidden;
 }
+/* ── Clickable KPI card (anchor) ──────────────────────────────────────── */
+a.db-kpi {
+    text-decoration:none; color:inherit; position:relative;
+    cursor:pointer;
+    transition:box-shadow .15s ease, transform .15s ease, border-color .15s ease;
+}
+a.db-kpi:hover {
+    box-shadow:0 6px 18px rgba(109,40,217,.16);
+    transform:translateY(-2px);
+    border-color:#c4b5fd;
+}
+a.db-kpi::after {
+    content:'↗'; position:absolute; top:.7rem; right:.85rem;
+    font-size:.8rem; color:#c4b5fd; opacity:0; transition:opacity .15s ease;
+}
+a.db-kpi:hover::after { opacity:1; }
+.dark a.db-kpi:hover { box-shadow:0 6px 18px rgba(0,0,0,.4); border-color:#6d28d9; }
+
 .db-kpi-label {
     font-size:.6875rem; font-weight:700;
     text-transform:uppercase; letter-spacing:.055em; color:#9ca3af;
@@ -334,6 +359,9 @@ $recSparkData   = array_slice($chartRecovered, -7);
 .db-driver-table { width:100%; border-collapse:collapse; }
 .db-driver-table td { padding:.45rem .25rem; font-size:.8rem; color:#374151; vertical-align:middle; }
 .db-driver-table tr:last-child td { border-bottom:none; }
+.db-driver-table tr.db-driver-link { cursor:pointer; transition:background .12s ease; }
+.db-driver-table tr.db-driver-link:hover td { background:#faf5ff; }
+.dark .db-driver-table tr.db-driver-link:hover td { background:#2e1065; }
 .db-driver-name  { font-weight:600; color:#111827; white-space:nowrap; }
 .db-driver-bar-wrap { width:100%; background:#f3f4f6; border-radius:9999px; height:.45rem; overflow:hidden; }
 .db-driver-bar   { height:100%; border-radius:9999px; background:linear-gradient(90deg,#6d28d9,#8b5cf6); }
@@ -478,7 +506,7 @@ $recSparkData   = array_slice($chartRecovered, -7);
 <div class="db-kpi-grid">
 
     {{-- Revenue at Risk --}}
-    <div class="db-kpi">
+    <a href="{{ $urlRevenueAtRisk }}" class="db-kpi" title="See how Revenue at Risk is derived">
         <div class="db-kpi-label">Revenue at Risk</div>
         <div class="db-kpi-value">{{ $dbFormatMoney((float)$revenueAtRisk) }}</div>
         <div class="db-kpi-trend {{ $riskTrend['dir'] === 'up' ? 'db-trend-up' : ($riskTrend['dir'] === 'down' ? 'db-trend-down' : 'db-trend-flat') }}">
@@ -486,10 +514,10 @@ $recSparkData   = array_slice($chartRecovered, -7);
             @if($riskTrend['pct'] !== null) {{ $riskTrend['pct'] }}% vs prev period @else New metric @endif
         </div>
         <div class="db-kpi-spark">{!! $dbSparkline($riskSparkData, '#dc2626') !!}</div>
-    </div>
+    </a>
 
     {{-- Open Investigations --}}
-    <div class="db-kpi">
+    <a href="{{ $urlOpenInv }}" class="db-kpi" title="View open investigations">
         <div class="db-kpi-label">Open Investigations</div>
         <div class="db-kpi-value">{{ $openCount }}</div>
         <div class="db-kpi-trend {{ $openTrend['dir'] === 'up' ? 'db-trend-up' : ($openTrend['dir'] === 'down' ? 'db-trend-down' : 'db-trend-flat') }}">
@@ -497,10 +525,10 @@ $recSparkData   = array_slice($chartRecovered, -7);
             @if($openTrend['pct'] !== null) {{ $openTrend['pct'] }}% vs prev period @else No prior data @endif
         </div>
         <div class="db-kpi-spark">{!! $dbSparkline(array_values(array_slice($statusBreakdown ?: [0], 0, 7)), '#3b82f6') !!}</div>
-    </div>
+    </a>
 
     {{-- High Priority --}}
-    <div class="db-kpi">
+    <a href="{{ $urlHighPriority }}" class="db-kpi" title="View high &amp; critical priority investigations">
         <div class="db-kpi-label">High Priority</div>
         <div class="db-kpi-value" style="color:#f59e0b">{{ $highPriorityCount }}</div>
         <div class="db-kpi-trend {{ $highTrend['dir'] === 'up' ? 'db-trend-up' : ($highTrend['dir'] === 'down' ? 'db-trend-down' : 'db-trend-flat') }}">
@@ -508,18 +536,18 @@ $recSparkData   = array_slice($chartRecovered, -7);
             @if($highTrend['pct'] !== null) {{ $highTrend['pct'] }}% vs prev period @else No prior data @endif
         </div>
         <div class="db-kpi-spark">{!! $dbSparkline(array_values(array_slice($chartAtRisk, -7)), '#f59e0b') !!}</div>
-    </div>
+    </a>
 
     {{-- Overdue Actions --}}
-    <div class="db-kpi">
+    <a href="{{ $urlOverdue }}" class="db-kpi" title="View overdue actions in the Action Center">
         <div class="db-kpi-label">Overdue Actions</div>
         <div class="db-kpi-value" style="{{ $overdueCount > 0 ? 'color:#dc2626' : '' }}">{{ $overdueCount }}</div>
         <div class="db-kpi-trend db-trend-flat">Actions pending &gt;48h</div>
         <div class="db-kpi-spark">{!! $dbSparkline([$overdueCount, $overdueCount], '#dc2626') !!}</div>
-    </div>
+    </a>
 
     {{-- Recovered MTD --}}
-    <div class="db-kpi">
+    <a href="{{ $urlRecoveredMtd }}" class="db-kpi" title="See how Recovered MTD is derived">
         <div class="db-kpi-label">Recovered MTD</div>
         <div class="db-kpi-value" style="color:#16a34a">{{ $dbFormatMoney((float)$recoveredMTD) }}</div>
         <div class="db-kpi-trend {{ $recTrend['dir'] === 'up' ? 'db-trend-up' : ($recTrend['dir'] === 'down' ? 'db-trend-down' : 'db-trend-flat') }}">
@@ -527,7 +555,7 @@ $recSparkData   = array_slice($chartRecovered, -7);
             @if($recTrend['pct'] !== null) {{ $recTrend['pct'] }}% vs prev month @else Month to date @endif
         </div>
         <div class="db-kpi-spark">{!! $dbSparkline($recSparkData, '#16a34a') !!}</div>
-    </div>
+    </a>
 
 </div>
 
@@ -580,8 +608,11 @@ $recSparkData   = array_slice($chartRecovered, -7);
             <table class="db-driver-table">
                 <tbody>
                 @foreach($topDrivers as $driver)
-                @php $pct = round(($driver->cnt / $totalDriverAnomalies) * 100); @endphp
-                <tr>
+                @php
+                    $pct = round(($driver->cnt / $totalDriverAnomalies) * 100);
+                    $driverUrl = \App\Filament\Resources\AnomalyResource::getUrl('index', ['tableFilters' => ['rule_type' => ['value' => $driver->rule_type]]]);
+                @endphp
+                <tr class="db-driver-link" onclick="window.location.href='{{ $driverUrl }}'" title="View {{ $dbRuleLabel($driver->rule_type) }} anomalies">
                     <td style="width:40%">
                         <span class="db-driver-name">{{ $dbRuleLabel($driver->rule_type) }}</span>
                     </td>
