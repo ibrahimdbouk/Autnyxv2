@@ -1,213 +1,218 @@
 <x-filament-panels::page>
 
-    {{-- ── Header summary card ──────────────────────────────────────────── --}}
-    <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-sm p-6 mb-6">
-        <div class="flex flex-wrap items-start gap-4">
-            {{-- Severity badge --}}
-            <span @class([
-                'inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide',
-                'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'              => $this->record->severity === 'high',
-                'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300'  => $this->record->severity === 'medium',
-                'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'          => $this->record->severity === 'low',
-            ])>
-                {{ ucfirst($this->record->severity) }}
-            </span>
+{{--
+    Self-contained inline styling. This project does NOT compile Tailwind
+    utility classes for custom Filament blade views (see the dashboard /
+    investigation pages, which all use scoped <style> blocks). Using bare
+    Tailwind utilities here left the page unstyled and blew a 1.5px status-dot
+    SVG up into a full-width black circle. All styling below is explicit.
+--}}
+<style>
+    .ia-card {
+        background:#fff; border:1px solid #e5e7eb; border-radius:.875rem;
+        box-shadow:0 1px 4px rgba(0,0,0,.06); padding:1.25rem 1.5rem; margin-bottom:1.25rem;
+    }
+    .ia-card-violet { background:#f5f3ff; border-color:#ddd6fe; }
+    .ia-head { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; }
+    .ia-pill {
+        display:inline-flex; align-items:center; gap:.35rem;
+        padding:.2rem .65rem; border-radius:9999px;
+        font-size:.75rem; font-weight:600; white-space:nowrap; line-height:1.4;
+    }
+    .ia-dot { width:.4rem; height:.4rem; border-radius:9999px; flex-shrink:0; }
+    .ia-detected { margin-left:auto; font-size:.8rem; color:#9ca3af; }
+    .ia-desc { margin-top:.85rem; font-size:.875rem; color:#374151; line-height:1.65; }
+    .ia-label { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#7c3aed; margin:0 0 .25rem; }
+    .ia-title { font-size:.95rem; font-weight:700; color:#111827; margin:0; }
+    .ia-badges { display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.75rem; }
+    .ia-ai { margin-top:.85rem; font-size:.875rem; color:#374151; line-height:1.6; }
+    .ia-ai-muted { margin-top:.85rem; font-size:.8rem; color:#6b7280; font-style:italic; }
+    .ia-meta { margin-top:.4rem; font-size:.72rem; color:#9ca3af; }
+    .ia-divider { margin-top:1rem; padding-top:1rem; border-top:1px solid #ddd6fe; font-size:.75rem; color:#6d28d9; }
+    .ia-empty { background:#fff; border:2px dashed #e5e7eb; border-radius:.875rem; padding:2.5rem 1.5rem; text-align:center; margin-bottom:1.25rem; }
+    .ia-empty-icon { width:3.25rem; height:3.25rem; margin:0 auto 1rem; display:flex; align-items:center; justify-content:center; border-radius:9999px; background:#f9fafb; color:#9ca3af; }
+    .ia-empty-title { font-size:.9rem; font-weight:700; color:#111827; margin:0; }
+    .ia-empty-body { margin:.4rem auto 0; max-width:34rem; font-size:.85rem; color:#6b7280; line-height:1.55; }
+    .ia-details summary { cursor:pointer; font-size:.75rem; color:#9ca3af; user-select:none; }
+    .ia-details summary:hover { color:#6b7280; }
+    .ia-pre { margin-top:.5rem; border-radius:.5rem; background:#f9fafb; border:1px solid #f3f4f6; padding:1rem; font-size:.72rem; color:#4b5563; overflow-x:auto; }
 
-            {{-- Rule badge --}}
-            <span class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
-                {{ $this->record->getRuleLabel() }}
-            </span>
+    .dark .ia-card { background:#1f2937; border-color:#374151; }
+    .dark .ia-card-violet { background:#2e1065; border-color:#5b21b6; }
+    .dark .ia-desc, .dark .ia-ai { color:#d1d5db; }
+    .dark .ia-title, .dark .ia-empty-title { color:#f9fafb; }
+    .dark .ia-empty { border-color:#374151; }
+    .dark .ia-empty-icon { background:#111827; }
+    .dark .ia-pre { background:#111827; border-color:#374151; color:#9ca3af; }
+</style>
 
-            @if($this->record->sku)
-                <span class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
-                    SKU: {{ $this->record->sku }}
-                </span>
-            @endif
+@php
+    // color name → [background, text]
+    $iaPalette = [
+        'red'    => ['#fee2e2', '#991b1b'],
+        'orange' => ['#ffedd5', '#9a3412'],
+        'yellow' => ['#fef3c7', '#92400e'],
+        'green'  => ['#dcfce7', '#166534'],
+        'blue'   => ['#dbeafe', '#1e40af'],
+        'indigo' => ['#e0e7ff', '#3730a3'],
+        'violet' => ['#ede9fe', '#6d28d9'],
+        'purple' => ['#ede9fe', '#6d28d9'],
+        'gray'   => ['#f3f4f6', '#374151'],
+    ];
+    $iaPill = function (string $color) use ($iaPalette): string {
+        $c = $iaPalette[$color] ?? $iaPalette['gray'];
+        return 'background:' . $c[0] . ';color:' . $c[1] . ';';
+    };
 
-            @if($this->record->store_id)
-                <span class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
-                    Store {{ $this->record->store_id }}
-                </span>
-            @endif
+    $record = $this->record;
+    $sevColor = match ($record->severity) {
+        'high'   => 'red',
+        'medium' => 'yellow',
+        default  => 'blue',
+    };
+@endphp
 
-            <span class="ml-auto text-sm text-gray-400">
-                Detected {{ $this->record->detected_at?->diffForHumans() }}
-            </span>
-        </div>
+{{-- ── Header summary card ──────────────────────────────────────────── --}}
+<div class="ia-card">
+    <div class="ia-head">
+        <span class="ia-pill" style="{{ $iaPill($sevColor) }} text-transform:uppercase; letter-spacing:.03em;">
+            {{ ucfirst($record->severity) }}
+        </span>
 
-        <p class="mt-3 text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
-            {{ $this->record->description }}
-        </p>
+        <span class="ia-pill" style="{{ $iaPill('gray') }}">{{ $record->getRuleLabel() }}</span>
 
-        {{-- Anomaly status badge (used for dismiss/investigation status tracking) --}}
-        @if($this->record->investigation_status && $this->record->investigation_status !== 'not_started')
-        <div class="mt-4">
-            @php
-                $statusLabel = match($this->record->investigation_status) {
-                    'investigating'     => 'Investigating',
-                    'cause_established' => 'Cause Established',
-                    'action_taken'      => 'Action Taken',
-                    'resolved'          => 'Resolved',
-                    'unresolved'        => 'Unresolved',
-                    default             => 'Detected',
-                };
-                $statusColor = match($this->record->investigation_status) {
-                    'cause_established' => 'blue',
-                    'action_taken'      => 'yellow',
-                    'resolved'          => 'green',
-                    'unresolved'        => 'red',
-                    'investigating'     => 'purple',
-                    default             => 'gray',
-                };
-            @endphp
-            <span @class([
-                'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold',
-                'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'             => $statusColor === 'gray',
-                'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'  => $statusColor === 'purple',
-                'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'          => $statusColor === 'blue',
-                'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300'  => $statusColor === 'yellow',
-                'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'      => $statusColor === 'green',
-                'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'              => $statusColor === 'red',
-            ])>
-                <svg class="h-1.5 w-1.5 fill-current" viewBox="0 0 6 6"><circle cx="3" cy="3" r="3"/></svg>
+        @if($record->sku)
+            <span class="ia-pill" style="{{ $iaPill('violet') }}">SKU: {{ $record->sku }}</span>
+        @endif
+
+        @if($record->store_id)
+            <span class="ia-pill" style="{{ $iaPill('indigo') }}">Store {{ $record->store_id }}</span>
+        @endif
+
+        <span class="ia-detected">Detected {{ $record->detected_at?->diffForHumans() }}</span>
+    </div>
+
+    <p class="ia-desc">{{ $record->description }}</p>
+
+    @if($record->investigation_status && $record->investigation_status !== 'not_started')
+        @php
+            $statusLabel = match ($record->investigation_status) {
+                'investigating'     => 'Investigating',
+                'cause_established' => 'Cause Established',
+                'action_taken'      => 'Action Taken',
+                'resolved'          => 'Resolved',
+                'unresolved'        => 'Unresolved',
+                default             => 'Detected',
+            };
+            $statusColor = match ($record->investigation_status) {
+                'cause_established' => 'blue',
+                'action_taken'      => 'yellow',
+                'resolved'          => 'green',
+                'unresolved'        => 'red',
+                'investigating'     => 'purple',
+                default             => 'gray',
+            };
+            $statusText = $iaPalette[$statusColor][1] ?? $iaPalette['gray'][1];
+        @endphp
+        <div style="margin-top:1rem;">
+            <span class="ia-pill" style="{{ $iaPill($statusColor) }}">
+                <span class="ia-dot" style="background:{{ $statusText }};"></span>
                 {{ $statusLabel }}
             </span>
         </div>
-        @endif
-    </div>
+    @endif
+</div>
 
-    {{-- ── Investigation link ────────────────────────────────────────────── --}}
-    @if($this->record->investigation)
-        @php $inv = $this->record->investigation; @endphp
-        <div class="rounded-xl border border-violet-200 dark:border-violet-700/60 bg-violet-50 dark:bg-violet-900/20 shadow-sm p-6 mb-6">
-            <div class="flex items-start justify-between gap-4">
-                <div class="flex-1 min-w-0">
-                    <p class="text-xs font-semibold text-violet-500 dark:text-violet-400 uppercase tracking-wide mb-1">
-                        Linked Investigation
-                    </p>
-                    <h3 class="text-sm font-semibold text-gray-900 dark:text-white truncate">
-                        {{ $inv->title }}
-                    </h3>
+{{-- ── Investigation link ────────────────────────────────────────────── --}}
+@if($record->investigation)
+    @php $inv = $record->investigation; @endphp
+    <div class="ia-card ia-card-violet">
+        <p class="ia-label">Linked Investigation</p>
+        <h3 class="ia-title">{{ $inv->title }}</h3>
 
-                    <div class="flex flex-wrap gap-2 mt-3">
-                        {{-- Status --}}
-                        @php
-                            $invStatusColor = match($inv->status) {
-                                'open'        => 'yellow',
-                                'in_progress' => 'blue',
-                                'resolved'    => 'green',
-                                'closed'      => 'gray',
-                                default       => 'gray',
-                            };
-                        @endphp
-                        <span @class([
-                            'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold',
-                            'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300' => $invStatusColor === 'yellow',
-                            'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'         => $invStatusColor === 'blue',
-                            'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'     => $invStatusColor === 'green',
-                            'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'            => $invStatusColor === 'gray',
-                        ])>
-                            {{ ucwords(str_replace('_', ' ', $inv->status)) }}
-                        </span>
+        <div class="ia-badges">
+            @php
+                $invStatusColor = match ($inv->status) {
+                    'open'        => 'yellow',
+                    'in_progress' => 'blue',
+                    'resolved'    => 'green',
+                    'closed'      => 'gray',
+                    default       => 'gray',
+                };
+            @endphp
+            <span class="ia-pill" style="{{ $iaPill($invStatusColor) }}">
+                {{ ucwords(str_replace('_', ' ', $inv->status)) }}
+            </span>
 
-                        {{-- Priority --}}
-                        @php
-                            $invPriColor = match($inv->priority) {
-                                'critical' => 'red',
-                                'high'     => 'orange',
-                                'medium'   => 'blue',
-                                default    => 'gray',
-                            };
-                        @endphp
-                        <span @class([
-                            'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold',
-                            'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'             => $invPriColor === 'red',
-                            'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300' => $invPriColor === 'orange',
-                            'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'         => $invPriColor === 'blue',
-                            'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'            => $invPriColor === 'gray',
-                        ])>
-                            {{ ucfirst($inv->priority) }} Priority
-                        </span>
+            @php
+                $invPriColor = match ($inv->priority) {
+                    'critical' => 'red',
+                    'high'     => 'orange',
+                    'medium'   => 'blue',
+                    default    => 'gray',
+                };
+            @endphp
+            <span class="ia-pill" style="{{ $iaPill($invPriColor) }}">
+                {{ ucfirst($inv->priority) }} Priority
+            </span>
 
-                        {{-- AI confidence --}}
-                        @if($inv->ai_confidence)
-                            @php
-                                $confColor = match($inv->ai_confidence) {
-                                    'established' => 'green',
-                                    'probable'    => 'blue',
-                                    'suspected'   => 'yellow',
-                                    default       => 'gray',
-                                };
-                            @endphp
-                            <span @class([
-                                'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold',
-                                'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'   => $confColor === 'green',
-                                'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'       => $confColor === 'blue',
-                                'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300' => $confColor === 'yellow',
-                                'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'          => $confColor === 'gray',
-                            ])>
-                                {{ ucfirst($inv->ai_confidence) }} confidence
-                            </span>
-                        @endif
+            @if($inv->ai_confidence)
+                @php
+                    $confColor = match ($inv->ai_confidence) {
+                        'established' => 'green',
+                        'probable'    => 'blue',
+                        'suspected'   => 'yellow',
+                        default       => 'gray',
+                    };
+                @endphp
+                <span class="ia-pill" style="{{ $iaPill($confColor) }}">
+                    {{ ucfirst($inv->ai_confidence) }} confidence
+                </span>
+            @endif
 
-                        {{-- Team --}}
-                        @if($inv->assignedTeam)
-                            <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
-                                {{ $inv->assignedTeam->name }}
-                            </span>
-                        @endif
-                    </div>
-
-                    {{-- AI summary snippet if available --}}
-                    @if($inv->ai_summary)
-                        <p class="mt-3 text-sm text-gray-700 dark:text-gray-300 leading-relaxed line-clamp-3">
-                            {{ $inv->ai_summary }}
-                        </p>
-                        <p class="mt-1 text-xs text-gray-400">
-                            Narrative generated {{ $inv->ai_generated_at?->diffForHumans() }}
-                        </p>
-                    @else
-                        <p class="mt-3 text-xs text-gray-400 italic">
-                            AI narrative not yet generated — it will be produced during the nightly pipeline at 03:30 AM, or click "Generate Narrative" on the investigation page.
-                        </p>
-                    @endif
-                </div>
-            </div>
-
-            {{-- Anomaly count in investigation --}}
-            @if($inv->anomaly_count > 1)
-                <div class="mt-4 pt-4 border-t border-violet-200 dark:border-violet-700/60 text-xs text-violet-600 dark:text-violet-400">
-                    This investigation groups {{ $inv->anomaly_count }} correlated anomalies. Click "View Investigation" above to see the full picture, all evidence, and recommended actions.
-                </div>
+            @if($inv->assignedTeam)
+                <span class="ia-pill" style="{{ $iaPill('gray') }}">{{ $inv->assignedTeam->name }}</span>
             @endif
         </div>
 
-    @else
-        {{-- No investigation correlated yet --}}
-        <div class="rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 p-10 text-center mb-6">
-            <div class="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gray-50 dark:bg-gray-800">
-                <x-heroicon-o-clock class="h-7 w-7 text-gray-400" />
-            </div>
-            <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Pending investigation correlation</h3>
-            <p class="mt-1 text-sm text-gray-500 max-w-md mx-auto">
-                This anomaly has not yet been correlated into an investigation. Investigation correlation runs nightly at 02:00 AM alongside anomaly detection.
+        @if($inv->ai_summary)
+            <p class="ia-ai">{{ \Illuminate\Support\Str::limit($inv->ai_summary, 320) }}</p>
+            <p class="ia-meta">Narrative generated {{ $inv->ai_generated_at?->diffForHumans() }}</p>
+        @else
+            <p class="ia-ai-muted">
+                AI narrative not yet generated — it will be produced during the nightly pipeline at 03:30 AM, or click “Generate Narrative” on the investigation page.
             </p>
-            <p class="mt-3 text-xs text-gray-400">
-                Once correlated, an Investigation object will be created grouping this anomaly with related signals on the same SKU or store. You can then view the full AI-powered analysis, evidence package, and actions from the Investigation page.
-            </p>
-        </div>
-    @endif
+        @endif
 
-    {{-- ── Raw detection context (collapsed) ──────────────────────────── --}}
-    @if($this->record->context)
-        <div class="mt-2">
-            <details class="group">
-                <summary class="cursor-pointer text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 select-none">
-                    ▶ Raw detection context
-                </summary>
-                <pre class="mt-2 rounded-lg bg-gray-50 dark:bg-gray-800 p-4 text-xs text-gray-600 dark:text-gray-400 overflow-x-auto">{{ json_encode($this->record->context, JSON_PRETTY_PRINT) }}</pre>
-            </details>
+        @if($inv->anomaly_count > 1)
+            <div class="ia-divider">
+                This investigation groups {{ $inv->anomaly_count }} correlated anomalies. Click “View Investigation” above to see the full picture, all evidence, and recommended actions.
+            </div>
+        @endif
+    </div>
+@else
+    <div class="ia-empty">
+        <div class="ia-empty-icon">
+            <svg style="width:1.75rem;height:1.75rem" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
         </div>
-    @endif
+        <h3 class="ia-empty-title">Pending investigation correlation</h3>
+        <p class="ia-empty-body">
+            This anomaly has not yet been correlated into an investigation. Investigation correlation runs nightly at 02:00 AM alongside anomaly detection.
+        </p>
+        <p class="ia-empty-body" style="margin-top:.75rem; font-size:.75rem; color:#9ca3af;">
+            Once correlated, an Investigation object will be created grouping this anomaly with related signals on the same SKU or store. You can then view the full AI-powered analysis, evidence package, and actions from the Investigation page.
+        </p>
+    </div>
+@endif
+
+{{-- ── Raw detection context (collapsed) ──────────────────────────── --}}
+@if($record->context)
+    <details class="ia-details">
+        <summary>▶ Raw detection context</summary>
+        <pre class="ia-pre">{{ json_encode($record->context, JSON_PRETTY_PRINT) }}</pre>
+    </details>
+@endif
 
 </x-filament-panels::page>
