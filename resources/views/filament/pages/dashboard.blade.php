@@ -276,17 +276,6 @@ $urlOverdue       = \App\Filament\Pages\ActionCenter::getUrl(['tab' => 'overdue'
 }
 @media(min-width:640px)  { .db-kpi-grid { grid-template-columns:repeat(3,1fr); } }
 @media(min-width:1024px) { .db-kpi-grid { grid-template-columns:repeat(5,1fr); } }
-
-/* ── KPI card ─────────────────────────────────────────────────────────── */
-.db-kpi {
-    background:#fff;
-    border:1px solid #e5e7eb;
-    border-radius:.875rem;
-    padding:1rem 1.125rem .875rem;
-    box-shadow:0 1px 4px rgba(0,0,0,.06);
-    display:flex; flex-direction:column; gap:.375rem;
-    overflow:hidden;
-}
 /* ── Clickable KPI card (anchor) ──────────────────────────────────────── */
 a.db-kpi {
     text-decoration:none; color:inherit; position:relative;
@@ -305,6 +294,16 @@ a.db-kpi::after {
 a.db-kpi:hover::after { opacity:1; }
 .dark a.db-kpi:hover { box-shadow:0 6px 18px rgba(0,0,0,.4); border-color:#6d28d9; }
 
+/* ── KPI card ─────────────────────────────────────────────────────────── */
+.db-kpi {
+    background:#fff;
+    border:1px solid #e5e7eb;
+    border-radius:.875rem;
+    padding:1rem 1.125rem .875rem;
+    box-shadow:0 1px 4px rgba(0,0,0,.06);
+    display:flex; flex-direction:column; gap:.375rem;
+    overflow:hidden;
+}
 .db-kpi-label {
     font-size:.6875rem; font-weight:700;
     text-transform:uppercase; letter-spacing:.055em; color:#9ca3af;

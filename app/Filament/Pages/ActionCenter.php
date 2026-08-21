@@ -31,8 +31,8 @@ class ActionCenter extends Page
     }
 
     // ── Filter / tab / sort state ─────────────────────────────────────────────
-    // Tab / filter props are URL-bound so the dashboard "Overdue Actions" KPI
-    // card can deep-link straight to the matching tab (e.g. ?tab=overdue).
+    // URL-bound so the dashboard "Overdue Actions" KPI card can deep-link to
+    // the matching tab (e.g. ?tab=overdue).
     #[Url(as: 'tab')]
     public string $activeTab     = 'all';
     #[Url(as: 'q')]

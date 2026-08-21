@@ -25,8 +25,8 @@ class ListInvestigations extends ListRecords
     public ?int $selectedInvestigationId = null;
 
     // ── Filter / search / sort state ──────────────────────────────────────────
-    // Filter props are URL-bound so the dashboard KPI cards can deep-link with a
-    // pre-applied filter (e.g. ?status=open&priority=high_critical).
+    // URL-bound so the dashboard KPI cards can deep-link with a pre-applied
+    // filter (e.g. ?status=open&priority=high_critical).
     #[Url(as: 'q')]
     public string $search        = '';
     #[Url(as: 'status')]
@@ -254,8 +254,7 @@ class ListInvestigations extends ListRecords
         }
 
         if ($this->priorityFilter === 'high_critical') {
-            // Deep-link value used by the dashboard "High Priority" KPI card
-            // (high + critical open investigations).
+            // Deep-link value used by the dashboard "High Priority" KPI card.
             $query->whereIn('priority', ['high', 'critical']);
         } elseif ($this->priorityFilter) {
             $query->where('priority', $this->priorityFilter);
