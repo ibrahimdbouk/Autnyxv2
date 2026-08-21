@@ -228,6 +228,7 @@ class SmokeTest extends TestCase
                 'WatchedInvestigations',
                 'QualityCenter',
                 'FinancialBreakdown',
+                'Reports',
             ]
         );
     }
