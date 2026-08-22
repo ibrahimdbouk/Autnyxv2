@@ -77,6 +77,9 @@ class AnomalyDetectionService
     public function runForTenant(int $tenantId): void
     {
         AnomalySetting::seedForTenant($tenantId);
+        // Headroom for large tenants; the detectors below are written to stream,
+        // so this is a safety margin, not a crutch.
+        @ini_set('memory_limit', '512M');
         $this->primePriceMap($tenantId);
 
         $settings = AnomalySetting::where('tenant_id', $tenantId)
@@ -550,36 +553,45 @@ class AnomalyDetectionService
 
     private function detectMultiLocationImbalance(int $tenantId): void
     {
-        $levelsBySku = InventoryLevel::where('tenant_id', $tenantId)
+        // Stream rows and keep only a compact per-SKU summary, so a 200k-row
+        // inventory table never all lives in memory at once.
+        $acc = [];
+        InventoryLevel::where('tenant_id', $tenantId)
             ->whereNotNull('location')
-            ->get()
-            ->groupBy('sku');
+            ->select(['sku', 'location', 'on_hand_qty', 'reorder_point', 'product_id'])
+            ->cursor()
+            ->each(function ($l) use (&$acc) {
+                $sku = $l->sku;
+                $oh  = (float) $l->on_hand_qty;
+                $rp  = $l->reorder_point !== null ? (float) $l->reorder_point : null;
 
-        foreach ($levelsBySku as $sku => $levels) {
-            if ($levels->count() < 2) continue;
+                if (! isset($acc[$sku])) {
+                    $acc[$sku] = ['count' => 0, 'out' => null, 'over' => null, 'product_id' => $l->product_id];
+                }
+                $acc[$sku]['count']++;
 
-            $stochedOut  = $levels->filter(fn ($l) =>
-                (float) $l->on_hand_qty <= 0 ||
-                ($l->reorder_point && (float) $l->on_hand_qty <= (float) $l->reorder_point)
-            );
-            $overstocked = $levels->filter(fn ($l) =>
-                $l->reorder_point && (float) $l->on_hand_qty > (float) $l->reorder_point * 2
-            );
+                $isOut  = $oh <= 0 || ($rp !== null && $oh <= $rp);
+                $isOver = $rp !== null && $oh > $rp * 2;
 
-            if ($stochedOut->isEmpty() || $overstocked->isEmpty()) continue;
+                if ($isOut && $acc[$sku]['out'] === null) {
+                    $acc[$sku]['out'] = ['loc' => $l->location, 'qty' => $oh];
+                }
+                if ($isOver && ($acc[$sku]['over'] === null || $oh > $acc[$sku]['over']['qty'])) {
+                    $acc[$sku]['over'] = ['loc' => $l->location, 'qty' => $oh];
+                }
+            });
 
-            $product        = Product::where('tenant_id', $tenantId)->where('sku', $sku)->first();
-            $stockedOutLoc  = $stochedOut->first()->location;
-            $overstockedLoc = $overstocked->first()->location;
-            $surplusQty     = round((float) $overstocked->first()->on_hand_qty);
+        foreach ($acc as $sku => $a) {
+            if ($a['count'] < 2 || $a['out'] === null || $a['over'] === null) continue;
 
-            $this->flag($tenantId, 'multi_location_imbalance', 'medium', $sku, null, $product?->id,
-                "SKU {$sku} is stocked out at '{$stockedOutLoc}' while '{$overstockedLoc}' has {$surplusQty} units — consider rebalancing.",
+            $surplusQty = round($a['over']['qty']);
+            $this->flag($tenantId, 'multi_location_imbalance', 'medium', $sku, null, $a['product_id'],
+                "SKU {$sku} is stocked out at '{$a['out']['loc']}' while '{$a['over']['loc']}' has {$surplusQty} units — consider rebalancing.",
                 [
-                    'stocked_out_location'  => $stockedOutLoc,
-                    'overstocked_location'  => $overstockedLoc,
+                    'stocked_out_location'  => $a['out']['loc'],
+                    'overstocked_location'  => $a['over']['loc'],
                     'surplus_qty'           => $surplusQty,
-                    'stocked_out_qty'       => $stochedOut->first()->on_hand_qty,
+                    'stocked_out_qty'       => $a['out']['qty'],
                 ]
             );
         }
@@ -816,63 +828,76 @@ class AnomalyDetectionService
             ->pluck('avg_price', 'sku')
             ->map(fn ($v) => (float) $v);
 
-        $recent = SalesTransaction::where('tenant_id', $tenantId)
+        // Stream recent transactions, keeping only a compact per-SKU summary
+        // (worst deviating price + anomaly count) so we never hold them all.
+        $state         = [];
+        $baselineCache = [];
+
+        SalesTransaction::where('tenant_id', $tenantId)
             ->where('date', '>=', $recentDate)
             ->whereNotNull('unit_price')
             ->where('unit_price', '>', 0)
-            ->get()
-            ->groupBy('sku');
+            ->select(['sku', 'unit_price', 'store_id', 'product_id'])
+            ->cursor()
+            ->each(function ($tx) use (&$state, &$baselineCache, $avgPrices, $tenantId, $pct) {
+                $sku = $tx->sku;
+                $avg = $avgPrices->get($sku);
+                if (! $avg) return;
 
-        foreach ($recent as $sku => $txs) {
-            $avg = $avgPrices->get($sku);
-            if (!$avg) continue;
+                if (! array_key_exists($sku, $baselineCache)) {
+                    $baselineCache[$sku] = $this->baselines->getBaseline($tenantId, $sku, 'price_anomaly', 'unit_price');
+                }
+                $baseline = $baselineCache[$sku];
+                $price    = (float) $tx->unit_price;
 
-            $baseline = $this->baselines->getBaseline($tenantId, $sku, 'price_anomaly', 'unit_price');
-
-            $worst          = null;
-            $worstDeviation = 0.0;
-            $worstZ         = 0.0;
-
-            foreach ($txs as $tx) {
-                $price = (float) $tx->unit_price;
+                if (! isset($state[$sku])) {
+                    $state[$sku] = ['count' => 0, 'worst' => null];
+                }
 
                 if ($baseline) {
                     $z = abs($this->baselines->zScore($price, $baseline));
-                    if ($z > $baseline->sensitivity_multiplier && $z > $worstZ) {
-                        $worst  = $tx;
-                        $worstZ = $z;
-                        $worstDeviation = abs(($price - $avg) / max(0.001, $avg)) * 100;
+                    if ($z > $baseline->sensitivity_multiplier) {
+                        $state[$sku]['count']++;
+                        if ($state[$sku]['worst'] === null || $z > $state[$sku]['worst']['z']) {
+                            $state[$sku]['worst'] = ['price' => $price, 'store_id' => $tx->store_id,
+                                'product_id' => $tx->product_id, 'z' => $z,
+                                'dev' => abs(($price - $avg) / max(0.001, $avg)) * 100];
+                        }
                     }
                 } else {
-                    $deviation = abs(($price - $avg) / $avg) * 100;
-                    if ($deviation >= $pct && $deviation > $worstDeviation) {
-                        $worst          = $tx;
-                        $worstDeviation = $deviation;
+                    $dev = abs(($price - $avg) / $avg) * 100;
+                    if ($dev >= $pct) {
+                        $state[$sku]['count']++;
+                        if ($state[$sku]['worst'] === null || $dev > $state[$sku]['worst']['dev']) {
+                            $state[$sku]['worst'] = ['price' => $price, 'store_id' => $tx->store_id,
+                                'product_id' => $tx->product_id, 'z' => 0.0, 'dev' => $dev];
+                        }
                     }
                 }
-            }
+            });
 
-            if ($worst) {
-                $direction = (float) $worst->unit_price > $avg ? 'above' : 'below';
-                if ($baseline) {
-                    $anomalyCount = $txs->filter(function ($tx) use ($baseline) {
-                        return abs($this->baselines->zScore((float) $tx->unit_price, $baseline)) > $baseline->sensitivity_multiplier;
-                    })->count();
-                    $this->flag($tenantId, 'price_anomaly', 'low', $sku, $worst->store_id, $worst->product_id,
-                        "SKU {$sku} has {$anomalyCount} recent price anomaly(ies) — worst: \$"
-                        . round($worst->unit_price, 2) . " (" . round($worstZ, 1) . "σ "
-                        . $direction . " baseline mean \$" . round($baseline->baseline_mean, 2) . ").",
-                        ['baseline_mean' => round($baseline->baseline_mean, 4), 'worst_price' => $worst->unit_price,
-                         'z_score' => round($worstZ, 2), 'count' => $anomalyCount, 'sensitivity' => $baseline->sensitivity_multiplier]
-                    );
-                } else {
-                    $count = $txs->filter(fn ($tx) => abs(((float) $tx->unit_price - $avg) / $avg) * 100 >= $pct)->count();
-                    $this->flag($tenantId, 'price_anomaly', 'low', $sku, $worst->store_id, $worst->product_id,
-                        "SKU {$sku} has {$count} recent transaction(s) with price anomalies — worst: "
-                        . round($worst->unit_price, 2) . " is " . round($worstDeviation) . "% {$direction} the avg of " . round($avg, 2) . ".",
-                        ['avg_price' => round($avg, 4), 'worst_price' => $worst->unit_price, 'deviation_pct' => round($worstDeviation, 1), 'count' => $count]
-                    );
-                }
+        foreach ($state as $sku => $s) {
+            if ($s['worst'] === null) continue;
+
+            $avg      = (float) $avgPrices->get($sku);
+            $baseline = $baselineCache[$sku] ?? null;
+            $w        = $s['worst'];
+            $direction = $w['price'] > $avg ? 'above' : 'below';
+
+            if ($baseline) {
+                $this->flag($tenantId, 'price_anomaly', 'low', $sku, $w['store_id'], $w['product_id'],
+                    "SKU {$sku} has {$s['count']} recent price anomaly(ies) — worst: \$"
+                    . round($w['price'], 2) . " (" . round($w['z'], 1) . "σ "
+                    . $direction . " baseline mean \$" . round($baseline->baseline_mean, 2) . ").",
+                    ['baseline_mean' => round($baseline->baseline_mean, 4), 'worst_price' => $w['price'],
+                     'z_score' => round($w['z'], 2), 'count' => $s['count'], 'sensitivity' => $baseline->sensitivity_multiplier]
+                );
+            } else {
+                $this->flag($tenantId, 'price_anomaly', 'low', $sku, $w['store_id'], $w['product_id'],
+                    "SKU {$sku} has {$s['count']} recent transaction(s) with price anomalies — worst: "
+                    . round($w['price'], 2) . " is " . round($w['dev']) . "% {$direction} the avg of " . round($avg, 2) . ".",
+                    ['avg_price' => round($avg, 4), 'worst_price' => $w['price'], 'deviation_pct' => round($w['dev'], 1), 'count' => $s['count']]
+                );
             }
         }
     }
@@ -889,25 +914,39 @@ class AnomalyDetectionService
 
         if ($products->isEmpty()) return;
 
-        $recent = SalesTransaction::where('tenant_id', $tenantId)
+        // Stream recent transactions; keep only per-SKU below-cost count + worst.
+        $state = [];
+        SalesTransaction::where('tenant_id', $tenantId)
             ->where('date', '>=', $recentDate)
             ->whereNotNull('unit_price')
             ->where('unit_price', '>', 0)
             ->whereIn('sku', $products->keys())
-            ->get()
-            ->groupBy('sku');
+            ->select(['sku', 'unit_price', 'store_id', 'product_id'])
+            ->cursor()
+            ->each(function ($tx) use (&$state, $products) {
+                $sku  = $tx->sku;
+                $cost = $products->get($sku);
+                if ($cost === null) return;
 
-        foreach ($recent as $sku => $txs) {
-            $cost      = $products->get($sku);
-            $belowCost = $txs->filter(fn ($tx) => (float) $tx->unit_price < $cost);
+                $price = (float) $tx->unit_price;
+                if ($price >= $cost) return;
 
-            if ($belowCost->isEmpty()) continue;
+                if (! isset($state[$sku])) {
+                    $state[$sku] = ['count' => 0, 'worst' => null];
+                }
+                $state[$sku]['count']++;
+                if ($state[$sku]['worst'] === null || $price < $state[$sku]['worst']['price']) {
+                    $state[$sku]['worst'] = ['price' => $price, 'store_id' => $tx->store_id, 'product_id' => $tx->product_id];
+                }
+            });
 
-            $worst = $belowCost->sortBy('unit_price')->first();
-            $this->flag($tenantId, 'margin_erosion', 'high', $sku, $worst->store_id, $worst->product_id,
-                "SKU {$sku} has {$belowCost->count()} recent transaction(s) sold below cost — "
-                . "worst: sold at \$" . round($worst->unit_price, 2) . " vs unit cost of \$" . round($cost, 2) . ".",
-                ['unit_cost' => $cost, 'worst_sale_price' => $worst->unit_price, 'count' => $belowCost->count()]
+        foreach ($state as $sku => $s) {
+            $cost = $products->get($sku);
+            $w    = $s['worst'];
+            $this->flag($tenantId, 'margin_erosion', 'high', $sku, $w['store_id'], $w['product_id'],
+                "SKU {$sku} has {$s['count']} recent transaction(s) sold below cost — "
+                . "worst: sold at \$" . round($w['price'], 2) . " vs unit cost of \$" . round($cost, 2) . ".",
+                ['unit_cost' => $cost, 'worst_sale_price' => $w['price'], 'count' => $s['count']]
             );
         }
     }
@@ -980,28 +1019,33 @@ class AnomalyDetectionService
 
         if ($products->isEmpty()) return;
 
+        // Aggregate on-hand per SKU in SQL (one light row per SKU) instead of
+        // loading every inventory row into memory.
         $inventory = InventoryLevel::where('tenant_id', $tenantId)
             ->where('on_hand_qty', '>', 0)
             ->whereIn('sku', $products->keys())
-            ->get()
-            ->groupBy('sku');
+            ->selectRaw('sku, SUM(on_hand_qty) as total_qty, MAX(product_id) as product_id')
+            ->groupBy('sku')
+            ->get();
 
         $activeSkus = SalesTransaction::where('tenant_id', $tenantId)
             ->where('date', '>=', $since)
-            ->pluck('sku')
-            ->unique();
+            ->distinct()
+            ->pluck('sku');
 
-        foreach ($inventory as $sku => $levels) {
-            if ($activeSkus->contains($sku)) continue;
+        $activeSet = array_flip($activeSkus->all());
 
-            $totalQty   = (float) $levels->sum('on_hand_qty');
+        foreach ($inventory as $row) {
+            $sku = $row->sku;
+            if (isset($activeSet[$sku])) continue;
+
+            $totalQty   = (float) $row->total_qty;
             $unitCost   = $products->get($sku);
             $totalValue = $totalQty * $unitCost;
 
             if ($totalValue < $minValue) continue;
 
-            $product = Product::where('tenant_id', $tenantId)->where('sku', $sku)->first();
-            $this->flag($tenantId, 'slow_moving_capital', 'medium', $sku, null, $product?->id,
+            $this->flag($tenantId, 'slow_moving_capital', 'medium', $sku, null, $row->product_id,
                 "SKU {$sku} has \$" . number_format($totalValue, 2) . " tied up in inventory "
                 . "(" . round($totalQty) . " units × \$" . round($unitCost, 2) . ") with no sales in the last {$days} days.",
                 ['on_hand_qty' => $totalQty, 'unit_cost' => $unitCost, 'inventory_value' => round($totalValue, 2), 'days_without_sales' => $days]
@@ -1019,34 +1063,39 @@ class AnomalyDetectionService
         $days  = (int)($thresholds['days'] ?? 7);
         $since = Carbon::today()->subDays($days)->format('Y-m-d');
 
-        $salesBySkuLocation = SalesTransaction::where('tenant_id', $tenantId)
+        // The SUM/GROUP BY already collapses to one row per (sku, location);
+        // stream it and keep a compact per-SKU list so nothing large is held.
+        $bySku = [];
+        SalesTransaction::where('tenant_id', $tenantId)
             ->where('date', '>=', $since)
             ->whereNotNull('location')
             ->selectRaw('sku, location, SUM(quantity) as qty')
             ->groupBy('sku', 'location')
-            ->get()
-            ->groupBy('sku');
+            ->cursor()
+            ->each(function ($r) use (&$bySku) {
+                $bySku[$r->sku][] = ['location' => $r->location, 'qty' => (float) $r->qty];
+            });
 
-        foreach ($salesBySkuLocation as $sku => $rows) {
-            if ($rows->count() < 2) continue;
+        foreach ($bySku as $sku => $rows) {
+            if (count($rows) < 2) continue;
 
-            $qtys = $rows->pluck('qty')->map(fn ($v) => (float) $v);
-            $avg  = $qtys->average();
+            $qtys = array_map(fn ($x) => $x['qty'], $rows);
+            $avg  = array_sum($qtys) / count($qtys);
             if ($avg <= 0) continue;
 
             $baseline = $this->baselines->getBaseline($tenantId, $sku, 'store_outlier', 'location_qty');
 
             foreach ($rows as $row) {
-                $qty = (float) $row->qty;
+                $qty = (float) $row['qty'];
 
                 if ($baseline) {
                     // z = (mean - value) / stddev — large positive z means far below expected
                     $z = ($baseline->baseline_mean - $qty) / max(0.001, $baseline->baseline_stddev);
                     if ($z <= $baseline->sensitivity_multiplier) continue;
                     $this->flag($tenantId, 'store_outlier', 'medium', $sku, null, null,
-                        "SKU {$sku} at '{$row->location}' sold " . round($qty) . " units over the period — "
+                        "SKU {$sku} at '{$row['location']}' sold " . round($qty) . " units over the period — "
                         . round($z, 1) . "σ below the baseline mean of " . round($baseline->baseline_mean, 1) . " units.",
-                        ['location' => $row->location, 'location_qty' => $qty,
+                        ['location' => $row['location'], 'location_qty' => $qty,
                          'baseline_mean' => round($baseline->baseline_mean, 1),
                          'z_score' => round($z, 2), 'sensitivity' => $baseline->sensitivity_multiplier, 'days' => $days]
                     );
@@ -1054,9 +1103,9 @@ class AnomalyDetectionService
                     $dropPct = (($avg - $qty) / $avg) * 100;
                     if ($dropPct < $pct) continue;
                     $this->flag($tenantId, 'store_outlier', 'medium', $sku, null, null,
-                        "SKU {$sku} at '{$row->location}' sold " . round($qty) . " units in the last {$days} days — "
+                        "SKU {$sku} at '{$row['location']}' sold " . round($qty) . " units in the last {$days} days — "
                         . round($dropPct) . "% below the cross-location average of " . round($avg) . " units.",
-                        ['location' => $row->location, 'location_qty' => $qty, 'avg_qty' => round($avg, 1), 'drop_pct' => round($dropPct, 1), 'days' => $days]
+                        ['location' => $row['location'], 'location_qty' => $qty, 'avg_qty' => round($avg, 1), 'drop_pct' => round($dropPct, 1), 'days' => $days]
                     );
                 }
             }
