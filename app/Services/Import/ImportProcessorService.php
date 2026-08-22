@@ -22,7 +22,6 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\IOFactory;
-use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 
 /**
  * Applies a confirmed column mapping to the uploaded file and writes rows to the DB.
@@ -478,12 +477,8 @@ class ImportProcessorService
         foreach ($data as $row) {
             $rowData = [];
             foreach ($headers as $i => $header) {
+                // toArray() uses formatData = true, so Excel dates are already formatted.
                 $value = $row[$i] ?? null;
-                if (is_numeric($value) && ExcelDate::isDateTimeValue($value)) {
-                    try {
-                        $value = ExcelDate::excelToDateTimeObject($value)->format('Y-m-d');
-                    } catch (\Exception) {}
-                }
                 $rowData[$header] = $value !== null ? (string) $value : '';
             }
 

@@ -4,7 +4,6 @@ namespace App\Services\Import;
 
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Reader\IReadFilter;
-use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 
 /**
  * Reads CSV and Excel files, returning headers and sample rows.
@@ -70,19 +69,13 @@ class FileReaderService
 
         $sampleRows = array_slice($data, 0, $sampleLimit);
 
-        // Build sample as array of assoc arrays keyed by header
+        // Build sample as array of assoc arrays keyed by header.
+        // toArray() above is called with formatData = true, so Excel date cells
+        // are already returned as formatted strings — no manual conversion needed.
         $sample = array_map(function ($row) use ($headers) {
             $assoc = [];
             foreach ($headers as $i => $header) {
                 $value = $row[$i] ?? null;
-                // Convert Excel numeric dates to readable strings
-                if (is_numeric($value) && ExcelDate::isDateTimeValue($value)) {
-                    try {
-                        $value = ExcelDate::excelToDateTimeObject($value)->format('Y-m-d');
-                    } catch (\Exception) {
-                        // keep raw value
-                    }
-                }
                 $assoc[$header] = $value !== null ? (string) $value : '';
             }
             return $assoc;

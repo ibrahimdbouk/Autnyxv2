@@ -15,11 +15,14 @@ class FileReaderServiceTest extends TestCase
 {
     private function makeCsv(int $dataRows): string
     {
+        // Include NUMERIC columns (qty, price) and a date — this is what real
+        // sales/returns files look like, and what exposed the crash in the
+        // numeric-value handling path (isDateTimeValue on a non-existent method).
         $path = sys_get_temp_dir() . '/import_test_' . uniqid() . '.csv';
         $fh   = fopen($path, 'w');
-        fputcsv($fh, ['name', 'code', 'city']);
+        fputcsv($fh, ['date', 'sku', 'qty', 'price']);
         for ($i = 1; $i <= $dataRows; $i++) {
-            fputcsv($fh, ["Store {$i}", "S{$i}", "City {$i}"]);
+            fputcsv($fh, ['2026-08-01', "SKU{$i}", (string) $i, '9.99']);
         }
         fclose($fh);
 
@@ -33,12 +36,13 @@ class FileReaderServiceTest extends TestCase
         try {
             $result = (new FileReaderService())->read($path, 10);
 
-            $this->assertSame(['name', 'code', 'city'], $result['headers']);
+            $this->assertSame(['date', 'sku', 'qty', 'price'], $result['headers']);
 
             // Only the sample is materialised, not all 100 rows.
             $this->assertCount(10, $result['rows']);
-            $this->assertSame('Store 1', $result['rows'][0]['name']);
-            $this->assertSame('S1', $result['rows'][0]['code']);
+            $this->assertSame('SKU1', $result['rows'][0]['sku']);
+            $this->assertSame('1', $result['rows'][0]['qty']);
+            $this->assertSame('9.99', $result['rows'][0]['price']);
 
             // The total count reflects the whole file, not just the sampled rows.
             $this->assertGreaterThanOrEqual(100, $result['total_rows']);
