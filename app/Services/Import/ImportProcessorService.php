@@ -2,6 +2,7 @@
 
 namespace App\Services\Import;
 
+use App\Models\IngestionRun;
 use App\Models\Import;
 use App\Models\ImportColumnMap;
 use App\Models\ImportRow;
@@ -10,11 +11,15 @@ use App\Models\Product;
 use App\Models\PurchaseOrder;
 use App\Models\SalesTransaction;
 use App\Models\Store;
+use App\Models\Supplier;
+use App\Models\User;
 use App\Services\Anomaly\AnomalyDetectionService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 
@@ -79,6 +84,7 @@ class ImportProcessorService
     public function process(Import $import): void
     {
         $import->update(['status' => Import::STATUS_IMPORTING]);
+        $startedAt = now();
 
         try {
             $columnMap = $import->columnMaps()
@@ -124,6 +130,9 @@ class ImportProcessorService
                 'failed_rows'   => $failed,
             ]);
 
+            // Record an IngestionRun so Data Health sees this ingestion.
+            $this->recordIngestionRun($import, $total, $imported, $failed, $startedAt);
+
             // Run anomaly detection after every completed import
             try {
                 app(AnomalyDetectionService::class)->runForTenant($import->tenant_id);
@@ -148,6 +157,9 @@ class ImportProcessorService
             Import::TYPE_INVENTORY       => $this->writeInventoryLevel($import, $data, $rowNumber),
             Import::TYPE_PRODUCTS        => $this->writeProduct($import, $data, $rowNumber),
             Import::TYPE_PURCHASE_ORDERS => $this->writePurchaseOrder($import, $data, $rowNumber),
+            Import::TYPE_STORES          => $this->writeStore($import, $data, $rowNumber),
+            Import::TYPE_SUPPLIERS       => $this->writeSupplier($import, $data, $rowNumber),
+            Import::TYPE_USERS           => $this->writeUser($import, $data, $rowNumber),
             default                      => throw new \InvalidArgumentException("Unknown data type: {$import->data_type}"),
         };
     }
@@ -161,6 +173,9 @@ class ImportProcessorService
             Import::TYPE_INVENTORY       => $this->writeInventoryLevel($import, $data, $rowNumber),
             Import::TYPE_PRODUCTS        => $this->writeProduct($import, $data, $rowNumber),
             Import::TYPE_PURCHASE_ORDERS => $this->writePurchaseOrder($import, $data, $rowNumber),
+            Import::TYPE_STORES          => $this->writeStore($import, $data, $rowNumber),
+            Import::TYPE_SUPPLIERS       => $this->writeSupplier($import, $data, $rowNumber),
+            Import::TYPE_USERS           => $this->writeUser($import, $data, $rowNumber),
             default                      => throw new \InvalidArgumentException("Unknown data type: {$import->data_type}"),
         };
     }
@@ -275,7 +290,86 @@ class ImportProcessorService
             $attrs['product_id'] = $product->id;
         }
 
+        // Link (or create) the supplier master so supplier-level rules and
+        // reporting work off a real supplier record, not just a text name.
+        $attrs['supplier_id'] = $this->resolveSupplier($import->tenant_id, $attrs['supplier']);
+
         PurchaseOrder::create($attrs);
+    }
+
+    private function writeStore(Import $import, array $data, int $row): void
+    {
+        $this->requireFields($data, ['name'], $row);
+
+        $attrs = [
+            'tenant_id' => $import->tenant_id,
+            'name'      => $this->str($data['name'], 'name', $row),
+            'code'      => $data['code'] ?? null,
+            'address'   => $data['address'] ?? null,
+            'city'      => $data['city'] ?? null,
+            'region'    => $data['region'] ?? null,
+            'country'   => $data['country'] ?? null,
+        ];
+
+        // Enrich the existing (possibly auto-created) store rather than duplicating.
+        Store::updateOrCreate(
+            ['tenant_id' => $attrs['tenant_id'], 'name' => $attrs['name']],
+            $attrs
+        );
+    }
+
+    private function writeSupplier(Import $import, array $data, int $row): void
+    {
+        $this->requireFields($data, ['name'], $row);
+
+        $attrs = [
+            'tenant_id'      => $import->tenant_id,
+            'name'           => $this->str($data['name'], 'name', $row),
+            'code'           => $data['code'] ?? null,
+            'lead_time_days' => isset($data['lead_time_days']) ? (int) $this->numericOrNull($data['lead_time_days']) : null,
+            'contact_email'  => $data['contact_email'] ?? null,
+            'contact_phone'  => $data['contact_phone'] ?? null,
+        ];
+
+        Supplier::updateOrCreate(
+            ['tenant_id' => $attrs['tenant_id'], 'name' => $attrs['name']],
+            $attrs
+        );
+    }
+
+    private function writeUser(Import $import, array $data, int $row): void
+    {
+        $this->requireFields($data, ['name', 'email'], $row);
+
+        $email = strtolower(trim($this->str($data['email'], 'email', $row)));
+        if (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            throw new \InvalidArgumentException("Row {$row}: '{$email}' is not a valid email address.");
+        }
+
+        $role = strtolower(trim((string) ($data['role'] ?? '')));
+        $isAdmin = in_array($role, ['admin', 'tenant_admin', 'tenant admin', 'administrator', 'manager'], true);
+
+        $existing = User::where('email', $email)->first();
+
+        $attrs = [
+            'tenant_id'       => $import->tenant_id,
+            'name'            => $this->str($data['name'], 'name', $row),
+            'is_tenant_admin' => $isAdmin,
+        ];
+
+        if ($existing) {
+            // Never let an import escalate a super admin or move another tenant's user.
+            if ($existing->tenant_id !== $import->tenant_id) {
+                throw new \InvalidArgumentException("Row {$row}: user '{$email}' already exists under a different tenant.");
+            }
+            $existing->update($attrs);
+        } else {
+            // Random password — imported users must have one set by an admin
+            // (no self-service reset until MAIL_* is configured).
+            $attrs['email']    = $email;
+            $attrs['password'] = Str::random(40);
+            User::create($attrs);
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -393,5 +487,77 @@ class ImportProcessorService
         );
 
         return $store->id;
+    }
+
+    /**
+     * Resolve (or create) a Supplier by name for the given tenant.
+     * Returns the supplier's primary key, or null for a blank name.
+     */
+    private function resolveSupplier(int $tenantId, ?string $supplierName): ?int
+    {
+        $name = trim((string) $supplierName);
+        if ($name === '') {
+            return null;
+        }
+
+        $supplier = Supplier::firstOrCreate(
+            ['tenant_id' => $tenantId, 'name' => $name],
+            ['tenant_id' => $tenantId, 'name' => $name]
+        );
+
+        return $supplier->id;
+    }
+
+    /**
+     * Record an IngestionRun so the Data Health Center gets real ingestion
+     * metadata (status, counts, validation score, rejected sample) for this run.
+     * Users are an account-setup import, not a health-tracked dataset — skipped.
+     */
+    private function recordIngestionRun(Import $import, int $total, int $imported, int $failed, ?Carbon $startedAt): void
+    {
+        $map = [
+            Import::TYPE_SALES           => IngestionRun::TYPE_SALES,
+            Import::TYPE_INVENTORY       => IngestionRun::TYPE_INVENTORY,
+            Import::TYPE_PRODUCTS        => IngestionRun::TYPE_PRODUCTS,
+            Import::TYPE_PURCHASE_ORDERS => IngestionRun::TYPE_PURCHASE_ORDERS,
+            Import::TYPE_STORES          => IngestionRun::TYPE_STORES,
+            Import::TYPE_SUPPLIERS       => IngestionRun::TYPE_SUPPLIERS,
+        ];
+
+        $dataType = $map[$import->data_type] ?? null;
+        if ($dataType === null) {
+            return; // e.g. users — not a health-tracked dataset
+        }
+
+        $status = $failed === 0
+            ? IngestionRun::STATUS_COMPLETED
+            : ($imported > 0 ? IngestionRun::STATUS_PARTIAL : IngestionRun::STATUS_FAILED);
+
+        $sample = ImportRow::where('import_id', $import->id)
+            ->limit(20)
+            ->get(['row_number', 'error_message'])
+            ->map(fn ($r) => ['row' => $r->row_number, 'error' => $r->error_message])
+            ->all();
+
+        try {
+            IngestionRun::create([
+                'tenant_id'        => $import->tenant_id,
+                'data_type'        => $dataType,
+                'source'           => 'csv',
+                'status'           => $status,
+                'filename'         => $import->original_filename,
+                'rows_processed'   => $total,
+                'rows_imported'    => $imported,
+                'rows_failed'      => $failed,
+                'validation_score' => $total > 0 ? round(($imported / $total) * 100, 2) : 100,
+                'rejected_sample'  => $sample,
+                'started_at'       => $startedAt ?? $import->created_at,
+                'completed_at'     => now(),
+                'import_id'        => $import->id,
+            ]);
+        } catch (\Throwable $e) {
+            // Ingestion-run recording is best-effort — never fail the import over it.
+            Log::error('Failed to record IngestionRun', ['import_id' => $import->id, 'error' => $e->getMessage()]);
+        }
     }
 }

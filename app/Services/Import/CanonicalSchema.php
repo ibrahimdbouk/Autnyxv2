@@ -19,6 +19,9 @@ class CanonicalSchema
             'inventory_levels'    => self::inventoryLevels(),
             'products'            => self::products(),
             'purchase_orders'     => self::purchaseOrders(),
+            'stores'              => self::stores(),
+            'suppliers'           => self::suppliers(),
+            'users'               => self::users(),
             default               => [],
         };
     }
@@ -65,6 +68,38 @@ class CanonicalSchema
             'selling_price' => ['label' => 'Selling Price', 'description' => 'Retail or wholesale selling price per unit',         'required' => false],
             'supplier'      => ['label' => 'Supplier',      'description' => 'Supplier or vendor name',                            'required' => false],
             'barcode'       => ['label' => 'Barcode',       'description' => 'Barcode, UPC, EAN, or GTIN',                         'required' => false],
+        ];
+    }
+
+    private static function stores(): array
+    {
+        return [
+            'name'    => ['label' => 'Store Name', 'description' => 'Store, outlet or location name (matches the Location used in sales/inventory)', 'required' => true],
+            'code'    => ['label' => 'Store Code', 'description' => 'Store number or code',                    'required' => false],
+            'address' => ['label' => 'Address',    'description' => 'Street address',                          'required' => false],
+            'city'    => ['label' => 'City',       'description' => 'City',                                    'required' => false],
+            'region'  => ['label' => 'Region',     'description' => 'Region, state or area',                   'required' => false],
+            'country' => ['label' => 'Country',    'description' => 'Country',                                 'required' => false],
+        ];
+    }
+
+    private static function suppliers(): array
+    {
+        return [
+            'name'           => ['label' => 'Supplier Name',   'description' => 'Supplier or vendor name (matches Supplier on purchase orders)', 'required' => true],
+            'code'           => ['label' => 'Supplier Code',   'description' => 'Supplier number or external code',           'required' => false],
+            'lead_time_days' => ['label' => 'Lead Time (days)','description' => 'Contracted lead time in days',               'required' => false],
+            'contact_email'  => ['label' => 'Contact Email',   'description' => 'Supplier contact email address',             'required' => false],
+            'contact_phone'  => ['label' => 'Contact Phone',   'description' => 'Supplier contact phone number',              'required' => false],
+        ];
+    }
+
+    private static function users(): array
+    {
+        return [
+            'name'  => ['label' => 'Name',  'description' => 'Full name of the user',                                   'required' => true],
+            'email' => ['label' => 'Email', 'description' => 'Login email address (must be unique)',                    'required' => true],
+            'role'  => ['label' => 'Role',  'description' => 'admin / tenant_admin grants admin rights; anything else is a standard user', 'required' => false],
         ];
     }
 

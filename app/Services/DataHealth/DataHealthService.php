@@ -50,6 +50,8 @@ class DataHealthService
         DataHealthSnapshot::DATASET_INVENTORY       => IngestionRun::TYPE_INVENTORY,
         DataHealthSnapshot::DATASET_PURCHASE_ORDERS => IngestionRun::TYPE_PURCHASE_ORDERS,
         DataHealthSnapshot::DATASET_PRODUCTS        => IngestionRun::TYPE_PRODUCTS,
+        DataHealthSnapshot::DATASET_STORES          => IngestionRun::TYPE_STORES,
+        DataHealthSnapshot::DATASET_SUPPLIERS       => IngestionRun::TYPE_SUPPLIERS,
     ];
 
     /** Evidence source tables mapped to datasets — used to find affected investigations. */

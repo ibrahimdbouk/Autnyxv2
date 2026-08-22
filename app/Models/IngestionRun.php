@@ -19,6 +19,8 @@ class IngestionRun extends Model
     const TYPE_INVENTORY       = 'inventory';
     const TYPE_PURCHASE_ORDERS = 'purchase_orders';
     const TYPE_PRODUCTS        = 'products';
+    const TYPE_STORES          = 'stores';
+    const TYPE_SUPPLIERS       = 'suppliers';
 
     protected $fillable = [
         'tenant_id',

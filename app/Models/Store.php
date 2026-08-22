@@ -14,6 +14,7 @@ class Store extends Model
         'code',
         'address',
         'city',
+        'region',
         'country',
     ];
 

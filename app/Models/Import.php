@@ -40,6 +40,10 @@ class Import extends Model
     const TYPE_INVENTORY    = 'inventory_levels';
     const TYPE_PRODUCTS     = 'products';
     const TYPE_PURCHASE_ORDERS = 'purchase_orders';
+    // Master / reference data (M24 — completes the import surface)
+    const TYPE_STORES       = 'stores';
+    const TYPE_SUPPLIERS    = 'suppliers';
+    const TYPE_USERS        = 'users';
 
     public static function dataTypeLabels(): array
     {
@@ -48,6 +52,9 @@ class Import extends Model
             self::TYPE_INVENTORY       => 'Inventory Levels',
             self::TYPE_PRODUCTS        => 'Products',
             self::TYPE_PURCHASE_ORDERS => 'Purchase Orders',
+            self::TYPE_STORES          => 'Stores / Locations',
+            self::TYPE_SUPPLIERS       => 'Suppliers',
+            self::TYPE_USERS           => 'Users (account setup)',
         ];
     }
 

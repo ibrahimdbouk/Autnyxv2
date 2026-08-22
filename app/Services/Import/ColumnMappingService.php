@@ -214,7 +214,18 @@ PROMPT;
             'order_date'     => ['order_date', 'po_date', 'created_date', 'placed_date', 'purchase_date'],
             'expected_date'  => ['expected_date', 'due_date', 'promised_date', 'eta', 'delivery_date', 'est_arrival'],
             'received_date'  => ['received_date', 'receipt_date', 'arrival_date', 'delivery_received', 'actual_receipt'],
-            'name'           => ['name', 'product_name', 'item_name', 'description', 'product_description', 'title'],
+            'name'           => ['name', 'product_name', 'item_name', 'description', 'product_description', 'title', 'store_name', 'supplier_name', 'vendor_name', 'full_name'],
+            // Stores / Suppliers / Users master data (M24)
+            'code'           => ['code', 'store_code', 'store_no', 'store_number', 'supplier_code', 'vendor_code', 'location_code', 'site_code'],
+            'address'        => ['address', 'street', 'street_address', 'address_line', 'addr'],
+            'city'           => ['city', 'town', 'municipality'],
+            'region'         => ['region', 'state', 'province', 'area', 'territory', 'zone', 'district'],
+            'country'        => ['country', 'country_code', 'nation'],
+            'lead_time_days' => ['lead_time_days', 'lead_time', 'leadtime', 'lead_days', 'delivery_days', 'contracted_lead_time'],
+            'contact_email'  => ['contact_email', 'email', 'supplier_email', 'vendor_email', 'contact_mail', 'e_mail'],
+            'contact_phone'  => ['contact_phone', 'phone', 'telephone', 'tel', 'supplier_phone', 'vendor_phone', 'mobile', 'contact_number'],
+            'email'          => ['email', 'e_mail', 'login', 'user_email', 'username', 'mail'],
+            'role'           => ['role', 'user_role', 'access_level', 'permission', 'access', 'type'],
         ][$field] ?? [$field];
     }
 
