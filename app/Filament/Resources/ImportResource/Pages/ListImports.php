@@ -32,7 +32,6 @@ class ListImports extends ListRecords
                         ->label('Data Type')
                         ->options(Import::dataTypeLabels())
                         ->required()
-                        ->native(false)
                         ->helperText('What kind of data does this file contain?'),
 
                     FileUpload::make('file')
