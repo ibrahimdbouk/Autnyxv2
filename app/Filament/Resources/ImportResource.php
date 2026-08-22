@@ -4,6 +4,8 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\ImportResource\Pages;
 use App\Models\Import;
+use App\Services\Import\ImportProcessorService;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
@@ -60,6 +62,7 @@ class ImportResource extends Resource
                         'completed'              => 'Completed',
                         'completed_with_errors'  => 'Completed (errors)',
                         'failed'                 => 'Failed',
+                        'rolled_back'            => 'Rolled back',
                         default                  => ucfirst($state),
                     }),
 
@@ -107,6 +110,24 @@ class ImportResource extends Resource
                         Import::STATUS_FAILED,
                     ]))
                     ->color('danger'),
+
+                Action::make('rollback')
+                    ->label('Undo Import')
+                    ->icon('heroicon-o-arrow-uturn-left')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalHeading('Undo this import?')
+                    ->modalDescription('This permanently deletes every row this import added. Other imports and your master data are unaffected. This cannot be undone.')
+                    ->modalSubmitActionLabel('Yes, delete these rows')
+                    ->visible(fn (Import $record) => $record->canRollback())
+                    ->action(function (Import $record) {
+                        $deleted = app(ImportProcessorService::class)->rollback($record);
+                        Notification::make()
+                            ->title('Import undone')
+                            ->body("{$deleted} row(s) removed.")
+                            ->success()
+                            ->send();
+                    }),
             ]);
     }
 

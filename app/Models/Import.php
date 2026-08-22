@@ -34,6 +34,15 @@ class Import extends Model
     const STATUS_COMPLETED            = 'completed';
     const STATUS_COMPLETED_WITH_ERRORS = 'completed_with_errors';
     const STATUS_FAILED               = 'failed';
+    const STATUS_ROLLED_BACK          = 'rolled_back';
+
+    /** Data types whose rows are inserted (and therefore reversible via rollback). */
+    const ROLLBACK_TYPES = [
+        self::TYPE_SALES,
+        self::TYPE_INVENTORY,
+        self::TYPE_RETURNS,
+        self::TYPE_PURCHASE_ORDERS,
+    ];
 
     // Data type constants
     const TYPE_SALES        = 'sales_transactions';
@@ -83,6 +92,16 @@ class Import extends Model
     public function getDataTypeLabelAttribute(): string
     {
         return self::dataTypeLabels()[$this->data_type] ?? $this->data_type;
+    }
+
+    /**
+     * Can this import be rolled back? Only insert-based datasets that have
+     * actually been committed (not master data, which is upserted).
+     */
+    public function canRollback(): bool
+    {
+        return in_array($this->data_type, self::ROLLBACK_TYPES, true)
+            && in_array($this->status, [self::STATUS_COMPLETED, self::STATUS_COMPLETED_WITH_ERRORS], true);
     }
 
     public function isReadyToReview(): bool

@@ -12,6 +12,7 @@ class InventoryLevel extends Model
 
     protected $fillable = [
         'tenant_id',
+        'import_id',
         'store_id',
         'product_id',
         'sku',

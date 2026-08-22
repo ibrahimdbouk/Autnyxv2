@@ -12,6 +12,7 @@ class SalesTransaction extends Model
 
     protected $fillable = [
         'tenant_id',
+        'import_id',
         'store_id',
         'product_id',
         'transaction_id',

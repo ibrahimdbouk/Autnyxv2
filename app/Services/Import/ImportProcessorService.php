@@ -82,6 +82,37 @@ class ImportProcessorService
             ]);
     }
 
+    /**
+     * Undo an import: delete every row it inserted (insert-based datasets only —
+     * master data is upserted and therefore not reversible this way). Returns the
+     * number of rows removed and marks the import as rolled back.
+     */
+    public function rollback(Import $import): int
+    {
+        $modelClass = match ($import->data_type) {
+            Import::TYPE_SALES           => \App\Models\SalesTransaction::class,
+            Import::TYPE_INVENTORY       => \App\Models\InventoryLevel::class,
+            Import::TYPE_RETURNS         => \App\Models\SalesReturn::class,
+            Import::TYPE_PURCHASE_ORDERS => \App\Models\PurchaseOrder::class,
+            default                      => null,
+        };
+
+        if ($modelClass === null) {
+            return 0;
+        }
+
+        $deleted = $modelClass::where('tenant_id', $import->tenant_id)
+            ->where('import_id', $import->id)
+            ->delete();
+
+        $import->update([
+            'status'        => Import::STATUS_ROLLED_BACK,
+            'error_message' => "Rolled back — {$deleted} row(s) removed.",
+        ]);
+
+        return $deleted;
+    }
+
     public function process(Import $import): void
     {
         $import->update(['status' => Import::STATUS_IMPORTING]);
@@ -191,6 +222,7 @@ class ImportProcessorService
 
         $attrs = [
             'tenant_id'      => $import->tenant_id,
+            'import_id'      => $import->id,
             'date'           => $this->parseDate($data['date'], $row),
             'sku'            => $this->str($data['sku'] ?? null, 'sku', $row),
             'location'       => $location,
@@ -229,6 +261,7 @@ class ImportProcessorService
 
         $attrs = [
             'tenant_id'     => $import->tenant_id,
+            'import_id'     => $import->id,
             'sku'           => $this->str($data['sku'], 'sku', $row),
             'location'      => $location,
             'on_hand_qty'   => $this->numeric($data['on_hand_qty'], 'on_hand_qty', $row),
@@ -277,6 +310,7 @@ class ImportProcessorService
 
         $attrs = [
             'tenant_id'     => $import->tenant_id,
+            'import_id'     => $import->id,
             'po_number'     => $this->str($data['po_number'], 'po_number', $row),
             'supplier'      => $this->str($data['supplier'], 'supplier', $row),
             'sku'           => $this->str($data['sku'], 'sku', $row),
@@ -348,6 +382,7 @@ class ImportProcessorService
 
         $attrs = [
             'tenant_id' => $import->tenant_id,
+            'import_id' => $import->id,
             'date'      => $this->parseDate($data['date'], $row),
             'sku'       => $this->str($data['sku'], 'sku', $row),
             'location'  => $location,

@@ -115,6 +115,27 @@ class ImportMasterDataTest extends TestCase
         $this->assertEqualsWithDelta(59.97, (float) $return->value, 0.001);
     }
 
+    public function test_import_rollback_deletes_only_its_own_rows(): void
+    {
+        // Two separate returns imports.
+        $importA = $this->makeImport(Import::TYPE_RETURNS);
+        $this->runRow($importA, ['date' => '2026-08-01', 'sku' => 'SKU-A', 'quantity' => '2', 'reason' => 'a']);
+
+        $importB = $this->makeImport(Import::TYPE_RETURNS);
+        $this->runRow($importB, ['date' => '2026-08-02', 'sku' => 'SKU-B', 'quantity' => '5', 'reason' => 'b']);
+
+        $this->assertSame(1, \App\Models\SalesReturn::where('import_id', $importA->id)->count());
+        $this->assertSame(1, \App\Models\SalesReturn::where('import_id', $importB->id)->count());
+
+        $deleted = app(ImportProcessorService::class)->rollback($importA->fresh());
+
+        $this->assertSame(1, $deleted);
+        $this->assertSame(0, \App\Models\SalesReturn::where('import_id', $importA->id)->count());
+        // Import B's rows are untouched.
+        $this->assertSame(1, \App\Models\SalesReturn::where('import_id', $importB->id)->count());
+        $this->assertSame(Import::STATUS_ROLLED_BACK, $importA->fresh()->status);
+    }
+
     public function test_purchase_order_import_links_supplier(): void
     {
         $import = $this->makeImport(Import::TYPE_PURCHASE_ORDERS);

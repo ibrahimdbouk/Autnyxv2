@@ -9,6 +9,7 @@ class PurchaseOrder extends Model
 {
     protected $fillable = [
         'tenant_id',
+        'import_id',
         'product_id',
         'supplier_id',
         'po_number',
