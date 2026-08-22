@@ -36,13 +36,17 @@ class ImportMasterDataTest extends TestCase
 
     private function runRow(Import $import, array $mapped): void
     {
+        // import_rows is a failed-rows ledger: a row only exists here because it errored,
+        // so raw_data and error_message are both required. This simulates that failed row,
+        // then exercises the retry path which writes the real entity.
         $row = ImportRow::create([
-            'import_id'   => $import->id,
-            'tenant_id'   => $this->tenant->id,
-            'row_number'  => 2,
-            'raw_data'    => $mapped,   // required (NOT NULL); real imports store the original source row here
-            'mapped_data' => $mapped,
-            'status'      => ImportRow::STATUS_PENDING,
+            'import_id'     => $import->id,
+            'tenant_id'     => $this->tenant->id,
+            'row_number'    => 2,
+            'raw_data'      => $mapped,
+            'mapped_data'   => $mapped,
+            'error_message' => 'seeded failed row (retry test)',
+            'status'        => ImportRow::STATUS_PENDING,
         ]);
 
         app(ImportProcessorService::class)->retryRows($import, collect([$row]));
