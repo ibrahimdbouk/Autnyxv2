@@ -71,28 +71,16 @@ class ReviewMapping extends Page
             ]);
         }
 
-        // Run the import processor synchronously (queue it in M8+)
+        // Kick off chunked, poll-driven processing. The heavy lifting happens
+        // on the ProcessImport page, one memory-safe chunk per poll, so large
+        // files no longer black-screen the request.
         try {
-            $processor = app(ImportProcessorService::class);
-            $processor->process($this->record->fresh());
+            app(ImportProcessorService::class)->startChunkedImport($this->record->fresh());
 
-            $this->record->refresh();
-
-            $msg = "Imported {$this->record->imported_rows} of {$this->record->total_rows} rows.";
-            if ($this->record->failed_rows > 0) {
-                $msg .= " {$this->record->failed_rows} rows need review.";
-            }
-
-            Notification::make()
-                ->title($this->record->failed_rows > 0 ? 'Import completed with errors' : 'Import complete')
-                ->body($msg)
-                ->color($this->record->failed_rows > 0 ? 'warning' : 'success')
-                ->send();
-
-            $this->redirect(ViewImport::getUrl(['record' => $this->record]));
+            $this->redirect(ProcessImport::getUrl(['record' => $this->record]));
         } catch (\Throwable $e) {
             Notification::make()
-                ->title('Import failed')
+                ->title('Could not start import')
                 ->body($e->getMessage())
                 ->danger()
                 ->send();

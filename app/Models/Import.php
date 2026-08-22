@@ -20,6 +20,7 @@ class Import extends Model
         'total_rows',
         'imported_rows',
         'failed_rows',
+        'process_cursor',
         'error_message',
     ];
 
@@ -112,5 +113,22 @@ class Import extends Model
     public function isCompleted(): bool
     {
         return in_array($this->status, [self::STATUS_COMPLETED, self::STATUS_COMPLETED_WITH_ERRORS]);
+    }
+
+    public function isImporting(): bool
+    {
+        return $this->status === self::STATUS_IMPORTING;
+    }
+
+    /**
+     * Percentage of rows processed so far (0–100), for the progress bar.
+     */
+    public function progressPercent(): int
+    {
+        if (! $this->total_rows) {
+            return $this->isCompleted() ? 100 : 0;
+        }
+
+        return (int) min(100, round(($this->process_cursor / $this->total_rows) * 100));
     }
 }

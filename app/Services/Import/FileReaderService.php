@@ -87,4 +87,149 @@ class FileReaderService
             'total_rows' => $totalRows,
         ];
     }
+
+    /**
+     * Read a window of data rows [$offset, $offset + $limit) as assoc arrays
+     * keyed by header. Memory-safe: only the header + the requested window is
+     * ever held in memory, so a 200k-row file is processed one chunk at a time.
+     *
+     * `consumed` is the number of raw data-row positions advanced (so the next
+     * call passes offset + consumed); it can exceed count(rows) because blank
+     * lines are skipped from the returned rows but still advance the cursor.
+     *
+     * @return array{headers: string[], rows: array[], consumed: int, eof: bool}
+     */
+    public function readRange(string $path, int $offset, int $limit): array
+    {
+        $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+
+        if (in_array($ext, ['csv', 'txt'], true)) {
+            return $this->readCsvRange($path, $offset, $limit);
+        }
+
+        return $this->readSpreadsheetRange($path, $offset, $limit);
+    }
+
+    /**
+     * Fast native CSV window read (fgetcsv streaming, no spreadsheet engine).
+     */
+    private function readCsvRange(string $path, int $offset, int $limit): array
+    {
+        $fh = fopen($path, 'r');
+        if ($fh === false) {
+            return ['headers' => [], 'rows' => [], 'consumed' => 0, 'eof' => true];
+        }
+
+        // Strip a UTF-8 BOM if present so the first header isn't corrupted.
+        $bom = fread($fh, 3);
+        if ($bom !== "\xEF\xBB\xBF") {
+            rewind($fh);
+        }
+
+        $headerRow = fgetcsv($fh);
+        if ($headerRow === false) {
+            fclose($fh);
+            return ['headers' => [], 'rows' => [], 'consumed' => 0, 'eof' => true];
+        }
+        $headers = array_map(fn ($h) => trim((string) $h), $headerRow);
+
+        // Skip rows already processed.
+        for ($i = 0; $i < $offset; $i++) {
+            if (fgetcsv($fh) === false) {
+                fclose($fh);
+                return ['headers' => $headers, 'rows' => [], 'consumed' => 0, 'eof' => true];
+            }
+        }
+
+        $rows = [];
+        $read = 0;
+        $eof  = false;
+        while ($read < $limit) {
+            $line = fgetcsv($fh);
+            if ($line === false) {
+                $eof = true;
+                break;
+            }
+            $read++;
+
+            $assoc = [];
+            foreach ($headers as $i => $header) {
+                $value = $line[$i] ?? null;
+                $assoc[$header] = $value !== null ? (string) $value : '';
+            }
+
+            // Skip completely blank lines (still counted in `consumed`).
+            if (! empty(array_filter($assoc, fn ($v) => $v !== '' && $v !== null))) {
+                $rows[] = $assoc;
+            }
+        }
+
+        fclose($fh);
+
+        return ['headers' => $headers, 'rows' => $rows, 'consumed' => $read, 'eof' => $eof];
+    }
+
+    /**
+     * Windowed read for Excel files using a row-range read filter so only the
+     * header + the requested rows are materialised.
+     */
+    private function readSpreadsheetRange(string $path, int $offset, int $limit): array
+    {
+        $startRow = $offset + 2;              // +1 header, +1 to 1-index
+        $endRow   = $offset + 1 + $limit;
+
+        $reader = IOFactory::createReaderForFile($path);
+        $reader->setReadDataOnly(true);
+        $reader->setReadFilter(new class(1, $startRow, $endRow) implements IReadFilter {
+            public function __construct(
+                private int $headerRow,
+                private int $start,
+                private int $end,
+            ) {
+            }
+
+            public function readCell($columnAddress, $row, $worksheetName = ''): bool
+            {
+                $row = (int) $row;
+
+                return $row === $this->headerRow || ($row >= $this->start && $row <= $this->end);
+            }
+        });
+
+        $spreadsheet = $reader->load($path);
+        $sheet       = $spreadsheet->getActiveSheet();
+        // Row-number-keyed so we can address the header and window rows directly.
+        $data        = $sheet->toArray(null, true, true, true);
+        $spreadsheet->disconnectWorksheets();
+        unset($spreadsheet);
+
+        $headerRow = $data[1] ?? [];
+        $headers   = array_map(fn ($v) => trim((string) $v), array_values($headerRow));
+
+        $rows       = [];
+        $maxPresent = 0;
+        for ($r = $startRow; $r <= $endRow; $r++) {
+            if (! isset($data[$r])) {
+                continue;
+            }
+            $maxPresent = $r;
+            $values = array_values($data[$r]);
+            $assoc  = [];
+            foreach ($headers as $i => $header) {
+                $value = $values[$i] ?? null;
+                $assoc[$header] = $value !== null ? (string) $value : '';
+            }
+            if (! empty(array_filter($assoc, fn ($v) => $v !== '' && $v !== null))) {
+                $rows[] = $assoc;
+            }
+        }
+
+        // How many raw row positions we actually advanced through this window.
+        $consumed = $maxPresent >= $startRow ? ($maxPresent - $startRow + 1) : 0;
+
+        // EOF when the window didn't fill — no more rows beyond it.
+        $eof = $consumed < $limit;
+
+        return ['headers' => $headers, 'rows' => $rows, 'consumed' => $consumed, 'eof' => $eof];
+    }
 }

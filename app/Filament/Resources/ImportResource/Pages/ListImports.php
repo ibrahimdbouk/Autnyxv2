@@ -2,7 +2,9 @@
 
 namespace App\Filament\Resources\ImportResource\Pages;
 
+use App\Models\Anomaly;
 use App\Models\Import;
+use App\Services\Anomaly\AnomalyDetectionService;
 use App\Services\Import\ColumnMappingService;
 use App\Services\Import\FileReaderService;
 use Filament\Actions\Action;
@@ -21,6 +23,38 @@ class ListImports extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('runDetection')
+                ->label('Run Detection Now')
+                ->icon('heroicon-o-sparkles')
+                ->color('gray')
+                ->requiresConfirmation()
+                ->modalHeading('Run anomaly detection?')
+                ->modalDescription('This scans all of your imported data now and refreshes anomalies. Detection also runs automatically after every import.')
+                ->modalSubmitActionLabel('Run detection')
+                ->action(function () {
+                    $tenantId = Filament::getTenant()->id;
+
+                    try {
+                        app(AnomalyDetectionService::class)->runForTenant($tenantId);
+
+                        $open = Anomaly::where('tenant_id', $tenantId)
+                            ->where('status', Anomaly::STATUS_DETECTED)
+                            ->count();
+
+                        Notification::make()
+                            ->title('Detection complete')
+                            ->body("Scanned all data — {$open} open anomaly(ies) currently flagged.")
+                            ->success()
+                            ->send();
+                    } catch (\Throwable $e) {
+                        Notification::make()
+                            ->title('Detection failed')
+                            ->body($e->getMessage())
+                            ->danger()
+                            ->send();
+                    }
+                }),
+
             Action::make('upload')
                 ->label('Upload File')
                 ->icon('heroicon-o-arrow-up-tray')
@@ -31,10 +65,12 @@ class ListImports extends ListRecords
                     Select::make('data_type')
                         ->label('Data Type')
                         ->options(Import::dataTypeLabels())
+                        ->required()
                         ->helperText('What kind of data does this file contain?'),
 
                     FileUpload::make('file')
                         ->label('File (CSV or Excel)')
+                        ->required()
                         ->acceptedFileTypes([
                             'text/csv',
                             'application/vnd.ms-excel',
@@ -47,25 +83,16 @@ class ListImports extends ListRecords
                         ->helperText('Maximum 20 MB. CSV or .xlsx files supported.'),
                 ])
                 ->action(function (array $data, $livewire) {
-                    // DIAGNOSTIC: record + show exactly what the form sent.
-                    try {
-                        Storage::disk('local')->append(
-                            'import_diag2.log',
-                            now()->toDateTimeString() . ' ' . json_encode($data) . "\n"
-                        );
-                    } catch (\Throwable $e) {
-                    }
-
                     $dt = $data['data_type'] ?? null;
                     $f  = $data['file'] ?? null;
 
                     if (empty($dt) || empty($f)) {
                         Notification::make()
-                            ->title('Diagnostic — form values received')
-                            ->body('data_type = [' . ($dt ?: 'EMPTY') . '] · file = [' . ($f ?: 'EMPTY') . ']')
+                            ->title('Missing information')
+                            ->body('Please choose a data type and select a file.')
                             ->warning()
-                            ->persistent()
                             ->send();
+
                         return;
                     }
 

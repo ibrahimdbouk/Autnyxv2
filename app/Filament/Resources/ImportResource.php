@@ -144,6 +144,7 @@ class ImportResource extends Resource
             // hand-rolled Livewire form that never bound its fields correctly.
             'index'          => Pages\ListImports::route('/'),
             'review-mapping' => Pages\ReviewMapping::route('/{record}/review'),
+            'process'        => Pages\ProcessImport::route('/{record}/process'),
             'view'           => Pages\ViewImport::route('/{record}'),
         ];
     }

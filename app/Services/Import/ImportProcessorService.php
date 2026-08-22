@@ -29,6 +29,68 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
  */
 class ImportProcessorService
 {
+    /** Rows processed per poll tick. Small enough to stay well under any request timeout. */
+    public const CHUNK_SIZE = 1000;
+
+    /** @var array<string,int>|null  name => store_id, primed per tenant */
+    private ?array $storeCache = null;
+
+    /** @var array<string,int>|null  name => supplier_id, primed per tenant */
+    private ?array $supplierCache = null;
+
+    /** @var array<string,int>|null  sku => product_id, primed per tenant */
+    private ?array $productCache = null;
+
+    /** Tenant the caches above were primed for. */
+    private ?int $cachedTenantId = null;
+
+    /**
+     * Load every store / supplier / product for the tenant into in-memory maps
+     * once, so per-row resolution is an O(1) array hit instead of a DB round
+     * trip. This is what turns a 25k-row import from ~75k queries into ~3.
+     */
+    private function primeCaches(int $tenantId): void
+    {
+        if ($this->cachedTenantId === $tenantId && $this->storeCache !== null) {
+            return;
+        }
+
+        $this->storeCache = Store::where('tenant_id', $tenantId)
+            ->pluck('id', 'name')
+            ->mapWithKeys(fn ($id, $name) => [trim((string) $name) => (int) $id])
+            ->all();
+
+        $this->supplierCache = Supplier::where('tenant_id', $tenantId)
+            ->pluck('id', 'name')
+            ->mapWithKeys(fn ($id, $name) => [trim((string) $name) => (int) $id])
+            ->all();
+
+        $this->productCache = Product::where('tenant_id', $tenantId)
+            ->pluck('id', 'sku')
+            ->mapWithKeys(fn ($id, $sku) => [trim((string) $sku) => (int) $id])
+            ->all();
+
+        $this->cachedTenantId = $tenantId;
+    }
+
+    /**
+     * Resolve a product id from SKU using the primed cache (null if unknown).
+     */
+    private function resolveProductId(int $tenantId, ?string $sku): ?int
+    {
+        $sku = trim((string) $sku);
+        if ($sku === '') {
+            return null;
+        }
+
+        if ($this->productCache !== null && $this->cachedTenantId === $tenantId) {
+            return $this->productCache[$sku] ?? null;
+        }
+
+        // Fallback (e.g. single-row retry path where caches aren't primed).
+        return Product::where('tenant_id', $tenantId)->where('sku', $sku)->value('id');
+    }
+
     /**
      * Retry a specific set of failed ImportRow records.
      * Uses the already-mapped data stored on the row so the file doesn't need to be re-read.
@@ -177,6 +239,148 @@ class ImportProcessorService
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Chunked, poll-driven processing (memory-safe for large files)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Prepare an import for chunked, poll-driven processing. Resets counters,
+     * clears any prior failed-row ledger, and flips status to importing. The
+     * rows themselves are handled incrementally by processChunk().
+     */
+    public function startChunkedImport(Import $import): void
+    {
+        ImportRow::where('import_id', $import->id)->delete();
+
+        $import->update([
+            'status'         => Import::STATUS_IMPORTING,
+            'imported_rows'  => 0,
+            'failed_rows'    => 0,
+            'process_cursor' => 0,
+            'error_message'  => null,
+        ]);
+    }
+
+    /**
+     * Process the next chunk of an in-progress import. Called repeatedly (e.g.
+     * from a wire:poll) until it reports done. Each call reads only its window
+     * of rows into memory and resolves stores/suppliers/products from primed
+     * caches, so a 200k-row file never blows the memory limit or the request
+     * timeout the way the old single-pass process() did.
+     *
+     * @return array{done: bool, processed: int, total: int, failed?: bool}
+     */
+    public function processChunk(Import $import, int $chunkSize = self::CHUNK_SIZE): array
+    {
+        $import->refresh();
+
+        if ($import->status !== Import::STATUS_IMPORTING) {
+            return ['done' => true, 'processed' => (int) $import->process_cursor, 'total' => (int) $import->total_rows];
+        }
+
+        $this->primeCaches($import->tenant_id);
+
+        $columnMap = $import->columnMaps()
+            ->where('is_skipped', false)
+            ->whereNotNull('target_field')
+            ->get()
+            ->keyBy('source_header');
+
+        $offset   = (int) $import->process_cursor;
+        $filePath = Storage::disk($import->disk)->path($import->path);
+
+        try {
+            /** @var FileReaderService $reader */
+            $reader = app(FileReaderService::class);
+            $chunk  = $reader->readRange($filePath, $offset, $chunkSize);
+        } catch (\Throwable $e) {
+            Log::error('Import chunk read failed', ['import_id' => $import->id, 'error' => $e->getMessage()]);
+            $import->update(['status' => Import::STATUS_FAILED, 'error_message' => $e->getMessage()]);
+
+            return ['done' => true, 'processed' => $offset, 'total' => (int) $import->total_rows, 'failed' => true];
+        }
+
+        $imported  = 0;
+        $failed    = 0;
+        $rowNumber = $offset + 2; // 1-index + header row
+
+        foreach ($chunk['rows'] as $rawRow) {
+            try {
+                $this->writeRow($import, $columnMap, $rawRow, $rowNumber);
+                $imported++;
+            } catch (\Throwable $e) {
+                $failed++;
+                ImportRow::create([
+                    'import_id'     => $import->id,
+                    'tenant_id'     => $import->tenant_id,
+                    'row_number'    => $rowNumber,
+                    'raw_data'      => $rawRow,
+                    'mapped_data'   => $this->applyMap($columnMap, $rawRow),
+                    'error_message' => $e->getMessage(),
+                    'status'        => ImportRow::STATUS_PENDING,
+                ]);
+            }
+            $rowNumber++;
+        }
+
+        $newCursor = $offset + (int) $chunk['consumed'];
+
+        $import->update([
+            'process_cursor' => $newCursor,
+            'imported_rows'  => $import->imported_rows + $imported,
+            'failed_rows'    => $import->failed_rows + $failed,
+        ]);
+
+        $done = $chunk['eof']
+            || (int) $chunk['consumed'] === 0
+            || ($import->total_rows > 0 && $newCursor >= $import->total_rows);
+
+        if ($done) {
+            $this->finalizeChunkedImport($import);
+
+            return ['done' => true, 'processed' => (int) $import->process_cursor, 'total' => (int) $import->total_rows];
+        }
+
+        return ['done' => false, 'processed' => $newCursor, 'total' => (int) $import->total_rows];
+    }
+
+    /**
+     * Wrap up a chunked import: set the final status, record the ingestion run,
+     * and run anomaly detection across the tenant.
+     */
+    private function finalizeChunkedImport(Import $import): void
+    {
+        $import->refresh();
+
+        $status = $import->failed_rows > 0
+            ? Import::STATUS_COMPLETED_WITH_ERRORS
+            : Import::STATUS_COMPLETED;
+
+        $total = max(
+            (int) $import->total_rows,
+            (int) $import->imported_rows + (int) $import->failed_rows
+        );
+
+        $import->update([
+            'status'     => $status,
+            'total_rows' => $total,
+        ]);
+
+        $this->recordIngestionRun(
+            $import,
+            $total,
+            (int) $import->imported_rows,
+            (int) $import->failed_rows,
+            $import->created_at
+        );
+
+        try {
+            app(AnomalyDetectionService::class)->runForTenant($import->tenant_id);
+        } catch (\Throwable $e) {
+            Log::error('Anomaly detection failed after import', ['import_id' => $import->id, 'error' => $e->getMessage()]);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
 
     /**
      * Write already-mapped data (used by retryRows to avoid re-reading the file).
@@ -239,9 +443,8 @@ class ImportProcessorService
         }
 
         // Try to resolve product_id from SKU
-        $product = Product::where('tenant_id', $import->tenant_id)->where('sku', $attrs['sku'])->first();
-        if ($product) {
-            $attrs['product_id'] = $product->id;
+        if ($productId = $this->resolveProductId($import->tenant_id, $attrs['sku'])) {
+            $attrs['product_id'] = $productId;
         }
 
         $uniqueKey = array_filter(['tenant_id' => $attrs['tenant_id'], 'transaction_id' => $attrs['transaction_id']]);
@@ -277,9 +480,8 @@ class ImportProcessorService
             $attrs['store_id'] = $this->resolveStore($import->tenant_id, $location);
         }
 
-        $product = Product::where('tenant_id', $import->tenant_id)->where('sku', $attrs['sku'])->first();
-        if ($product) {
-            $attrs['product_id'] = $product->id;
+        if ($productId = $this->resolveProductId($import->tenant_id, $attrs['sku'])) {
+            $attrs['product_id'] = $productId;
         }
 
         InventoryLevel::create($attrs);
@@ -336,9 +538,8 @@ class ImportProcessorService
             $attrs['store_id'] = $this->resolveStore($import->tenant_id, $data['location']);
         }
 
-        $product = Product::where('tenant_id', $import->tenant_id)->where('sku', $attrs['sku'])->first();
-        if ($product) {
-            $attrs['product_id'] = $product->id;
+        if ($productId = $this->resolveProductId($import->tenant_id, $attrs['sku'])) {
+            $attrs['product_id'] = $productId;
         }
 
         // Link (or create) the supplier master so supplier-level rules and
@@ -415,9 +616,8 @@ class ImportProcessorService
         }
 
         // Resolve product from SKU
-        $product = Product::where('tenant_id', $import->tenant_id)->where('sku', $attrs['sku'])->first();
-        if ($product) {
-            $attrs['product_id'] = $product->id;
+        if ($productId = $this->resolveProductId($import->tenant_id, $attrs['sku'])) {
+            $attrs['product_id'] = $productId;
         }
 
         SalesReturn::create($attrs);
@@ -568,10 +768,20 @@ class ImportProcessorService
      */
     private function resolveStore(int $tenantId, string $locationName): int
     {
+        $name = trim($locationName);
+
+        if ($this->storeCache !== null && $this->cachedTenantId === $tenantId && isset($this->storeCache[$name])) {
+            return $this->storeCache[$name];
+        }
+
         $store = Store::firstOrCreate(
-            ['tenant_id' => $tenantId, 'name' => trim($locationName)],
-            ['tenant_id' => $tenantId, 'name' => trim($locationName)]
+            ['tenant_id' => $tenantId, 'name' => $name],
+            ['tenant_id' => $tenantId, 'name' => $name]
         );
+
+        if ($this->storeCache !== null && $this->cachedTenantId === $tenantId) {
+            $this->storeCache[$name] = (int) $store->id;
+        }
 
         return $store->id;
     }
@@ -587,10 +797,18 @@ class ImportProcessorService
             return null;
         }
 
+        if ($this->supplierCache !== null && $this->cachedTenantId === $tenantId && isset($this->supplierCache[$name])) {
+            return $this->supplierCache[$name];
+        }
+
         $supplier = Supplier::firstOrCreate(
             ['tenant_id' => $tenantId, 'name' => $name],
             ['tenant_id' => $tenantId, 'name' => $name]
         );
+
+        if ($this->supplierCache !== null && $this->cachedTenantId === $tenantId) {
+            $this->supplierCache[$name] = (int) $supplier->id;
+        }
 
         return $supplier->id;
     }
