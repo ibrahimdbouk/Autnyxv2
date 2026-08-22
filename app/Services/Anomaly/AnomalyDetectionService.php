@@ -188,10 +188,14 @@ class AnomalyDetectionService
                 if ($z <= $baseline->sensitivity_multiplier) continue;
 
                 $excessUnits = max(0, $dailyRecent - $baseline->baseline_mean) * $days;
-                $impact      = $this->estimateImpact($sku, $excessUnits);
-                if ($impact < $minRevenue) continue; // below the money floor → noise
+                $price       = $this->unitPrice($sku);
+                $impact      = $excessUnits * $price;
+                // Money floor only applies when we actually know the price — a SKU
+                // with no price data is never silently suppressed.
+                if ($price > 0 && $impact < $minRevenue) continue;
+                $severity    = $price > 0 ? $this->severityFromImpact($impact) : Anomaly::SEVERITY_LOW;
 
-                $this->flag($tenantId, 'sales_spike', $this->severityFromImpact($impact), $sku, null, null,
+                $this->flag($tenantId, 'sales_spike', $severity, $sku, null, null,
                     "SKU {$sku} daily sales rate (" . round($dailyRecent, 1) . " units/day) is "
                     . round($z, 1) . " standard deviations above the 90-day baseline mean of "
                     . round($baseline->baseline_mean, 1) . " units/day.",
@@ -204,10 +208,12 @@ class AnomalyDetectionService
                 $changePct = (($recentQty - $avgQty) / $avgQty) * 100;
                 if ($changePct < $pct) continue;
 
-                $impact = $this->estimateImpact($sku, $recentQty - $avgQty);
-                if ($impact < $minRevenue) continue;
+                $price  = $this->unitPrice($sku);
+                $impact = ($recentQty - $avgQty) * $price;
+                if ($price > 0 && $impact < $minRevenue) continue;
+                $severity = $price > 0 ? $this->severityFromImpact($impact) : Anomaly::SEVERITY_LOW;
 
-                $this->flag($tenantId, 'sales_spike', $this->severityFromImpact($impact), $sku, null, null,
+                $this->flag($tenantId, 'sales_spike', $severity, $sku, null, null,
                     "SKU {$sku} sales spiked " . round($changePct) . "% above its {$days}-day average "
                     . "(recent: " . round($recentQty) . " units, avg: " . round($avgQty) . " units).",
                     ['recent_qty' => $recentQty, 'avg_qty' => round($avgQty, 2), 'change_pct' => round($changePct, 1),
@@ -241,10 +247,12 @@ class AnomalyDetectionService
                 if ($z <= $baseline->sensitivity_multiplier) continue;
 
                 $lostUnits = max(0, $baseline->baseline_mean - $dailyRecent) * $days;
-                $impact    = $this->estimateImpact($sku, $lostUnits);
-                if ($impact < $minRevenue) continue;
+                $price     = $this->unitPrice($sku);
+                $impact    = $lostUnits * $price;
+                if ($price > 0 && $impact < $minRevenue) continue;
+                $severity  = $price > 0 ? $this->severityFromImpact($impact) : Anomaly::SEVERITY_MEDIUM;
 
-                $this->flag($tenantId, 'sales_drop', $this->severityFromImpact($impact), $sku, null, null,
+                $this->flag($tenantId, 'sales_drop', $severity, $sku, null, null,
                     "SKU {$sku} daily sales rate (" . round($dailyRecent, 1) . " units/day) is "
                     . round($z, 1) . " standard deviations below the 90-day baseline mean of "
                     . round($baseline->baseline_mean, 1) . " units/day.",
@@ -257,10 +265,12 @@ class AnomalyDetectionService
                 $changePct = (($avgQty - $recentQty) / $avgQty) * 100;
                 if ($changePct < $pct) continue;
 
-                $impact = $this->estimateImpact($sku, $avgQty - $recentQty);
-                if ($impact < $minRevenue) continue;
+                $price  = $this->unitPrice($sku);
+                $impact = ($avgQty - $recentQty) * $price;
+                if ($price > 0 && $impact < $minRevenue) continue;
+                $severity = $price > 0 ? $this->severityFromImpact($impact) : Anomaly::SEVERITY_MEDIUM;
 
-                $this->flag($tenantId, 'sales_drop', $this->severityFromImpact($impact), $sku, null, null,
+                $this->flag($tenantId, 'sales_drop', $severity, $sku, null, null,
                     "SKU {$sku} sales dropped " . round($changePct) . "% below its {$days}-day average "
                     . "(recent: " . round($recentQty) . " units, avg: " . round($avgQty) . " units).",
                     ['recent_qty' => $recentQty, 'avg_qty' => round($avgQty, 2), 'change_pct' => round($changePct, 1),
