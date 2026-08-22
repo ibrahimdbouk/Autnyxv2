@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Compile gate + SmokeTest (PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: autnyx_test
+          POSTGRES_USER: autnyx
+          POSTGRES_PASSWORD: secret
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U autnyx"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      APP_ENV: testing
+      APP_KEY: base64:2fl+Ktvkfl+Fuz4Qp/A75G2RTiWVA/ZoKZvp6fiiM10=
+      APP_DEBUG: "true"
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_DATABASE: autnyx_test
+      DB_USERNAME: autnyx
+      DB_PASSWORD: secret
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+      MAIL_MAILER: array
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: pdo, pdo_pgsql, pgsql, mbstring, bcmath, intl, gd, zip, dom
+          coverage: none
+      - name: Prepare environment file
+        run: '[ -f .env ] || cp .env.example .env 2>/dev/null || touch .env'
+      - name: Install dependencies (runs the compile gate via composer scripts)
+        run: composer update --no-interaction --prefer-dist --no-progress
+      - name: Blade / Filament footgun linter
+        run: php scripts/check-blade.php
+      - name: Run tests (route SmokeTest boots every page against PostgreSQL)
+        run: php artisan test
+
+  promote:
+    name: Promote green build to production
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fast-forward production → tested commit
+        run: git push origin "HEAD:refs/heads/production"
