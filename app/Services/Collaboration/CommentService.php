@@ -35,17 +35,31 @@ class CommentService
         string $body,
         array $mentionedUserIds = [],
         array $mentionedTeamIds = [],
-        ?int $parentId = null
+        ?int $parentId = null,
+        string $source = InvestigationComment::SOURCE_WEB,
+        ?string $externalRef = null
     ): InvestigationComment {
         $body = trim($body);
 
-        return DB::transaction(function () use ($investigation, $userId, $body, $mentionedUserIds, $mentionedTeamIds, $parentId) {
+        // De-duplicate inbound emails (same provider message-id).
+        if ($externalRef) {
+            $existing = InvestigationComment::where('investigation_id', $investigation->id)
+                ->where('external_ref', $externalRef)
+                ->first();
+            if ($existing) {
+                return $existing;
+            }
+        }
+
+        return DB::transaction(function () use ($investigation, $userId, $body, $mentionedUserIds, $mentionedTeamIds, $parentId, $source, $externalRef) {
             $comment = InvestigationComment::create([
                 'tenant_id'        => $investigation->tenant_id,
                 'investigation_id' => $investigation->id,
                 'user_id'          => $userId,
                 'parent_id'        => $parentId,
                 'body'             => $body,
+                'source'           => $source,
+                'external_ref'     => $externalRef,
             ]);
 
             // Merge explicit mentions with light text parsing
@@ -80,13 +94,8 @@ class CommentService
                 ]);
             }
 
-            // Timeline (audit) — keeps everything in the existing Investigation Timeline
-            AuditLogger::log(
-                $investigation,
-                AuditLog::EVENT_COMMENT_ADDED,
-                'Comment added' . (count($allMentionedUserIds) ? ' (mentioned ' . count($allMentionedUserIds) . ')' : ''),
-                $userId
-            );
+            // Timeline (audit) — captures the comment text + how it arrived (web/email)
+            AuditLogger::commentAdded($investigation, $userId, $body, $source, $comment->id);
 
             $url = $this->investigationUrl($investigation);
             $authorName = User::find($userId)?->name ?? 'Someone';

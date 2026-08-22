@@ -14,12 +14,17 @@ class InvestigationComment extends Model
 {
     use SoftDeletes;
 
+    const SOURCE_WEB   = 'web';
+    const SOURCE_EMAIL = 'email';
+
     protected $fillable = [
         'tenant_id',
         'investigation_id',
         'user_id',
         'parent_id',
         'body',
+        'source',
+        'external_ref',
         'edited_at',
         'deleted_by',
     ];
@@ -66,5 +71,10 @@ class InvestigationComment extends Model
     public function wasEdited(): bool
     {
         return $this->edited_at !== null;
+    }
+
+    public function isFromEmail(): bool
+    {
+        return $this->source === self::SOURCE_EMAIL;
     }
 }

@@ -1,12 +1,17 @@
 <?php
 
 use App\Http\Controllers\AnomalyReportController;
+use App\Http\Controllers\InboundEmailController;
 use App\Http\Controllers\ReportController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
     return view('welcome');
 });
+
+// Inbound email → investigation comment (secret-protected, CSRF-exempt).
+Route::post('/webhooks/inbound-email', [InboundEmailController::class, 'handle'])
+    ->name('webhooks.inbound-email');
 
 // Reports & PDF exports — protected by Filament's auth middleware
 Route::middleware(['auth'])->group(function () {

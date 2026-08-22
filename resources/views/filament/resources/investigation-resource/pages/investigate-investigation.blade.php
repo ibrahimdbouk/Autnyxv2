@@ -753,6 +753,7 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                     <div class="col-comment-meta">
                         <span class="col-comment-author">{{ $comment->getAuthorLabel() }}</span>
                         · {{ $comment->created_at->diffForHumans() }}
+                        @if($comment->isFromEmail()) · <span style="color:#92400e;">via email</span> @endif
                         @if($comment->wasEdited()) · edited @endif
                     </div>
                     <div class="col-comment-body">{{ $comment->body }}</div>

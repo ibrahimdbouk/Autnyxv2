@@ -170,6 +170,30 @@ class AuditLogger
     }
 
     /**
+     * Log a comment being added, capturing its text and source (web | email)
+     * so the audit log shows what was said and how it arrived.
+     */
+    public static function commentAdded(
+        Investigation $investigation,
+        ?int $userId,
+        string $body,
+        string $source = 'web',
+        ?int $commentId = null
+    ): void {
+        $snippet = \Illuminate\Support\Str::limit(trim($body), 140);
+        $via     = $source === 'email' ? ' (via email)' : '';
+
+        self::write([
+            'tenant_id'        => $investigation->tenant_id,
+            'investigation_id' => $investigation->id,
+            'user_id'          => $userId,
+            'event_type'       => AuditLog::EVENT_COMMENT_ADDED,
+            'description'      => 'Comment added' . $via . ': ' . $snippet,
+            'new_value'        => ['source' => $source, 'comment_id' => $commentId, 'body' => $snippet],
+        ]);
+    }
+
+    /**
      * Generic log entry — use when no specific method fits.
      */
     public static function log(
