@@ -17,6 +17,7 @@ class SalesReturn extends Model
         'import_id',
         'store_id',
         'product_id',
+        'return_id',
         'date',
         'sku',
         'location',

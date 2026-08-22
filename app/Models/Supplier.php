@@ -15,6 +15,8 @@ class Supplier extends Model
         'lead_time_days',
         'contact_email',
         'contact_phone',
+        'type',
+        'specialization',
     ];
 
     public function tenant(): BelongsTo

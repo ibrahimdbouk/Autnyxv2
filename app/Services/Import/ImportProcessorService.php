@@ -229,6 +229,8 @@ class ImportProcessorService
             'unit_price'     => isset($data['unit_price'])  ? $this->numericOrNull($data['unit_price'])  : null,
             'total_amount'   => isset($data['total_amount']) ? $this->numericOrNull($data['total_amount']) : null,
             'transaction_id' => $data['transaction_id'] ?? null,
+            'discount'       => isset($data['discount']) ? $this->numericOrNull($data['discount']) : null,
+            'payment_method' => $data['payment_method'] ?? null,
         ];
 
         // Resolve store from location string
@@ -264,8 +266,10 @@ class ImportProcessorService
             'sku'           => $this->str($data['sku'], 'sku', $row),
             'location'      => $location,
             'on_hand_qty'   => $this->numeric($data['on_hand_qty'], 'on_hand_qty', $row),
-            'reorder_point' => isset($data['reorder_point']) ? $this->numericOrNull($data['reorder_point']) : null,
-            'as_of_date'    => isset($data['as_of_date']) ? $this->parseDateOrNull($data['as_of_date']) : null,
+            'reorder_point'   => isset($data['reorder_point']) ? $this->numericOrNull($data['reorder_point']) : null,
+            'as_of_date'      => isset($data['as_of_date']) ? $this->parseDateOrNull($data['as_of_date']) : null,
+            'on_order_qty'    => isset($data['on_order_qty']) ? $this->numericOrNull($data['on_order_qty']) : null,
+            'inventory_value' => isset($data['inventory_value']) ? $this->numericOrNull($data['inventory_value']) : null,
         ];
 
         // Resolve store from location string
@@ -295,6 +299,8 @@ class ImportProcessorService
             'selling_price' => isset($data['selling_price']) ? $this->numericOrNull($data['selling_price']) : null,
             'supplier'      => $data['supplier'] ?? null,
             'barcode'       => $data['barcode'] ?? null,
+            'brand'         => $data['brand'] ?? null,
+            'pack_size'     => $data['pack_size'] ?? null,
         ];
 
         Product::updateOrCreate(
@@ -319,7 +325,16 @@ class ImportProcessorService
             'order_date'    => $this->parseDate($data['order_date'], $row),
             'expected_date' => isset($data['expected_date']) ? $this->parseDateOrNull($data['expected_date']) : null,
             'received_date' => isset($data['received_date']) ? $this->parseDateOrNull($data['received_date']) : null,
+            'location'      => $data['location'] ?? null,
+            'open_qty'      => isset($data['open_qty'])  ? $this->numericOrNull($data['open_qty'])  : null,
+            'late_days'     => isset($data['late_days']) ? (int) $this->numericOrNull($data['late_days']) : null,
+            'fill_rate'     => isset($data['fill_rate']) ? $this->numericOrNull($data['fill_rate']) : null,
         ];
+
+        // Resolve destination store from the location string.
+        if (! empty($data['location'])) {
+            $attrs['store_id'] = $this->resolveStore($import->tenant_id, $data['location']);
+        }
 
         $product = Product::where('tenant_id', $import->tenant_id)->where('sku', $attrs['sku'])->first();
         if ($product) {
@@ -345,6 +360,7 @@ class ImportProcessorService
             'city'      => $data['city'] ?? null,
             'region'    => $data['region'] ?? null,
             'country'   => $data['country'] ?? null,
+            'format'    => $data['format'] ?? null,
         ];
 
         // Enrich the existing (possibly auto-created) store rather than duplicating.
@@ -365,6 +381,8 @@ class ImportProcessorService
             'lead_time_days' => isset($data['lead_time_days']) ? (int) $this->numericOrNull($data['lead_time_days']) : null,
             'contact_email'  => $data['contact_email'] ?? null,
             'contact_phone'  => $data['contact_phone'] ?? null,
+            'type'           => $data['type'] ?? null,
+            'specialization' => $data['specialization'] ?? null,
         ];
 
         Supplier::updateOrCreate(
@@ -388,6 +406,7 @@ class ImportProcessorService
             'quantity'  => $this->numeric($data['quantity'], 'quantity', $row),
             'value'     => isset($data['value']) ? $this->numericOrNull($data['value']) : null,
             'reason'    => $data['reason'] ?? null,
+            'return_id' => $data['return_id'] ?? null,
         ];
 
         // Resolve store from the location/store string

@@ -18,6 +18,8 @@ class Product extends Model
         'selling_price',
         'supplier',
         'barcode',
+        'brand',
+        'pack_size',
     ];
 
     protected $casts = [

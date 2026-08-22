@@ -22,6 +22,8 @@ class SalesTransaction extends Model
         'quantity',
         'unit_price',
         'total_amount',
+        'discount',
+        'payment_method',
     ];
 
     protected $casts = [
@@ -29,6 +31,7 @@ class SalesTransaction extends Model
         'quantity'     => 'decimal:4',
         'unit_price'   => 'decimal:4',
         'total_amount' => 'decimal:4',
+        'discount'     => 'decimal:4',
     ];
 
     public function tenant(): BelongsTo

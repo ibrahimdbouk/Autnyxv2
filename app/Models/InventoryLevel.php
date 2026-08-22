@@ -20,12 +20,16 @@ class InventoryLevel extends Model
         'on_hand_qty',
         'reorder_point',
         'as_of_date',
+        'on_order_qty',
+        'inventory_value',
     ];
 
     protected $casts = [
-        'on_hand_qty'   => 'decimal:4',
-        'reorder_point' => 'decimal:4',
-        'as_of_date'    => 'date',
+        'on_hand_qty'     => 'decimal:4',
+        'reorder_point'   => 'decimal:4',
+        'as_of_date'      => 'date',
+        'on_order_qty'    => 'decimal:4',
+        'inventory_value' => 'decimal:4',
     ];
 
     public function tenant(): BelongsTo

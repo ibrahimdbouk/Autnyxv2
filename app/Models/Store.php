@@ -16,6 +16,7 @@ class Store extends Model
         'city',
         'region',
         'country',
+        'format',
     ];
 
     public function tenant(): BelongsTo

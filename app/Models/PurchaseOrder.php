@@ -21,6 +21,11 @@ class PurchaseOrder extends Model
         'order_date',
         'expected_date',
         'received_date',
+        'store_id',
+        'location',
+        'open_qty',
+        'late_days',
+        'fill_rate',
     ];
 
     protected $casts = [
@@ -30,6 +35,9 @@ class PurchaseOrder extends Model
         'order_date'    => 'date',
         'expected_date' => 'date',
         'received_date' => 'date',
+        'open_qty'      => 'decimal:4',
+        'late_days'     => 'integer',
+        'fill_rate'     => 'decimal:2',
     ];
 
     public function tenant(): BelongsTo
@@ -45,5 +53,10 @@ class PurchaseOrder extends Model
     public function supplier(): BelongsTo
     {
         return $this->belongsTo(Supplier::class);
+    }
+
+    public function store(): BelongsTo
+    {
+        return $this->belongsTo(Store::class);
     }
 }

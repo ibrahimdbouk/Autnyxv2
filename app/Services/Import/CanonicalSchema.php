@@ -41,8 +41,10 @@ class CanonicalSchema
             'location'       => ['label' => 'Location',       'description' => 'Store, outlet, channel, or region name',    'required' => false],
             'quantity'       => ['label' => 'Quantity',       'description' => 'Number of units sold',                      'required' => true],
             'unit_price'     => ['label' => 'Unit Price',     'description' => 'Price per unit sold',                       'required' => false],
-            'total_amount'   => ['label' => 'Total Amount',   'description' => 'Total revenue or sales amount for the row', 'required' => false],
+            'total_amount'   => ['label' => 'Total Amount',   'description' => 'Total net revenue or sales amount for the row', 'required' => false],
             'transaction_id' => ['label' => 'Transaction ID', 'description' => 'Unique identifier for the transaction',     'required' => false],
+            'discount'       => ['label' => 'Discount',       'description' => 'Discount amount applied on the row',       'required' => false],
+            'payment_method' => ['label' => 'Payment Method', 'description' => 'Payment type, e.g. cash, card, wallet',    'required' => false],
         ];
     }
 
@@ -52,9 +54,11 @@ class CanonicalSchema
             'sku'           => ['label' => 'SKU',           'description' => 'Product SKU, item code, or product ID',              'required' => true],
             'product_name'  => ['label' => 'Product Name',  'description' => 'Name or description of the product',                 'required' => false],
             'location'      => ['label' => 'Location',      'description' => 'Store, warehouse, or bin location',                  'required' => false],
-            'on_hand_qty'   => ['label' => 'On Hand Qty',   'description' => 'Current stock quantity on hand',                     'required' => true],
-            'reorder_point' => ['label' => 'Reorder Point', 'description' => 'Minimum stock level before reordering is triggered', 'required' => false],
-            'as_of_date'    => ['label' => 'As Of Date',    'description' => 'Date this inventory snapshot was taken',             'required' => false],
+            'on_hand_qty'     => ['label' => 'On Hand Qty',     'description' => 'Current stock quantity on hand',                     'required' => true],
+            'reorder_point'   => ['label' => 'Reorder Point',   'description' => 'Minimum stock level before reordering is triggered', 'required' => false],
+            'as_of_date'      => ['label' => 'As Of Date',      'description' => 'Date this inventory snapshot was taken',             'required' => false],
+            'on_order_qty'    => ['label' => 'On Order Qty',    'description' => 'Quantity currently on order (inbound, not yet received)', 'required' => false],
+            'inventory_value' => ['label' => 'Inventory Value', 'description' => 'Monetary value of on-hand stock for this row',       'required' => false],
         ];
     }
 
@@ -69,6 +73,8 @@ class CanonicalSchema
             'selling_price' => ['label' => 'Selling Price', 'description' => 'Retail or wholesale selling price per unit',         'required' => false],
             'supplier'      => ['label' => 'Supplier',      'description' => 'Supplier or vendor name',                            'required' => false],
             'barcode'       => ['label' => 'Barcode',       'description' => 'Barcode, UPC, EAN, or GTIN',                         'required' => false],
+            'brand'         => ['label' => 'Brand',         'description' => 'Product brand or manufacturer',                      'required' => false],
+            'pack_size'     => ['label' => 'Pack Size',     'description' => 'Pack or unit size, e.g. 1L, 500g, 6-pack',           'required' => false],
         ];
     }
 
@@ -76,7 +82,8 @@ class CanonicalSchema
     {
         return [
             'name'    => ['label' => 'Store Name', 'description' => 'Store, outlet or location name (matches the Location used in sales/inventory)', 'required' => true],
-            'code'    => ['label' => 'Store Code', 'description' => 'Store number or code',                    'required' => false],
+            'code'    => ['label' => 'Store Code', 'description' => 'Store number or code (e.g. ST023)',        'required' => false],
+            'format'  => ['label' => 'Format',     'description' => 'Store format, e.g. Hypermarket, Supermarket, Express', 'required' => false],
             'address' => ['label' => 'Address',    'description' => 'Street address',                          'required' => false],
             'city'    => ['label' => 'City',       'description' => 'City',                                    'required' => false],
             'region'  => ['label' => 'Region',     'description' => 'Region, state or area',                   'required' => false],
@@ -92,6 +99,8 @@ class CanonicalSchema
             'lead_time_days' => ['label' => 'Lead Time (days)','description' => 'Contracted lead time in days',               'required' => false],
             'contact_email'  => ['label' => 'Contact Email',   'description' => 'Supplier contact email address',             'required' => false],
             'contact_phone'  => ['label' => 'Contact Phone',   'description' => 'Supplier contact phone number',              'required' => false],
+            'type'           => ['label' => 'Type',            'description' => 'Supplier type, e.g. distributor, manufacturer, importer', 'required' => false],
+            'specialization' => ['label' => 'Specialization',  'description' => 'Supplier category focus, e.g. Dairy, Beverages, Frozen', 'required' => false],
         ];
     }
 
@@ -107,6 +116,7 @@ class CanonicalSchema
     private static function returns(): array
     {
         return [
+            'return_id' => ['label' => 'Return ID', 'description' => 'Unique identifier for the return',                    'required' => false],
             'date'     => ['label' => 'Date',     'description' => 'Date the item was returned (any common date format)', 'required' => true],
             'sku'      => ['label' => 'SKU',      'description' => 'Product SKU, item code, or product ID',              'required' => true],
             'quantity' => ['label' => 'Quantity', 'description' => 'Number of units returned',                           'required' => true],
@@ -129,6 +139,10 @@ class CanonicalSchema
             'order_date'    => ['label' => 'Order Date',    'description' => 'Date the purchase order was placed',               'required' => true],
             'expected_date' => ['label' => 'Expected Date', 'description' => 'Expected or promised delivery date',               'required' => false],
             'received_date' => ['label' => 'Received Date', 'description' => 'Actual date goods were received',                  'required' => false],
+            'location'      => ['label' => 'Store',         'description' => 'Destination store/location for the order (matches the Store name/code)', 'required' => false],
+            'open_qty'      => ['label' => 'Open Qty',      'description' => 'Outstanding quantity not yet received',            'required' => false],
+            'late_days'     => ['label' => 'Late Days',     'description' => 'Days late vs the expected date',                   'required' => false],
+            'fill_rate'     => ['label' => 'Fill Rate',     'description' => 'Fill rate for the order (received ÷ ordered), as a percentage', 'required' => false],
         ];
     }
 }
