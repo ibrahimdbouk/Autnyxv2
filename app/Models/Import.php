@@ -44,6 +44,7 @@ class Import extends Model
     const TYPE_STORES       = 'stores';
     const TYPE_SUPPLIERS    = 'suppliers';
     const TYPE_USERS        = 'users';
+    const TYPE_RETURNS      = 'returns';
 
     public static function dataTypeLabels(): array
     {
@@ -55,6 +56,7 @@ class Import extends Model
             self::TYPE_STORES          => 'Stores / Locations',
             self::TYPE_SUPPLIERS       => 'Suppliers',
             self::TYPE_USERS           => 'Users (account setup)',
+            self::TYPE_RETURNS         => 'Returns / Refunds',
         ];
     }
 

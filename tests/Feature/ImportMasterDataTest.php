@@ -98,6 +98,23 @@ class ImportMasterDataTest extends TestCase
         $this->assertFalse((bool) $user->is_super_admin);
     }
 
+    public function test_returns_import_creates_return_with_reason(): void
+    {
+        $import = $this->makeImport(Import::TYPE_RETURNS);
+        $this->runRow($import, [
+            'date' => '2026-08-01', 'sku' => 'SKU-RET', 'location' => 'Downtown',
+            'quantity' => '3', 'value' => '59.97', 'reason' => 'Defective',
+        ]);
+
+        $return = \App\Models\SalesReturn::where('tenant_id', $this->tenant->id)
+            ->where('sku', 'SKU-RET')->first();
+
+        $this->assertNotNull($return);
+        $this->assertSame(3, (int) $return->quantity);
+        $this->assertSame('Defective', $return->reason);
+        $this->assertEqualsWithDelta(59.97, (float) $return->value, 0.001);
+    }
+
     public function test_purchase_order_import_links_supplier(): void
     {
         $import = $this->makeImport(Import::TYPE_PURCHASE_ORDERS);

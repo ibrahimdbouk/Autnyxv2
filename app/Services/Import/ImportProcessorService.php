@@ -9,6 +9,7 @@ use App\Models\ImportRow;
 use App\Models\InventoryLevel;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
+use App\Models\SalesReturn;
 use App\Models\SalesTransaction;
 use App\Models\Store;
 use App\Models\Supplier;
@@ -160,6 +161,7 @@ class ImportProcessorService
             Import::TYPE_STORES          => $this->writeStore($import, $data, $rowNumber),
             Import::TYPE_SUPPLIERS       => $this->writeSupplier($import, $data, $rowNumber),
             Import::TYPE_USERS           => $this->writeUser($import, $data, $rowNumber),
+            Import::TYPE_RETURNS         => $this->writeReturn($import, $data, $rowNumber),
             default                      => throw new \InvalidArgumentException("Unknown data type: {$import->data_type}"),
         };
     }
@@ -176,6 +178,7 @@ class ImportProcessorService
             Import::TYPE_STORES          => $this->writeStore($import, $data, $rowNumber),
             Import::TYPE_SUPPLIERS       => $this->writeSupplier($import, $data, $rowNumber),
             Import::TYPE_USERS           => $this->writeUser($import, $data, $rowNumber),
+            Import::TYPE_RETURNS         => $this->writeReturn($import, $data, $rowNumber),
             default                      => throw new \InvalidArgumentException("Unknown data type: {$import->data_type}"),
         };
     }
@@ -337,6 +340,36 @@ class ImportProcessorService
         );
     }
 
+    private function writeReturn(Import $import, array $data, int $row): void
+    {
+        $this->requireFields($data, ['date', 'sku', 'quantity'], $row);
+
+        $location = $data['location'] ?? null;
+
+        $attrs = [
+            'tenant_id' => $import->tenant_id,
+            'date'      => $this->parseDate($data['date'], $row),
+            'sku'       => $this->str($data['sku'], 'sku', $row),
+            'location'  => $location,
+            'quantity'  => $this->numeric($data['quantity'], 'quantity', $row),
+            'value'     => isset($data['value']) ? $this->numericOrNull($data['value']) : null,
+            'reason'    => $data['reason'] ?? null,
+        ];
+
+        // Resolve store from the location/store string
+        if ($location) {
+            $attrs['store_id'] = $this->resolveStore($import->tenant_id, $location);
+        }
+
+        // Resolve product from SKU
+        $product = Product::where('tenant_id', $import->tenant_id)->where('sku', $attrs['sku'])->first();
+        if ($product) {
+            $attrs['product_id'] = $product->id;
+        }
+
+        SalesReturn::create($attrs);
+    }
+
     private function writeUser(Import $import, array $data, int $row): void
     {
         $this->requireFields($data, ['name', 'email'], $row);
@@ -391,9 +424,14 @@ class ImportProcessorService
 
     private function readAllRows(string $filePath): array
     {
-        $spreadsheet = IOFactory::load($filePath);
+        // Read data only (skip styles/formatting) to keep memory down on large files.
+        $reader      = IOFactory::createReaderForFile($filePath);
+        $reader->setReadDataOnly(true);
+        $spreadsheet = $reader->load($filePath);
         $sheet       = $spreadsheet->getActiveSheet();
         $data        = $sheet->toArray(null, true, true, false);
+        $spreadsheet->disconnectWorksheets();
+        unset($spreadsheet);
 
         if (empty($data)) {
             return [];

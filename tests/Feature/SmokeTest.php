@@ -207,6 +207,7 @@ class SmokeTest extends TestCase
                 'InvestigationResource',
                 'ProductResource',
                 'PurchaseOrderResource',
+                'SalesReturnResource',
                 'SalesTransactionResource',
                 'SftpConnectionResource',
                 'StoreResource',

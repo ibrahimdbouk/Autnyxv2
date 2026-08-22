@@ -302,9 +302,20 @@ class AnomalyDetectionService
             ->get()
             ->groupBy('sku');
 
-        foreach ($txsBySku as $sku => $skuTxs) {
+        // Dedicated returns dataset (if the tenant imports returns as their own
+        // data type). Counted in addition to legacy negative-quantity sales rows.
+        $returnsBySku = \App\Models\SalesReturn::where('tenant_id', $tenantId)
+            ->where('date', '>=', $since)
+            ->get()
+            ->groupBy('sku');
+
+        $allSkus = collect($txsBySku->keys())->merge($returnsBySku->keys())->unique();
+
+        foreach ($allSkus as $sku) {
+            $skuTxs  = $txsBySku->get($sku) ?? collect();
             $sales   = (float) $skuTxs->where('quantity', '>', 0)->sum('quantity');
             $returns = (float) abs($skuTxs->where('quantity', '<', 0)->sum('quantity'));
+            $returns += (float) (optional($returnsBySku->get($sku))->sum('quantity') ?? 0);
 
             if ($sales <= 0 || $returns <= 0) continue;
 

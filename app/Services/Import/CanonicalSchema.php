@@ -22,6 +22,7 @@ class CanonicalSchema
             'stores'              => self::stores(),
             'suppliers'           => self::suppliers(),
             'users'               => self::users(),
+            'returns'             => self::returns(),
             default               => [],
         };
     }
@@ -100,6 +101,18 @@ class CanonicalSchema
             'name'  => ['label' => 'Name',  'description' => 'Full name of the user',                                   'required' => true],
             'email' => ['label' => 'Email', 'description' => 'Login email address (must be unique)',                    'required' => true],
             'role'  => ['label' => 'Role',  'description' => 'admin / tenant_admin grants admin rights; anything else is a standard user', 'required' => false],
+        ];
+    }
+
+    private static function returns(): array
+    {
+        return [
+            'date'     => ['label' => 'Date',     'description' => 'Date the item was returned (any common date format)', 'required' => true],
+            'sku'      => ['label' => 'SKU',      'description' => 'Product SKU, item code, or product ID',              'required' => true],
+            'quantity' => ['label' => 'Quantity', 'description' => 'Number of units returned',                           'required' => true],
+            'value'    => ['label' => 'Value',    'description' => 'Refund or return value for the row',                 'required' => false],
+            'location' => ['label' => 'Store',    'description' => 'Store, outlet or location where the return occurred (matches the Store name used elsewhere)', 'required' => false],
+            'reason'   => ['label' => 'Reason',   'description' => 'Reason for the return (e.g. defective, wrong size, changed mind)', 'required' => false],
         ];
     }
 
