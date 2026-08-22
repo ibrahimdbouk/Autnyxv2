@@ -34,6 +34,7 @@ class CreateImport extends Page
                     ->label('Data Type')
                     ->options(Import::dataTypeLabels())
                     ->required()
+                    ->live()
                     ->native(false)
                     ->helperText('What kind of data does this file contain?'),
 
@@ -59,27 +60,17 @@ class CreateImport extends Page
     public function startImport(): void
     {
         $this->processing = true;
-        $diag = function ($m) {
-            try {
-                Storage::disk('local')->append('import_diag.log', now()->toDateTimeString() . ' ' . $m . "\n");
-            } catch (\Throwable $e) {
-            }
-        };
-        $diag('M1 upload() entered');
 
         try {
             $validated = $this->form->getState();
-            $diag('M2 getState ok file=' . ($validated['file'] ?? 'NULL') . ' type=' . ($validated['data_type'] ?? 'NULL'));
 
             $filePath  = Storage::disk('local')->path($validated['file']);
-            $diag('M3 path exists=' . (is_file($filePath) ? 'yes' : 'no'));
             $dataType  = $validated['data_type'];
             $tenantId  = \Filament\Facades\Filament::getTenant()->id;
 
             // 1. Read headers + sample rows
             $reader = app(FileReaderService::class);
             $result = $reader->read($filePath);
-            $diag('M4 read ok headers=' . count($result['headers']) . ' rows=' . count($result['rows']) . ' total=' . $result['total_rows']);
 
             // 2. Create the Import record
             $import = Import::create([
@@ -93,26 +84,21 @@ class CreateImport extends Page
                 'sample_rows'       => $result['rows'],
                 'total_rows'        => $result['total_rows'],
             ]);
-            $diag('M5 import created id=' . $import->id);
 
             // 3. Run AI column mapping
             $mapper   = app(ColumnMappingService::class);
             $mappings = $mapper->map($result['headers'], $result['rows'], $dataType);
-            $diag('M6 map ok count=' . count($mappings));
 
             foreach ($mappings as $mapping) {
                 $import->columnMaps()->create($mapping);
             }
-            $diag('M7 columnMaps created');
 
             $import->update(['status' => Import::STATUS_MAPPING_REVIEW]);
-            $diag('M8 redirecting to review');
 
             // 4. Redirect to mapping review
             $this->redirect(ReviewMapping::getUrl(['record' => $import]));
         } catch (\Throwable $e) {
             $this->processing = false;
-            $diag('ERR ' . get_class($e) . ': ' . $e->getMessage());
 
             Notification::make()
                 ->title('Upload failed')
