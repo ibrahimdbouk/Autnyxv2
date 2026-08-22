@@ -2,22 +2,28 @@
 
 namespace App\Services;
 
+use App\Mail\NotificationMail;
 use App\Models\User;
 use Filament\Notifications\Actions\Action;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 /**
  * NotificationDispatcher — M23
  *
- * Single entry point for in-app (Filament database) notifications. Email can be
- * layered on later once MAIL_* is configured; callers do not change.
- * Best-effort: notification failures never break the originating flow.
+ * Single entry point for notifications. Always writes an in-app (Filament
+ * database) notification, and — once a real mail transport is configured
+ * (MAIL_MAILER other than "log") — also sends the email counterpart.
+ * Callers do not change. Best-effort throughout: neither an in-app nor an
+ * email failure ever breaks the originating flow, and one recipient's failed
+ * email never blocks the others.
  */
 class NotificationDispatcher
 {
     /**
-     * Send an in-app notification to a set of users (deduplicated).
+     * Send a notification to a set of users (deduplicated): in-app always,
+     * plus email when a mail transport is configured and $alsoEmail is true.
      *
      * @param  array<int>  $userIds
      */
@@ -27,12 +33,15 @@ class NotificationDispatcher
         ?string $body = null,
         ?string $url = null,
         string $icon = 'heroicon-o-bell',
-        string $color = 'primary'
+        string $color = 'primary',
+        bool $alsoEmail = true
     ): void {
         $userIds = array_values(array_unique(array_filter($userIds)));
         if (empty($userIds)) {
             return;
         }
+
+        $users = null;
 
         try {
             $users = User::whereIn('id', $userIds)->get();
@@ -62,7 +71,36 @@ class NotificationDispatcher
                 $notification->sendToDatabase($user);
             }
         } catch (\Throwable $e) {
-            Log::error('[NotificationDispatcher] ' . $e->getMessage());
+            Log::error('[NotificationDispatcher] in-app: ' . $e->getMessage());
+        }
+
+        // Email counterpart — dormant until a real transport is set, so nothing
+        // is sent (or logged as a fake "log" email) before Resend is configured.
+        if ($alsoEmail && $users !== null && config('mail.default') !== 'log') {
+            self::emailUsers($users, $title, $body, $url);
+        }
+    }
+
+    /**
+     * Send the email counterpart to each user that has an address. Per-user
+     * try/catch so one bad address never blocks the rest.
+     *
+     * @param  \Illuminate\Support\Collection<int,User>  $users
+     */
+    private static function emailUsers($users, string $title, ?string $body, ?string $url): void
+    {
+        foreach ($users as $user) {
+            if (empty($user->email)) {
+                continue;
+            }
+
+            try {
+                Mail::to($user->email)->send(
+                    new NotificationMail($title, $body, $url, $user->name ?? null)
+                );
+            } catch (\Throwable $e) {
+                Log::error('[NotificationDispatcher] email to ' . $user->email . ': ' . $e->getMessage());
+            }
         }
     }
 }
