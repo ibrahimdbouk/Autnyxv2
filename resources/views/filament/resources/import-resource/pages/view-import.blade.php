@@ -50,6 +50,43 @@
                 @endforeach
             </div>
 
+            {{-- Grouped bulk actions: same error across many rows, handled in one click --}}
+            @if($statusFilter === 'pending_review' && count($this->failedGroups) > 0)
+                <div class="mb-5 space-y-2">
+                    <div class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Grouped by reason</div>
+                    @foreach($this->failedGroups as $group)
+                        <div class="flex items-center justify-between gap-4 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                            <div class="min-w-0">
+                                <span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-xs font-semibold text-gray-700 dark:text-gray-300">
+                                    {{ number_format($group['count']) }} rows
+                                </span>
+                                <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">{{ $group['label'] }}</span>
+                            </div>
+                            <div class="flex shrink-0 gap-2">
+                                <x-filament::button
+                                    size="sm"
+                                    color="success"
+                                    icon="heroicon-o-arrow-path"
+                                    wire:click="retryGroup('{{ $group['b64'] }}')"
+                                    wire:loading.attr="disabled"
+                                >
+                                    Fix &amp; retry all
+                                </x-filament::button>
+                                <x-filament::button
+                                    size="sm"
+                                    color="gray"
+                                    outlined
+                                    wire:click="rejectGroup('{{ $group['b64'] }}')"
+                                    wire:loading.attr="disabled"
+                                >
+                                    Skip all
+                                </x-filament::button>
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+            @endif
+
             @if($this->failedRows->isEmpty())
                 <p class="text-sm text-gray-500 dark:text-gray-400">No rows in this status.</p>
             @else

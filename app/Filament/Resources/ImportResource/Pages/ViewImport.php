@@ -42,6 +42,81 @@ class ViewImport extends Page
             ->paginate(25);
     }
 
+    /**
+     * Failed rows grouped by their (row-number-stripped) error message, most
+     * common first — so the same problem across thousands of rows can be
+     * retried or rejected in one click instead of row by row.
+     *
+     * @return array<int, array{b64: string, label: string, count: int}>
+     */
+    #[Computed]
+    public function failedGroups(): array
+    {
+        $rows = ImportRow::where('import_id', $this->record->id)
+            ->where('status', $this->statusFilter)
+            ->get(['error_message']);
+
+        $groups = [];
+        foreach ($rows as $r) {
+            $label = preg_replace('/^Row \d+:\s*/', '', (string) $r->error_message);
+            $groups[$label] = ($groups[$label] ?? 0) + 1;
+        }
+        arsort($groups);
+
+        $out = [];
+        foreach ($groups as $label => $count) {
+            $out[] = ['b64' => base64_encode($label), 'label' => $label, 'count' => $count];
+        }
+
+        return $out;
+    }
+
+    private function rowsMatchingGroup(string $b64, array $statuses)
+    {
+        $label = base64_decode($b64);
+
+        return ImportRow::where('import_id', $this->record->id)
+            ->whereIn('status', $statuses)
+            ->get()
+            ->filter(fn ($r) => preg_replace('/^Row \d+:\s*/', '', (string) $r->error_message) === $label);
+    }
+
+    public function retryGroup(string $b64): void
+    {
+        $rows = $this->rowsMatchingGroup($b64, [ImportRow::STATUS_PENDING, 'pending_review']);
+
+        if ($rows->isEmpty()) {
+            Notification::make()->title('Nothing to retry in that group')->warning()->send();
+            return;
+        }
+
+        $result = app(ImportProcessorService::class)->retryRows($this->record, $rows);
+        $this->record->refresh();
+        unset($this->failedGroups);
+        $this->resetPage();
+
+        Notification::make()
+            ->title("Retried {$rows->count()}: {$result['retried']} imported, {$result['still_failed']} still failing")
+            ->color($result['still_failed'] > 0 ? 'warning' : 'success')
+            ->send();
+    }
+
+    public function rejectGroup(string $b64): void
+    {
+        $ids = $this->rowsMatchingGroup($b64, ['pending_review'])->pluck('id');
+
+        if ($ids->isEmpty()) {
+            Notification::make()->title('Nothing to skip in that group')->warning()->send();
+            return;
+        }
+
+        ImportRow::whereIn('id', $ids)->update(['status' => ImportRow::STATUS_REJECTED]);
+        unset($this->failedGroups);
+        $this->resetPage();
+
+        Notification::make()->title("Skipped {$ids->count()} row(s)")->success()->send();
+    }
+
     public function approveRow(int $rowId): void
     {
         ImportRow::where('id', $rowId)->update(['status' => ImportRow::STATUS_APPROVED]);

@@ -5,6 +5,7 @@ namespace App\Filament\Resources\ImportResource\Pages;
 use App\Filament\Resources\ImportResource;
 use App\Models\Import;
 use App\Services\Import\ImportProcessorService;
+use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
 
@@ -19,6 +20,33 @@ class ProcessImport extends Page
     public Import $record;
 
     public bool $done = false;
+
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('cancel')
+                ->label('Cancel import')
+                ->icon('heroicon-o-x-circle')
+                ->color('danger')
+                ->requiresConfirmation()
+                ->modalHeading('Cancel this import?')
+                ->modalDescription('Stops the import and removes any rows it has already added.')
+                ->modalSubmitActionLabel('Yes, cancel')
+                ->visible(fn () => ! $this->done && $this->record->isImporting())
+                ->action(function () {
+                    $removed = app(ImportProcessorService::class)->cancel($this->record);
+                    $this->done = true;
+
+                    Notification::make()
+                        ->title('Import cancelled')
+                        ->body("{$removed} partial row(s) removed.")
+                        ->success()
+                        ->send();
+
+                    $this->redirect(ImportResource::getUrl('index'));
+                }),
+        ];
+    }
 
     public function mount(Import $record): void
     {

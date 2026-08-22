@@ -7,7 +7,7 @@
 
     <div
         @if (! $done && $this->record->isImporting())
-            wire:poll.1500ms="tick"
+            wire:poll.800ms="tick"
         @endif
         class="mx-auto w-full max-w-xl"
     >

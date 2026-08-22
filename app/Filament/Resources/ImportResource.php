@@ -111,6 +111,34 @@ class ImportResource extends Resource
                     ]))
                     ->color('danger'),
 
+                Action::make('resume')
+                    ->label('Resume')
+                    ->icon('heroicon-o-play')
+                    ->color('info')
+                    ->url(fn (Import $record) => Pages\ProcessImport::getUrl(['record' => $record]))
+                    ->visible(fn (Import $record) => $record->status === Import::STATUS_IMPORTING),
+
+                Action::make('cancel')
+                    ->label('Cancel / Undo')
+                    ->icon('heroicon-o-x-circle')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalHeading('Cancel this import?')
+                    ->modalDescription('Stops the import and removes any rows it has already added. Use this if an import got stuck (e.g. the tab was closed) or failed part-way.')
+                    ->modalSubmitActionLabel('Yes, cancel and remove rows')
+                    ->visible(fn (Import $record) => in_array($record->status, [
+                        Import::STATUS_IMPORTING,
+                        Import::STATUS_FAILED,
+                    ], true))
+                    ->action(function (Import $record) {
+                        $deleted = app(ImportProcessorService::class)->cancel($record);
+                        Notification::make()
+                            ->title('Import cancelled')
+                            ->body("{$deleted} partial row(s) removed.")
+                            ->success()
+                            ->send();
+                    }),
+
                 Action::make('rollback')
                     ->label('Undo Import')
                     ->icon('heroicon-o-arrow-uturn-left')

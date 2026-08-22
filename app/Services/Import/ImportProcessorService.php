@@ -29,8 +29,11 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
  */
 class ImportProcessorService
 {
-    /** Rows processed per poll tick. Small enough to stay well under any request timeout. */
-    public const CHUNK_SIZE = 1000;
+    /** Rows processed per poll tick. Batch inserts keep this fast and well under any request timeout. */
+    public const CHUNK_SIZE = 5000;
+
+    /** Rows per multi-row INSERT statement (bounded to stay under Postgres' parameter limit). */
+    private const INSERT_BATCH = 2000;
 
     /** @var array<string,int>|null  name => store_id, primed per tenant */
     private ?array $storeCache = null;
@@ -174,6 +177,27 @@ class ImportProcessorService
         return $deleted;
     }
 
+    /**
+     * Cancel an import (typically one stuck in "importing" because the browser
+     * tab was closed mid-run, or one that failed). Removes any rows it inserted
+     * and marks it rolled back so the state is clean and it leaves the running
+     * state. Safe against a concurrent poll: once status is no longer
+     * "importing", the next processChunk() no-ops.
+     */
+    public function cancel(Import $import): int
+    {
+        if (in_array($import->data_type, Import::ROLLBACK_TYPES, true)) {
+            return $this->rollback($import); // deletes inserted rows + sets rolled_back
+        }
+
+        $import->update([
+            'status'        => Import::STATUS_ROLLED_BACK,
+            'error_message' => 'Import cancelled.',
+        ]);
+
+        return 0;
+    }
+
     public function process(Import $import): void
     {
         $import->update(['status' => Import::STATUS_IMPORTING]);
@@ -303,10 +327,26 @@ class ImportProcessorService
         $failed    = 0;
         $rowNumber = $offset + 2; // 1-index + header row
 
+        $table    = $this->insertTableFor($import->data_type);
+        $template = $table ? $this->insertTemplate($table) : [];
+        $now      = now();
+        $batch    = [];
+
         foreach ($chunk['rows'] as $rawRow) {
+            $data = $this->applyMap($columnMap, $rawRow);
             try {
-                $this->writeRow($import, $columnMap, $rawRow, $rowNumber);
-                $imported++;
+                if ($table !== null) {
+                    // Insert-based type: build + collect for one bulk INSERT.
+                    $attrs = array_merge($template, $this->buildInsertAttrs($import, $data, $rowNumber));
+                    $attrs['created_at'] = $now;
+                    $attrs['updated_at'] = $now;
+                    $batch[] = ['attrs' => $attrs, 'row' => $rowNumber, 'raw' => $rawRow, 'mapped' => $data];
+                    $imported++; // optimistic; reconciled if the bulk insert falls back
+                } else {
+                    // Master/upsert type (products, stores, suppliers, users): per-row.
+                    $this->writeMappedData($import, $data, $rowNumber);
+                    $imported++;
+                }
             } catch (\Throwable $e) {
                 $failed++;
                 ImportRow::create([
@@ -314,12 +354,42 @@ class ImportProcessorService
                     'tenant_id'     => $import->tenant_id,
                     'row_number'    => $rowNumber,
                     'raw_data'      => $rawRow,
-                    'mapped_data'   => $this->applyMap($columnMap, $rawRow),
+                    'mapped_data'   => $data,
                     'error_message' => $e->getMessage(),
                     'status'        => ImportRow::STATUS_PENDING,
                 ]);
             }
             $rowNumber++;
+        }
+
+        // One multi-row INSERT per sub-batch — the core speedup for large files.
+        if ($table !== null && ! empty($batch)) {
+            foreach (array_chunk($batch, self::INSERT_BATCH) as $slice) {
+                try {
+                    DB::table($table)->insert(array_column($slice, 'attrs'));
+                } catch (\Throwable $e) {
+                    // A single bad value aborts the whole multi-row INSERT. Fall
+                    // back to per-row so the good rows still land and the bad ones
+                    // are captured in the failed-row ledger instead of vanishing.
+                    foreach ($slice as $entry) {
+                        try {
+                            DB::table($table)->insert($entry['attrs']);
+                        } catch (\Throwable $rowError) {
+                            $imported--;
+                            $failed++;
+                            ImportRow::create([
+                                'import_id'     => $import->id,
+                                'tenant_id'     => $import->tenant_id,
+                                'row_number'    => $entry['row'],
+                                'raw_data'      => $entry['raw'],
+                                'mapped_data'   => $entry['mapped'],
+                                'error_message' => $rowError->getMessage(),
+                                'status'        => ImportRow::STATUS_PENDING,
+                            ]);
+                        }
+                    }
+                }
+            }
         }
 
         $newCursor = $offset + (int) $chunk['consumed'];
@@ -400,6 +470,68 @@ class ImportProcessorService
         };
     }
 
+    /**
+     * The DB table for a batch-insertable (insert-based) data type, or null for
+     * upsert/master types (products, stores, suppliers, users) which stay per-row.
+     */
+    private function insertTableFor(string $dataType): ?string
+    {
+        return match ($dataType) {
+            Import::TYPE_SALES           => 'sales_transactions',
+            Import::TYPE_INVENTORY       => 'inventory_levels',
+            Import::TYPE_PURCHASE_ORDERS => 'purchase_orders',
+            Import::TYPE_RETURNS         => 'sales_returns',
+            default                      => null,
+        };
+    }
+
+    /**
+     * Full column template per insert table so every batched row has an
+     * identical key set (a multi-row INSERT requires uniform columns).
+     */
+    private function insertTemplate(string $table): array
+    {
+        return match ($table) {
+            'sales_transactions' => [
+                'tenant_id' => null, 'import_id' => null, 'store_id' => null, 'product_id' => null,
+                'transaction_id' => null, 'date' => null, 'sku' => null, 'location' => null,
+                'quantity' => null, 'unit_price' => null, 'total_amount' => null, 'discount' => null, 'payment_method' => null,
+            ],
+            'inventory_levels' => [
+                'tenant_id' => null, 'import_id' => null, 'store_id' => null, 'product_id' => null,
+                'sku' => null, 'location' => null, 'on_hand_qty' => null, 'reorder_point' => null,
+                'as_of_date' => null, 'on_order_qty' => null, 'inventory_value' => null,
+            ],
+            'purchase_orders' => [
+                'tenant_id' => null, 'import_id' => null, 'supplier_id' => null, 'store_id' => null, 'product_id' => null,
+                'po_number' => null, 'supplier' => null, 'sku' => null, 'qty_ordered' => null, 'qty_received' => null,
+                'unit_cost' => null, 'order_date' => null, 'expected_date' => null, 'received_date' => null,
+                'location' => null, 'open_qty' => null, 'late_days' => null, 'fill_rate' => null,
+            ],
+            'sales_returns' => [
+                'tenant_id' => null, 'import_id' => null, 'store_id' => null, 'product_id' => null,
+                'return_id' => null, 'date' => null, 'sku' => null, 'location' => null,
+                'quantity' => null, 'value' => null, 'reason' => null,
+            ],
+            default => [],
+        };
+    }
+
+    /**
+     * Build the attribute array for one insert-based row (validation throws on
+     * a bad row so the caller can capture it in the failed-row ledger).
+     */
+    private function buildInsertAttrs(Import $import, array $data, int $row): array
+    {
+        return match ($import->data_type) {
+            Import::TYPE_SALES           => $this->buildSalesTransactionAttrs($import, $data, $row),
+            Import::TYPE_INVENTORY       => $this->buildInventoryLevelAttrs($import, $data, $row),
+            Import::TYPE_PURCHASE_ORDERS => $this->buildPurchaseOrderAttrs($import, $data, $row),
+            Import::TYPE_RETURNS         => $this->buildReturnAttrs($import, $data, $row),
+            default                      => throw new \InvalidArgumentException("Not a batch-insert type: {$import->data_type}"),
+        };
+    }
+
     private function writeRow(Import $import, $columnMap, array $rawRow, int $rowNumber): void
     {
         $data = $this->applyMap($columnMap, $rawRow);
@@ -419,6 +551,20 @@ class ImportProcessorService
 
     private function writeSalesTransaction(Import $import, array $data, int $row): void
     {
+        $attrs = $this->buildSalesTransactionAttrs($import, $data, $row);
+
+        $uniqueKey = array_filter(['tenant_id' => $attrs['tenant_id'], 'transaction_id' => $attrs['transaction_id']]);
+
+        if ($attrs['transaction_id'] && SalesTransaction::where($uniqueKey)->exists()) {
+            // Upsert by transaction_id
+            SalesTransaction::where($uniqueKey)->update($attrs);
+        } else {
+            SalesTransaction::create($attrs);
+        }
+    }
+
+    private function buildSalesTransactionAttrs(Import $import, array $data, int $row): array
+    {
         $this->requireFields($data, ['date', 'sku', 'quantity'], $row);
 
         $location = $data['location'] ?? null;
@@ -437,29 +583,28 @@ class ImportProcessorService
             'payment_method' => $data['payment_method'] ?? null,
         ];
 
-        // Resolve store from location string
         if ($location) {
             $attrs['store_id'] = $this->resolveStore($import->tenant_id, $location);
         }
 
-        // Try to resolve product_id from SKU
         if ($productId = $this->resolveProductId($import->tenant_id, $attrs['sku'])) {
             $attrs['product_id'] = $productId;
         }
 
-        $uniqueKey = array_filter(['tenant_id' => $attrs['tenant_id'], 'transaction_id' => $attrs['transaction_id']]);
-
-        if ($attrs['transaction_id'] && SalesTransaction::where($uniqueKey)->exists()) {
-            // Upsert by transaction_id
-            SalesTransaction::where($uniqueKey)->update($attrs);
-        } else {
-            SalesTransaction::create($attrs);
-        }
+        return $attrs;
     }
 
     private function writeInventoryLevel(Import $import, array $data, int $row): void
     {
-        $this->requireFields($data, ['sku', 'on_hand_qty'], $row);
+        InventoryLevel::create($this->buildInventoryLevelAttrs($import, $data, $row));
+    }
+
+    private function buildInventoryLevelAttrs(Import $import, array $data, int $row): array
+    {
+        // Only the SKU is truly required. A blank stock quantity means 0 (out of
+        // stock) — CSV exports routinely write 0 as an empty cell — so we default
+        // it rather than rejecting the row.
+        $this->requireFields($data, ['sku'], $row);
 
         $location = $data['location'] ?? null;
 
@@ -468,14 +613,13 @@ class ImportProcessorService
             'import_id'     => $import->id,
             'sku'           => $this->str($data['sku'], 'sku', $row),
             'location'      => $location,
-            'on_hand_qty'   => $this->numeric($data['on_hand_qty'], 'on_hand_qty', $row),
+            'on_hand_qty'   => $this->numericOrZero($data['on_hand_qty'] ?? null),
             'reorder_point'   => isset($data['reorder_point']) ? $this->numericOrNull($data['reorder_point']) : null,
             'as_of_date'      => isset($data['as_of_date']) ? $this->parseDateOrNull($data['as_of_date']) : null,
             'on_order_qty'    => isset($data['on_order_qty']) ? $this->numericOrNull($data['on_order_qty']) : null,
             'inventory_value' => isset($data['inventory_value']) ? $this->numericOrNull($data['inventory_value']) : null,
         ];
 
-        // Resolve store from location string
         if ($location) {
             $attrs['store_id'] = $this->resolveStore($import->tenant_id, $location);
         }
@@ -484,7 +628,7 @@ class ImportProcessorService
             $attrs['product_id'] = $productId;
         }
 
-        InventoryLevel::create($attrs);
+        return $attrs;
     }
 
     private function writeProduct(Import $import, array $data, int $row): void
@@ -513,6 +657,11 @@ class ImportProcessorService
 
     private function writePurchaseOrder(Import $import, array $data, int $row): void
     {
+        PurchaseOrder::create($this->buildPurchaseOrderAttrs($import, $data, $row));
+    }
+
+    private function buildPurchaseOrderAttrs(Import $import, array $data, int $row): array
+    {
         $this->requireFields($data, ['po_number', 'supplier', 'sku', 'qty_ordered', 'order_date'], $row);
 
         $attrs = [
@@ -533,7 +682,6 @@ class ImportProcessorService
             'fill_rate'     => isset($data['fill_rate']) ? $this->numericOrNull($data['fill_rate']) : null,
         ];
 
-        // Resolve destination store from the location string.
         if (! empty($data['location'])) {
             $attrs['store_id'] = $this->resolveStore($import->tenant_id, $data['location']);
         }
@@ -546,7 +694,7 @@ class ImportProcessorService
         // reporting work off a real supplier record, not just a text name.
         $attrs['supplier_id'] = $this->resolveSupplier($import->tenant_id, $attrs['supplier']);
 
-        PurchaseOrder::create($attrs);
+        return $attrs;
     }
 
     private function writeStore(Import $import, array $data, int $row): void
@@ -594,6 +742,11 @@ class ImportProcessorService
 
     private function writeReturn(Import $import, array $data, int $row): void
     {
+        SalesReturn::create($this->buildReturnAttrs($import, $data, $row));
+    }
+
+    private function buildReturnAttrs(Import $import, array $data, int $row): array
+    {
         $this->requireFields($data, ['date', 'sku', 'quantity'], $row);
 
         $location = $data['location'] ?? null;
@@ -610,17 +763,15 @@ class ImportProcessorService
             'return_id' => $data['return_id'] ?? null,
         ];
 
-        // Resolve store from the location/store string
         if ($location) {
             $attrs['store_id'] = $this->resolveStore($import->tenant_id, $location);
         }
 
-        // Resolve product from SKU
         if ($productId = $this->resolveProductId($import->tenant_id, $attrs['sku'])) {
             $attrs['product_id'] = $productId;
         }
 
-        SalesReturn::create($attrs);
+        return $attrs;
     }
 
     private function writeUser(Import $import, array $data, int $row): void
@@ -751,6 +902,20 @@ class ImportProcessorService
         if (empty($value)) return null;
         $clean = preg_replace('/[^0-9.\-]/', '', $value);
         return is_numeric($clean) ? (float) $clean : null;
+    }
+
+    /**
+     * Numeric value where a blank/missing cell means 0 (e.g. a stock quantity
+     * written as an empty cell by a CSV export). Non-numeric junk also falls
+     * back to 0 rather than rejecting the row.
+     */
+    private function numericOrZero(?string $value): float
+    {
+        if ($value === null || trim((string) $value) === '') {
+            return 0.0;
+        }
+        $clean = preg_replace('/[^0-9.\-]/', '', $value);
+        return is_numeric($clean) ? (float) $clean : 0.0;
     }
 
     private function str(?string $value, string $field, int $row): string

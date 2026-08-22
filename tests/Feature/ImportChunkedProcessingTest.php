@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Import;
+use App\Models\InventoryLevel;
 use App\Models\SalesReturn;
 use App\Models\Store;
 use App\Services\Import\ImportProcessorService;
@@ -90,6 +91,51 @@ class ImportChunkedProcessingTest extends TestCase
 
         // The store referenced by every row was auto-resolved just once.
         $this->assertSame(1, Store::where('tenant_id', $this->tenant->id)->where('name', 'Downtown')->count());
+    }
+
+    public function test_blank_stock_quantity_imports_as_zero(): void
+    {
+        $csv = "SKU,Store,OnHand\n"
+            . "SKU-1,Downtown,5\n"
+            . "SKU-2,Downtown,\n"   // blank -> should import as 0, not fail
+            . "SKU-3,Downtown,0\n";
+
+        Storage::disk('local')->put('imports/pending/inv.csv', $csv);
+
+        $import = Import::create([
+            'tenant_id'         => $this->tenant->id,
+            'original_filename' => 'inv.csv',
+            'disk'              => 'local',
+            'path'              => 'imports/pending/inv.csv',
+            'data_type'         => Import::TYPE_INVENTORY,
+            'status'            => Import::STATUS_UPLOADED,
+            'total_rows'        => 3,
+        ]);
+
+        foreach (['SKU' => 'sku', 'Store' => 'location', 'OnHand' => 'on_hand_qty'] as $header => $field) {
+            $import->columnMaps()->create([
+                'source_header' => $header,
+                'target_field'  => $field,
+                'is_skipped'    => false,
+                'is_confirmed'  => true,
+            ]);
+        }
+
+        $service = app(ImportProcessorService::class);
+        $service->startChunkedImport($import);
+        $guard = 0;
+        do {
+            $result = $service->processChunk($import->fresh(), 100);
+        } while (! ($result['done'] ?? false) && ++$guard < 5);
+
+        $import->refresh();
+
+        $this->assertSame(3, (int) $import->imported_rows, 'blank qty row should import, not fail');
+        $this->assertSame(0, (int) $import->failed_rows);
+
+        $blank = InventoryLevel::where('tenant_id', $this->tenant->id)->where('sku', 'SKU-2')->first();
+        $this->assertNotNull($blank);
+        $this->assertEqualsWithDelta(0.0, (float) $blank->on_hand_qty, 0.001);
     }
 
     public function test_chunked_import_records_failed_rows_without_aborting(): void

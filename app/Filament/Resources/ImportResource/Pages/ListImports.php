@@ -7,6 +7,7 @@ use App\Models\Import;
 use App\Services\Anomaly\AnomalyDetectionService;
 use App\Services\Import\ColumnMappingService;
 use App\Services\Import\FileReaderService;
+use App\Services\Import\ImportProcessorService;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\FileUpload;
@@ -19,6 +20,18 @@ use Illuminate\Support\Facades\Storage;
 class ListImports extends ListRecords
 {
     protected static string $resource = \App\Filament\Resources\ImportResource::class;
+
+    public function mount(): void
+    {
+        parent::mount();
+
+        // Self-heal imports whose browser tab was closed mid-run. Batch imports
+        // finish in well under a minute, and an actively-polling import keeps its
+        // timestamp fresh, so only a genuinely stalled one is flagged — flipping
+        // it to "failed" surfaces the Cancel / Undo action instead of leaving it
+        // stuck in "importing" forever.
+        ImportProcessorService::recoverStuckImports(2);
+    }
 
     protected function getHeaderActions(): array
     {
