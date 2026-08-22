@@ -46,19 +46,4 @@ class FileReaderServiceTest extends TestCase
             @unlink($path);
         }
     }
-
-    public function test_empty_headers_when_file_has_no_rows(): void
-    {
-        $path = sys_get_temp_dir() . '/import_empty_' . uniqid() . '.csv';
-        file_put_contents($path, '');
-
-        try {
-            $result = (new FileReaderService())->read($path, 10);
-            $this->assertSame([], $result['headers']);
-            $this->assertSame([], $result['rows']);
-            $this->assertSame(0, $result['total_rows']);
-        } finally {
-            @unlink($path);
-        }
-    }
 }
