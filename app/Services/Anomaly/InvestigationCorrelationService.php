@@ -91,6 +91,7 @@ class InvestigationCorrelationService
 
         // Sync count and escalate priority if this anomaly is more severe
         $investigation->syncAnomalyCount();
+        $this->syncRevenueAtRisk($investigation);
         $this->escalatePriorityIfNeeded($investigation, $anomaly);
 
         // Collect evidence for this anomaly (M17)
@@ -254,6 +255,21 @@ class InvestigationCorrelationService
      * If the incoming anomaly severity maps to a higher priority than the
      * investigation currently holds, escalate it.
      */
+    /**
+     * Recompute the investigation's revenue-at-risk as the sum of its member
+     * anomalies' estimated revenue impact. This is what lets the investigations
+     * list rank by money and surface the handful that actually matter.
+     */
+    private function syncRevenueAtRisk(Investigation $investigation): void
+    {
+        $total = 0.0;
+        foreach ($investigation->anomalies()->get(['context']) as $a) {
+            $total += (float) ($a->context['revenue_impact'] ?? 0);
+        }
+
+        $investigation->update(['revenue_at_risk' => round($total, 2)]);
+    }
+
     private function escalatePriorityIfNeeded(Investigation $investigation, Anomaly $anomaly): void
     {
         $priorityOrder = [

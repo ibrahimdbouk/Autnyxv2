@@ -25,6 +25,51 @@ class AnomalyDetectionService
      */
     private array $touchedAnomalyIds = [];
 
+    /** @var array<string,float>|null  sku => unit price (selling_price ?? unit_cost), primed per run */
+    private ?array $priceMap = null;
+
+    /**
+     * Estimated revenue impact (in the tenant's currency) below which a
+     * sales spike/drop is treated as noise and not flagged. Overridable per
+     * rule via the 'min_revenue' threshold.
+     */
+    private const DEFAULT_MIN_REVENUE = 500.0;
+
+    /** Prime a sku => unit-price map once so impact estimates don't hit the DB per SKU. */
+    private function primePriceMap(int $tenantId): void
+    {
+        $this->priceMap = Product::where('tenant_id', $tenantId)
+            ->get(['sku', 'selling_price', 'unit_cost'])
+            ->mapWithKeys(fn ($p) => [
+                trim((string) $p->sku) => (float) ($p->selling_price ?: $p->unit_cost ?: 0),
+            ])
+            ->all();
+    }
+
+    private function unitPrice(?string $sku): float
+    {
+        if ($sku === null || $this->priceMap === null) {
+            return 0.0;
+        }
+
+        return $this->priceMap[trim($sku)] ?? 0.0;
+    }
+
+    /** Estimated revenue impact = |units affected| × unit price. */
+    private function estimateImpact(?string $sku, float $unitsDelta): float
+    {
+        return abs($unitsDelta) * $this->unitPrice($sku);
+    }
+
+    /** Map a revenue-impact figure to a severity tier so money drives priority. */
+    private function severityFromImpact(float $impact): string
+    {
+        if ($impact >= 10000) return Anomaly::SEVERITY_HIGH;
+        if ($impact >= 2000)  return Anomaly::SEVERITY_MEDIUM;
+
+        return Anomaly::SEVERITY_LOW;
+    }
+
     /**
      * Run all enabled rules for a tenant and store results in the anomalies table.
      * Existing open anomalies are upserted (investigation fields preserved); stale ones are deleted.
@@ -32,6 +77,7 @@ class AnomalyDetectionService
     public function runForTenant(int $tenantId): void
     {
         AnomalySetting::seedForTenant($tenantId);
+        $this->primePriceMap($tenantId);
 
         $settings = AnomalySetting::where('tenant_id', $tenantId)
             ->get()
@@ -122,8 +168,9 @@ class AnomalyDetectionService
 
     private function detectSalesSpike(int $tenantId, array $thresholds): void
     {
-        $pct  = (float)($thresholds['pct'] ?? 50);
-        $days = (int)($thresholds['days'] ?? 7);
+        $pct        = (float)($thresholds['pct'] ?? 50);
+        $days       = (int)($thresholds['days'] ?? 7);
+        $minRevenue = (float)($thresholds['min_revenue'] ?? self::DEFAULT_MIN_REVENUE);
 
         [$recent, $historical, $periods] = $this->salesComparison($tenantId, $days);
 
@@ -139,21 +186,32 @@ class AnomalyDetectionService
                 $dailyRecent = $recentQty / max(1, $days);
                 $z = $this->baselines->zScore($dailyRecent, $baseline);
                 if ($z <= $baseline->sensitivity_multiplier) continue;
-                $this->flag($tenantId, 'sales_spike', 'low', $sku, null, null,
+
+                $excessUnits = max(0, $dailyRecent - $baseline->baseline_mean) * $days;
+                $impact      = $this->estimateImpact($sku, $excessUnits);
+                if ($impact < $minRevenue) continue; // below the money floor → noise
+
+                $this->flag($tenantId, 'sales_spike', $this->severityFromImpact($impact), $sku, null, null,
                     "SKU {$sku} daily sales rate (" . round($dailyRecent, 1) . " units/day) is "
                     . round($z, 1) . " standard deviations above the 90-day baseline mean of "
                     . round($baseline->baseline_mean, 1) . " units/day.",
                     ['recent_daily' => round($dailyRecent, 2), 'baseline_mean' => round($baseline->baseline_mean, 2),
                      'baseline_stddev' => round($baseline->baseline_stddev, 2), 'z_score' => round($z, 2),
-                     'sensitivity' => $baseline->sensitivity_multiplier, 'days' => $days]
+                     'sensitivity' => $baseline->sensitivity_multiplier, 'days' => $days,
+                     'revenue_impact' => round($impact, 2)]
                 );
             } else {
                 $changePct = (($recentQty - $avgQty) / $avgQty) * 100;
                 if ($changePct < $pct) continue;
-                $this->flag($tenantId, 'sales_spike', 'low', $sku, null, null,
+
+                $impact = $this->estimateImpact($sku, $recentQty - $avgQty);
+                if ($impact < $minRevenue) continue;
+
+                $this->flag($tenantId, 'sales_spike', $this->severityFromImpact($impact), $sku, null, null,
                     "SKU {$sku} sales spiked " . round($changePct) . "% above its {$days}-day average "
                     . "(recent: " . round($recentQty) . " units, avg: " . round($avgQty) . " units).",
-                    ['recent_qty' => $recentQty, 'avg_qty' => round($avgQty, 2), 'change_pct' => round($changePct, 1), 'days' => $days]
+                    ['recent_qty' => $recentQty, 'avg_qty' => round($avgQty, 2), 'change_pct' => round($changePct, 1),
+                     'days' => $days, 'revenue_impact' => round($impact, 2)]
                 );
             }
         }
@@ -161,8 +219,9 @@ class AnomalyDetectionService
 
     private function detectSalesDrop(int $tenantId, array $thresholds): void
     {
-        $pct  = (float)($thresholds['pct'] ?? 30);
-        $days = (int)($thresholds['days'] ?? 7);
+        $pct        = (float)($thresholds['pct'] ?? 30);
+        $days       = (int)($thresholds['days'] ?? 7);
+        $minRevenue = (float)($thresholds['min_revenue'] ?? self::DEFAULT_MIN_REVENUE);
 
         [$recent, $historical, $periods] = $this->salesComparison($tenantId, $days);
 
@@ -180,21 +239,32 @@ class AnomalyDetectionService
                 // For a drop, z = (mean - value) / stddev — positive when below mean
                 $z = ($baseline->baseline_mean - $dailyRecent) / max(0.001, $baseline->baseline_stddev);
                 if ($z <= $baseline->sensitivity_multiplier) continue;
-                $this->flag($tenantId, 'sales_drop', 'medium', $sku, null, null,
+
+                $lostUnits = max(0, $baseline->baseline_mean - $dailyRecent) * $days;
+                $impact    = $this->estimateImpact($sku, $lostUnits);
+                if ($impact < $minRevenue) continue;
+
+                $this->flag($tenantId, 'sales_drop', $this->severityFromImpact($impact), $sku, null, null,
                     "SKU {$sku} daily sales rate (" . round($dailyRecent, 1) . " units/day) is "
                     . round($z, 1) . " standard deviations below the 90-day baseline mean of "
                     . round($baseline->baseline_mean, 1) . " units/day.",
                     ['recent_daily' => round($dailyRecent, 2), 'baseline_mean' => round($baseline->baseline_mean, 2),
                      'baseline_stddev' => round($baseline->baseline_stddev, 2), 'z_score' => round($z, 2),
-                     'sensitivity' => $baseline->sensitivity_multiplier, 'days' => $days]
+                     'sensitivity' => $baseline->sensitivity_multiplier, 'days' => $days,
+                     'revenue_impact' => round($impact, 2)]
                 );
             } else {
                 $changePct = (($avgQty - $recentQty) / $avgQty) * 100;
                 if ($changePct < $pct) continue;
-                $this->flag($tenantId, 'sales_drop', 'medium', $sku, null, null,
+
+                $impact = $this->estimateImpact($sku, $avgQty - $recentQty);
+                if ($impact < $minRevenue) continue;
+
+                $this->flag($tenantId, 'sales_drop', $this->severityFromImpact($impact), $sku, null, null,
                     "SKU {$sku} sales dropped " . round($changePct) . "% below its {$days}-day average "
                     . "(recent: " . round($recentQty) . " units, avg: " . round($avgQty) . " units).",
-                    ['recent_qty' => $recentQty, 'avg_qty' => round($avgQty, 2), 'change_pct' => round($changePct, 1), 'days' => $days]
+                    ['recent_qty' => $recentQty, 'avg_qty' => round($avgQty, 2), 'change_pct' => round($changePct, 1),
+                     'days' => $days, 'revenue_impact' => round($impact, 2)]
                 );
             }
         }

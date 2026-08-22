@@ -37,7 +37,7 @@ class ListInvestigations extends ListRecords
     public string $ruleFilter    = '';
     #[Url(as: 'store')]
     public string $storeFilter   = '';
-    public string $sortField     = 'opened_at';
+    public string $sortField     = 'revenue_at_risk';
     public string $sortDir       = 'desc';
     public int    $perPage       = 25;
     public int    $currentPage   = 1;

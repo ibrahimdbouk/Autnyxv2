@@ -444,7 +444,10 @@ class ImportProcessorService
         );
 
         try {
+            // Full pipeline so investigations (and therefore the dashboards) are
+            // populated automatically, not just the raw Anomalies page.
             app(AnomalyDetectionService::class)->runForTenant($import->tenant_id);
+            app(\App\Services\Anomaly\InvestigationCorrelationService::class)->correlateForTenant($import->tenant_id);
         } catch (\Throwable $e) {
             Log::error('Anomaly detection failed after import', ['import_id' => $import->id, 'error' => $e->getMessage()]);
         }

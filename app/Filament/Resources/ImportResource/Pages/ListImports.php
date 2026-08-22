@@ -2,9 +2,10 @@
 
 namespace App\Filament\Resources\ImportResource\Pages;
 
-use App\Models\Anomaly;
 use App\Models\Import;
+use App\Models\Investigation;
 use App\Services\Anomaly\AnomalyDetectionService;
+use App\Services\Anomaly\InvestigationCorrelationService;
 use App\Services\Import\ColumnMappingService;
 use App\Services\Import\FileReaderService;
 use App\Services\Import\ImportProcessorService;
@@ -42,21 +43,25 @@ class ListImports extends ListRecords
                 ->color('gray')
                 ->requiresConfirmation()
                 ->modalHeading('Run anomaly detection?')
-                ->modalDescription('This scans all of your imported data now and refreshes anomalies. Detection also runs automatically after every import.')
+                ->modalDescription('Scans all of your imported data, groups the findings into prioritised investigations, and refreshes your dashboards. On large datasets this can take up to a minute.')
                 ->modalSubmitActionLabel('Run detection')
                 ->action(function () {
                     $tenantId = Filament::getTenant()->id;
 
                     try {
+                        // Full pipeline: detect raw anomalies, THEN correlate them into
+                        // investigations — the dashboards read investigations, so both
+                        // steps are required for anything beyond the Anomalies page.
                         app(AnomalyDetectionService::class)->runForTenant($tenantId);
+                        app(InvestigationCorrelationService::class)->correlateForTenant($tenantId);
 
-                        $open = Anomaly::where('tenant_id', $tenantId)
-                            ->where('status', Anomaly::STATUS_DETECTED)
+                        $open = Investigation::where('tenant_id', $tenantId)
+                            ->where('status', Investigation::STATUS_OPEN)
                             ->count();
 
                         Notification::make()
                             ->title('Detection complete')
-                            ->body("Scanned all data — {$open} open anomaly(ies) currently flagged.")
+                            ->body("Scanned all data — {$open} open investigation(s), ranked by revenue at risk.")
                             ->success()
                             ->send();
                     } catch (\Throwable $e) {
