@@ -139,8 +139,10 @@ class ImportResource extends Resource
     public static function getPages(): array
     {
         return [
+            // NB: no 'create' page — uploads go through the "Upload File" modal
+            // action on the index (ListImports). The old CreateImport page was a
+            // hand-rolled Livewire form that never bound its fields correctly.
             'index'          => Pages\ListImports::route('/'),
-            'create'         => Pages\CreateImport::route('/create'),
             'review-mapping' => Pages\ReviewMapping::route('/{record}/review'),
             'view'           => Pages\ViewImport::route('/{record}'),
         ];
