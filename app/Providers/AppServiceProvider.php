@@ -11,6 +11,7 @@ use App\Console\Commands\ExpireNoiseCommand;
 use App\Console\Commands\MeasureOutcomesCommand;
 use App\Console\Commands\NarrateInvestigationsCommand;
 use App\Console\Commands\NotifyAnomaliesCommand;
+use App\Console\Commands\PollSftpCommand;
 use App\Services\Import\ImportProcessorService;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\ServiceProvider;
@@ -137,6 +138,13 @@ class AppServiceProvider extends ServiceProvider
                 ->withoutOverlapping()
                 ->runInBackground()
                 ->appendOutputTo(storage_path('logs/outcome-measure.log'));
+
+            // Hourly — poll SFTP connections for new flat files (M14)
+            $schedule->command(PollSftpCommand::class)
+                ->hourly()
+                ->withoutOverlapping()
+                ->runInBackground()
+                ->appendOutputTo(storage_path('logs/sftp-poll.log'));
         });
     }
 }
