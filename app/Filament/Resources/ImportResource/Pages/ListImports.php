@@ -31,12 +31,10 @@ class ListImports extends ListRecords
                     Select::make('data_type')
                         ->label('Data Type')
                         ->options(Import::dataTypeLabels())
-                        ->required()
                         ->helperText('What kind of data does this file contain?'),
 
                     FileUpload::make('file')
                         ->label('File (CSV or Excel)')
-                        ->required()
                         ->acceptedFileTypes([
                             'text/csv',
                             'application/vnd.ms-excel',
@@ -49,9 +47,30 @@ class ListImports extends ListRecords
                         ->helperText('Maximum 20 MB. CSV or .xlsx files supported.'),
                 ])
                 ->action(function (array $data, $livewire) {
+                    // DIAGNOSTIC: record + show exactly what the form sent.
                     try {
-                        $filePath = Storage::disk('local')->path($data['file']);
-                        $dataType = $data['data_type'];
+                        Storage::disk('local')->append(
+                            'import_diag2.log',
+                            now()->toDateTimeString() . ' ' . json_encode($data) . "\n"
+                        );
+                    } catch (\Throwable $e) {
+                    }
+
+                    $dt = $data['data_type'] ?? null;
+                    $f  = $data['file'] ?? null;
+
+                    if (empty($dt) || empty($f)) {
+                        Notification::make()
+                            ->title('Diagnostic — form values received')
+                            ->body('data_type = [' . ($dt ?: 'EMPTY') . '] · file = [' . ($f ?: 'EMPTY') . ']')
+                            ->warning()
+                            ->persistent()
+                            ->send();
+                        return;
+                    }
+
+                    try {
+                        $filePath = Storage::disk('local')->path($f);
                         $tenantId = Filament::getTenant()->id;
 
                         $reader = app(FileReaderService::class);
@@ -60,17 +79,17 @@ class ListImports extends ListRecords
                         $import = Import::create([
                             'tenant_id'         => $tenantId,
                             'user_id'           => Auth::id(),
-                            'original_filename' => $data['file'],
+                            'original_filename' => $f,
                             'disk'              => 'local',
-                            'path'              => $data['file'],
-                            'data_type'         => $dataType,
+                            'path'              => $f,
+                            'data_type'         => $dt,
                             'status'            => Import::STATUS_UPLOADED,
                             'sample_rows'       => $result['rows'],
                             'total_rows'        => $result['total_rows'],
                         ]);
 
                         $mapper = app(ColumnMappingService::class);
-                        foreach ($mapper->map($result['headers'], $result['rows'], $dataType) as $mapping) {
+                        foreach ($mapper->map($result['headers'], $result['rows'], $dt) as $mapping) {
                             $import->columnMaps()->create($mapping);
                         }
 
