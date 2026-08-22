@@ -99,6 +99,7 @@ class InvestigationFlowTest extends TestCase
         // Create minimal evidence so the narrator doesn't skip
         $investigation->evidence()->create([
             'evidence_type' => 'sales_summary',
+            'source'        => 'sales_transactions',   // required (NOT NULL); the collector always sets this
             'direction'     => 'supports',
             'label'         => 'Recent sales data',
             'value_text'    => '45% drop vs 30-day avg',

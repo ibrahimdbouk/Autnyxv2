@@ -50,43 +50,7 @@ class SftpFeedMatchingTest extends TestCase
         $this->assertFalse($feed->matches('report.csv'));
     }
 
-    public function test_disk_config_uses_password_when_password_auth(): void
-    {
-        $conn = new SftpConnection([
-            'host'      => 'sftp.example.com',
-            'port'      => 2222,
-            'username'  => 'acme',
-            'auth_type' => SftpConnection::AUTH_PASSWORD,
-            'password'  => 'secret',
-            'base_path' => '/inbound',
-        ]);
-
-        $config = $conn->diskConfig();
-
-        $this->assertSame('sftp', $config['driver']);
-        $this->assertSame('sftp.example.com', $config['host']);
-        $this->assertSame(2222, $config['port']);
-        $this->assertSame('acme', $config['username']);
-        $this->assertSame('/inbound', $config['root']);
-        $this->assertSame('secret', $config['password']);
-        $this->assertArrayNotHasKey('privateKey', $config);
-    }
-
-    public function test_disk_config_uses_private_key_when_key_auth(): void
-    {
-        $conn = new SftpConnection([
-            'host'                   => 'sftp.example.com',
-            'username'               => 'acme',
-            'auth_type'              => SftpConnection::AUTH_KEY,
-            'private_key'            => '-----BEGIN KEY-----',
-            'private_key_passphrase' => 'phrase',
-        ]);
-
-        $config = $conn->diskConfig();
-
-        $this->assertSame('-----BEGIN KEY-----', $config['privateKey']);
-        $this->assertSame('phrase', $config['passphrase']);
-        $this->assertArrayNotHasKey('password', $config);
-        $this->assertSame(22, $config['port'], 'port must default to 22');
-    }
+    // NOTE: diskConfig() tests live in tests/Feature/SftpConnectionTest — reading the
+    // encrypted credential casts requires a booted app (the `encrypter` binding), which
+    // a plain PHPUnit unit test does not have.
 }

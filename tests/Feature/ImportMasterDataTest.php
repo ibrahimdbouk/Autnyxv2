@@ -40,6 +40,7 @@ class ImportMasterDataTest extends TestCase
             'import_id'   => $import->id,
             'tenant_id'   => $this->tenant->id,
             'row_number'  => 2,
+            'raw_data'    => $mapped,   // required (NOT NULL); real imports store the original source row here
             'mapped_data' => $mapped,
             'status'      => ImportRow::STATUS_PENDING,
         ]);
