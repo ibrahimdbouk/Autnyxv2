@@ -10,12 +10,12 @@
 
             <div class="flex justify-end">
                 <x-filament::button
-                    wire:click="upload"
+                    wire:click="startImport"
                     wire:loading.attr="disabled"
-                    wire:target="upload"
+                    wire:target="startImport"
                 >
-                    <span wire:loading.remove wire:target="upload">Upload &amp; Map Columns</span>
-                    <span wire:loading wire:target="upload">Analysing file…</span>
+                    <span wire:loading.remove wire:target="startImport">Upload &amp; Map Columns</span>
+                    <span wire:loading wire:target="startImport">Analysing file…</span>
                 </x-filament::button>
             </div>
         </div>

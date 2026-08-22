@@ -54,7 +54,9 @@ class CreateImport extends Page
             ->statePath('data');
     }
 
-    public function upload(): void
+    // NB: method must NOT be named upload() — that collides with Livewire's
+    // WithFileUploads::upload(), so wire:click/wire:submit never reach this code.
+    public function startImport(): void
     {
         $this->processing = true;
         $diag = function ($m) {
