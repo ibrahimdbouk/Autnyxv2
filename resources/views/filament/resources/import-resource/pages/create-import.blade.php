@@ -5,18 +5,19 @@
             Select the data type and upload your CSV or Excel file. Our AI will automatically map your columns to the system.
         </x-slot>
 
-        <form wire:submit="upload" class="space-y-6">
+        <div class="space-y-6">
             {{ $this->form }}
 
             <div class="flex justify-end">
                 <x-filament::button
-                    type="submit"
+                    wire:click="upload"
                     wire:loading.attr="disabled"
+                    wire:target="upload"
                 >
-                    <span wire:loading.remove>Upload & Map Columns</span>
-                    <span wire:loading>Analysing file…</span>
+                    <span wire:loading.remove wire:target="upload">Upload &amp; Map Columns</span>
+                    <span wire:loading wire:target="upload">Analysing file…</span>
                 </x-filament::button>
             </div>
-        </form>
+        </div>
     </x-filament::section>
 </x-filament-panels::page>
