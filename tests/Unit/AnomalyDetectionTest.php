@@ -103,18 +103,36 @@ class AnomalyDetectionTest extends TestCase
     /**
      * An inventory level at or below the reorder point triggers a stockout_risk anomaly.
      *
-     * Detection: on_hand_qty <= reorder_point AND reorder_point > 0
+     * Detection (demand-aware): a SKU that SELLS but whose latest on-hand is at/
+     * under the line is a lost-sales stockout. Zero stock with no demand is dead
+     * stock, not a stockout — see the dead_stock test.
      */
     public function test_stockout_risk_detected_when_on_hand_is_zero(): void
     {
         $tenant = $this->createTenant();
+        $store  = \App\Models\Store::create(['tenant_id' => $tenant->id, 'name' => 'Store One', 'code' => 'ST01']);
 
         InventoryLevel::factory()->create([
             'tenant_id'     => $tenant->id,
+            'store_id'      => $store->id,
             'sku'           => 'SKU-OUT',
             'on_hand_qty'   => 0,
             'reorder_point' => 50,
+            'as_of_date'    => now()->subDay(),
         ]);
+
+        // Real recent demand → this is a lost-sales stockout, not dead stock.
+        for ($i = 1; $i <= 7; $i++) {
+            \App\Models\SalesDaily::create([
+                'tenant_id'         => $tenant->id,
+                'store_id'          => $store->id,
+                'sku'               => 'SKU-OUT',
+                'date'              => now()->subDays($i)->format('Y-m-d'),
+                'units_sold'        => 10,
+                'revenue'           => 100,
+                'transaction_count' => 2,
+            ]);
+        }
 
         AnomalySetting::seedForTenant($tenant->id);
         AnomalySetting::where('tenant_id', $tenant->id)
