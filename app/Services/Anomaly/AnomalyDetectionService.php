@@ -119,7 +119,7 @@ class AnomalyDetectionService
             'stockout_risk'              => fn () => $this->detectStockoutRisk($tenantId, $t('stockout_risk')),
             'safety_stock_breach'        => fn () => $this->detectSafetyStockBreach($tenantId),
             'dead_stock'                 => fn () => $this->detectDeadStock($tenantId, $t('dead_stock')),
-            'phantom_inventory'          => fn () => $this->detectPhantomInventory($tenantId),
+            'phantom_inventory'          => fn () => $this->detectPhantomInventory($tenantId, $t('phantom_inventory')),
             'multi_location_imbalance'   => fn () => $this->detectMultiLocationImbalance($tenantId),
             'reorder_point_staleness'    => fn () => $this->detectReorderPointStaleness($tenantId, $t('reorder_point_staleness')),
             'inventory_shrinkage'        => fn () => $this->detectInventoryShrinkage($tenantId, $t('inventory_shrinkage')),
@@ -729,26 +729,74 @@ class AnomalyDetectionService
         }
     }
 
-    private function detectPhantomInventory(int $tenantId): void
+    /**
+     * Store-level phantom / non-moving inventory: a (store, SKU) that holds stock
+     * but has negligible demand AT THAT STORE — capital tied up where it doesn't
+     * sell (even if the SKU sells fine elsewhere). Ranked by tied-up value
+     * (on-hand × cost). A materiality floor keeps it to inventory worth acting on;
+     * lower `min_value` to widen recall (at the cost of a much longer list).
+     */
+    private function detectPhantomInventory(int $tenantId, array $thresholds): void
     {
-        $inventoriedSkus = InventoryLevel::where('tenant_id', $tenantId)
+        $days      = (int)($thresholds['days'] ?? 30);
+        $maxDemand = (float)($thresholds['max_demand'] ?? 1);   // "negligible" = ≤ this many units in the window
+        $minValue  = (float)($thresholds['min_value'] ?? self::DEFAULT_MIN_REVENUE);
+
+        $recentFrom = Carbon::today()->subDays($days)->format('Y-m-d');
+
+        // Latest on-hand per (store, sku).
+        $onHand = [];
+        InventoryLevel::where('tenant_id', $tenantId)
+            ->whereNotNull('store_id')
             ->where('on_hand_qty', '>', 0)
-            ->pluck('sku')
-            ->unique();
+            ->select(['store_id', 'sku', 'on_hand_qty', 'product_id', 'location', 'as_of_date'])
+            ->cursor()
+            ->each(function ($l) use (&$onHand) {
+                $k = $l->store_id . '|' . $l->sku;
+                $d = $l->as_of_date ? $l->as_of_date->format('Y-m-d') : '0000-00-00';
+                if (! isset($onHand[$k]) || $d >= $onHand[$k]['d']) {
+                    $onHand[$k] = [
+                        'qty' => (float) $l->on_hand_qty, 'product_id' => $l->product_id,
+                        'location' => $l->location, 'd' => $d,
+                    ];
+                }
+            });
 
-        $everSoldSkus = SalesTransaction::where('tenant_id', $tenantId)
-            ->pluck('sku')
-            ->unique();
+        // Recent demand per (store, sku).
+        $demand = [];
+        DB::table('sales_daily')
+            ->where('tenant_id', $tenantId)
+            ->where('date', '>=', $recentFrom)
+            ->selectRaw('store_id, sku, SUM(units_sold) as u')
+            ->groupBy('store_id', 'sku')
+            ->cursor()
+            ->each(function ($r) use (&$demand) {
+                $demand[$r->store_id . '|' . $r->sku] = (float) $r->u;
+            });
 
-        foreach ($inventoriedSkus->diff($everSoldSkus) as $sku) {
-            $level = InventoryLevel::where('tenant_id', $tenantId)
-                ->where('sku', $sku)
-                ->orderByDesc('on_hand_qty')
-                ->first();
+        foreach ($onHand as $k => $oh) {
+            if ($oh['qty'] <= 0) continue;
+            $recent = $demand[$k] ?? 0.0;
+            if ($recent > $maxDemand) continue; // it sells here → not phantom
 
-            $this->flag($tenantId, 'phantom_inventory', 'medium', $sku, $level?->store_id, $level?->product_id,
-                "SKU {$sku} has " . round((float)($level?->on_hand_qty ?? 0)) . " units in inventory but has never generated a sales transaction.",
-                ['on_hand_qty' => $level?->on_hand_qty, 'location' => $level?->location]
+            [$storeId, $sku] = explode('|', $k, 2);
+            $cost  = $this->unitCost($sku);
+            $value = $oh['qty'] * $cost;        // capital tied up in non-moving stock
+            if ($cost > 0 && $value < $minValue) continue;
+
+            $severity = $cost > 0 ? $this->severityFromImpact($value) : Anomaly::SEVERITY_MEDIUM;
+
+            $this->flag($tenantId, 'phantom_inventory', $severity, $sku, (int) $storeId, $oh['product_id'],
+                "SKU {$sku} holds " . round($oh['qty']) . " units (\$" . number_format($value, 2) . ") at '{$oh['location']}' "
+                . "but sold only " . round($recent, 1) . " units there in {$days} days — capital tied up in non-moving stock.",
+                [
+                    'on_hand_qty'     => $oh['qty'],
+                    'recent_demand'   => round($recent, 2),
+                    'inventory_value' => round($value, 2),
+                    'revenue_impact'  => round($value, 2),
+                    'location'        => $oh['location'],
+                    'lookback_days'   => $days,
+                ]
             );
         }
     }
