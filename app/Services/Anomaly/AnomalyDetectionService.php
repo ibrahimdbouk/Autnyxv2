@@ -33,6 +33,24 @@ class AnomalyDetectionService
     private ?array $costMap = null;
 
     /**
+     * Latest on-hand snapshot per "store_id|sku", primed ONCE per run and shared
+     * by every inventory rule (stockout, phantom, negative, overstock, safety
+     * stock). Each entry: ['qty','reorder','product_id','location','d'].
+     * @var array<string,array>|null
+     */
+    private ?array $latestOnHand = null;
+
+    /**
+     * Recent units-sold per "store_id|sku" over $demandWindowDays, primed once
+     * from the sales_daily aggregate and shared by the demand-aware inventory
+     * rules. @var array<string,float>|null
+     */
+    private ?array $recentDemand = null;
+
+    /** Window (days) the shared recentDemand map was aggregated over. */
+    private int $demandWindowDays = 30;
+
+    /**
      * Estimated revenue impact (in the tenant's currency) below which a
      * sales spike/drop is treated as noise and not flagged. Overridable per
      * rule via the 'min_revenue' threshold.
@@ -52,6 +70,59 @@ class AnomalyDetectionService
                 $sku = trim((string) $p->sku);
                 $this->priceMap[$sku] = (float) ($p->selling_price ?: $p->unit_cost ?: 0);
                 $this->costMap[$sku]  = (float) ($p->unit_cost ?: $p->selling_price ?: 0);
+            });
+    }
+
+    /**
+     * Prime the latest on-hand snapshot per (store, sku) with ONE indexed query.
+     * Postgres DISTINCT ON returns a single row per combo — the most recent by
+     * as_of_date — so we read ~one row per (store, sku) instead of streaming the
+     * full inventory history into PHP once per rule. Backed by
+     * idx_inv_latest_snapshot.
+     */
+    private function primeInventorySnapshot(int $tenantId): void
+    {
+        $this->latestOnHand = [];
+
+        DB::table('inventory_levels')
+            ->where('tenant_id', $tenantId)
+            ->whereNotNull('store_id')
+            ->select(['store_id', 'sku', 'on_hand_qty', 'reorder_point', 'product_id', 'location', 'as_of_date'])
+            ->orderByRaw('store_id, sku, as_of_date DESC NULLS LAST')
+            ->distinct(['store_id', 'sku']) // DISTINCT ON (store_id, sku) via the Postgres driver
+            ->cursor()
+            ->each(function ($l) {
+                $d = $l->as_of_date ? substr((string) $l->as_of_date, 0, 10) : '0000-00-00';
+                $this->latestOnHand[$l->store_id . '|' . $l->sku] = [
+                    'qty'        => (float) $l->on_hand_qty,
+                    'reorder'    => $l->reorder_point !== null ? (float) $l->reorder_point : null,
+                    'product_id' => $l->product_id,
+                    'location'   => $l->location,
+                    'd'          => $d,
+                ];
+            });
+    }
+
+    /**
+     * Prime recent units-sold per (store, sku) over $windowDays with ONE grouped
+     * aggregate (backed by idx_sales_daily_demand), shared by all demand-aware
+     * inventory rules instead of each re-running the same GROUP BY.
+     */
+    private function primeRecentDemand(int $tenantId, int $windowDays): void
+    {
+        $this->recentDemand     = [];
+        $this->demandWindowDays = max(1, $windowDays);
+
+        $from = Carbon::today()->subDays($this->demandWindowDays)->format('Y-m-d');
+
+        DB::table('sales_daily')
+            ->where('tenant_id', $tenantId)
+            ->where('date', '>=', $from)
+            ->selectRaw('store_id, sku, SUM(units_sold) as u')
+            ->groupBy('store_id', 'sku')
+            ->cursor()
+            ->each(function ($r) {
+                $this->recentDemand[$r->store_id . '|' . $r->sku] = (float) $r->u;
             });
     }
 
@@ -105,6 +176,19 @@ class AnomalyDetectionService
             ->keyBy('rule_type');
 
         $t = fn (string $rule) => $settings->get($rule)?->getEffectiveThresholds() ?? [];
+
+        // Prime the shared inventory snapshot + recent-demand maps ONCE. Every
+        // demand-aware inventory rule (stockout, phantom, negative, overstock,
+        // safety stock) reads these instead of re-scanning the full inventory
+        // history and re-aggregating sales_daily itself — the single biggest win
+        // for run time on large tenants.
+        $this->primeInventorySnapshot($tenantId);
+        $demandWindow = (int) max(
+            $t('stockout_risk')['days']       ?? 30,
+            $t('phantom_inventory')['days']   ?? 30,
+            $t('overstock')['lookback_days']  ?? 30,
+        );
+        $this->primeRecentDemand($tenantId, $demandWindow);
 
         $rules = [
             // Demand & Sales
@@ -605,55 +689,21 @@ class AnomalyDetectionService
      */
     private function detectStockoutRisk(int $tenantId, array $thresholds): void
     {
-        $days     = (int)($thresholds['days'] ?? 30);
         $minUnits = (float)($thresholds['min_units'] ?? 3);
         // No revenue floor by default: an empty shelf for an item people buy is
         // worth surfacing even when the lost-sales dollar value is small. Impact
         // still drives severity so high-velocity stockouts rank to the top.
         $minValue = (float)($thresholds['min_revenue'] ?? 0);
         $horizon  = (int)($thresholds['lost_sales_days'] ?? 7);
+        $days     = $this->demandWindowDays;
 
-        $recentFrom = Carbon::today()->subDays($days)->format('Y-m-d');
-
-        // 1. Latest on-hand per (store, sku): stream all snapshots, keep the most
-        //    recent one per combo (null as_of_date treated as oldest).
-        $onHand = [];
-        InventoryLevel::where('tenant_id', $tenantId)
-            ->whereNotNull('store_id')
-            ->select(['store_id', 'sku', 'on_hand_qty', 'reorder_point', 'product_id', 'location', 'as_of_date'])
-            ->cursor()
-            ->each(function ($l) use (&$onHand) {
-                $k = $l->store_id . '|' . $l->sku;
-                $d = $l->as_of_date ? $l->as_of_date->format('Y-m-d') : '0000-00-00';
-                if (! isset($onHand[$k]) || $d >= $onHand[$k]['d']) {
-                    $onHand[$k] = [
-                        'qty'        => (float) $l->on_hand_qty,
-                        'reorder'    => $l->reorder_point !== null ? (float) $l->reorder_point : null,
-                        'product_id' => $l->product_id,
-                        'location'   => $l->location,
-                        'd'          => $d,
-                    ];
-                }
-            });
-
-        // 2. Recent demand per (store, sku) from the daily aggregate (the narrowing
-        //    filter — only SKUs that actually sell can suffer a lost-sales stockout).
-        $demand = [];
-        DB::table('sales_daily')
-            ->where('tenant_id', $tenantId)
-            ->where('date', '>=', $recentFrom)
-            ->selectRaw('store_id, sku, SUM(units_sold) as u')
-            ->groupBy('store_id', 'sku')
-            ->cursor()
-            ->each(function ($r) use (&$demand) {
-                $demand[$r->store_id . '|' . $r->sku] = (float) $r->u;
-            });
-
-        // 3. Flag: sells normally BUT stock is at/under the line.
-        foreach ($demand as $k => $units) {
+        // Reads the shared snapshot + demand maps (primed once per run). Only
+        // SKUs that actually sell can suffer a lost-sales stockout, so we iterate
+        // demand — the narrower set.
+        foreach (($this->recentDemand ?? []) as $k => $units) {
             if ($units < $minUnits) continue;
 
-            $oh = $onHand[$k] ?? null;
+            $oh = $this->latestOnHand[$k] ?? null;
             if ($oh === null) continue; // no stock snapshot for a selling SKU → can't assert a stockout here
 
             $reorder    = $oh['reorder'];
@@ -700,24 +750,8 @@ class AnomalyDetectionService
      */
     private function detectNegativeInventory(int $tenantId): void
     {
-        // Latest snapshot per (store, sku); keep only those that end up negative.
-        $onHand = [];
-        InventoryLevel::where('tenant_id', $tenantId)
-            ->whereNotNull('store_id')
-            ->select(['store_id', 'sku', 'on_hand_qty', 'product_id', 'location', 'as_of_date'])
-            ->cursor()
-            ->each(function ($l) use (&$onHand) {
-                $k = $l->store_id . '|' . $l->sku;
-                $d = $l->as_of_date ? $l->as_of_date->format('Y-m-d') : '0000-00-00';
-                if (! isset($onHand[$k]) || $d >= $onHand[$k]['d']) {
-                    $onHand[$k] = [
-                        'qty' => (float) $l->on_hand_qty, 'product_id' => $l->product_id,
-                        'location' => $l->location, 'd' => $d,
-                    ];
-                }
-            });
-
-        foreach ($onHand as $k => $oh) {
+        // Reads the shared latest-snapshot map; flags any combo that ends negative.
+        foreach (($this->latestOnHand ?? []) as $k => $oh) {
             if ($oh['qty'] >= 0) continue;
 
             [$storeId, $sku] = explode('|', $k, 2);
@@ -747,44 +781,14 @@ class AnomalyDetectionService
     private function detectOverstock(int $tenantId, array $thresholds): void
     {
         $daysCover = (float)($thresholds['days_cover'] ?? 120);
-        $lookback  = (int)($thresholds['lookback_days'] ?? 30);
         $minValue  = (float)($thresholds['min_value'] ?? 1000);
+        $lookback  = $this->demandWindowDays;
 
-        $recentFrom = Carbon::today()->subDays($lookback)->format('Y-m-d');
+        // Reads the shared snapshot + demand maps (primed once per run).
+        foreach (($this->latestOnHand ?? []) as $k => $oh) {
+            if ($oh['qty'] <= 0) continue; // positive stock only
 
-        // Latest on-hand per (store, sku), positive stock only.
-        $onHand = [];
-        InventoryLevel::where('tenant_id', $tenantId)
-            ->whereNotNull('store_id')
-            ->where('on_hand_qty', '>', 0)
-            ->select(['store_id', 'sku', 'on_hand_qty', 'product_id', 'location', 'as_of_date'])
-            ->cursor()
-            ->each(function ($l) use (&$onHand) {
-                $k = $l->store_id . '|' . $l->sku;
-                $d = $l->as_of_date ? $l->as_of_date->format('Y-m-d') : '0000-00-00';
-                if (! isset($onHand[$k]) || $d >= $onHand[$k]['d']) {
-                    $onHand[$k] = [
-                        'qty' => (float) $l->on_hand_qty, 'product_id' => $l->product_id,
-                        'location' => $l->location, 'd' => $d,
-                    ];
-                }
-            });
-
-        // Recent demand per (store, sku). Only SKUs that actually sell qualify —
-        // no demand is dead_stock/phantom's job, not overstock's.
-        $demand = [];
-        DB::table('sales_daily')
-            ->where('tenant_id', $tenantId)
-            ->where('date', '>=', $recentFrom)
-            ->selectRaw('store_id, sku, SUM(units_sold) as u')
-            ->groupBy('store_id', 'sku')
-            ->cursor()
-            ->each(function ($r) use (&$demand) {
-                $demand[$r->store_id . '|' . $r->sku] = (float) $r->u;
-            });
-
-        foreach ($onHand as $k => $oh) {
-            $units = $demand[$k] ?? 0.0;
+            $units = $this->recentDemand[$k] ?? 0.0;
             if ($units <= 0) continue; // no demand → dead stock, not overstock
 
             $dailyDemand = $units / max(1, $lookback);
@@ -820,18 +824,20 @@ class AnomalyDetectionService
 
     private function detectSafetyStockBreach(int $tenantId): void
     {
-        $levels = InventoryLevel::where('tenant_id', $tenantId)
-            ->whereNotNull('reorder_point')
-            ->where('reorder_point', '>', 0)
-            ->get()
-            ->filter(fn ($l) => (float) $l->on_hand_qty < (float) $l->reorder_point * 0.5);
+        // Reads the shared latest-snapshot map: a (store, sku) whose most-recent
+        // on-hand sits below half its reorder point. Using the latest snapshot
+        // (not every historical row) also stops stale rows from re-firing.
+        foreach (($this->latestOnHand ?? []) as $k => $oh) {
+            $reorder = $oh['reorder'];
+            if ($reorder === null || $reorder <= 0) continue;
+            if ($oh['qty'] >= $reorder * 0.5) continue;
 
-        foreach ($levels as $level) {
-            $safetyProxy = round((float) $level->reorder_point * 0.5, 1);
-            $loc = $level->location ? " at {$level->location}" : '';
-            $this->flag($tenantId, 'safety_stock_breach', 'high', $level->sku, $level->store_id, $level->product_id,
-                "SKU {$level->sku}{$loc} is critically low — on hand: {$level->on_hand_qty} (below safety proxy of {$safetyProxy}, 50% of reorder point {$level->reorder_point}).",
-                ['on_hand_qty' => $level->on_hand_qty, 'reorder_point' => $level->reorder_point, 'safety_stock_proxy' => $safetyProxy, 'location' => $level->location]
+            [$storeId, $sku] = explode('|', $k, 2);
+            $safetyProxy = round($reorder * 0.5, 1);
+            $loc = $oh['location'] ? " at {$oh['location']}" : '';
+            $this->flag($tenantId, 'safety_stock_breach', 'high', $sku, (int) $storeId, $oh['product_id'],
+                "SKU {$sku}{$loc} is critically low — on hand: {$oh['qty']} (below safety proxy of {$safetyProxy}, 50% of reorder point {$reorder}).",
+                ['on_hand_qty' => $oh['qty'], 'reorder_point' => $reorder, 'safety_stock_proxy' => $safetyProxy, 'location' => $oh['location']]
             );
         }
     }
@@ -869,45 +875,14 @@ class AnomalyDetectionService
      */
     private function detectPhantomInventory(int $tenantId, array $thresholds): void
     {
-        $days      = (int)($thresholds['days'] ?? 30);
         $maxDemand = (float)($thresholds['max_demand'] ?? 1);   // "negligible" = ≤ this many units in the window
         $minValue  = (float)($thresholds['min_value'] ?? self::DEFAULT_MIN_REVENUE);
+        $days      = $this->demandWindowDays;
 
-        $recentFrom = Carbon::today()->subDays($days)->format('Y-m-d');
-
-        // Latest on-hand per (store, sku).
-        $onHand = [];
-        InventoryLevel::where('tenant_id', $tenantId)
-            ->whereNotNull('store_id')
-            ->where('on_hand_qty', '>', 0)
-            ->select(['store_id', 'sku', 'on_hand_qty', 'product_id', 'location', 'as_of_date'])
-            ->cursor()
-            ->each(function ($l) use (&$onHand) {
-                $k = $l->store_id . '|' . $l->sku;
-                $d = $l->as_of_date ? $l->as_of_date->format('Y-m-d') : '0000-00-00';
-                if (! isset($onHand[$k]) || $d >= $onHand[$k]['d']) {
-                    $onHand[$k] = [
-                        'qty' => (float) $l->on_hand_qty, 'product_id' => $l->product_id,
-                        'location' => $l->location, 'd' => $d,
-                    ];
-                }
-            });
-
-        // Recent demand per (store, sku).
-        $demand = [];
-        DB::table('sales_daily')
-            ->where('tenant_id', $tenantId)
-            ->where('date', '>=', $recentFrom)
-            ->selectRaw('store_id, sku, SUM(units_sold) as u')
-            ->groupBy('store_id', 'sku')
-            ->cursor()
-            ->each(function ($r) use (&$demand) {
-                $demand[$r->store_id . '|' . $r->sku] = (float) $r->u;
-            });
-
-        foreach ($onHand as $k => $oh) {
+        // Reads the shared snapshot + demand maps (primed once per run).
+        foreach (($this->latestOnHand ?? []) as $k => $oh) {
             if ($oh['qty'] <= 0) continue;
-            $recent = $demand[$k] ?? 0.0;
+            $recent = $this->recentDemand[$k] ?? 0.0;
             if ($recent > $maxDemand) continue; // it sells here → not phantom
 
             [$storeId, $sku] = explode('|', $k, 2);
