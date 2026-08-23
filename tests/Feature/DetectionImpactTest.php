@@ -257,4 +257,106 @@ class DetectionImpactTest extends TestCase
             Anomaly::where('tenant_id', $this->tenant->id)->where('rule_type', 'receiving_discrepancy')->where('sku', 'PO-CHEAP')->first()
         );
     }
+
+    public function test_demand_erosion_flags_sustained_slide_not_flat_demand(): void
+    {
+        $store = Store::create(['tenant_id' => $this->tenant->id, 'name' => 'Store One', 'code' => 'ST01']);
+        Product::create(['tenant_id' => $this->tenant->id, 'sku' => 'ERODE', 'name' => 'Eroding', 'selling_price' => 100]);
+        Product::create(['tenant_id' => $this->tenant->id, 'sku' => 'FLAT',  'name' => 'Flat',    'selling_price' => 100]);
+
+        // 12 points across ~90 days. ERODE slides 24 → 2 (clean linear decline);
+        // FLAT holds ~12 every point. Neither is a sharp recent break.
+        for ($i = 0; $i < 12; $i++) {
+            $date = now()->subDays(88 - $i * 8)->format('Y-m-d');
+            SalesDaily::create([
+                'tenant_id' => $this->tenant->id, 'store_id' => $store->id, 'sku' => 'ERODE',
+                'date' => $date, 'units_sold' => 24 - $i * 2, 'revenue' => (24 - $i * 2) * 100, 'transaction_count' => 1,
+            ]);
+            SalesDaily::create([
+                'tenant_id' => $this->tenant->id, 'store_id' => $store->id, 'sku' => 'FLAT',
+                'date' => $date, 'units_sold' => 12, 'revenue' => 1200, 'transaction_count' => 1,
+            ]);
+        }
+
+        app(AnomalyDetectionService::class)->runForTenant($this->tenant->id);
+
+        $this->assertNotNull(
+            Anomaly::where('tenant_id', $this->tenant->id)->where('rule_type', 'demand_erosion')->where('sku', 'ERODE')->first(),
+            'a consistent multi-month decline should be flagged even without a sharp recent break'
+        );
+        $this->assertNull(
+            Anomaly::where('tenant_id', $this->tenant->id)->where('rule_type', 'demand_erosion')->where('sku', 'FLAT')->first(),
+            'flat demand is not erosion'
+        );
+    }
+
+    public function test_cumulative_shrink_flags_sawtooth_hidden_from_latest_two(): void
+    {
+        $store = Store::create(['tenant_id' => $this->tenant->id, 'name' => 'Store One', 'code' => 'ST01']);
+        Product::create(['tenant_id' => $this->tenant->id, 'sku' => 'SAW', 'name' => 'Sawtooth', 'unit_cost' => 50]);
+
+        // Sawtooth at one location: THREE 100→55 drops (45 lost, ~5 sold →
+        // ~40 unexplained each) with restocks back to 100 between them. The LATEST
+        // interval is a restock (55→100), so latest-two shrinkage sees no drop,
+        // but three separate leaks accumulate (min_intervals = 3).
+        $series = [
+            ['d' => 40, 'qty' => 100], ['d' => 35, 'qty' => 55],  // decline 1
+            ['d' => 28, 'qty' => 100], ['d' => 23, 'qty' => 55],  // decline 2
+            ['d' => 16, 'qty' => 100], ['d' => 11, 'qty' => 55],  // decline 3
+            ['d' => 1,  'qty' => 100],                             // restock (latest)
+        ];
+        foreach ($series as $s) {
+            InventoryLevel::create([
+                'tenant_id' => $this->tenant->id, 'store_id' => $store->id, 'sku' => 'SAW',
+                'location' => 'ST01', 'on_hand_qty' => $s['qty'],
+                'as_of_date' => now()->subDays($s['d'])->format('Y-m-d'),
+            ]);
+        }
+        // One ~5-unit sale inside each decline window — nowhere near enough to explain the 45-unit drops.
+        foreach ([37, 25, 13] as $d) {
+            SalesDaily::create([
+                'tenant_id' => $this->tenant->id, 'store_id' => $store->id, 'sku' => 'SAW',
+                'date' => now()->subDays($d)->format('Y-m-d'), 'units_sold' => 5, 'revenue' => 500, 'transaction_count' => 1,
+            ]);
+        }
+
+        app(AnomalyDetectionService::class)->runForTenant($this->tenant->id);
+
+        $this->assertNotNull(
+            Anomaly::where('tenant_id', $this->tenant->id)->where('rule_type', 'cumulative_shrink')->where('sku', 'SAW')->first(),
+            'repeated unexplained losses across the series should be flagged'
+        );
+        $this->assertNull(
+            Anomaly::where('tenant_id', $this->tenant->id)->where('rule_type', 'inventory_shrinkage')->where('sku', 'SAW')->first(),
+            'the latest two snapshots are a restock, so point-in-time shrinkage should NOT fire'
+        );
+    }
+
+    public function test_supplier_fill_rate_flags_chronic_underfill_below_per_po_floor(): void
+    {
+        Product::create(['tenant_id' => $this->tenant->id, 'sku' => 'CHRON', 'name' => 'Chronic', 'unit_cost' => 10]);
+
+        // 4 POs from one supplier, each 70% filled (30 units short × $10 = $300 —
+        // below the $500 receiving floor, so receiving_discrepancy stays silent),
+        // but the repeated pattern is a real service failure.
+        foreach (['C1', 'C2', 'C3', 'C4'] as $po) {
+            PurchaseOrder::create([
+                'tenant_id' => $this->tenant->id, 'po_number' => $po, 'supplier' => 'ShakySupplier', 'sku' => 'CHRON',
+                'qty_ordered' => 100, 'qty_received' => 70,
+                'order_date' => now()->subDays(30)->format('Y-m-d'),
+                'received_date' => now()->subDays(20)->format('Y-m-d'),
+            ]);
+        }
+
+        app(AnomalyDetectionService::class)->runForTenant($this->tenant->id);
+
+        $this->assertNotNull(
+            Anomaly::where('tenant_id', $this->tenant->id)->where('rule_type', 'supplier_fill_rate')->where('sku', 'CHRON')->first(),
+            'a supplier chronically short across several POs should be flagged in aggregate'
+        );
+        $this->assertNull(
+            Anomaly::where('tenant_id', $this->tenant->id)->where('rule_type', 'receiving_discrepancy')->where('sku', 'CHRON')->first(),
+            'no single PO crosses the per-PO dollar floor'
+        );
+    }
 }

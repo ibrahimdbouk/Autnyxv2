@@ -198,6 +198,7 @@ class AnomalyDetectionService
             'cannibalization_signal'     => fn () => $this->detectCannibalizationSignal($tenantId, $t('cannibalization_signal')),
             'return_rate_spike'          => fn () => $this->detectReturnRateSpike($tenantId, $t('return_rate_spike')),
             'channel_mix_shift'          => fn () => $this->detectChannelMixShift($tenantId, $t('channel_mix_shift')),
+            'demand_erosion'             => fn () => $this->detectDemandErosion($tenantId, $t('demand_erosion')),
 
             // Inventory & Supply
             'stockout_risk'              => fn () => $this->detectStockoutRisk($tenantId, $t('stockout_risk')),
@@ -209,11 +210,13 @@ class AnomalyDetectionService
             'multi_location_imbalance'   => fn () => $this->detectMultiLocationImbalance($tenantId),
             'reorder_point_staleness'    => fn () => $this->detectReorderPointStaleness($tenantId, $t('reorder_point_staleness')),
             'inventory_shrinkage'        => fn () => $this->detectInventoryShrinkage($tenantId, $t('inventory_shrinkage')),
+            'cumulative_shrink'          => fn () => $this->detectCumulativeShrink($tenantId, $t('cumulative_shrink')),
 
             // Purchase Orders
             'po_overdue'                 => fn () => $this->detectPoOverdue($tenantId),
             'receiving_discrepancy'      => fn () => $this->detectReceivingDiscrepancy($tenantId, $t('receiving_discrepancy')),
             'po_late_receipt'            => fn () => $this->detectPoLateReceipt($tenantId, $t('po_late_receipt')),
+            'supplier_fill_rate'         => fn () => $this->detectSupplierFillRate($tenantId, $t('supplier_fill_rate')),
             'supplier_lead_time_drift'   => fn () => $this->detectSupplierLeadTimeDrift($tenantId, $t('supplier_lead_time_drift')),
             'cost_spike'                 => fn () => $this->detectCostSpike($tenantId, $t('cost_spike')),
 
@@ -676,6 +679,78 @@ class AnomalyDetectionService
         }
     }
 
+    /**
+     * Slow demand erosion — a sustained downward TREND, not a sharp break.
+     *
+     * Recent-vs-window rules (sales_drop) compare a short recent window to a
+     * historical one; a gradual slide moves BOTH windows down together, so the
+     * ratio never trips. This fits a linear regression to daily units over the
+     * window (per store+SKU, in SQL via regr_slope/regr_r2) and flags a
+     * consistent negative slope whose fitted line falls by >= pct across the
+     * window. regr_r2 guards against noise (a real trend, not a scatter).
+     */
+    private function detectDemandErosion(int $tenantId, array $thresholds): void
+    {
+        $days     = (int)($thresholds['days'] ?? 90);
+        $pct      = (float)($thresholds['pct'] ?? 40);
+        $minUnits = (float)($thresholds['min_units'] ?? 20);
+        $minR2    = (float)($thresholds['min_r2'] ?? 0.3);
+        $minValue = (float)($thresholds['min_revenue'] ?? self::DEFAULT_MIN_REVENUE);
+
+        $from = Carbon::today()->subDays($days)->format('Y-m-d');
+
+        $rows = DB::select(
+            "SELECT store_id, sku,
+                    regr_slope(units_sold, EXTRACT(EPOCH FROM date)/86400.0)     AS slope,
+                    regr_intercept(units_sold, EXTRACT(EPOCH FROM date)/86400.0) AS intercept,
+                    regr_r2(units_sold, EXTRACT(EPOCH FROM date)/86400.0)        AS r2,
+                    COUNT(*) AS pts, SUM(units_sold) AS total,
+                    MIN(EXTRACT(EPOCH FROM date)/86400.0) AS x0,
+                    MAX(EXTRACT(EPOCH FROM date)/86400.0) AS x1
+             FROM sales_daily
+             WHERE tenant_id = ? AND date >= ?
+             GROUP BY store_id, sku
+             HAVING COUNT(*) >= 8
+                AND SUM(units_sold) >= ?
+                AND regr_slope(units_sold, EXTRACT(EPOCH FROM date)/86400.0) < 0",
+            [$tenantId, $from, $minUnits]
+        );
+
+        foreach ($rows as $r) {
+            $r2 = $r->r2 !== null ? (float) $r->r2 : 0.0;
+            if ($r2 < $minR2) continue;
+
+            $slope = (float) $r->slope;
+            $start = (float) $r->intercept + $slope * (float) $r->x0;
+            $end   = (float) $r->intercept + $slope * (float) $r->x1;
+            if ($start <= 0) continue;
+
+            $declinePct = (($start - $end) / $start) * 100;
+            if ($declinePct < $pct) continue;
+
+            $spanDays  = max(1, (int) round((float) $r->x1 - (float) $r->x0));
+            $lostUnits = max(0.0, ($start - $end) / 2) * $spanDays; // vs holding the start rate flat
+            $price     = $this->unitPrice($r->sku);
+            $impact    = $lostUnits * $price;
+            if ($price > 0 && $impact < $minValue) continue;
+            $severity  = $price > 0 ? $this->severityFromImpact($impact) : Anomaly::SEVERITY_MEDIUM;
+
+            $this->flag($tenantId, 'demand_erosion', $severity, $r->sku, (int) $r->store_id, null,
+                "SKU {$r->sku} is in a sustained demand decline — down ~" . round($declinePct)
+                . "% across the last {$days} days on a consistent downward trend (R²=" . round($r2, 2)
+                . "), a gradual slide rather than a sharp break.",
+                [
+                    'decline_pct'    => round($declinePct, 1),
+                    'slope_per_day'  => round($slope, 4),
+                    'r2'             => round($r2, 2),
+                    'window_days'    => $days,
+                    'total_units'    => round((float) $r->total, 1),
+                    'revenue_impact' => round($impact, 2),
+                ]
+            );
+        }
+    }
+
     // =========================================================================
     // INVENTORY & SUPPLY
     // =========================================================================
@@ -1064,6 +1139,77 @@ class AnomalyDetectionService
         }
     }
 
+    /**
+     * Concealed shrink — unexplained inventory loss accumulated across the FULL
+     * snapshot history of a (SKU, location), not just the latest two snapshots.
+     *
+     * `inventory_shrinkage` compares only the two most recent snapshots, so a
+     * sawtooth (lose stock → restock → lose again) hides: the last pair looks
+     * fine. This sums the unexplained loss (prev − sales − curr, when positive)
+     * over EVERY declining interval in the series. Only declining intervals can
+     * contribute, so we filter to those before the per-interval sales lookup
+     * (backed by idx_sales_daily_sku_date); result is one row per genuinely-
+     * leaking (SKU, location).
+     */
+    private function detectCumulativeShrink(int $tenantId, array $thresholds): void
+    {
+        $minValue     = (float)($thresholds['min_value'] ?? 1000);
+        $minIntervals = (int)($thresholds['min_intervals'] ?? 3);
+
+        $rows = DB::select(
+            "WITH ivals AS (
+                SELECT store_id, sku, location, product_id,
+                       on_hand_qty            AS curr_qty,
+                       LAG(on_hand_qty) OVER w AS prev_qty,
+                       LAG(as_of_date)  OVER w AS prev_date,
+                       as_of_date              AS curr_date
+                FROM inventory_levels
+                WHERE tenant_id = ? AND as_of_date IS NOT NULL AND location IS NOT NULL
+                WINDOW w AS (PARTITION BY sku, location ORDER BY as_of_date ASC)
+            ),
+            drops AS (
+                SELECT * FROM ivals WHERE prev_qty IS NOT NULL AND prev_qty > curr_qty
+            )
+            SELECT d.store_id, d.sku, d.location, MAX(d.product_id) AS product_id,
+                   SUM(GREATEST(0, d.prev_qty - COALESCE(s.sales, 0) - d.curr_qty)) AS cum_unexplained,
+                   COUNT(*) FILTER (WHERE (d.prev_qty - COALESCE(s.sales, 0) - d.curr_qty) > 0) AS loss_intervals
+            FROM drops d
+            LEFT JOIN LATERAL (
+                SELECT SUM(sd.units_sold) AS sales
+                FROM sales_daily sd
+                WHERE sd.tenant_id = ? AND sd.sku = d.sku
+                  AND sd.date > d.prev_date::date AND sd.date <= d.curr_date::date
+            ) s ON TRUE
+            GROUP BY d.store_id, d.sku, d.location
+            HAVING SUM(GREATEST(0, d.prev_qty - COALESCE(s.sales, 0) - d.curr_qty)) > 0
+               AND COUNT(*) FILTER (WHERE (d.prev_qty - COALESCE(s.sales, 0) - d.curr_qty) > 0) >= ?",
+            [$tenantId, $tenantId, $minIntervals]
+        );
+
+        foreach ($rows as $r) {
+            $cum = (float) $r->cum_unexplained;
+            if ($cum <= 0) continue;
+
+            $cost  = $this->unitCost($r->sku);
+            $value = $cum * $cost;
+            if ($cost > 0 && $value < $minValue) continue;
+            $severity = $cost > 0 ? $this->severityFromImpact($value) : Anomaly::SEVERITY_HIGH;
+
+            $this->flag($tenantId, 'cumulative_shrink', $severity, $r->sku, (int) $r->store_id, $r->product_id,
+                "SKU {$r->sku} at '{$r->location}' shows a concealed shrink pattern — "
+                . round($cum) . " units (\$" . number_format($value, 2) . ") of unexplained loss accumulated across "
+                . (int) $r->loss_intervals . " separate declines, masked by restocking in between.",
+                [
+                    'location'         => $r->location,
+                    'cumulative_units' => round($cum, 1),
+                    'loss_intervals'   => (int) $r->loss_intervals,
+                    'inventory_value'  => round($value, 2),
+                    'revenue_impact'   => round($value, 2),
+                ]
+            );
+        }
+    }
+
     // =========================================================================
     // PURCHASE ORDERS
     // =========================================================================
@@ -1171,6 +1317,56 @@ class AnomalyDetectionService
                     ]
                 );
             });
+    }
+
+    /**
+     * Chronic supplier under-fill: a supplier that is persistently short on a SKU
+     * across many POs. `receiving_discrepancy` tests each PO against a dollar
+     * floor in isolation, so a supplier reliably 20–30% short on small orders
+     * never surfaces — the pattern only shows in aggregate. Flags when the average
+     * fill across at least `min_pos` POs is at or below `pct`%, ranked by the total
+     * shortfall value.
+     */
+    private function detectSupplierFillRate(int $tenantId, array $thresholds): void
+    {
+        $pct      = (float)($thresholds['pct'] ?? 85);   // flag when avg fill <= this %
+        $minPos   = (int)($thresholds['min_pos'] ?? 3);
+        $minValue = (float)($thresholds['min_value'] ?? 200);
+        $fillFrac = $pct / 100;
+
+        $rows = DB::select(
+            "SELECT supplier, sku, MAX(product_id) AS product_id,
+                    COUNT(*) AS pos,
+                    AVG(qty_received / NULLIF(qty_ordered, 0)) AS avg_fill,
+                    SUM(qty_ordered - qty_received) AS short_units
+             FROM purchase_orders
+             WHERE tenant_id = ? AND qty_ordered > 0 AND qty_received IS NOT NULL AND supplier IS NOT NULL
+             GROUP BY supplier, sku
+             HAVING COUNT(*) >= ? AND AVG(qty_received / NULLIF(qty_ordered, 0)) <= ?",
+            [$tenantId, $minPos, $fillFrac]
+        );
+
+        foreach ($rows as $r) {
+            $shortUnits = max(0.0, (float) $r->short_units);
+            $cost  = $this->unitCost($r->sku);
+            $value = $shortUnits * $cost;
+            if ($cost > 0 && $value < $minValue) continue;
+
+            $avgFillPct = round((float) $r->avg_fill * 100);
+            $severity = $cost > 0 ? $this->severityFromImpact($value) : Anomaly::SEVERITY_MEDIUM;
+
+            $this->flag($tenantId, 'supplier_fill_rate', $severity, $r->sku, null, $r->product_id,
+                "Supplier '{$r->supplier}' has chronically under-filled SKU {$r->sku} — averaging {$avgFillPct}% fill across "
+                . (int) $r->pos . " POs (" . round($shortUnits) . " units short, \$" . number_format($value, 2) . ").",
+                [
+                    'supplier'       => $r->supplier,
+                    'pos'            => (int) $r->pos,
+                    'avg_fill_pct'   => $avgFillPct,
+                    'short_units'    => round($shortUnits, 1),
+                    'revenue_impact' => round($value, 2),
+                ]
+            );
+        }
     }
 
     private function detectSupplierLeadTimeDrift(int $tenantId, array $thresholds): void

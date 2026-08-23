@@ -53,6 +53,13 @@ class AnomalySetting extends Model
             'tier'               => 'core',   // Requires: sales_transactions.location
             'default_thresholds' => ['pct' => 25, 'days' => 30],
         ],
+        'demand_erosion' => [
+            'label'              => 'Slow Demand Erosion',
+            'description'        => 'A SKU\'s demand is on a sustained downward trend (a gradual slide, not a sharp break) — the kind of erosion that recent-vs-window rules miss because both windows fall together.',
+            'severity'           => 'medium',
+            'tier'               => 'core',   // Requires: sales_daily
+            'default_thresholds' => ['days' => 90, 'pct' => 40, 'min_units' => 20, 'min_r2' => 0.3, 'min_revenue' => 500],
+        ],
 
         // ── Inventory & Supply ───────────────────────────────────────────────
         'stockout_risk' => [
@@ -97,6 +104,13 @@ class AnomalySetting extends Model
             'tier'               => 'core',   // Requires: inventory_levels + sales_daily + products.unit_cost
             'default_thresholds' => ['days_cover' => 120, 'lookback_days' => 30, 'min_value' => 1000],
         ],
+        'cumulative_shrink' => [
+            'label'              => 'Concealed Shrink Pattern',
+            'description'        => 'Unexplained inventory loss accumulated across the FULL snapshot history of a (SKU, location) — repeated small declines that a latest-two-snapshot check hides because stock is restocked between them.',
+            'severity'           => 'high',
+            'tier'               => 'core',   // Requires: multiple inventory_levels snapshots + sales_daily + products.unit_cost
+            'default_thresholds' => ['min_value' => 1000, 'min_intervals' => 3],
+        ],
         'multi_location_imbalance' => [
             'label'              => 'Multi-Location Imbalance',
             'description'        => 'The same SKU is overstocked in one location while at or below reorder point in another.',
@@ -140,6 +154,13 @@ class AnomalySetting extends Model
             'severity'           => 'medium',
             'tier'               => 'core',   // Requires: purchase_orders with expected_date + received_date
             'default_thresholds' => ['days' => 7],
+        ],
+        'supplier_fill_rate' => [
+            'label'              => 'Chronic Supplier Under-Fill',
+            'description'        => 'A supplier is persistently short on a SKU across many POs — each shortfall too small to trip the per-PO receiving check, but the repeated pattern is a real service-level failure.',
+            'severity'           => 'medium',
+            'tier'               => 'core',   // Requires: purchase_orders with qty_ordered + qty_received
+            'default_thresholds' => ['pct' => 80, 'min_pos' => 3, 'min_value' => 500],
         ],
         'supplier_lead_time_drift' => [
             'label'              => 'Supplier Lead Time Drift',

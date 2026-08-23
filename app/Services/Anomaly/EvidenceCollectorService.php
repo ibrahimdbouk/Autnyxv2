@@ -64,7 +64,7 @@ class EvidenceCollectorService
     private function collectForAnomaly(Investigation $investigation, Anomaly $anomaly): void
     {
         match (true) {
-            in_array($anomaly->rule_type, ['sales_spike', 'sales_drop', 'demand_seasonality_breach'])
+            in_array($anomaly->rule_type, ['sales_spike', 'sales_drop', 'demand_seasonality_breach', 'demand_erosion'])
                 => $this->collectSalesEvidence($investigation, $anomaly),
 
             in_array($anomaly->rule_type, ['cannibalization_signal', 'channel_mix_shift', 'store_outlier'])
@@ -76,12 +76,12 @@ class EvidenceCollectorService
             in_array($anomaly->rule_type, ['stockout_risk', 'safety_stock_breach', 'dead_stock',
                                             'phantom_inventory', 'multi_location_imbalance',
                                             'inventory_shrinkage', 'reorder_point_staleness',
-                                            'negative_inventory', 'overstock'])
+                                            'negative_inventory', 'overstock', 'cumulative_shrink'])
                 => $this->collectInventoryEvidence($investigation, $anomaly),
 
             in_array($anomaly->rule_type, ['po_overdue', 'receiving_discrepancy',
                                             'supplier_lead_time_drift', 'cost_spike',
-                                            'po_late_receipt'])
+                                            'po_late_receipt', 'supplier_fill_rate'])
                 => $this->collectPoEvidence($investigation, $anomaly),
 
             in_array($anomaly->rule_type, ['price_anomaly', 'margin_erosion', 'discount_signal',
