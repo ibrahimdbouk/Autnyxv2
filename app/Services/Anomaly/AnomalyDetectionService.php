@@ -116,7 +116,7 @@ class AnomalyDetectionService
             'channel_mix_shift'          => fn () => $this->detectChannelMixShift($tenantId, $t('channel_mix_shift')),
 
             // Inventory & Supply
-            'stockout_risk'              => fn () => $this->detectStockoutRisk($tenantId),
+            'stockout_risk'              => fn () => $this->detectStockoutRisk($tenantId, $t('stockout_risk')),
             'safety_stock_breach'        => fn () => $this->detectSafetyStockBreach($tenantId),
             'dead_stock'                 => fn () => $this->detectDeadStock($tenantId, $t('dead_stock')),
             'phantom_inventory'          => fn () => $this->detectPhantomInventory($tenantId),
@@ -593,19 +593,93 @@ class AnomalyDetectionService
     // INVENTORY & SUPPLY
     // =========================================================================
 
-    private function detectStockoutRisk(int $tenantId): void
+    /**
+     * Demand-aware stockout risk. A stockout that matters is a SKU that *sells*
+     * but whose current stock has hit (or fallen below) the line — a lost-sales
+     * event. This does NOT require a reorder_point: if one exists we use it,
+     * otherwise on-hand at/near zero while the SKU has real recent demand is the
+     * signal. Impact = expected lost sales over the horizon × price.
+     */
+    private function detectStockoutRisk(int $tenantId, array $thresholds): void
     {
-        $levels = InventoryLevel::where('tenant_id', $tenantId)
-            ->whereNotNull('reorder_point')
-            ->where('reorder_point', '>', 0)
-            ->whereColumn('on_hand_qty', '<=', 'reorder_point')
-            ->get();
+        $days     = (int)($thresholds['days'] ?? 30);
+        $minUnits = (float)($thresholds['min_units'] ?? 3);
+        $minValue = (float)($thresholds['min_revenue'] ?? self::DEFAULT_MIN_REVENUE);
+        $horizon  = (int)($thresholds['lost_sales_days'] ?? 7);
 
-        foreach ($levels as $level) {
-            $loc = $level->location ? " at {$level->location}" : '';
-            $this->flag($tenantId, 'stockout_risk', 'high', $level->sku, $level->store_id, $level->product_id,
-                "SKU {$level->sku}{$loc} is at stockout risk — on hand: {$level->on_hand_qty}, reorder point: {$level->reorder_point}.",
-                ['on_hand_qty' => $level->on_hand_qty, 'reorder_point' => $level->reorder_point, 'location' => $level->location]
+        $recentFrom = Carbon::today()->subDays($days)->format('Y-m-d');
+
+        // 1. Latest on-hand per (store, sku): stream all snapshots, keep the most
+        //    recent one per combo (null as_of_date treated as oldest).
+        $onHand = [];
+        InventoryLevel::where('tenant_id', $tenantId)
+            ->whereNotNull('store_id')
+            ->select(['store_id', 'sku', 'on_hand_qty', 'reorder_point', 'product_id', 'location', 'as_of_date'])
+            ->cursor()
+            ->each(function ($l) use (&$onHand) {
+                $k = $l->store_id . '|' . $l->sku;
+                $d = $l->as_of_date ? $l->as_of_date->format('Y-m-d') : '0000-00-00';
+                if (! isset($onHand[$k]) || $d >= $onHand[$k]['d']) {
+                    $onHand[$k] = [
+                        'qty'        => (float) $l->on_hand_qty,
+                        'reorder'    => $l->reorder_point !== null ? (float) $l->reorder_point : null,
+                        'product_id' => $l->product_id,
+                        'location'   => $l->location,
+                        'd'          => $d,
+                    ];
+                }
+            });
+
+        // 2. Recent demand per (store, sku) from the daily aggregate (the narrowing
+        //    filter — only SKUs that actually sell can suffer a lost-sales stockout).
+        $demand = [];
+        DB::table('sales_daily')
+            ->where('tenant_id', $tenantId)
+            ->where('date', '>=', $recentFrom)
+            ->selectRaw('store_id, sku, SUM(units_sold) as u')
+            ->groupBy('store_id', 'sku')
+            ->cursor()
+            ->each(function ($r) use (&$demand) {
+                $demand[$r->store_id . '|' . $r->sku] = (float) $r->u;
+            });
+
+        // 3. Flag: sells normally BUT stock is at/under the line.
+        foreach ($demand as $k => $units) {
+            if ($units < $minUnits) continue;
+
+            $oh = $onHand[$k] ?? null;
+            if ($oh === null) continue; // no stock snapshot for a selling SKU → can't assert a stockout here
+
+            $reorder    = $oh['reorder'];
+            $isStockout = $oh['qty'] <= 0 || ($reorder !== null && $reorder > 0 && $oh['qty'] <= $reorder);
+            if (! $isStockout) continue;
+
+            [$storeId, $sku] = explode('|', $k, 2);
+
+            $dailyDemand = $units / max(1, $days);
+            $lostUnits   = $dailyDemand * $horizon;
+            $price       = $this->unitPrice($sku);
+            $impact      = $lostUnits * $price;
+            if ($price > 0 && $impact < $minValue) continue;
+
+            $severity = $price > 0 ? $this->severityFromImpact($impact) : Anomaly::SEVERITY_HIGH;
+
+            $line = ($reorder !== null && $reorder > 0)
+                ? "on hand {$oh['qty']} ≤ reorder point {$reorder}"
+                : "on hand {$oh['qty']}";
+
+            $this->flag($tenantId, 'stockout_risk', $severity, $sku, (int) $storeId, $oh['product_id'],
+                "SKU {$sku} is at stockout risk at '{$oh['location']}' — {$line}, while it sells ~"
+                . round($dailyDemand, 1) . " units/day (\$" . number_format($impact, 2) . " lost sales at risk over {$horizon} days).",
+                [
+                    'on_hand_qty'    => $oh['qty'],
+                    'reorder_point'  => $reorder,
+                    'daily_demand'   => round($dailyDemand, 2),
+                    'lost_units'     => round($lostUnits, 1),
+                    'revenue_impact' => round($impact, 2),
+                    'location'       => $oh['location'],
+                    'lookback_days'  => $days,
+                ]
             );
         }
     }

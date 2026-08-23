@@ -946,10 +946,19 @@ class ImportProcessorService
             return $this->storeCache[$name];
         }
 
-        $store = Store::firstOrCreate(
-            ['tenant_id' => $tenantId, 'name' => $name],
-            ['tenant_id' => $tenantId, 'name' => $name]
-        );
+        // Match an existing store by NAME *or* CODE, so a transactions file that
+        // identifies stores by their code ("ST042") links to the master store
+        // record (name "Fujairah Grocery 42", code "ST042") instead of creating a
+        // duplicate. Only create a new store when neither matches.
+        $store = Store::where('tenant_id', $tenantId)
+            ->where(function ($q) use ($name) {
+                $q->where('name', $name)->orWhere('code', $name);
+            })
+            ->first();
+
+        if (! $store) {
+            $store = Store::create(['tenant_id' => $tenantId, 'name' => $name]);
+        }
 
         if ($this->storeCache !== null && $this->cachedTenantId === $tenantId) {
             $this->storeCache[$name] = (int) $store->id;

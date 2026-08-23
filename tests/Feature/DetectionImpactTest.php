@@ -3,10 +3,13 @@
 namespace Tests\Feature;
 
 use App\Models\Anomaly;
+use App\Models\InventoryLevel;
 use App\Models\Investigation;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
+use App\Models\SalesDaily;
 use App\Models\SalesTransaction;
+use App\Models\Store;
 use App\Models\Tenant;
 use App\Services\Anomaly\AnomalyDetectionService;
 use App\Services\Anomaly\InvestigationCorrelationService;
@@ -79,6 +82,48 @@ class DetectionImpactTest extends TestCase
 
         $this->assertNotNull($inv);
         $this->assertGreaterThan(0, (float) $inv->revenue_at_risk);
+    }
+
+    public function test_demand_aware_stockout_flags_selling_sku_at_zero_stock(): void
+    {
+        $store = Store::create(['tenant_id' => $this->tenant->id, 'name' => 'Store One', 'code' => 'ST01']);
+        Product::create(['tenant_id' => $this->tenant->id, 'sku' => 'SK-OUT',  'name' => 'Seller', 'selling_price' => 100]);
+        Product::create(['tenant_id' => $this->tenant->id, 'sku' => 'SK-DEAD', 'name' => 'Dead',   'selling_price' => 100]);
+
+        // Both currently at zero stock (latest snapshot), no reorder point at all.
+        foreach (['SK-OUT', 'SK-DEAD'] as $sku) {
+            InventoryLevel::create([
+                'tenant_id'   => $this->tenant->id,
+                'store_id'    => $store->id,
+                'sku'         => $sku,
+                'on_hand_qty' => 0,
+                'as_of_date'  => now()->subDays(2)->format('Y-m-d'),
+            ]);
+        }
+
+        // SK-OUT sells briskly (real demand); SK-DEAD has none.
+        for ($i = 1; $i <= 10; $i++) {
+            SalesDaily::create([
+                'tenant_id'         => $this->tenant->id,
+                'store_id'          => $store->id,
+                'sku'               => 'SK-OUT',
+                'date'              => now()->subDays($i)->format('Y-m-d'),
+                'units_sold'        => 15,
+                'revenue'           => 1500,
+                'transaction_count' => 3,
+            ]);
+        }
+
+        app(AnomalyDetectionService::class)->runForTenant($this->tenant->id);
+
+        $this->assertNotNull(
+            Anomaly::where('tenant_id', $this->tenant->id)->where('rule_type', 'stockout_risk')->where('sku', 'SK-OUT')->first(),
+            'a selling SKU at zero stock should be flagged as a stockout, with no reorder_point needed'
+        );
+        $this->assertNull(
+            Anomaly::where('tenant_id', $this->tenant->id)->where('rule_type', 'stockout_risk')->where('sku', 'SK-DEAD')->first(),
+            'a zero-stock SKU with no demand is dead stock, not a stockout'
+        );
     }
 
     public function test_receiving_discrepancy_gates_on_shortfall_value(): void
