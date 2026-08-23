@@ -986,59 +986,32 @@ class AnomalyDetectionService
      * Unexplained inventory shrinkage between the two most recent snapshots of a
      * (sku, location): stock fell by more than sales can account for.
      *
-     * Rewritten to run in a handful of BULK queries instead of ~2 per (sku,
-     * location) pair. The old version issued one query for the pair list, then a
-     * fetch-snapshots + a sum-sales query per pair — ~200k round-trips on this
-     * dataset and, at ~684s, essentially the entire detection run time. Now:
-     *   1 window-function query for the latest two snapshots per pair, then one
-     *   grouped sales query PER DISTINCT (prev_date → latest_date) window (there
-     *   are only a few, since snapshots share import dates).
+     * Rewritten from ~200k round-trips (the old version fetched snapshots + summed
+     * sales with a query PER pair — ~684s, essentially the whole detection run) to
+     * two lightweight STREAMING passes + a couple of grouped sales queries. It
+     * streams (never materialises) the latest-two-snapshots set so memory stays
+     * flat regardless of catalogue size:
+     *   pass A collects the distinct (prev_date → latest_date) windows, one
+     *   grouped sales query runs per window (usually just one), pass B evaluates
+     *   and flags each dropped pair inline.
      */
     private function detectInventoryShrinkage(int $tenantId, array $thresholds): void
     {
         $pct      = (float)($thresholds['pct'] ?? 20);
         $minValue = (float)($thresholds['min_value'] ?? self::DEFAULT_MIN_REVENUE);
 
-        // 1. Latest two snapshots per (sku, location) in a single pass.
-        $rows = DB::select(
-            'SELECT store_id, sku, location, on_hand_qty, as_of_date, product_id, rn FROM (
-                SELECT store_id, sku, location, on_hand_qty, as_of_date, product_id,
-                       ROW_NUMBER() OVER (PARTITION BY sku, location ORDER BY as_of_date DESC) AS rn
-                FROM inventory_levels
-                WHERE tenant_id = ? AND as_of_date IS NOT NULL AND location IS NOT NULL
-            ) s WHERE rn <= 2',
-            [$tenantId]
-        );
-
-        // Group the two snapshots per pair.
-        $pairs = [];
-        foreach ($rows as $r) {
-            $pairs[$r->sku . '|' . $r->location][(int) $r->rn] = $r;
-        }
-
-        // 2. Keep only pairs that actually dropped; collect the distinct
-        //    (prev_date → latest_date) windows we need sales for.
-        $valid   = [];
+        // Pass A: which sales windows do we actually need? (tiny set)
         $windows = [];
-        foreach ($pairs as $k => $p) {
-            if (! isset($p[1], $p[2])) continue; // need both snapshots
+        $this->streamShrinkagePairs($tenantId, function (array $cur) use (&$windows) {
+            $e = $this->shrinkagePairEntry($cur);
+            if ($e !== null) {
+                $windows[$e['pd'] . '|' . $e['ld']] = true;
+            }
+        });
 
-            $latest    = $p[1];
-            $previous  = $p[2];
-            $prevQty   = (float) $previous->on_hand_qty;
-            $latestQty = (float) $latest->on_hand_qty;
-            if ($prevQty <= 0 || $latestQty >= $prevQty) continue;
+        if (empty($windows)) return;
 
-            $pd = substr((string) $previous->as_of_date, 0, 10);
-            $ld = substr((string) $latest->as_of_date, 0, 10);
-
-            $valid[$k] = compact('latest', 'previous', 'prevQty', 'latestQty', 'pd', 'ld');
-            $windows[$pd . '|' . $ld][$latest->sku] = true;
-        }
-
-        if (empty($valid)) return;
-
-        // 3. One grouped sales query per distinct window (usually just one).
+        // One grouped sales query per distinct window.
         $salesByWindow = [];
         foreach (array_keys($windows) as $w) {
             [$pd, $ld] = explode('|', $w, 2);
@@ -1054,40 +1027,104 @@ class AnomalyDetectionService
             $salesByWindow[$w] = $m;
         }
 
-        // 4. Evaluate each dropped pair against sales in its window.
-        foreach ($valid as $v) {
-            $sku           = $v['latest']->sku;
-            $salesInPeriod = $salesByWindow[$v['pd'] . '|' . $v['ld']][$sku] ?? 0.0;
+        // Pass B: evaluate + flag each dropped pair inline (no accumulation).
+        $this->streamShrinkagePairs($tenantId, function (array $cur) use (&$salesByWindow, $pct, $minValue, $tenantId) {
+            $e = $this->shrinkagePairEntry($cur);
+            if ($e === null) return;
 
-            $expectedQty = $v['prevQty'] - $salesInPeriod;
-            $unexplained = $expectedQty - $v['latestQty'];
-            if ($unexplained <= 0) continue;
+            $sales       = $salesByWindow[$e['pd'] . '|' . $e['ld']][$e['sku']] ?? 0.0;
+            $expectedQty = $e['prevQty'] - $sales;
+            $unexplained = $expectedQty - $e['latestQty'];
+            if ($unexplained <= 0) return;
 
-            $shrinkagePct = ($unexplained / $v['prevQty']) * 100;
-            if ($shrinkagePct < $pct) continue;
+            $shrinkagePct = ($unexplained / $e['prevQty']) * 100;
+            if ($shrinkagePct < $pct) return;
 
             // Gate on the cost of the missing units so a 20% shrink of a penny
             // item doesn't rank alongside a real loss. Only floors when cost is known.
-            $cost  = $this->unitCost($sku);
+            $cost  = $this->unitCost($e['sku']);
             $value = $unexplained * $cost;
-            if ($cost > 0 && $value < $minValue) continue;
+            if ($cost > 0 && $value < $minValue) return;
             $severity = $cost > 0 ? $this->severityFromImpact($value) : Anomaly::SEVERITY_HIGH;
 
-            $this->flag($tenantId, 'inventory_shrinkage', $severity, $sku, $v['latest']->store_id, $v['latest']->product_id,
-                "SKU {$sku} at '{$v['latest']->location}' shows " . round($shrinkagePct) . "% inventory shrinkage — "
+            $this->flag($tenantId, 'inventory_shrinkage', $severity, $e['sku'], $e['store_id'], $e['product_id'],
+                "SKU {$e['sku']} at '{$e['location']}' shows " . round($shrinkagePct) . "% inventory shrinkage — "
                 . round($unexplained) . " units (\$" . number_format($value, 2) . ") unaccounted for between "
-                . $v['pd'] . " and " . $v['ld'] . ".",
+                . $e['pd'] . " and " . $e['ld'] . ".",
                 [
-                    'location'        => $v['latest']->location,
-                    'prev_qty'        => $v['prevQty'],
-                    'latest_qty'      => $v['latestQty'],
-                    'sales_in_period' => $salesInPeriod,
+                    'location'        => $e['location'],
+                    'prev_qty'        => $e['prevQty'],
+                    'latest_qty'      => $e['latestQty'],
+                    'sales_in_period' => $sales,
                     'unexplained'     => round($unexplained, 2),
                     'shrinkage_pct'   => round($shrinkagePct, 1),
                     'revenue_impact'  => round($value, 2),
                 ]
             );
+        });
+    }
+
+    /**
+     * Streams the latest two snapshots of every (sku, location) for a tenant and
+     * invokes $onPair($cur) once per pair, where $cur is [rn => row]. Rows arrive
+     * ordered by (sku, location, rn) so each pair's two rows are adjacent — the
+     * callback fires as soon as a pair completes and nothing is held across pairs,
+     * keeping memory flat. Backed by a ROW_NUMBER() window (no per-pair queries).
+     */
+    private function streamShrinkagePairs(int $tenantId, callable $onPair): void
+    {
+        $sub = DB::table('inventory_levels')
+            ->where('tenant_id', $tenantId)
+            ->whereNotNull('as_of_date')
+            ->whereNotNull('location')
+            ->selectRaw('store_id, sku, location, on_hand_qty, as_of_date, product_id, ROW_NUMBER() OVER (PARTITION BY sku, location ORDER BY as_of_date DESC) AS rn');
+
+        $curKey = null;
+        $cur    = [];
+
+        foreach (
+            DB::query()->fromSub($sub, 's')->where('rn', '<=', 2)
+                ->orderBy('sku')->orderBy('location')->orderBy('rn')
+                ->cursor() as $r
+        ) {
+            $k = $r->sku . '|' . $r->location;
+            if ($k !== $curKey) {
+                if ($curKey !== null) $onPair($cur);
+                $cur    = [];
+                $curKey = $k;
+            }
+            $cur[(int) $r->rn] = $r;
         }
+
+        if ($curKey !== null) $onPair($cur);
+    }
+
+    /**
+     * Turns a streamed (sku, location) pair — [rn => row] — into a compact drop
+     * record, or null when there is no genuine drop (missing snapshot, zero prior
+     * stock, or stock not lower). Keeping this scalar-only means callers never
+     * hold row objects.
+     */
+    private function shrinkagePairEntry(array $cur): ?array
+    {
+        if (! isset($cur[1], $cur[2])) return null; // need both snapshots
+
+        $latest    = $cur[1];
+        $previous  = $cur[2];
+        $prevQty   = (float) $previous->on_hand_qty;
+        $latestQty = (float) $latest->on_hand_qty;
+        if ($prevQty <= 0 || $latestQty >= $prevQty) return null;
+
+        return [
+            'sku'        => $latest->sku,
+            'location'   => $latest->location,
+            'store_id'   => $latest->store_id,
+            'product_id' => $latest->product_id,
+            'prevQty'    => $prevQty,
+            'latestQty'  => $latestQty,
+            'pd'         => substr((string) $previous->as_of_date, 0, 10),
+            'ld'         => substr((string) $latest->as_of_date, 0, 10),
+        ];
     }
 
     // =========================================================================
