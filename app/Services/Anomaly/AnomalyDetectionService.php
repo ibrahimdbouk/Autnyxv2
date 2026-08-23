@@ -982,70 +982,105 @@ class AnomalyDetectionService
         }
     }
 
+    /**
+     * Unexplained inventory shrinkage between the two most recent snapshots of a
+     * (sku, location): stock fell by more than sales can account for.
+     *
+     * Rewritten to run in a handful of BULK queries instead of ~2 per (sku,
+     * location) pair. The old version issued one query for the pair list, then a
+     * fetch-snapshots + a sum-sales query per pair — ~200k round-trips on this
+     * dataset and, at ~684s, essentially the entire detection run time. Now:
+     *   1 window-function query for the latest two snapshots per pair, then one
+     *   grouped sales query PER DISTINCT (prev_date → latest_date) window (there
+     *   are only a few, since snapshots share import dates).
+     */
     private function detectInventoryShrinkage(int $tenantId, array $thresholds): void
     {
         $pct      = (float)($thresholds['pct'] ?? 20);
         $minValue = (float)($thresholds['min_value'] ?? self::DEFAULT_MIN_REVENUE);
 
-        $pairs = InventoryLevel::where('tenant_id', $tenantId)
-            ->whereNotNull('as_of_date')
-            ->whereNotNull('location')
-            ->selectRaw('sku, location')
-            ->groupBy('sku', 'location')
-            ->havingRaw('COUNT(*) >= 2')
-            ->get();
+        // 1. Latest two snapshots per (sku, location) in a single pass.
+        $rows = DB::select(
+            'SELECT store_id, sku, location, on_hand_qty, as_of_date, product_id, rn FROM (
+                SELECT store_id, sku, location, on_hand_qty, as_of_date, product_id,
+                       ROW_NUMBER() OVER (PARTITION BY sku, location ORDER BY as_of_date DESC) AS rn
+                FROM inventory_levels
+                WHERE tenant_id = ? AND as_of_date IS NOT NULL AND location IS NOT NULL
+            ) s WHERE rn <= 2',
+            [$tenantId]
+        );
 
-        foreach ($pairs as $pair) {
-            $snapshots = InventoryLevel::where('tenant_id', $tenantId)
-                ->where('sku', $pair->sku)
-                ->where('location', $pair->location)
-                ->whereNotNull('as_of_date')
-                ->orderBy('as_of_date', 'desc')
-                ->limit(2)
-                ->get();
+        // Group the two snapshots per pair.
+        $pairs = [];
+        foreach ($rows as $r) {
+            $pairs[$r->sku . '|' . $r->location][(int) $r->rn] = $r;
+        }
 
-            if ($snapshots->count() < 2) continue;
+        // 2. Keep only pairs that actually dropped; collect the distinct
+        //    (prev_date → latest_date) windows we need sales for.
+        $valid   = [];
+        $windows = [];
+        foreach ($pairs as $k => $p) {
+            if (! isset($p[1], $p[2])) continue; // need both snapshots
 
-            $latest   = $snapshots->first();
-            $previous = $snapshots->last();
-
+            $latest    = $p[1];
+            $previous  = $p[2];
             $prevQty   = (float) $previous->on_hand_qty;
             $latestQty = (float) $latest->on_hand_qty;
-
             if ($prevQty <= 0 || $latestQty >= $prevQty) continue;
 
-            $salesInPeriod = (float) SalesTransaction::where('tenant_id', $tenantId)
-                ->where('sku', $pair->sku)
-                ->whereBetween('date', [
-                    $previous->as_of_date->format('Y-m-d'),
-                    $latest->as_of_date->format('Y-m-d'),
-                ])
-                ->sum('quantity');
+            $pd = substr((string) $previous->as_of_date, 0, 10);
+            $ld = substr((string) $latest->as_of_date, 0, 10);
 
-            $expectedQty = $prevQty - $salesInPeriod;
-            $unexplained = $expectedQty - $latestQty;
+            $valid[$k] = compact('latest', 'previous', 'prevQty', 'latestQty', 'pd', 'ld');
+            $windows[$pd . '|' . $ld][$latest->sku] = true;
+        }
 
+        if (empty($valid)) return;
+
+        // 3. One grouped sales query per distinct window (usually just one).
+        $salesByWindow = [];
+        foreach (array_keys($windows) as $w) {
+            [$pd, $ld] = explode('|', $w, 2);
+            $m = [];
+            SalesTransaction::where('tenant_id', $tenantId)
+                ->whereBetween('date', [$pd, $ld])
+                ->selectRaw('sku, SUM(quantity) as q')
+                ->groupBy('sku')
+                ->cursor()
+                ->each(function ($r) use (&$m) {
+                    $m[$r->sku] = (float) $r->q;
+                });
+            $salesByWindow[$w] = $m;
+        }
+
+        // 4. Evaluate each dropped pair against sales in its window.
+        foreach ($valid as $v) {
+            $sku           = $v['latest']->sku;
+            $salesInPeriod = $salesByWindow[$v['pd'] . '|' . $v['ld']][$sku] ?? 0.0;
+
+            $expectedQty = $v['prevQty'] - $salesInPeriod;
+            $unexplained = $expectedQty - $v['latestQty'];
             if ($unexplained <= 0) continue;
 
-            $shrinkagePct = ($unexplained / $prevQty) * 100;
-
+            $shrinkagePct = ($unexplained / $v['prevQty']) * 100;
             if ($shrinkagePct < $pct) continue;
 
             // Gate on the cost of the missing units so a 20% shrink of a penny
             // item doesn't rank alongside a real loss. Only floors when cost is known.
-            $cost  = $this->unitCost($pair->sku);
+            $cost  = $this->unitCost($sku);
             $value = $unexplained * $cost;
             if ($cost > 0 && $value < $minValue) continue;
             $severity = $cost > 0 ? $this->severityFromImpact($value) : Anomaly::SEVERITY_HIGH;
 
-            $this->flag($tenantId, 'inventory_shrinkage', $severity, $pair->sku, $latest->store_id, $latest->product_id,
-                "SKU {$pair->sku} at '{$pair->location}' shows " . round($shrinkagePct) . "% inventory shrinkage — "
+            $this->flag($tenantId, 'inventory_shrinkage', $severity, $sku, $v['latest']->store_id, $v['latest']->product_id,
+                "SKU {$sku} at '{$v['latest']->location}' shows " . round($shrinkagePct) . "% inventory shrinkage — "
                 . round($unexplained) . " units (\$" . number_format($value, 2) . ") unaccounted for between "
-                . $previous->as_of_date->format('Y-m-d') . " and " . $latest->as_of_date->format('Y-m-d') . ".",
+                . $v['pd'] . " and " . $v['ld'] . ".",
                 [
-                    'location'        => $pair->location,
-                    'prev_qty'        => $prevQty,
-                    'latest_qty'      => $latestQty,
+                    'location'        => $v['latest']->location,
+                    'prev_qty'        => $v['prevQty'],
+                    'latest_qty'      => $v['latestQty'],
                     'sales_in_period' => $salesInPeriod,
                     'unexplained'     => round($unexplained, 2),
                     'shrinkage_pct'   => round($shrinkagePct, 1),
