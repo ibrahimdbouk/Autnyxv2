@@ -48,29 +48,15 @@ class ListImports extends ListRecords
                 ->action(function () {
                     $tenantId = Filament::getTenant()->id;
 
-                    try {
-                        // Full pipeline: detect raw anomalies, THEN correlate them into
-                        // investigations — the dashboards read investigations, so both
-                        // steps are required for anything beyond the Anomalies page.
-                        app(AnomalyDetectionService::class)->runForTenant($tenantId);
-                        app(InvestigationCorrelationService::class)->correlateForTenant($tenantId);
+                    // Detection runs off the web request (it can take minutes on large
+                    // data). Dispatched to the queue; a worker picks it up.
+                    \App\Jobs\RunTenantDetectionJob::dispatch($tenantId);
 
-                        $open = Investigation::where('tenant_id', $tenantId)
-                            ->where('status', Investigation::STATUS_OPEN)
-                            ->count();
-
-                        Notification::make()
-                            ->title('Detection complete')
-                            ->body("Scanned all data — {$open} open investigation(s), ranked by revenue at risk.")
-                            ->success()
-                            ->send();
-                    } catch (\Throwable $e) {
-                        Notification::make()
-                            ->title('Detection failed')
-                            ->body($e->getMessage())
-                            ->danger()
-                            ->send();
-                    }
+                    Notification::make()
+                        ->title('Detection started')
+                        ->body('Your data is being scanned in the background — investigations will refresh automatically in a few minutes.')
+                        ->success()
+                        ->send();
                 }),
 
             Action::make('upload')

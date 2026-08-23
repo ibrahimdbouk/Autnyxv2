@@ -11,6 +11,7 @@ use App\Models\PurchaseOrder;
 use App\Models\SalesTransaction;
 use App\Models\Store;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class AnomalyDetectionService
@@ -326,50 +327,142 @@ class AnomalyDetectionService
         }
     }
 
+    /**
+     * Store-level, candidate-based cannibalization detection (reads the
+     * sales_daily aggregate, not raw POS). The pipeline narrows the population
+     * before any comparison, so work scales with genuinely-moving SKUs rather
+     * than SKU²:
+     *   store → category → positive-candidate SKUs (rose ≥ threshold) →
+     *   down-moving siblings in the SAME store+category → category-demand guard
+     *   → category-share scoring → one signal per (store, affected SKU).
+     */
     private function detectCannibalizationSignal(int $tenantId, array $thresholds): void
     {
-        $pct  = (float)($thresholds['pct'] ?? 30);
-        $days = (int)($thresholds['days'] ?? 30);
+        $pct      = (float)($thresholds['pct'] ?? 30);
+        $days     = (int)($thresholds['days'] ?? 30);
+        $minUnits = (float)($thresholds['min_units'] ?? 5);
 
-        [$recent, $historical, $periods] = $this->salesComparison($tenantId, $days);
+        $recentFrom   = Carbon::today()->subDays($days)->format('Y-m-d');
+        $baselineFrom = Carbon::today()->subDays($days * 2)->format('Y-m-d');
 
-        if ($recent->isEmpty() || $historical->isEmpty()) return;
-
-        $allSkus   = $recent->keys()->merge($historical->keys())->unique();
-        $products  = Product::where('tenant_id', $tenantId)
+        // SKU → [category, product_id]; only categorised products can have siblings.
+        $catalog = [];
+        Product::where('tenant_id', $tenantId)
             ->whereNotNull('category')
-            ->whereIn('sku', $allSkus)
-            ->get()
-            ->groupBy('category');
+            ->select(['sku', 'category', 'id'])
+            ->cursor()
+            ->each(function ($p) use (&$catalog) {
+                $catalog[trim((string) $p->sku)] = ['category' => $p->category, 'product_id' => $p->id];
+            });
 
-        foreach ($products as $category => $categoryProducts) {
-            if ($categoryProducts->count() < 2) continue;
+        if (empty($catalog)) return;
 
-            $rising  = [];
-            $falling = [];
+        // Evaluate store by store (batching) so nothing large is held at once.
+        $storeIds = DB::table('sales_daily')
+            ->where('tenant_id', $tenantId)
+            ->whereNotNull('store_id')
+            ->where('date', '>=', $baselineFrom)
+            ->distinct()
+            ->pluck('store_id');
 
-            foreach ($categoryProducts as $product) {
-                $sku       = $product->sku;
-                $recentQty = (float)($recent->get($sku) ?? 0);
-                $histQty   = (float)($historical->get($sku) ?? 0);
+        foreach ($storeIds as $storeId) {
+            $this->detectCannibalizationForStore($tenantId, (int) $storeId, $catalog, $pct, $minUnits, $days, $recentFrom, $baselineFrom);
+        }
+    }
 
-                if ($histQty <= 0) continue;
+    private function detectCannibalizationForStore(
+        int $tenantId, int $storeId, array $catalog,
+        float $pct, float $minUnits, int $days, string $recentFrom, string $baselineFrom
+    ): void {
+        // Recent vs equal-length prior window, per SKU, for this store only.
+        $rows = DB::select(
+            'SELECT sku,
+                    SUM(CASE WHEN date >= ? THEN units_sold ELSE 0 END) AS recent,
+                    SUM(CASE WHEN date >= ? AND date < ? THEN units_sold ELSE 0 END) AS baseline
+             FROM sales_daily
+             WHERE tenant_id = ? AND store_id = ? AND date >= ?
+             GROUP BY sku',
+            [$recentFrom, $baselineFrom, $recentFrom, $tenantId, $storeId, $baselineFrom]
+        );
 
-                $avgQty    = $histQty / $periods;
-                $changePct = (($recentQty - $avgQty) / $avgQty) * 100;
+        // Bucket the store's SKUs by category, tracking category totals.
+        $cats = []; // category => ['skus'=>[...], 'catRecent'=>, 'catBaseline'=>]
+        foreach ($rows as $r) {
+            $sku = trim((string) $r->sku);
+            if (! isset($catalog[$sku])) continue; // uncategorised → no siblings
 
-                if ($changePct >= $pct)  $rising[]  = ['sku' => $sku, 'change' => round($changePct, 1)];
-                if ($changePct <= -$pct) $falling[] = ['sku' => $sku, 'change' => round($changePct, 1), 'product_id' => $product->id];
+            $category = $catalog[$sku]['category'];
+            $recent   = (float) $r->recent;
+            $baseline = (float) $r->baseline;
+
+            if (! isset($cats[$category])) {
+                $cats[$category] = ['skus' => [], 'catRecent' => 0.0, 'catBaseline' => 0.0];
             }
+            $cats[$category]['catRecent']   += $recent;
+            $cats[$category]['catBaseline'] += $baseline;
+            $cats[$category]['skus'][] = [
+                'sku'        => $sku,
+                'recent'     => $recent,
+                'baseline'   => $baseline,
+                'change'     => $baseline > 0 ? (($recent - $baseline) / $baseline) * 100 : null,
+                'product_id' => $catalog[$sku]['product_id'],
+            ];
+        }
 
-            if (!empty($rising) && !empty($falling)) {
-                $risingSkus = implode(', ', array_column($rising, 'sku'));
-                foreach ($falling as $f) {
-                    $this->flag($tenantId, 'cannibalization_signal', 'medium', $f['sku'], null, $f['product_id'],
-                        "SKU {$f['sku']} (category: {$category}) fell {$f['change']}% while sibling SKU(s) {$risingSkus} rose — possible cannibalization.",
-                        ['category' => $category, 'falling_sku' => $f['sku'], 'rising_skus' => $rising, 'change_pct' => $f['change']]
-                    );
-                }
+        foreach ($cats as $category => $c) {
+            if (count($c['skus']) < 2 || $c['catBaseline'] <= 0) continue;
+
+            $catChangePct = (($c['catRecent'] - $c['catBaseline']) / $c['catBaseline']) * 100;
+
+            // Category-demand guard: if the whole category is collapsing, this is
+            // category decline, not cannibalization — do not flag.
+            if ($catChangePct <= -$pct) continue;
+
+            // Candidate risers and sibling fallers within this store+category.
+            $candidates = array_filter($c['skus'], fn ($s) => $s['change'] !== null && $s['change'] >= $pct && $s['recent'] >= $minUnits);
+            $fallers    = array_filter($c['skus'], fn ($s) => $s['change'] !== null && $s['change'] <= -$pct);
+
+            if (empty($candidates) || empty($fallers)) continue;
+
+            // Strongest riser is the primary suspect.
+            usort($candidates, fn ($a, $b) => $b['change'] <=> $a['change']);
+            $primary = $candidates[0];
+
+            $primaryRecentShare   = $c['catRecent']   > 0 ? $primary['recent']   / $c['catRecent']   : 0;
+            $primaryBaselineShare = $c['catBaseline'] > 0 ? $primary['baseline'] / $c['catBaseline'] : 0;
+            $primaryShareGain     = ($primaryRecentShare - $primaryBaselineShare) * 100;
+
+            foreach ($fallers as $affected) {
+                $affRecentShare   = $c['catRecent']   > 0 ? $affected['recent']   / $c['catRecent']   : 0;
+                $affBaselineShare = $c['catBaseline'] > 0 ? $affected['baseline'] / $c['catBaseline'] : 0;
+                $affShareLoss     = ($affBaselineShare - $affRecentShare) * 100; // positive = lost share
+
+                // Confidence: category stability + genuine share transfer.
+                $stability   = max(0.0, 1 - min(1.0, abs($catChangePct) / max(1.0, 2 * $pct)));
+                $shareFactor = min(1.0, max(0.0, ($primaryShareGain + $affShareLoss)) / max(1.0, 2 * $pct));
+                $confidence  = round(0.5 * $stability + 0.5 * $shareFactor, 2);
+
+                $severity = $confidence >= 0.7 ? Anomaly::SEVERITY_HIGH
+                    : ($confidence >= 0.4 ? Anomaly::SEVERITY_MEDIUM : Anomaly::SEVERITY_LOW);
+
+                $this->flag($tenantId, 'cannibalization_signal', $severity, $affected['sku'], $storeId, $affected['product_id'],
+                    "SKU {$affected['sku']} fell " . round(abs($affected['change'])) . "% while sibling {$primary['sku']} rose "
+                    . round($primary['change']) . "% in the same store/category ({$category}); category demand moved "
+                    . round($catChangePct, 1) . "% and {$primary['sku']} took category share — possible cannibalization.",
+                    [
+                        'category'                  => $category,
+                        'primary_sku'               => $primary['sku'],
+                        'affected_sku'              => $affected['sku'],
+                        'primary_sales_change_pct'  => round($primary['change'], 1),
+                        'affected_sales_change_pct' => round($affected['change'], 1),
+                        'category_sales_change_pct' => round($catChangePct, 1),
+                        'primary_share_change_pct'  => round($primaryShareGain, 1),
+                        'affected_share_change_pct' => round(-$affShareLoss, 1),
+                        'confidence_score'          => $confidence,
+                        'promotion_context'         => 'unknown',
+                        'lookback_days'             => $days,
+                    ]
+                );
             }
         }
     }

@@ -444,12 +444,16 @@ class ImportProcessorService
         );
 
         try {
-            // Full pipeline so investigations (and therefore the dashboards) are
-            // populated automatically, not just the raw Anomalies page.
-            app(AnomalyDetectionService::class)->runForTenant($import->tenant_id);
-            app(\App\Services\Anomaly\InvestigationCorrelationService::class)->correlateForTenant($import->tenant_id);
+            // Keep the sales_daily aggregate current for this import's date range
+            // (memory-safe, incremental) so detection reads the aggregate, not raw POS.
+            app(\App\Services\Sales\SalesDailyAggregator::class)->aggregateForImport($import);
+
+            // Detection can take minutes on large data, so it runs off the web
+            // request as a queued job (requires a queue worker). It populates
+            // anomalies + investigations, which the dashboards read.
+            \App\Jobs\RunTenantDetectionJob::dispatch($import->tenant_id);
         } catch (\Throwable $e) {
-            Log::error('Anomaly detection failed after import', ['import_id' => $import->id, 'error' => $e->getMessage()]);
+            Log::error('Post-import aggregation/detection dispatch failed', ['import_id' => $import->id, 'error' => $e->getMessage()]);
         }
     }
 

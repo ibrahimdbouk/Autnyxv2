@@ -155,13 +155,12 @@ class ViewImport extends Page
         $tenantId = Filament::getTenant()?->id;
         if (!$tenantId) return;
 
-        try {
-            app(AnomalyDetectionService::class)->runForTenant($tenantId);
-            app(\App\Services\Anomaly\InvestigationCorrelationService::class)->correlateForTenant($tenantId);
-            Notification::make()->title('Anomaly detection completed')->success()->send();
-        } catch (\Throwable $e) {
-            Notification::make()->title('Detection failed: ' . $e->getMessage())->danger()->send();
-        }
+        \App\Jobs\RunTenantDetectionJob::dispatch($tenantId);
+        Notification::make()
+            ->title('Detection started')
+            ->body('Scanning in the background — results refresh in a few minutes.')
+            ->success()
+            ->send();
     }
 
     protected function getHeaderActions(): array
