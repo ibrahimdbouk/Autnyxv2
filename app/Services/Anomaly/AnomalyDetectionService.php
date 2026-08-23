@@ -987,102 +987,80 @@ class AnomalyDetectionService
      * (sku, location): stock fell by more than sales can account for.
      *
      * The original ran a fetch-snapshots + sum-sales query PER pair — ~200k
-     * round-trips, ~684s, essentially the entire detection run. This version does
-     * the ENTIRE computation in SQL: a LEAD() window pairs each latest snapshot
-     * with its previous one, a grouped sales CTE covers the window, and the
-     * unexplained-shrinkage threshold is applied in the query — so only the
-     * handful of genuinely-shrinking rows ever return to PHP (no large result to
-     * buffer). Runs once per distinct snapshot window (usually just one).
+     * round-trips, ~684s, essentially the entire detection run. This does the
+     * whole rule in ONE query: a LEAD() window pairs each latest snapshot with its
+     * previous one (backed by idx_inv_pair_snapshot, so no full sort), and a
+     * LATERAL join sums each dropped pair's sales over ITS OWN date window (backed
+     * by idx_sales_daily_sku_date). The shrinkage threshold is applied in SQL, so
+     * only the handful of genuine hits return to PHP — no per-window loop (the
+     * data has thousands of distinct snapshot windows) and no large buffer.
      */
     private function detectInventoryShrinkage(int $tenantId, array $thresholds): void
     {
         $pct      = (float)($thresholds['pct'] ?? 20);
         $minValue = (float)($thresholds['min_value'] ?? self::DEFAULT_MIN_REVENUE);
 
-        // Distinct (prev_date → latest_date) windows (tiny set — snapshots share
-        // import dates, so this is usually a single row).
-        $windowRows = DB::select(
-            "SELECT DISTINCT TO_CHAR(latest_date, 'YYYY-MM-DD') AS ld, TO_CHAR(prev_date, 'YYYY-MM-DD') AS pd FROM (
-                SELECT as_of_date AS latest_date,
-                       LEAD(as_of_date) OVER w AS prev_date,
-                       ROW_NUMBER()     OVER w AS rn
-                FROM inventory_levels
-                WHERE tenant_id = ? AND as_of_date IS NOT NULL AND location IS NOT NULL
-                WINDOW w AS (PARTITION BY sku, location ORDER BY as_of_date DESC)
-            ) t WHERE rn = 1 AND prev_date IS NOT NULL",
-            [$tenantId]
+        $rows = DB::select(
+            "WITH drops AS (
+                SELECT store_id, sku, location, product_id, latest_qty, prev_qty, prev_date, latest_date
+                FROM (
+                    SELECT store_id, sku, location, product_id,
+                           on_hand_qty AS latest_qty,
+                           LEAD(on_hand_qty) OVER w AS prev_qty,
+                           as_of_date       AS latest_date,
+                           LEAD(as_of_date) OVER w AS prev_date,
+                           ROW_NUMBER()     OVER w AS rn
+                    FROM inventory_levels
+                    WHERE tenant_id = ? AND as_of_date IS NOT NULL AND location IS NOT NULL
+                    WINDOW w AS (PARTITION BY sku, location ORDER BY as_of_date DESC)
+                ) t
+                WHERE rn = 1 AND prev_qty IS NOT NULL AND prev_qty > 0 AND latest_qty < prev_qty
+            )
+            SELECT d.store_id, d.sku, d.location, d.product_id, d.latest_qty, d.prev_qty,
+                   TO_CHAR(d.prev_date,   'YYYY-MM-DD') AS prev_date,
+                   TO_CHAR(d.latest_date, 'YYYY-MM-DD') AS latest_date,
+                   COALESCE(sd.q, 0) AS sales,
+                   (d.prev_qty - COALESCE(sd.q, 0) - d.latest_qty) AS unexplained
+            FROM drops d
+            LEFT JOIN LATERAL (
+                SELECT SUM(s.units_sold) AS q
+                FROM sales_daily s
+                WHERE s.tenant_id = ? AND s.sku = d.sku
+                  AND s.date >= d.prev_date::date AND s.date <= d.latest_date::date
+            ) sd ON TRUE
+            WHERE (d.prev_qty - COALESCE(sd.q, 0) - d.latest_qty) > 0
+              AND ((d.prev_qty - COALESCE(sd.q, 0) - d.latest_qty) / d.prev_qty) * 100 >= ?",
+            [$tenantId, $tenantId, $pct]
         );
 
-        if (empty($windowRows)) return;
+        foreach ($rows as $row) {
+            $prevQty      = (float) $row->prev_qty;
+            $latestQty    = (float) $row->latest_qty;
+            $sales        = (float) $row->sales;
+            $unexplained  = (float) $row->unexplained;
+            $shrinkagePct = ($unexplained / $prevQty) * 100;
 
-        foreach ($windowRows as $wr) {
-            $pd = $wr->pd;
-            $ld = $wr->ld;
+            // Gate on the cost of the missing units so a 20% shrink of a penny
+            // item doesn't rank alongside a real loss. Only floors when cost is known.
+            $cost  = $this->unitCost($row->sku);
+            $value = $unexplained * $cost;
+            if ($cost > 0 && $value < $minValue) continue;
+            $severity = $cost > 0 ? $this->severityFromImpact($value) : Anomaly::SEVERITY_HIGH;
 
-            // Whole rule in SQL: pair snapshots, subtract window sales, keep only
-            // rows over the shrinkage threshold. Result is just the real hits.
-            $rows = DB::select(
-                "WITH drops AS (
-                    SELECT store_id, sku, location, product_id, latest_qty, prev_qty
-                    FROM (
-                        SELECT store_id, sku, location, product_id,
-                               on_hand_qty AS latest_qty,
-                               LEAD(on_hand_qty) OVER w AS prev_qty,
-                               TO_CHAR(as_of_date, 'YYYY-MM-DD') AS latest_date,
-                               TO_CHAR(LEAD(as_of_date) OVER w, 'YYYY-MM-DD') AS prev_date,
-                               ROW_NUMBER() OVER w AS rn
-                        FROM inventory_levels
-                        WHERE tenant_id = ? AND as_of_date IS NOT NULL AND location IS NOT NULL
-                        WINDOW w AS (PARTITION BY sku, location ORDER BY as_of_date DESC)
-                    ) t
-                    WHERE rn = 1 AND prev_qty IS NOT NULL AND prev_qty > 0 AND latest_qty < prev_qty
-                      AND prev_date = ? AND latest_date = ?
-                ),
-                sales AS (
-                    SELECT sku, SUM(quantity) AS q
-                    FROM sales_transactions
-                    WHERE tenant_id = ? AND date BETWEEN ? AND ?
-                    GROUP BY sku
-                )
-                SELECT d.store_id, d.sku, d.location, d.product_id, d.latest_qty, d.prev_qty,
-                       COALESCE(s.q, 0) AS sales,
-                       (d.prev_qty - COALESCE(s.q, 0) - d.latest_qty) AS unexplained
-                FROM drops d
-                LEFT JOIN sales s ON s.sku = d.sku
-                WHERE (d.prev_qty - COALESCE(s.q, 0) - d.latest_qty) > 0
-                  AND ((d.prev_qty - COALESCE(s.q, 0) - d.latest_qty) / d.prev_qty) * 100 >= ?",
-                [$tenantId, $pd, $ld, $tenantId, $pd, $ld, $pct]
+            $this->flag($tenantId, 'inventory_shrinkage', $severity, $row->sku, $row->store_id, $row->product_id,
+                "SKU {$row->sku} at '{$row->location}' shows " . round($shrinkagePct) . "% inventory shrinkage — "
+                . round($unexplained) . " units (\$" . number_format($value, 2) . ") unaccounted for between "
+                . $row->prev_date . " and " . $row->latest_date . ".",
+                [
+                    'location'        => $row->location,
+                    'prev_qty'        => $prevQty,
+                    'latest_qty'      => $latestQty,
+                    'sales_in_period' => $sales,
+                    'unexplained'     => round($unexplained, 2),
+                    'shrinkage_pct'   => round($shrinkagePct, 1),
+                    'revenue_impact'  => round($value, 2),
+                ]
             );
-
-            foreach ($rows as $row) {
-                $prevQty     = (float) $row->prev_qty;
-                $latestQty   = (float) $row->latest_qty;
-                $sales       = (float) $row->sales;
-                $unexplained = (float) $row->unexplained;
-                $shrinkagePct = ($unexplained / $prevQty) * 100;
-
-                // Gate on the cost of the missing units so a 20% shrink of a penny
-                // item doesn't rank alongside a real loss. Only floors when cost is known.
-                $cost  = $this->unitCost($row->sku);
-                $value = $unexplained * $cost;
-                if ($cost > 0 && $value < $minValue) continue;
-                $severity = $cost > 0 ? $this->severityFromImpact($value) : Anomaly::SEVERITY_HIGH;
-
-                $this->flag($tenantId, 'inventory_shrinkage', $severity, $row->sku, $row->store_id, $row->product_id,
-                    "SKU {$row->sku} at '{$row->location}' shows " . round($shrinkagePct) . "% inventory shrinkage — "
-                    . round($unexplained) . " units (\$" . number_format($value, 2) . ") unaccounted for between "
-                    . $pd . " and " . $ld . ".",
-                    [
-                        'location'        => $row->location,
-                        'prev_qty'        => $prevQty,
-                        'latest_qty'      => $latestQty,
-                        'sales_in_period' => $sales,
-                        'unexplained'     => round($unexplained, 2),
-                        'shrinkage_pct'   => round($shrinkagePct, 1),
-                        'revenue_impact'  => round($value, 2),
-                    ]
-                );
-            }
         }
     }
 
