@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Anomaly;
 use App\Models\Investigation;
 use App\Models\Product;
+use App\Models\PurchaseOrder;
 use App\Models\SalesTransaction;
 use App\Models\Tenant;
 use App\Services\Anomaly\AnomalyDetectionService;
@@ -78,5 +79,35 @@ class DetectionImpactTest extends TestCase
 
         $this->assertNotNull($inv);
         $this->assertGreaterThan(0, (float) $inv->revenue_at_risk);
+    }
+
+    public function test_receiving_discrepancy_gates_on_shortfall_value(): void
+    {
+        Product::create(['tenant_id' => $this->tenant->id, 'sku' => 'PO-BIG',   'name' => 'Big',   'unit_cost' => 100]);
+        Product::create(['tenant_id' => $this->tenant->id, 'sku' => 'PO-CHEAP', 'name' => 'Cheap', 'unit_cost' => 1]);
+
+        // Both are 90 units short on a 100-unit order (well past the 20% threshold).
+        foreach (['PO-BIG' => 'P1', 'PO-CHEAP' => 'P2'] as $sku => $po) {
+            PurchaseOrder::create([
+                'tenant_id'     => $this->tenant->id,
+                'po_number'     => $po,
+                'supplier'      => 'Acme',
+                'sku'           => $sku,
+                'qty_ordered'   => 100,
+                'qty_received'  => 10,
+                'order_date'    => now()->subDays(20)->format('Y-m-d'),
+                'received_date' => now()->subDays(2)->format('Y-m-d'),
+            ]);
+        }
+
+        app(AnomalyDetectionService::class)->runForTenant($this->tenant->id);
+
+        // 90 × $100 = $9,000 → flagged; 90 × $1 = $90 → below the floor, suppressed.
+        $this->assertNotNull(
+            Anomaly::where('tenant_id', $this->tenant->id)->where('rule_type', 'receiving_discrepancy')->where('sku', 'PO-BIG')->first()
+        );
+        $this->assertNull(
+            Anomaly::where('tenant_id', $this->tenant->id)->where('rule_type', 'receiving_discrepancy')->where('sku', 'PO-CHEAP')->first()
+        );
     }
 }

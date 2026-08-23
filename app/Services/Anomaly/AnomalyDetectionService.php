@@ -29,6 +29,9 @@ class AnomalyDetectionService
     /** @var array<string,float>|null  sku => unit price (selling_price ?? unit_cost), primed per run */
     private ?array $priceMap = null;
 
+    /** @var array<string,float>|null  sku => unit cost (unit_cost ?? selling_price), primed per run */
+    private ?array $costMap = null;
+
     /**
      * Estimated revenue impact (in the tenant's currency) below which a
      * sales spike/drop is treated as noise and not flagged. Overridable per
@@ -39,12 +42,17 @@ class AnomalyDetectionService
     /** Prime a sku => unit-price map once so impact estimates don't hit the DB per SKU. */
     private function primePriceMap(int $tenantId): void
     {
-        $this->priceMap = Product::where('tenant_id', $tenantId)
-            ->get(['sku', 'selling_price', 'unit_cost'])
-            ->mapWithKeys(fn ($p) => [
-                trim((string) $p->sku) => (float) ($p->selling_price ?: $p->unit_cost ?: 0),
-            ])
-            ->all();
+        $this->priceMap = [];
+        $this->costMap  = [];
+
+        Product::where('tenant_id', $tenantId)
+            ->select(['sku', 'selling_price', 'unit_cost'])
+            ->cursor()
+            ->each(function ($p) {
+                $sku = trim((string) $p->sku);
+                $this->priceMap[$sku] = (float) ($p->selling_price ?: $p->unit_cost ?: 0);
+                $this->costMap[$sku]  = (float) ($p->unit_cost ?: $p->selling_price ?: 0);
+            });
     }
 
     private function unitPrice(?string $sku): float
@@ -54,6 +62,15 @@ class AnomalyDetectionService
         }
 
         return $this->priceMap[trim($sku)] ?? 0.0;
+    }
+
+    private function unitCost(?string $sku): float
+    {
+        if ($sku === null || $this->costMap === null) {
+            return 0.0;
+        }
+
+        return $this->costMap[trim($sku)] ?? 0.0;
     }
 
     /** Estimated revenue impact = |units affected| × unit price. */
@@ -721,7 +738,8 @@ class AnomalyDetectionService
 
     private function detectInventoryShrinkage(int $tenantId, array $thresholds): void
     {
-        $pct = (float)($thresholds['pct'] ?? 20);
+        $pct      = (float)($thresholds['pct'] ?? 20);
+        $minValue = (float)($thresholds['min_value'] ?? self::DEFAULT_MIN_REVENUE);
 
         $pairs = InventoryLevel::where('tenant_id', $tenantId)
             ->whereNotNull('as_of_date')
@@ -765,21 +783,29 @@ class AnomalyDetectionService
 
             $shrinkagePct = ($unexplained / $prevQty) * 100;
 
-            if ($shrinkagePct >= $pct) {
-                $this->flag($tenantId, 'inventory_shrinkage', 'high', $pair->sku, $latest->store_id, $latest->product_id,
-                    "SKU {$pair->sku} at '{$pair->location}' shows " . round($shrinkagePct) . "% inventory shrinkage — "
-                    . round($unexplained) . " units unaccounted for between "
-                    . $previous->as_of_date->format('Y-m-d') . " and " . $latest->as_of_date->format('Y-m-d') . ".",
-                    [
-                        'location'        => $pair->location,
-                        'prev_qty'        => $prevQty,
-                        'latest_qty'      => $latestQty,
-                        'sales_in_period' => $salesInPeriod,
-                        'unexplained'     => round($unexplained, 2),
-                        'shrinkage_pct'   => round($shrinkagePct, 1),
-                    ]
-                );
-            }
+            if ($shrinkagePct < $pct) continue;
+
+            // Gate on the cost of the missing units so a 20% shrink of a penny
+            // item doesn't rank alongside a real loss. Only floors when cost is known.
+            $cost  = $this->unitCost($pair->sku);
+            $value = $unexplained * $cost;
+            if ($cost > 0 && $value < $minValue) continue;
+            $severity = $cost > 0 ? $this->severityFromImpact($value) : Anomaly::SEVERITY_HIGH;
+
+            $this->flag($tenantId, 'inventory_shrinkage', $severity, $pair->sku, $latest->store_id, $latest->product_id,
+                "SKU {$pair->sku} at '{$pair->location}' shows " . round($shrinkagePct) . "% inventory shrinkage — "
+                . round($unexplained) . " units (\$" . number_format($value, 2) . ") unaccounted for between "
+                . $previous->as_of_date->format('Y-m-d') . " and " . $latest->as_of_date->format('Y-m-d') . ".",
+                [
+                    'location'        => $pair->location,
+                    'prev_qty'        => $prevQty,
+                    'latest_qty'      => $latestQty,
+                    'sales_in_period' => $salesInPeriod,
+                    'unexplained'     => round($unexplained, 2),
+                    'shrinkage_pct'   => round($shrinkagePct, 1),
+                    'revenue_impact'  => round($value, 2),
+                ]
+            );
         }
     }
 
@@ -812,18 +838,32 @@ class AnomalyDetectionService
     {
         $pct       = (float)($thresholds['pct'] ?? 20);
         $threshold = 1 - ($pct / 100);
+        $minValue  = (float)($thresholds['min_value'] ?? self::DEFAULT_MIN_REVENUE);
 
+        // Push the shortfall filter into SQL so only discrepant POs load, and
+        // stream them. Gate on the cost of the shortfall so trivial under-receipts
+        // don't flood the list.
         PurchaseOrder::where('tenant_id', $tenantId)
             ->whereNotNull('received_date')
             ->where('qty_ordered', '>', 0)
-            ->get()
-            ->filter(fn ($po) => (float) $po->qty_received < (float) $po->qty_ordered * $threshold)
-            ->each(function ($po) use ($tenantId) {
-                $receivedPct = round(((float) $po->qty_received / (float) $po->qty_ordered) * 100);
-                $this->flag($tenantId, 'receiving_discrepancy', 'medium', $po->sku, null, $po->product_id,
+            ->whereRaw('qty_received < qty_ordered * ?', [$threshold])
+            ->select(['po_number', 'supplier', 'sku', 'qty_ordered', 'qty_received', 'product_id'])
+            ->cursor()
+            ->each(function ($po) use ($tenantId, $minValue) {
+                $ordered   = (float) $po->qty_ordered;
+                $received  = (float) $po->qty_received;
+                $shortfall = max(0.0, $ordered - $received);
+
+                $cost  = $this->unitCost($po->sku);
+                $value = $shortfall * $cost;
+                if ($cost > 0 && $value < $minValue) return;
+                $severity = $cost > 0 ? $this->severityFromImpact($value) : Anomaly::SEVERITY_MEDIUM;
+
+                $receivedPct = round(($received / $ordered) * 100);
+                $this->flag($tenantId, 'receiving_discrepancy', $severity, $po->sku, null, $po->product_id,
                     "PO #{$po->po_number} from {$po->supplier} (SKU {$po->sku}) was closed with only {$receivedPct}% received "
-                    . "({$po->qty_received} of {$po->qty_ordered} units).",
-                    ['po_number' => $po->po_number, 'supplier' => $po->supplier, 'qty_ordered' => $po->qty_ordered, 'qty_received' => $po->qty_received, 'received_pct' => $receivedPct]
+                    . "({$po->qty_received} of {$po->qty_ordered} units, \$" . number_format($value, 2) . " short).",
+                    ['po_number' => $po->po_number, 'supplier' => $po->supplier, 'qty_ordered' => $po->qty_ordered, 'qty_received' => $po->qty_received, 'received_pct' => $receivedPct, 'revenue_impact' => round($value, 2)]
                 );
             });
     }
@@ -1152,9 +1192,10 @@ class AnomalyDetectionService
 
     private function detectStoreOutlier(int $tenantId, array $thresholds): void
     {
-        $pct   = (float)($thresholds['pct'] ?? 50);
-        $days  = (int)($thresholds['days'] ?? 7);
-        $since = Carbon::today()->subDays($days)->format('Y-m-d');
+        $pct      = (float)($thresholds['pct'] ?? 50);
+        $days     = (int)($thresholds['days'] ?? 7);
+        $minValue = (float)($thresholds['min_value'] ?? self::DEFAULT_MIN_REVENUE);
+        $since    = Carbon::today()->subDays($days)->format('Y-m-d');
 
         // The SUM/GROUP BY already collapses to one row per (sku, location);
         // stream it and keep a compact per-SKU list so nothing large is held.
@@ -1176,6 +1217,7 @@ class AnomalyDetectionService
             $avg  = array_sum($qtys) / count($qtys);
             if ($avg <= 0) continue;
 
+            $price    = $this->unitPrice($sku);
             $baseline = $this->baselines->getBaseline($tenantId, $sku, 'store_outlier', 'location_qty');
 
             foreach ($rows as $row) {
@@ -1185,20 +1227,32 @@ class AnomalyDetectionService
                     // z = (mean - value) / stddev — large positive z means far below expected
                     $z = ($baseline->baseline_mean - $qty) / max(0.001, $baseline->baseline_stddev);
                     if ($z <= $baseline->sensitivity_multiplier) continue;
-                    $this->flag($tenantId, 'store_outlier', 'medium', $sku, null, null,
+
+                    $value = max(0.0, $baseline->baseline_mean - $qty) * $price;
+                    if ($price > 0 && $value < $minValue) continue;
+                    $severity = $price > 0 ? $this->severityFromImpact($value) : Anomaly::SEVERITY_MEDIUM;
+
+                    $this->flag($tenantId, 'store_outlier', $severity, $sku, null, null,
                         "SKU {$sku} at '{$row['location']}' sold " . round($qty) . " units over the period — "
                         . round($z, 1) . "σ below the baseline mean of " . round($baseline->baseline_mean, 1) . " units.",
                         ['location' => $row['location'], 'location_qty' => $qty,
                          'baseline_mean' => round($baseline->baseline_mean, 1),
-                         'z_score' => round($z, 2), 'sensitivity' => $baseline->sensitivity_multiplier, 'days' => $days]
+                         'z_score' => round($z, 2), 'sensitivity' => $baseline->sensitivity_multiplier, 'days' => $days,
+                         'revenue_impact' => round($value, 2)]
                     );
                 } else {
                     $dropPct = (($avg - $qty) / $avg) * 100;
                     if ($dropPct < $pct) continue;
-                    $this->flag($tenantId, 'store_outlier', 'medium', $sku, null, null,
+
+                    $value = max(0.0, $avg - $qty) * $price;
+                    if ($price > 0 && $value < $minValue) continue;
+                    $severity = $price > 0 ? $this->severityFromImpact($value) : Anomaly::SEVERITY_MEDIUM;
+
+                    $this->flag($tenantId, 'store_outlier', $severity, $sku, null, null,
                         "SKU {$sku} at '{$row['location']}' sold " . round($qty) . " units in the last {$days} days — "
                         . round($dropPct) . "% below the cross-location average of " . round($avg) . " units.",
-                        ['location' => $row['location'], 'location_qty' => $qty, 'avg_qty' => round($avg, 1), 'drop_pct' => round($dropPct, 1), 'days' => $days]
+                        ['location' => $row['location'], 'location_qty' => $qty, 'avg_qty' => round($avg, 1), 'drop_pct' => round($dropPct, 1), 'days' => $days,
+                         'revenue_impact' => round($value, 2)]
                     );
                 }
             }
