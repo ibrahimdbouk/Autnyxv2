@@ -75,11 +75,13 @@ class EvidenceCollectorService
 
             in_array($anomaly->rule_type, ['stockout_risk', 'safety_stock_breach', 'dead_stock',
                                             'phantom_inventory', 'multi_location_imbalance',
-                                            'inventory_shrinkage', 'reorder_point_staleness'])
+                                            'inventory_shrinkage', 'reorder_point_staleness',
+                                            'negative_inventory', 'overstock'])
                 => $this->collectInventoryEvidence($investigation, $anomaly),
 
             in_array($anomaly->rule_type, ['po_overdue', 'receiving_discrepancy',
-                                            'supplier_lead_time_drift', 'cost_spike'])
+                                            'supplier_lead_time_drift', 'cost_spike',
+                                            'po_late_receipt'])
                 => $this->collectPoEvidence($investigation, $anomaly),
 
             in_array($anomaly->rule_type, ['price_anomaly', 'margin_erosion', 'discount_signal',

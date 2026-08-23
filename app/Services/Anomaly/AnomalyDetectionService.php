@@ -120,6 +120,8 @@ class AnomalyDetectionService
             'safety_stock_breach'        => fn () => $this->detectSafetyStockBreach($tenantId),
             'dead_stock'                 => fn () => $this->detectDeadStock($tenantId, $t('dead_stock')),
             'phantom_inventory'          => fn () => $this->detectPhantomInventory($tenantId, $t('phantom_inventory')),
+            'negative_inventory'         => fn () => $this->detectNegativeInventory($tenantId),
+            'overstock'                  => fn () => $this->detectOverstock($tenantId, $t('overstock')),
             'multi_location_imbalance'   => fn () => $this->detectMultiLocationImbalance($tenantId),
             'reorder_point_staleness'    => fn () => $this->detectReorderPointStaleness($tenantId, $t('reorder_point_staleness')),
             'inventory_shrinkage'        => fn () => $this->detectInventoryShrinkage($tenantId, $t('inventory_shrinkage')),
@@ -127,6 +129,7 @@ class AnomalyDetectionService
             // Purchase Orders
             'po_overdue'                 => fn () => $this->detectPoOverdue($tenantId),
             'receiving_discrepancy'      => fn () => $this->detectReceivingDiscrepancy($tenantId, $t('receiving_discrepancy')),
+            'po_late_receipt'            => fn () => $this->detectPoLateReceipt($tenantId, $t('po_late_receipt')),
             'supplier_lead_time_drift'   => fn () => $this->detectSupplierLeadTimeDrift($tenantId, $t('supplier_lead_time_drift')),
             'cost_spike'                 => fn () => $this->detectCostSpike($tenantId, $t('cost_spike')),
 
@@ -687,6 +690,134 @@ class AnomalyDetectionService
         }
     }
 
+    /**
+     * Data-integrity rule: a (store, SKU) whose LATEST on-hand snapshot is below
+     * zero. Negative stock is never physically real — it means a receipt was
+     * missed, a sale was double-counted, or two feeds disagree. It silently
+     * corrupts stockout, dead-stock, phantom and overstock math, so it is flagged
+     * unconditionally (no money floor) at high severity. Precision is ~100% by
+     * construction: the condition IS the error.
+     */
+    private function detectNegativeInventory(int $tenantId): void
+    {
+        // Latest snapshot per (store, sku); keep only those that end up negative.
+        $onHand = [];
+        InventoryLevel::where('tenant_id', $tenantId)
+            ->whereNotNull('store_id')
+            ->select(['store_id', 'sku', 'on_hand_qty', 'product_id', 'location', 'as_of_date'])
+            ->cursor()
+            ->each(function ($l) use (&$onHand) {
+                $k = $l->store_id . '|' . $l->sku;
+                $d = $l->as_of_date ? $l->as_of_date->format('Y-m-d') : '0000-00-00';
+                if (! isset($onHand[$k]) || $d >= $onHand[$k]['d']) {
+                    $onHand[$k] = [
+                        'qty' => (float) $l->on_hand_qty, 'product_id' => $l->product_id,
+                        'location' => $l->location, 'd' => $d,
+                    ];
+                }
+            });
+
+        foreach ($onHand as $k => $oh) {
+            if ($oh['qty'] >= 0) continue;
+
+            [$storeId, $sku] = explode('|', $k, 2);
+            $loc = $oh['location'] ? " at '{$oh['location']}'" : '';
+
+            $this->flag($tenantId, 'negative_inventory', Anomaly::SEVERITY_HIGH, $sku, (int) $storeId, $oh['product_id'],
+                "SKU {$sku}{$loc} shows a negative on-hand balance of " . round($oh['qty']) . " units "
+                . "(as of {$oh['d']}) — a data-integrity error: a receipt was likely missed or a sale double-counted.",
+                [
+                    'on_hand_qty'   => $oh['qty'],
+                    'location'      => $oh['location'],
+                    'as_of_date'    => $oh['d'],
+                ]
+            );
+        }
+    }
+
+    /**
+     * Overstock by days-of-cover: a (store, SKU) whose latest on-hand would take
+     * more than `days_cover` days to sell through at its recent demand rate. This
+     * is the mirror image of stockout — capital frozen in stock that moves too
+     * slowly to justify the quantity held. Distinct from dead_stock/phantom
+     * (which require ~zero demand): overstock REQUIRES real ongoing demand, just
+     * far too little relative to the pile. Ranked by tied-up value (on-hand ×
+     * cost); a materiality floor keeps it to positions worth rebalancing.
+     */
+    private function detectOverstock(int $tenantId, array $thresholds): void
+    {
+        $daysCover = (float)($thresholds['days_cover'] ?? 120);
+        $lookback  = (int)($thresholds['lookback_days'] ?? 30);
+        $minValue  = (float)($thresholds['min_value'] ?? 1000);
+
+        $recentFrom = Carbon::today()->subDays($lookback)->format('Y-m-d');
+
+        // Latest on-hand per (store, sku), positive stock only.
+        $onHand = [];
+        InventoryLevel::where('tenant_id', $tenantId)
+            ->whereNotNull('store_id')
+            ->where('on_hand_qty', '>', 0)
+            ->select(['store_id', 'sku', 'on_hand_qty', 'product_id', 'location', 'as_of_date'])
+            ->cursor()
+            ->each(function ($l) use (&$onHand) {
+                $k = $l->store_id . '|' . $l->sku;
+                $d = $l->as_of_date ? $l->as_of_date->format('Y-m-d') : '0000-00-00';
+                if (! isset($onHand[$k]) || $d >= $onHand[$k]['d']) {
+                    $onHand[$k] = [
+                        'qty' => (float) $l->on_hand_qty, 'product_id' => $l->product_id,
+                        'location' => $l->location, 'd' => $d,
+                    ];
+                }
+            });
+
+        // Recent demand per (store, sku). Only SKUs that actually sell qualify —
+        // no demand is dead_stock/phantom's job, not overstock's.
+        $demand = [];
+        DB::table('sales_daily')
+            ->where('tenant_id', $tenantId)
+            ->where('date', '>=', $recentFrom)
+            ->selectRaw('store_id, sku, SUM(units_sold) as u')
+            ->groupBy('store_id', 'sku')
+            ->cursor()
+            ->each(function ($r) use (&$demand) {
+                $demand[$r->store_id . '|' . $r->sku] = (float) $r->u;
+            });
+
+        foreach ($onHand as $k => $oh) {
+            $units = $demand[$k] ?? 0.0;
+            if ($units <= 0) continue; // no demand → dead stock, not overstock
+
+            $dailyDemand = $units / max(1, $lookback);
+            if ($dailyDemand <= 0) continue;
+
+            $cover = $oh['qty'] / $dailyDemand; // days it would take to clear at this rate
+            if ($cover <= $daysCover) continue;
+
+            [$storeId, $sku] = explode('|', $k, 2);
+            $cost  = $this->unitCost($sku);
+            $value = $oh['qty'] * $cost;
+            if ($cost > 0 && $value < $minValue) continue;
+
+            $severity = $cost > 0 ? $this->severityFromImpact($value) : Anomaly::SEVERITY_LOW;
+
+            $this->flag($tenantId, 'overstock', $severity, $sku, (int) $storeId, $oh['product_id'],
+                "SKU {$sku} holds " . round($oh['qty']) . " units (\$" . number_format($value, 2) . ") at '{$oh['location']}' "
+                . "— about " . round($cover) . " days of cover at its recent rate of " . round($dailyDemand, 1)
+                . " units/day (threshold {$daysCover} days). Working capital tied up in slow-moving stock.",
+                [
+                    'on_hand_qty'     => $oh['qty'],
+                    'daily_demand'    => round($dailyDemand, 2),
+                    'days_of_cover'   => round($cover),
+                    'threshold_days'  => $daysCover,
+                    'inventory_value' => round($value, 2),
+                    'revenue_impact'  => round($value, 2),
+                    'location'        => $oh['location'],
+                    'lookback_days'   => $lookback,
+                ]
+            );
+        }
+    }
+
     private function detectSafetyStockBreach(int $tenantId): void
     {
         $levels = InventoryLevel::where('tenant_id', $tenantId)
@@ -1004,6 +1135,56 @@ class AnomalyDetectionService
                     "PO #{$po->po_number} from {$po->supplier} (SKU {$po->sku}) was closed with only {$receivedPct}% received "
                     . "({$po->qty_received} of {$po->qty_ordered} units, \$" . number_format($value, 2) . " short).",
                     ['po_number' => $po->po_number, 'supplier' => $po->supplier, 'qty_ordered' => $po->qty_ordered, 'qty_received' => $po->qty_received, 'received_pct' => $receivedPct, 'revenue_impact' => round($value, 2)]
+                );
+            });
+    }
+
+    /**
+     * Late-but-received POs: a purchase order that DID arrive, but materially
+     * later than its expected date. po_overdue only sees orders still outstanding
+     * (received_date null); once goods finally land, that rule goes silent even
+     * though the supplier missed the date — a service-level failure that never
+     * surfaced. This closes that blind spot. Flagged when the receipt lag exceeds
+     * `days` late; severity rises with lateness and, when priced, with the value
+     * of the delayed goods.
+     */
+    private function detectPoLateReceipt(int $tenantId, array $thresholds): void
+    {
+        $minLate = (int)($thresholds['days'] ?? 7);
+
+        PurchaseOrder::where('tenant_id', $tenantId)
+            ->whereNotNull('expected_date')
+            ->whereNotNull('received_date')
+            ->whereColumn('received_date', '>', 'expected_date')
+            ->select(['po_number', 'supplier', 'sku', 'qty_ordered', 'qty_received', 'expected_date', 'received_date', 'product_id'])
+            ->cursor()
+            ->each(function ($po) use ($tenantId, $minLate) {
+                $daysLate = (int) Carbon::parse($po->expected_date)->diffInDays(Carbon::parse($po->received_date));
+                if ($daysLate < $minLate) return;
+
+                $received = (float) $po->qty_received;
+                $value    = $received * $this->unitCost($po->sku);
+
+                // Severity by lateness first; escalate on the value of the delayed goods.
+                $severity = $daysLate >= 30 ? Anomaly::SEVERITY_HIGH
+                    : ($daysLate >= 14 ? Anomaly::SEVERITY_MEDIUM : Anomaly::SEVERITY_LOW);
+                if ($value >= 10000 && $severity === Anomaly::SEVERITY_LOW) {
+                    $severity = Anomaly::SEVERITY_MEDIUM;
+                }
+
+                $this->flag($tenantId, 'po_late_receipt', $severity, $po->sku, null, $po->product_id,
+                    "PO #{$po->po_number} from {$po->supplier} (SKU {$po->sku}) arrived {$daysLate} day(s) late "
+                    . "(expected " . Carbon::parse($po->expected_date)->format('Y-m-d')
+                    . ", received " . Carbon::parse($po->received_date)->format('Y-m-d') . ").",
+                    [
+                        'po_number'      => $po->po_number,
+                        'supplier'       => $po->supplier,
+                        'days_late'      => $daysLate,
+                        'expected_date'  => Carbon::parse($po->expected_date)->format('Y-m-d'),
+                        'received_date'  => Carbon::parse($po->received_date)->format('Y-m-d'),
+                        'qty_received'   => $received,
+                        'goods_value'    => round($value, 2),
+                    ]
                 );
             });
     }

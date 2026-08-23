@@ -126,6 +126,108 @@ class DetectionImpactTest extends TestCase
         );
     }
 
+    public function test_negative_inventory_is_flagged_unconditionally(): void
+    {
+        $store = Store::create(['tenant_id' => $this->tenant->id, 'name' => 'Store One', 'code' => 'ST01']);
+        Product::create(['tenant_id' => $this->tenant->id, 'sku' => 'NEG-1', 'name' => 'Neg', 'unit_cost' => 5]);
+
+        // Two snapshots: an older positive one, a newer negative one. Latest wins.
+        InventoryLevel::create([
+            'tenant_id' => $this->tenant->id, 'store_id' => $store->id, 'sku' => 'NEG-1',
+            'on_hand_qty' => 10, 'as_of_date' => now()->subDays(5)->format('Y-m-d'),
+        ]);
+        InventoryLevel::create([
+            'tenant_id' => $this->tenant->id, 'store_id' => $store->id, 'sku' => 'NEG-1',
+            'on_hand_qty' => -8, 'as_of_date' => now()->subDay()->format('Y-m-d'),
+        ]);
+
+        app(AnomalyDetectionService::class)->runForTenant($this->tenant->id);
+
+        $this->assertNotNull(
+            Anomaly::where('tenant_id', $this->tenant->id)->where('rule_type', 'negative_inventory')->where('sku', 'NEG-1')->first(),
+            'a negative latest on-hand balance must always be flagged'
+        );
+    }
+
+    public function test_overstock_flags_slow_pile_but_not_no_demand_or_healthy_cover(): void
+    {
+        $store = Store::create(['tenant_id' => $this->tenant->id, 'name' => 'Store One', 'code' => 'ST01']);
+        Product::create(['tenant_id' => $this->tenant->id, 'sku' => 'OVR-PILE', 'name' => 'Pile',    'unit_cost' => 50]);
+        Product::create(['tenant_id' => $this->tenant->id, 'sku' => 'OVR-DEAD', 'name' => 'DeadPile', 'unit_cost' => 50]);
+        Product::create(['tenant_id' => $this->tenant->id, 'sku' => 'OVR-OK',   'name' => 'Healthy',  'unit_cost' => 50]);
+
+        foreach (['OVR-PILE' => 1000, 'OVR-DEAD' => 1000, 'OVR-OK' => 60] as $sku => $qty) {
+            InventoryLevel::create([
+                'tenant_id' => $this->tenant->id, 'store_id' => $store->id, 'sku' => $sku,
+                'on_hand_qty' => $qty, 'as_of_date' => now()->subDay()->format('Y-m-d'),
+            ]);
+        }
+
+        // OVR-PILE and OVR-OK both sell ~2 units/day; OVR-DEAD has no demand.
+        for ($i = 1; $i <= 30; $i++) {
+            foreach (['OVR-PILE', 'OVR-OK'] as $sku) {
+                SalesDaily::create([
+                    'tenant_id' => $this->tenant->id, 'store_id' => $store->id, 'sku' => $sku,
+                    'date' => now()->subDays($i)->format('Y-m-d'),
+                    'units_sold' => 2, 'revenue' => 200, 'transaction_count' => 1,
+                ]);
+            }
+        }
+
+        app(AnomalyDetectionService::class)->runForTenant($this->tenant->id);
+
+        // 1000 units ÷ 2/day = 500 days cover > 120 → overstock, $50k tied up.
+        $this->assertNotNull(
+            Anomaly::where('tenant_id', $this->tenant->id)->where('rule_type', 'overstock')->where('sku', 'OVR-PILE')->first(),
+            'a slow-moving pile far beyond its days-of-cover threshold should be flagged'
+        );
+        // No demand → dead stock/phantom territory, not overstock.
+        $this->assertNull(
+            Anomaly::where('tenant_id', $this->tenant->id)->where('rule_type', 'overstock')->where('sku', 'OVR-DEAD')->first(),
+            'a SKU with no demand is not overstock'
+        );
+        // 60 units ÷ 2/day = 30 days cover → healthy, not flagged.
+        $this->assertNull(
+            Anomaly::where('tenant_id', $this->tenant->id)->where('rule_type', 'overstock')->where('sku', 'OVR-OK')->first(),
+            'stock within a normal days-of-cover band should not be flagged'
+        );
+    }
+
+    public function test_po_late_receipt_flags_late_arrival_but_not_on_time(): void
+    {
+        Product::create(['tenant_id' => $this->tenant->id, 'sku' => 'LATE-1', 'name' => 'Late', 'unit_cost' => 10]);
+        Product::create(['tenant_id' => $this->tenant->id, 'sku' => 'ONTIME', 'name' => 'OnTime', 'unit_cost' => 10]);
+
+        // Arrived 18 days after the expected date → well past the 7-day floor.
+        PurchaseOrder::create([
+            'tenant_id' => $this->tenant->id, 'po_number' => 'PL1', 'supplier' => 'Acme', 'sku' => 'LATE-1',
+            'qty_ordered' => 100, 'qty_received' => 100,
+            'order_date' => now()->subDays(40)->format('Y-m-d'),
+            'expected_date' => now()->subDays(20)->format('Y-m-d'),
+            'received_date' => now()->subDays(2)->format('Y-m-d'),
+        ]);
+
+        // Arrived on its expected date → not late.
+        PurchaseOrder::create([
+            'tenant_id' => $this->tenant->id, 'po_number' => 'PL2', 'supplier' => 'Acme', 'sku' => 'ONTIME',
+            'qty_ordered' => 100, 'qty_received' => 100,
+            'order_date' => now()->subDays(40)->format('Y-m-d'),
+            'expected_date' => now()->subDays(5)->format('Y-m-d'),
+            'received_date' => now()->subDays(5)->format('Y-m-d'),
+        ]);
+
+        app(AnomalyDetectionService::class)->runForTenant($this->tenant->id);
+
+        $this->assertNotNull(
+            Anomaly::where('tenant_id', $this->tenant->id)->where('rule_type', 'po_late_receipt')->where('sku', 'LATE-1')->first(),
+            'a PO received materially past its expected date should be flagged even though it arrived'
+        );
+        $this->assertNull(
+            Anomaly::where('tenant_id', $this->tenant->id)->where('rule_type', 'po_late_receipt')->where('sku', 'ONTIME')->first(),
+            'a PO received on its expected date is not late'
+        );
+    }
+
     public function test_receiving_discrepancy_gates_on_shortfall_value(): void
     {
         Product::create(['tenant_id' => $this->tenant->id, 'sku' => 'PO-BIG',   'name' => 'Big',   'unit_cost' => 100]);

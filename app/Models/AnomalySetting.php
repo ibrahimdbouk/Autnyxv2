@@ -83,6 +83,20 @@ class AnomalySetting extends Model
             'tier'               => 'core',   // Requires: inventory_levels + sales_transactions
             'default_thresholds' => [],
         ],
+        'negative_inventory' => [
+            'label'              => 'Negative Inventory',
+            'description'        => 'A SKU\'s latest on-hand quantity is below zero — a data-integrity error that corrupts every downstream metric.',
+            'severity'           => 'high',
+            'tier'               => 'core',   // Requires: inventory_levels
+            'default_thresholds' => [],
+        ],
+        'overstock' => [
+            'label'              => 'Overstock',
+            'description'        => 'A SKU holds far more stock than its recent demand can clear (days of cover beyond the threshold) — working capital tied up.',
+            'severity'           => 'low',
+            'tier'               => 'core',   // Requires: inventory_levels + sales_daily + products.unit_cost
+            'default_thresholds' => ['days_cover' => 120, 'lookback_days' => 30, 'min_value' => 1000],
+        ],
         'multi_location_imbalance' => [
             'label'              => 'Multi-Location Imbalance',
             'description'        => 'The same SKU is overstocked in one location while at or below reorder point in another.',
@@ -119,6 +133,13 @@ class AnomalySetting extends Model
             'severity'           => 'medium',
             'tier'               => 'core',   // Requires: purchase_orders
             'default_thresholds' => ['pct' => 20],
+        ],
+        'po_late_receipt' => [
+            'label'              => 'Late PO Receipt',
+            'description'        => 'A purchase order was received, but materially later than its expected date — a supplier service-level failure invisible to the overdue rule once the goods finally arrive.',
+            'severity'           => 'medium',
+            'tier'               => 'core',   // Requires: purchase_orders with expected_date + received_date
+            'default_thresholds' => ['days' => 7],
         ],
         'supplier_lead_time_drift' => [
             'label'              => 'Supplier Lead Time Drift',
@@ -273,9 +294,11 @@ class AnomalySetting extends Model
         if (empty($thresholds)) return '—';
 
         $parts = [];
-        if (isset($thresholds['pct']))       $parts[] = "±{$thresholds['pct']}%";
-        if (isset($thresholds['days']))      $parts[] = "{$thresholds['days']} days";
-        if (isset($thresholds['min_value'])) $parts[] = "min \${$thresholds['min_value']}";
+        if (isset($thresholds['pct']))         $parts[] = "±{$thresholds['pct']}%";
+        if (isset($thresholds['days']))        $parts[] = "{$thresholds['days']} days";
+        if (isset($thresholds['days_cover']))  $parts[] = "{$thresholds['days_cover']}d cover";
+        if (isset($thresholds['min_value']))   $parts[] = "min \${$thresholds['min_value']}";
+        if (isset($thresholds['min_revenue'])) $parts[] = "floor \${$thresholds['min_revenue']}";
 
         return implode(', ', $parts);
     }

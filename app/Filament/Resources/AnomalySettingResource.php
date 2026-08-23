@@ -64,13 +64,17 @@ class AnomalySettingResource extends Resource
             'return_rate_spike', 'channel_mix_shift', 'dead_stock',
             'reorder_point_staleness', 'revenue_concentration_risk',
             'slow_moving_capital', 'import_frequency_gap', 'location_proliferation',
-            'store_outlier',
+            'store_outlier', 'po_late_receipt',
         ];
 
-        $minValueRules = ['slow_moving_capital'];
+        // Rules whose noise is gated by a tied-up-value floor (thresholds.min_value).
+        $minValueRules = ['slow_moving_capital', 'overstock', 'phantom_inventory', 'receiving_discrepancy'];
+
+        // Rules whose noise is gated by an estimated-revenue-impact floor (thresholds.min_revenue).
+        $minRevenueRules = ['sales_spike', 'sales_drop', 'stockout_risk', 'cannibalization_signal'];
 
         $noThresholdRules = [
-            'stockout_risk', 'safety_stock_breach', 'phantom_inventory',
+            'safety_stock_breach', 'negative_inventory',
             'multi_location_imbalance', 'po_overdue', 'margin_erosion',
             'discount_signal', 'duplicate_transaction_ids', 'sku_master_drift',
         ];
@@ -106,13 +110,29 @@ class AnomalySettingResource extends Resource
                 ->suffix('days')
                 ->visible(fn (?AnomalySetting $record) => $record && in_array($record->rule_type, $daysRules)),
 
+            TextInput::make('thresholds.days_cover')
+                ->label('Days of cover threshold')
+                ->helperText('Flag when on-hand stock exceeds this many days of demand at the recent rate.')
+                ->numeric()
+                ->minValue(1)
+                ->suffix('days')
+                ->visible(fn (?AnomalySetting $record) => $record && $record->rule_type === 'overstock'),
+
             TextInput::make('thresholds.min_value')
-                ->label('Minimum inventory value ($)')
-                ->helperText('Only flag if total inventory value (qty × unit cost) exceeds this amount.')
+                ->label('Minimum tied-up value ($)')
+                ->helperText('Materiality floor: only flag when the inventory/shortfall value (qty × unit cost) exceeds this amount. Raise it to shorten the list, lower it for wider recall.')
                 ->numeric()
                 ->minValue(0)
                 ->prefix('$')
                 ->visible(fn (?AnomalySetting $record) => $record && in_array($record->rule_type, $minValueRules)),
+
+            TextInput::make('thresholds.min_revenue')
+                ->label('Minimum revenue impact ($)')
+                ->helperText('Materiality floor: only flag when the estimated revenue at risk exceeds this amount (0 = surface every hit, ranked by impact). Raise it to cut low-value noise.')
+                ->numeric()
+                ->minValue(0)
+                ->prefix('$')
+                ->visible(fn (?AnomalySetting $record) => $record && in_array($record->rule_type, $minRevenueRules)),
 
             Placeholder::make('no_thresholds')
                 ->label('Thresholds')
