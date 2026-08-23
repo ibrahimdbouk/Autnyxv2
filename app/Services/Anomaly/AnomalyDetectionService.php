@@ -355,9 +355,11 @@ class AnomalyDetectionService
      */
     private function detectCannibalizationSignal(int $tenantId, array $thresholds): void
     {
-        $pct      = (float)($thresholds['pct'] ?? 30);
-        $days     = (int)($thresholds['days'] ?? 30);
-        $minUnits = (float)($thresholds['min_units'] ?? 5);
+        $pct           = (float)($thresholds['pct'] ?? 30);
+        $days          = (int)($thresholds['days'] ?? 30);
+        $minUnits      = (float)($thresholds['min_units'] ?? 5);
+        $minConfidence = (float)($thresholds['min_confidence'] ?? 0.5);
+        $minValue      = (float)($thresholds['min_revenue'] ?? self::DEFAULT_MIN_REVENUE);
 
         $recentFrom   = Carbon::today()->subDays($days)->format('Y-m-d');
         $baselineFrom = Carbon::today()->subDays($days * 2)->format('Y-m-d');
@@ -383,13 +385,17 @@ class AnomalyDetectionService
             ->pluck('store_id');
 
         foreach ($storeIds as $storeId) {
-            $this->detectCannibalizationForStore($tenantId, (int) $storeId, $catalog, $pct, $minUnits, $days, $recentFrom, $baselineFrom);
+            $this->detectCannibalizationForStore($tenantId, (int) $storeId, $catalog, $pct, $minUnits, $days, $recentFrom, $baselineFrom, $minConfidence, $minValue);
         }
     }
 
+    /** Minimum category-share loss (percentage points) for a faller to count as a real victim. */
+    private const CANNIBALIZATION_MIN_SHARE_LOSS = 3.0;
+
     private function detectCannibalizationForStore(
         int $tenantId, int $storeId, array $catalog,
-        float $pct, float $minUnits, int $days, string $recentFrom, string $baselineFrom
+        float $pct, float $minUnits, int $days, string $recentFrom, string $baselineFrom,
+        float $minConfidence, float $minValue
     ): void {
         // Recent vs equal-length prior window, per SKU, for this store only.
         $rows = DB::select(
@@ -459,6 +465,14 @@ class AnomalyDetectionService
                 $shareFactor = min(1.0, max(0.0, ($primaryShareGain + $affShareLoss)) / max(1.0, 2 * $pct));
                 $confidence  = round(0.5 * $stability + 0.5 * $shareFactor, 2);
 
+                // Gate hard so only material, confident cannibalization surfaces — a
+                // down-mover in the same category is NOT a signal unless it actually
+                // ceded meaningful share to the riser and the lost sales matter.
+                $revenueImpact = ($affected['baseline'] - $affected['recent']) * $this->unitPrice($affected['sku']);
+                if ($affShareLoss < self::CANNIBALIZATION_MIN_SHARE_LOSS) continue;
+                if ($confidence < $minConfidence) continue;
+                if ($this->unitPrice($affected['sku']) > 0 && $revenueImpact < $minValue) continue;
+
                 $severity = $confidence >= 0.7 ? Anomaly::SEVERITY_HIGH
                     : ($confidence >= 0.4 ? Anomaly::SEVERITY_MEDIUM : Anomaly::SEVERITY_LOW);
 
@@ -478,6 +492,7 @@ class AnomalyDetectionService
                         'confidence_score'          => $confidence,
                         'promotion_context'         => 'unknown',
                         'lookback_days'             => $days,
+                        'revenue_impact'            => round(max(0.0, $revenueImpact), 2),
                     ]
                 );
             }
