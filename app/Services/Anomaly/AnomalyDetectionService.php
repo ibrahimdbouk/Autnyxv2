@@ -604,7 +604,10 @@ class AnomalyDetectionService
     {
         $days     = (int)($thresholds['days'] ?? 30);
         $minUnits = (float)($thresholds['min_units'] ?? 3);
-        $minValue = (float)($thresholds['min_revenue'] ?? self::DEFAULT_MIN_REVENUE);
+        // No revenue floor by default: an empty shelf for an item people buy is
+        // worth surfacing even when the lost-sales dollar value is small. Impact
+        // still drives severity so high-velocity stockouts rank to the top.
+        $minValue = (float)($thresholds['min_revenue'] ?? 0);
         $horizon  = (int)($thresholds['lost_sales_days'] ?? 7);
 
         $recentFrom = Carbon::today()->subDays($days)->format('Y-m-d');
