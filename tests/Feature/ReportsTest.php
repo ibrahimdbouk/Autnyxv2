@@ -28,7 +28,8 @@ class ReportsTest extends TestCase
 
     public function test_recovery_report_reflects_seeded_outcome(): void
     {
-        $tenant = $this->createTenant();
+        // Pin currency so the money assertions below are currency-explicit.
+        $tenant = $this->createTenant(['currency' => 'USD']);
 
         $inv = Investigation::factory()->create([
             'tenant_id' => $tenant->id, 'status' => 'resolved',
