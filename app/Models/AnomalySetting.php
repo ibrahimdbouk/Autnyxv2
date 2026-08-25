@@ -27,10 +27,10 @@ class AnomalySetting extends Model
         ],
         'demand_seasonality_breach' => [
             'label'              => 'Demand Seasonality Breach',
-            'description'        => 'A SKU\'s sales deviate significantly from the same 30-day window in the prior year.',
+            'description'        => 'A SKU\'s demand departs from what the calendar predicts — year-over-year when a year of data exists, otherwise a seasonal (day-of-week) adjusted expectation.',
             'severity'           => 'medium',
-            'tier'               => 'core',   // Requires: sales_transactions (>1 year of data to fire)
-            'default_thresholds' => ['pct' => 40],
+            'tier'               => 'core',   // Requires: sales_transactions / sales_daily
+            'default_thresholds' => ['pct' => 40, 'min_revenue' => 1000],
         ],
         'cannibalization_signal' => [
             'label'              => 'Cannibalization Signal',
@@ -48,10 +48,10 @@ class AnomalySetting extends Model
         ],
         'channel_mix_shift' => [
             'label'              => 'Channel Mix Shift',
-            'description'        => 'A location\'s share of total sales shifts significantly vs the prior period.',
+            'description'        => 'A location\'s share of total sales shifts significantly (relative change) vs the prior period.',
             'severity'           => 'medium',
             'tier'               => 'core',   // Requires: sales_transactions.location
-            'default_thresholds' => ['pct' => 25, 'days' => 30],
+            'default_thresholds' => ['pct' => 25, 'days' => 30, 'min_units' => 200],
         ],
         'demand_erosion' => [
             'label'              => 'Slow Demand Erosion',

@@ -332,6 +332,47 @@ class DetectionImpactTest extends TestCase
         );
     }
 
+    public function test_seasonality_breach_fallback_flags_departure_from_calendar_expectation(): void
+    {
+        $store = Store::create(['tenant_id' => $this->tenant->id, 'name' => 'Store One', 'code' => 'ST01']);
+        Product::create(['tenant_id' => $this->tenant->id, 'sku' => 'SEAS-HI', 'name' => 'Spiker', 'selling_price' => 100]);
+        Product::create(['tenant_id' => $this->tenant->id, 'sku' => 'SEAS-OK', 'name' => 'Steady', 'selling_price' => 100]);
+
+        // Baseline window (8–35 days ago): both steady at 10/day.
+        for ($i = 8; $i <= 35; $i++) {
+            foreach (['SEAS-HI', 'SEAS-OK'] as $sku) {
+                SalesDaily::create([
+                    'tenant_id' => $this->tenant->id, 'store_id' => $store->id, 'sku' => $sku,
+                    'date' => now()->subDays($i)->format('Y-m-d'),
+                    'units_sold' => 10, 'revenue' => 1000, 'transaction_count' => 1,
+                ]);
+            }
+        }
+        // Recent 7 days: SEAS-HI spikes to 60/day (far above its calendar expectation);
+        // SEAS-OK stays at 10/day (right at expectation).
+        for ($i = 1; $i <= 7; $i++) {
+            SalesDaily::create([
+                'tenant_id' => $this->tenant->id, 'store_id' => $store->id, 'sku' => 'SEAS-HI',
+                'date' => now()->subDays($i)->format('Y-m-d'), 'units_sold' => 60, 'revenue' => 6000, 'transaction_count' => 1,
+            ]);
+            SalesDaily::create([
+                'tenant_id' => $this->tenant->id, 'store_id' => $store->id, 'sku' => 'SEAS-OK',
+                'date' => now()->subDays($i)->format('Y-m-d'), 'units_sold' => 10, 'revenue' => 1000, 'transaction_count' => 1,
+            ]);
+        }
+
+        app(AnomalyDetectionService::class)->runForTenant($this->tenant->id);
+
+        $this->assertNotNull(
+            Anomaly::where('tenant_id', $this->tenant->id)->where('rule_type', 'demand_seasonality_breach')->where('sku', 'SEAS-HI')->first(),
+            'a SKU far above its calendar-adjusted expectation should be flagged (seasonal fallback, no year of history needed)'
+        );
+        $this->assertNull(
+            Anomaly::where('tenant_id', $this->tenant->id)->where('rule_type', 'demand_seasonality_breach')->where('sku', 'SEAS-OK')->first(),
+            'a SKU right at its expectation is not a seasonality breach'
+        );
+    }
+
     public function test_supplier_fill_rate_flags_chronic_underfill_below_per_po_floor(): void
     {
         Product::create(['tenant_id' => $this->tenant->id, 'sku' => 'CHRON', 'name' => 'Chronic', 'unit_cost' => 10]);

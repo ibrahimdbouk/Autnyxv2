@@ -72,7 +72,7 @@ class AnomalySettingResource extends Resource
             'cumulative_shrink', 'supplier_fill_rate'];
 
         // Rules whose noise is gated by an estimated-revenue-impact floor (thresholds.min_revenue).
-        $minRevenueRules = ['sales_spike', 'sales_drop', 'stockout_risk', 'cannibalization_signal', 'demand_erosion'];
+        $minRevenueRules = ['sales_spike', 'sales_drop', 'stockout_risk', 'cannibalization_signal', 'demand_erosion', 'demand_seasonality_breach'];
 
         $noThresholdRules = [
             'safety_stock_breach', 'negative_inventory',

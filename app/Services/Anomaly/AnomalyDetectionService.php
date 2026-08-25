@@ -391,9 +391,23 @@ class AnomalyDetectionService
         }
     }
 
+    /**
+     * Seasonality breach — recent demand departs from what the calendar predicts.
+     *
+     * PRIMARY (≥ ~1 year of history): year-over-year — compare the last 30 days to
+     * the same 30 days last year. This is the strongest signal but needs a year of
+     * data. With less, `prior` is empty and YoY can't run.
+     *
+     * FALLBACK (< 1 year): a seasonal-ADJUSTED recent-vs-baseline. It takes each
+     * SKU's own baseline daily rate, projects the expected units for the recent
+     * window using the chain's day-of-week factors (via SeasonalityService), and
+     * flags a material departure from that expectation. This keeps the rule alive
+     * on short histories and grows into full seasonal power as data accumulates.
+     */
     private function detectDemandSeasonalityBreach(int $tenantId, array $thresholds): void
     {
-        $pct = (float)($thresholds['pct'] ?? 40);
+        $pct        = (float)($thresholds['pct'] ?? 40);
+        $minRevenue = (float)($thresholds['min_revenue'] ?? 1000);
 
         $currentEnd   = Carbon::today()->format('Y-m-d');
         $currentStart = Carbon::today()->subDays(30)->format('Y-m-d');
@@ -414,24 +428,81 @@ class AnomalyDetectionService
             ->pluck('qty', 'sku')
             ->map(fn ($v) => (float) $v);
 
-        if ($prior->isEmpty()) return;
+        // ── PRIMARY: year-over-year (needs a year of history) ────────────────
+        if ($prior->isNotEmpty()) {
+            foreach ($current as $sku => $currentQty) {
+                $priorQty = (float)($prior->get($sku) ?? 0);
+                if ($priorQty <= 0) continue;
 
-        foreach ($current as $sku => $currentQty) {
-            $priorQty = (float)($prior->get($sku) ?? 0);
-            if ($priorQty <= 0) continue;
+                $changePct = abs(($currentQty - $priorQty) / $priorQty) * 100;
+                if ($changePct < $pct) continue;
 
-            $changePct = abs(($currentQty - $priorQty) / $priorQty) * 100;
-            if ($changePct < $pct) continue;
+                $price  = $this->unitPrice($sku);
+                $impact = abs($currentQty - $priorQty) * $price;
+                if ($price > 0 && $impact < $minRevenue) continue;
 
-            $direction = $currentQty > $priorQty ? 'above' : 'below';
-            $product   = Product::where('tenant_id', $tenantId)->where('sku', $sku)->first();
+                $direction = $currentQty > $priorQty ? 'above' : 'below';
+                $product   = Product::where('tenant_id', $tenantId)->where('sku', $sku)->first();
 
-            $this->flag($tenantId, 'demand_seasonality_breach', 'medium', $sku, null, $product?->id,
-                "SKU {$sku} sold " . round($currentQty) . " units in the last 30 days — "
-                . round($changePct) . "% {$direction} the same window last year (" . round($priorQty) . " units).",
-                ['current_qty' => $currentQty, 'prior_year_qty' => $priorQty, 'change_pct' => round($changePct, 1), 'direction' => $direction]
-            );
+                $this->flag($tenantId, 'demand_seasonality_breach', 'medium', $sku, null, $product?->id,
+                    "SKU {$sku} sold " . round($currentQty) . " units in the last 30 days — "
+                    . round($changePct) . "% {$direction} the same window last year (" . round($priorQty) . " units).",
+                    ['mode' => 'yoy', 'current_qty' => $currentQty, 'prior_year_qty' => $priorQty,
+                     'change_pct' => round($changePct, 1), 'direction' => $direction, 'revenue_impact' => round($impact, 2)]
+                );
+            }
+            return;
         }
+
+        // ── FALLBACK: seasonal-adjusted recent-vs-baseline (short history) ───
+        $seasonality = new SeasonalityService();
+        $dowFactors  = $seasonality->dayOfWeekFactors($tenantId, 90);
+
+        $recentDays   = 7;
+        $baselineDays = 28;
+        $recentFrom   = Carbon::today()->subDays($recentDays)->format('Y-m-d');
+        $baseFrom     = Carbon::today()->subDays($recentDays + $baselineDays)->format('Y-m-d');
+        $baseTo       = $recentFrom;
+
+        // Recent dates (for day-of-week projection).
+        $recentDates = [];
+        for ($i = 1; $i <= $recentDays; $i++) {
+            $recentDates[] = Carbon::today()->subDays($i)->format('Y-m-d');
+        }
+
+        $recent = DB::table('sales_daily')->where('tenant_id', $tenantId)
+            ->where('date', '>=', $recentFrom)
+            ->selectRaw('sku, SUM(units_sold) as u')->groupBy('sku')
+            ->pluck('u', 'sku');
+
+        DB::table('sales_daily')->where('tenant_id', $tenantId)
+            ->whereBetween('date', [$baseFrom, $baseTo])
+            ->selectRaw('sku, SUM(units_sold) as u')->groupBy('sku')
+            ->cursor()
+            ->each(function ($row) use ($tenantId, $recent, $dowFactors, $recentDates, $recentDays, $baselineDays, $pct, $minRevenue, $seasonality) {
+                $baselineDaily = (float) $row->u / max(1, $baselineDays);
+                if ($baselineDaily <= 0) return;
+
+                $expected  = $seasonality->expectedUnits($baselineDaily, $dowFactors, $recentDates);
+                if ($expected <= 0) return;
+                $actual    = (float) ($recent[$row->sku] ?? 0);
+                $deviation = abs($actual - $expected) / $expected * 100;
+                if ($deviation < $pct) return;
+
+                $price  = $this->unitPrice($row->sku);
+                $impact = abs($actual - $expected) * $price;
+                if ($price > 0 && $impact < $minRevenue) return;
+
+                $direction = $actual > $expected ? 'above' : 'below';
+                $product   = Product::where('tenant_id', $tenantId)->where('sku', $row->sku)->first();
+
+                $this->flag($tenantId, 'demand_seasonality_breach', 'medium', $row->sku, null, $product?->id,
+                    "SKU {$row->sku} sold " . round($actual) . " units in the last {$recentDays} days — "
+                    . round($deviation) . "% {$direction} its calendar-adjusted expectation of " . round($expected) . " units.",
+                    ['mode' => 'seasonal_adjusted', 'actual' => round($actual, 1), 'expected' => round($expected, 1),
+                     'deviation_pct' => round($deviation, 1), 'direction' => $direction, 'revenue_impact' => round($impact, 2)]
+                );
+            });
     }
 
     /**
@@ -632,8 +703,14 @@ class AnomalyDetectionService
 
     private function detectChannelMixShift(int $tenantId, array $thresholds): void
     {
-        $pct  = (float)($thresholds['pct'] ?? 25);
-        $days = (int)($thresholds['days'] ?? 30);
+        // `pct` is now a RELATIVE change in a location's sales share, not absolute
+        // percentage points. With ~50 stores no location holds more than a few
+        // percent of chain sales, so an absolute-points test (old 25pp) could
+        // never fire; a location halving its share (2.0% → 1.0%) is the real
+        // signal. `min_units` keeps tiny stores from tripping on noise.
+        $pct      = (float)($thresholds['pct'] ?? 25);
+        $days     = (int)($thresholds['days'] ?? 30);
+        $minUnits = (float)($thresholds['min_units'] ?? 200);
 
         $recentStart = Carbon::today()->subDays($days)->format('Y-m-d');
         $priorStart  = Carbon::today()->subDays($days * 2)->format('Y-m-d');
@@ -663,17 +740,22 @@ class AnomalyDetectionService
         foreach ($recentByLoc as $location => $recentQty) {
             $priorQty = (float)($priorByLoc->get($location) ?? 0);
             if ($priorQty <= 0) continue;
+            if (($recentQty + $priorQty) < $minUnits) continue; // immaterial location
 
             $recentShare = ($recentQty / $recentTotal) * 100;
             $priorShare  = ($priorQty / $priorTotal) * 100;
-            $shift       = $recentShare - $priorShare;
+            $shift       = $recentShare - $priorShare;                 // percentage points
+            $relChange   = (abs($shift) / max(0.0001, $priorShare)) * 100; // relative %
 
-            if (abs($shift) >= $pct) {
+            // Relative move must clear the threshold AND the absolute points move
+            // must be non-trivial (guards a 0.02%→0.04% "doubling" on a tiny share).
+            if ($relChange >= $pct && abs($shift) >= 0.5) {
                 $direction = $shift > 0 ? 'gained' : 'lost';
                 $this->flag($tenantId, 'channel_mix_shift', 'medium', null, null, null,
-                    "Location '{$location}' {$direction} " . round(abs($shift), 1) . " percentage points of sales share "
-                    . "(now " . round($recentShare, 1) . "% vs prior " . round($priorShare, 1) . "%).",
-                    ['location' => $location, 'recent_share_pct' => round($recentShare, 1), 'prior_share_pct' => round($priorShare, 1), 'shift_pct' => round($shift, 1)]
+                    "Location '{$location}' {$direction} " . round($relChange) . "% of its sales share "
+                    . "(now " . round($recentShare, 1) . "% vs prior " . round($priorShare, 1) . "% of chain sales).",
+                    ['location' => $location, 'recent_share_pct' => round($recentShare, 1), 'prior_share_pct' => round($priorShare, 1),
+                     'shift_pct' => round($shift, 1), 'relative_change_pct' => round($relChange, 1)]
                 );
             }
         }
@@ -1410,6 +1492,17 @@ class AnomalyDetectionService
         }
     }
 
+    /**
+     * Cost spike: a PO's unit cost is materially above baseline. Baseline is the
+     * SKU's own prior-PO average when there are ≥2 priced POs; otherwise it falls
+     * back to the product's STANDARD cost (`products.unit_cost`), so a single PO
+     * priced well above the item's standard also surfaces (a supplier overcharge
+     * on the first order, not only a rise over history).
+     *
+     * NOTE: requires `purchase_orders.unit_cost` in the feed. The importer maps it
+     * (buildPurchaseOrderAttrs), but if the PO source has no cost column this rule
+     * is correctly inert — a data-availability limit, not a logic gap.
+     */
     private function detectCostSpike(int $tenantId, array $thresholds): void
     {
         $pct = (float)($thresholds['pct'] ?? 25);
@@ -1422,25 +1515,28 @@ class AnomalyDetectionService
             ->groupBy('sku');
 
         foreach ($allPos as $sku => $pos) {
-            if ($pos->count() < 2) continue;
-
-            $latest  = $pos->first();
-            $history = $pos->slice(1);
-
-            $histAvg    = (float) $history->avg('unit_cost');
-            if ($histAvg <= 0) continue;
-
+            $latest     = $pos->first();
             $latestCost = (float) $latest->unit_cost;
-            $spikePct   = (($latestCost - $histAvg) / $histAvg) * 100;
 
-            if ($spikePct >= $pct) {
-                $product = Product::where('tenant_id', $tenantId)->where('sku', $sku)->first();
-                $this->flag($tenantId, 'cost_spike', 'high', $sku, null, $product?->id,
-                    "PO #{$latest->po_number} from {$latest->supplier} shows SKU {$sku} unit cost at \$" . round($latestCost, 2)
-                    . " — " . round($spikePct) . "% above historical avg of \$" . round($histAvg, 2) . ".",
-                    ['supplier' => $latest->supplier, 'po_number' => $latest->po_number, 'latest_cost' => $latestCost, 'historical_avg' => round($histAvg, 2), 'spike_pct' => round($spikePct, 1)]
-                );
+            if ($pos->count() >= 2) {
+                $baseline    = (float) $pos->slice(1)->avg('unit_cost');
+                $baselineKind = 'historical avg';
+            } else {
+                $baseline    = $this->unitCost($sku);   // product standard cost
+                $baselineKind = 'standard cost';
             }
+            if ($baseline <= 0) continue;
+
+            $spikePct = (($latestCost - $baseline) / $baseline) * 100;
+            if ($spikePct < $pct) continue;
+
+            $product = Product::where('tenant_id', $tenantId)->where('sku', $sku)->first();
+            $this->flag($tenantId, 'cost_spike', 'high', $sku, null, $product?->id,
+                "PO #{$latest->po_number} from {$latest->supplier} shows SKU {$sku} unit cost at \$" . round($latestCost, 2)
+                . " — " . round($spikePct) . "% above {$baselineKind} of \$" . round($baseline, 2) . ".",
+                ['supplier' => $latest->supplier, 'po_number' => $latest->po_number, 'latest_cost' => $latestCost,
+                 'baseline' => round($baseline, 2), 'baseline_kind' => $baselineKind, 'spike_pct' => round($spikePct, 1)]
+            );
         }
     }
 
