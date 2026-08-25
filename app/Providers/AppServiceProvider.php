@@ -12,6 +12,7 @@ use App\Console\Commands\MeasureOutcomesCommand;
 use App\Console\Commands\NarrateInvestigationsCommand;
 use App\Console\Commands\NotifyAnomaliesCommand;
 use App\Console\Commands\PollSftpCommand;
+use App\Console\Commands\ProfileSkusCommand;
 use App\Services\Import\ImportProcessorService;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\ServiceProvider;
@@ -73,6 +74,14 @@ class AppServiceProvider extends ServiceProvider
                 ->everyFiveMinutes()
                 ->name('recover-stuck-imports')
                 ->withoutOverlapping();
+
+            // 00:45 — Classify each (SKU, store) into sku_profiles (best-fit layer).
+            //          Runs before baselines/detection so those can consult it.
+            $schedule->command(ProfileSkusCommand::class)
+                ->dailyAt('00:45')
+                ->withoutOverlapping()
+                ->runInBackground()
+                ->appendOutputTo(storage_path('logs/sku-profile.log'));
 
             // 01:00 — Recompute adaptive baselines (z-score thresholds) — MUST be first
             $schedule->command(ComputeBaselinesCommand::class)
