@@ -59,7 +59,14 @@ class SkuProfilerService
             $adi         = $sellingDays > 0 ? $windowDays / $sellingDays : null;
             $cv2         = $meanNz > 0 ? pow($sd / $meanNz, 2) : 0.0;
 
-            $segment = $sellingDays < self::MIN_DAYS_TO_CLASSIFY
+            $firstSoldRecent = $r->first_sold !== null
+                && substr((string) $r->first_sold, 0, 10) >= $newFrom;
+
+            // NEW = genuinely just appeared (recent first sale) AND little history.
+            // A SKU that sells rarely but has done so for months is NOT new — it's
+            // intermittent/lumpy, and the ADI/CV² classifier captures that. (A
+            // sparse long-tail seller with ~2 sales in 90d has ADI≈45 → intermittent.)
+            $segment = ($firstSoldRecent && $sellingDays < self::MIN_DAYS_TO_CLASSIFY)
                 ? SkuProfile::SEG_NEW
                 : $this->classify($adi, $cv2);
 
@@ -67,7 +74,7 @@ class SkuProfilerService
             $r2    = $r->r2 !== null ? (float) $r->r2 : null;
 
             $lifecycle = 'mature';
-            if ($r->first_sold !== null && substr((string) $r->first_sold, 0, 10) >= $newFrom) {
+            if ($firstSoldRecent) {
                 $lifecycle = 'new';
             } elseif ($slope !== null && $slope < 0 && $r2 !== null && $r2 >= 0.3) {
                 $lifecycle = 'declining';
