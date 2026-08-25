@@ -101,6 +101,21 @@ class InvestigateInvestigation extends Page
         }
     }
 
+    /** B4s2/B5: replenishment recommendations for this investigation's stockouts (memoised per request). */
+    private ?array $recCache = null;
+
+    public function recommendedActions(): array
+    {
+        if ($this->recCache !== null) return $this->recCache;
+
+        try {
+            return $this->recCache = app(\App\Services\Anomaly\ReplenishmentRecommendationService::class)
+                ->forInvestigation($this->record);
+        } catch (\Throwable) {
+            return $this->recCache = [];
+        }
+    }
+
     protected function getHeaderActions(): array
     {
         return [
@@ -171,6 +186,41 @@ class InvestigateInvestigation extends Page
                     ]);
 
                     Notification::make()->title('Action added')->success()->send();
+                }),
+
+            // Add Recommended Action (B4s2/B5) — adopt a replenishment recommendation
+            // as a tracked internal action. Autnyx recommends only; nothing is sent
+            // to the ERP.
+            Action::make('add_recommended_action')
+                ->label('Add Recommended Action')
+                ->icon('heroicon-o-sparkles')
+                ->color('primary')
+                ->visible(fn () => ! empty($this->recommendedActions()))
+                ->form([
+                    Select::make('rec')
+                        ->label('Recommendation')
+                        ->options(fn () => collect($this->recommendedActions())
+                            ->mapWithKeys(fn ($r, $i) => [$i => $r['label']])->all())
+                        ->required()
+                        ->helperText('Adopting logs a tracked action for your team to carry out in your own ERP — Autnyx sends nothing.'),
+                ])
+                ->action(function (array $data) {
+                    $recs = $this->recommendedActions();
+                    $rec  = $recs[$data['rec']] ?? null;
+                    if ($rec === null) {
+                        Notification::make()->title('Recommendation no longer available')->warning()->send();
+                        return;
+                    }
+
+                    $action = app(\App\Services\Anomaly\ReplenishmentRecommendationService::class)
+                        ->adopt($this->record, $rec, auth()->id());
+
+                    AuditLogger::actionCreated($this->record, $action->id, $action->title, auth()->id());
+
+                    $this->recCache = null;
+                    $this->reloadRecord();
+
+                    Notification::make()->title('Recommended action added')->success()->send();
                 }),
 
             // Mark In Progress
