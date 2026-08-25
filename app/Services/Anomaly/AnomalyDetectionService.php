@@ -200,17 +200,21 @@ class AnomalyDetectionService
                 ];
             });
 
-        // Backfill null reorder points in the shared snapshot from the derived value.
-        foreach (($this->latestOnHand ?? []) as $k => &$oh) {
-            if (($oh['reorder'] ?? null) === null) {
-                $rp = $this->replenishment[$k]['reorder_point'] ?? null;
-                if ($rp !== null && $rp > 0) {
-                    $oh['reorder']        = $rp;
-                    $oh['reorder_source'] = 'derived';
+        // Backfill null reorder points in the shared snapshot from the derived
+        // value. Iterate the property DIRECTLY — `$this->latestOnHand ?? []` would
+        // make foreach reference a temporary copy, so the writes would be lost.
+        if ($this->latestOnHand !== null) {
+            foreach ($this->latestOnHand as $k => &$oh) {
+                if (($oh['reorder'] ?? null) === null) {
+                    $rp = $this->replenishment[$k]['reorder_point'] ?? null;
+                    if ($rp !== null && $rp > 0) {
+                        $oh['reorder']        = $rp;
+                        $oh['reorder_source'] = 'derived';
+                    }
                 }
             }
+            unset($oh);
         }
-        unset($oh);
     }
 
     /**
