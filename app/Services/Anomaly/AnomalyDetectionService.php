@@ -258,6 +258,7 @@ class AnomalyDetectionService
             'return_rate_spike'          => fn () => $this->detectReturnRateSpike($tenantId, $t('return_rate_spike')),
             'channel_mix_shift'          => fn () => $this->detectChannelMixShift($tenantId, $t('channel_mix_shift')),
             'demand_erosion'             => fn () => $this->detectDemandErosion($tenantId, $t('demand_erosion')),
+            'demand_forecast_break'      => fn () => $this->detectDemandForecastBreak($tenantId, $t('demand_forecast_break')),
 
             // Inventory & Supply
             'stockout_risk'              => fn () => $this->detectStockoutRisk($tenantId, $t('stockout_risk')),
@@ -898,6 +899,137 @@ class AnomalyDetectionService
                 ]
             );
         }
+    }
+
+    /**
+     * Demand vs best-fit forecast (Phase 4+5) — the demand detector for
+     * intermittent/lumpy/erratic SKUs, where fixed-% spike/drop rules don't fit.
+     *
+     * Per SKU (chain level), fits a Croston/SBA forecast over the baseline: the
+     * smoothed demand SIZE (z) and the smoothed INTERVAL between demands (p) give
+     * a per-day rate z/p, SBA-bias-corrected. That rate is projected onto the
+     * recent window's calendar with day-of-week factors (Phase 4 seasonality), and
+     * recent actual demand is compared to it. The tolerance band widens with the
+     * item's own CV² (lumpy items need a bigger move to flag). Shortfalls only
+     * fire when the item normally sells ≥2× in the window, so ordinary
+     * intermittent gaps don't read as anomalies.
+     */
+    private function detectDemandForecastBreak(int $tenantId, array $thresholds): void
+    {
+        $basePct    = (float)($thresholds['pct'] ?? 50) / 100;
+        $recentDays = (int)($thresholds['days'] ?? 7);
+        $windowDays = (int)($thresholds['window'] ?? 90);
+        $alpha      = (float)($thresholds['alpha'] ?? 0.2);
+        $minOcc     = (int)($thresholds['min_occasions'] ?? 3);
+        $minRevenue = (float)($thresholds['min_revenue'] ?? self::DEFAULT_MIN_REVENUE);
+
+        // Chain-level profiles decide which SKUs this rule owns.
+        $applicable = [SkuProfile::SEG_INTERMITTENT, SkuProfile::SEG_LUMPY, SkuProfile::SEG_ERRATIC];
+        $prof = [];
+        DB::table('sku_profiles')
+            ->where('tenant_id', $tenantId)->where('store_id', 0)
+            ->whereIn('segment', $applicable)
+            ->select(['sku', 'segment', 'cv2'])
+            ->cursor()
+            ->each(function ($p) use (&$prof) {
+                $prof[trim((string) $p->sku)] = ['segment' => $p->segment, 'cv2' => (float) ($p->cv2 ?? 0)];
+            });
+        if (empty($prof)) return;
+
+        $seasonality = new SeasonalityService();
+        $dow         = $seasonality->dayOfWeekFactors($tenantId, $windowDays);
+
+        $recentFrom  = Carbon::today()->subDays($recentDays)->format('Y-m-d');
+        $windowFrom  = Carbon::today()->subDays($windowDays)->format('Y-m-d');
+        $recentDates = [];
+        for ($i = 1; $i <= $recentDays; $i++) {
+            $recentDates[] = Carbon::today()->subDays($i)->format('Y-m-d');
+        }
+
+        // Per-SKU streaming Croston: chain daily totals ordered by (sku, date).
+        $curSku = null; $z = 0.0; $p = 0.0; $occ = 0; $lastDate = null; $recentActual = 0.0;
+
+        $flush = function () use (
+            &$curSku, &$z, &$p, &$occ, &$recentActual,
+            $prof, $alpha, $minOcc, $recentDays, $basePct, $minRevenue, $dow, $recentDates, $seasonality, $tenantId
+        ) {
+            if ($curSku === null) return;
+            $pr = $prof[$curSku] ?? null;
+
+            if ($pr !== null && $occ >= $minOcc && $p > 0) {
+                $rate     = ($z / $p) * (1 - $alpha / 2);          // SBA-corrected per-day rate
+                $expected = $seasonality->expectedUnits($rate, $dow, $recentDates);
+
+                if ($expected > 0) {
+                    $effTol    = $basePct * (1 + $pr['cv2']);       // wider band for lumpier demand
+                    $occasions = $recentDays / max(1e-9, $p);       // expected demand events in the window
+                    $dev       = $recentActual - $expected;
+
+                    $dir = null;
+                    if ($recentActual > $expected * (1 + $effTol)) {
+                        $dir = 'above';
+                    } elseif ($occasions >= 2 && $recentActual < $expected * (1 - $effTol)) {
+                        $dir = 'below';
+                    }
+
+                    if ($dir !== null) {
+                        $price  = $this->unitPrice($curSku);
+                        $impact = abs($dev) * $price;
+                        if (! ($price > 0 && $impact < $minRevenue)) {
+                            $sev    = $price > 0 ? $this->severityFromImpact($impact) : Anomaly::SEVERITY_MEDIUM;
+                            $devPct = round(abs($dev) / $expected * 100);
+                            $this->flag($tenantId, 'demand_forecast_break', $sev, $curSku, null, null,
+                                "SKU {$curSku} sold " . round($recentActual) . " units in the last {$recentDays} days — "
+                                . $devPct . "% {$dir} its best-fit ({$pr['segment']}) forecast of " . round($expected, 1) . " units.",
+                                [
+                                    'segment'        => $pr['segment'],
+                                    'model'          => 'croston_sba',
+                                    'forecast_units' => round($expected, 1),
+                                    'actual_units'   => round($recentActual, 1),
+                                    'deviation_pct'  => $devPct,
+                                    'direction'      => $dir,
+                                    'revenue_impact' => round($impact, 2),
+                                ]
+                            );
+                        }
+                    }
+                }
+            }
+
+            $z = 0.0; $p = 0.0; $occ = 0; $recentActual = 0.0;
+        };
+
+        $rows = DB::table('sales_daily')
+            ->where('tenant_id', $tenantId)
+            ->where('date', '>=', $windowFrom)
+            ->selectRaw("sku, TO_CHAR(date, 'YYYY-MM-DD') AS d, SUM(units_sold) AS u")
+            ->groupBy('sku', 'date')
+            ->orderBy('sku')->orderBy('date')
+            ->cursor();
+
+        foreach ($rows as $r) {
+            $sku = trim((string) $r->sku);
+            if ($sku !== $curSku) {
+                $flush();
+                $curSku = $sku; $lastDate = null;
+            }
+            if (! isset($prof[$sku])) continue; // only fit SKUs this rule owns
+
+            $u = (float) $r->u;
+            if ($r->d >= $recentFrom) {
+                $recentActual += $u;
+            } else {
+                if ($occ === 0) {
+                    $z = $u; $p = 1.0;
+                } else {
+                    $interval = max(1, (int) abs(Carbon::parse($r->d)->diffInDays(Carbon::parse($lastDate))));
+                    $z = $alpha * $u + (1 - $alpha) * $z;
+                    $p = $alpha * $interval + (1 - $alpha) * $p;
+                }
+                $occ++; $lastDate = $r->d;
+            }
+        }
+        $flush();
     }
 
     // =========================================================================

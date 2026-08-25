@@ -80,14 +80,16 @@ class SkuProfile extends Model
                 'stockout_risk', 'overstock', 'store_outlier', 'cannibalization_signal',
                 'return_rate_spike', 'channel_mix_shift',
             ],
+            // Erratic: frequent but variable size — the best-fit forecast band
+            // fits better than a fixed-% drop; keep inventory/quality rules.
             self::SEG_ERRATIC => [
-                'sales_drop', 'demand_erosion', 'stockout_risk', 'overstock',
-                'return_rate_spike', 'store_outlier',
+                'demand_forecast_break', 'demand_erosion', 'stockout_risk', 'overstock',
+                'store_outlier',
             ],
             // Intermittent/lumpy: spike/drop are meaningless on bursty series;
-            // lean on stockout/phantom/overstock + (future) Croston forecast.
+            // the Croston/SBA forecast rule is the demand detector, plus inventory.
             self::SEG_INTERMITTENT, self::SEG_LUMPY => [
-                'stockout_risk', 'phantom_inventory', 'overstock', 'dead_stock',
+                'demand_forecast_break', 'stockout_risk', 'phantom_inventory', 'overstock', 'dead_stock',
             ],
             self::SEG_DEAD => [
                 'dead_stock', 'phantom_inventory', 'slow_moving_capital', 'overstock',

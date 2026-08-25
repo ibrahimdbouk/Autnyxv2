@@ -56,7 +56,7 @@ class AnomalySettingResource extends Resource
             'cannibalization_signal', 'return_rate_spike', 'channel_mix_shift',
             'inventory_shrinkage', 'receiving_discrepancy', 'supplier_lead_time_drift',
             'cost_spike', 'price_anomaly', 'revenue_concentration_risk', 'slow_moving_capital',
-            'store_outlier', 'demand_erosion', 'supplier_fill_rate',
+            'store_outlier', 'demand_erosion', 'supplier_fill_rate', 'demand_forecast_break',
         ];
 
         $daysRules = [
@@ -72,7 +72,7 @@ class AnomalySettingResource extends Resource
             'cumulative_shrink', 'supplier_fill_rate'];
 
         // Rules whose noise is gated by an estimated-revenue-impact floor (thresholds.min_revenue).
-        $minRevenueRules = ['sales_spike', 'sales_drop', 'stockout_risk', 'cannibalization_signal', 'demand_erosion', 'demand_seasonality_breach'];
+        $minRevenueRules = ['sales_spike', 'sales_drop', 'stockout_risk', 'cannibalization_signal', 'demand_erosion', 'demand_seasonality_breach', 'demand_forecast_break'];
 
         $noThresholdRules = [
             'safety_stock_breach', 'negative_inventory',

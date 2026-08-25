@@ -64,7 +64,7 @@ class EvidenceCollectorService
     private function collectForAnomaly(Investigation $investigation, Anomaly $anomaly): void
     {
         match (true) {
-            in_array($anomaly->rule_type, ['sales_spike', 'sales_drop', 'demand_seasonality_breach', 'demand_erosion'])
+            in_array($anomaly->rule_type, ['sales_spike', 'sales_drop', 'demand_seasonality_breach', 'demand_erosion', 'demand_forecast_break'])
                 => $this->collectSalesEvidence($investigation, $anomaly),
 
             in_array($anomaly->rule_type, ['cannibalization_signal', 'channel_mix_shift', 'store_outlier'])

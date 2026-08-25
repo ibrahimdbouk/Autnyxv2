@@ -53,6 +53,13 @@ class AnomalySetting extends Model
             'tier'               => 'core',   // Requires: sales_transactions.location
             'default_thresholds' => ['pct' => 25, 'days' => 30, 'min_units' => 200],
         ],
+        'demand_forecast_break' => [
+            'label'              => 'Demand vs Best-Fit Forecast',
+            'description'        => 'Recent demand departs from the SKU\'s own best-fit forecast (Croston/SBA for intermittent demand, seasonally adjusted), outside a per-SKU tolerance band. The demand detector for intermittent/lumpy items, where fixed-% spike/drop rules do not fit.',
+            'severity'           => 'medium',
+            'tier'               => 'core',   // Requires: sales_daily + sku_profiles
+            'default_thresholds' => ['pct' => 100, 'days' => 7, 'window' => 90, 'alpha' => 0.2, 'min_occasions' => 3, 'min_revenue' => 500],
+        ],
         'demand_erosion' => [
             'label'              => 'Slow Demand Erosion',
             'description'        => 'A SKU\'s demand is on a sustained downward trend (a gradual slide, not a sharp break) — the kind of erosion that recent-vs-window rules miss because both windows fall together.',
