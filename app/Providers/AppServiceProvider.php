@@ -12,6 +12,7 @@ use App\Console\Commands\MeasureOutcomesCommand;
 use App\Console\Commands\NarrateInvestigationsCommand;
 use App\Console\Commands\NotifyAnomaliesCommand;
 use App\Console\Commands\PollSftpCommand;
+use App\Console\Commands\ComputeReplenishmentCommand;
 use App\Console\Commands\ProfileSkusCommand;
 use App\Services\Import\ImportProcessorService;
 use Illuminate\Console\Scheduling\Schedule;
@@ -82,6 +83,14 @@ class AppServiceProvider extends ServiceProvider
                 ->withoutOverlapping()
                 ->runInBackground()
                 ->appendOutputTo(storage_path('logs/sku-profile.log'));
+
+            // 00:50 — Derive reorder points / safety stock / suggested order qty
+            //          (B4) from the fresh profiles, before detection consumes them.
+            $schedule->command(ComputeReplenishmentCommand::class)
+                ->dailyAt('00:50')
+                ->withoutOverlapping()
+                ->runInBackground()
+                ->appendOutputTo(storage_path('logs/replenishment.log'));
 
             // 01:00 — Recompute adaptive baselines (z-score thresholds) — MUST be first
             $schedule->command(ComputeBaselinesCommand::class)

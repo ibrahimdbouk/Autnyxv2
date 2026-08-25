@@ -52,6 +52,16 @@ class AnomalyDetectionService
      */
     private ?array $recentDemand = null;
 
+    /**
+     * B4: derived replenishment params per "store_id|sku" from sku_replenishment
+     * (reorder_point, suggested_order_qty, order_up_to, supplier). Used to (a)
+     * fall back a reorder point where the tenant supplied none — reviving
+     * safety-stock and imbalance rules — and (b) attach a suggested order qty to
+     * stockout alerts. Empty if the replenishment pass hasn't run → no change.
+     * @var array<string,array>
+     */
+    private array $replenishment = [];
+
     /** Window (days) the shared recentDemand map was aggregated over. */
     private int $demandWindowDays = 30;
 
@@ -161,6 +171,46 @@ class AnomalyDetectionService
         }
 
         return $this->priceMap[trim($sku)] ?? 0.0;
+    }
+
+    /**
+     * B4: load derived replenishment params, then fall back the reorder point in
+     * the shared snapshot wherever the tenant supplied none. This revives the
+     * reorder-point-dependent rules (safety stock, imbalance) and sharpens
+     * stockout — without ever overwriting a reorder point the tenant did supply.
+     */
+    private function primeReplenishment(int $tenantId): void
+    {
+        $this->replenishment = [];
+
+        if (! DB::getSchemaBuilder()->hasTable('sku_replenishment')) {
+            return;
+        }
+
+        DB::table('sku_replenishment')
+            ->where('tenant_id', $tenantId)
+            ->select(['store_id', 'sku', 'reorder_point', 'suggested_order_qty', 'order_up_to', 'supplier'])
+            ->cursor()
+            ->each(function ($r) {
+                $this->replenishment[$r->store_id . '|' . trim((string) $r->sku)] = [
+                    'reorder_point'       => (float) $r->reorder_point,
+                    'suggested_order_qty' => (float) $r->suggested_order_qty,
+                    'order_up_to'         => (float) $r->order_up_to,
+                    'supplier'            => $r->supplier,
+                ];
+            });
+
+        // Backfill null reorder points in the shared snapshot from the derived value.
+        foreach (($this->latestOnHand ?? []) as $k => &$oh) {
+            if (($oh['reorder'] ?? null) === null) {
+                $rp = $this->replenishment[$k]['reorder_point'] ?? null;
+                if ($rp !== null && $rp > 0) {
+                    $oh['reorder']        = $rp;
+                    $oh['reorder_source'] = 'derived';
+                }
+            }
+        }
+        unset($oh);
     }
 
     /**
@@ -285,6 +335,7 @@ class AnomalyDetectionService
             $t('overstock')['lookback_days']  ?? 30,
         );
         $this->primeRecentDemand($tenantId, $demandWindow);
+        $this->primeReplenishment($tenantId); // B4: derived reorder points (after snapshot)
         $this->primeSkuSegments($tenantId);
 
         $rules = [
@@ -1116,19 +1167,31 @@ class AnomalyDetectionService
 
             $severity = $price > 0 ? $this->severityFromImpact($impact) : Anomaly::SEVERITY_HIGH;
 
+            $rpLabel = (($oh['reorder_source'] ?? null) === 'derived') ? 'derived reorder point' : 'reorder point';
             $line = ($reorder !== null && $reorder > 0)
-                ? "on hand {$oh['qty']} ≤ reorder point {$reorder}"
+                ? "on hand {$oh['qty']} ≤ {$rpLabel} " . round($reorder, 1)
                 : "on hand {$oh['qty']}";
+
+            // B4: prescriptive suggestion — how much to order and from whom.
+            $rep       = $this->replenishment[$k] ?? null;
+            $suggestQty = $rep && ($rep['suggested_order_qty'] ?? 0) > 0 ? (float) $rep['suggested_order_qty'] : null;
+            $supplier   = $rep['supplier'] ?? null;
+            $suggestClause = $suggestQty !== null
+                ? " Suggest ordering ~" . round($suggestQty) . " units" . ($supplier ? " from {$supplier}" : "") . "."
+                : "";
 
             $this->flag($tenantId, 'stockout_risk', $severity, $sku, (int) $storeId, $oh['product_id'],
                 "SKU {$sku} is at stockout risk at '{$oh['location']}' — {$line}, while it sells ~"
-                . round($dailyDemand, 1) . " units/day (" . $this->money($impact) . " lost sales at risk over {$horizon} days).",
+                . round($dailyDemand, 1) . " units/day (" . $this->money($impact) . " lost sales at risk over {$horizon} days)." . $suggestClause,
                 [
                     'on_hand_qty'    => $oh['qty'],
                     'reorder_point'  => $reorder,
+                    'reorder_source' => $oh['reorder_source'] ?? 'tenant',
                     'daily_demand'   => round($dailyDemand, 2),
                     'lost_units'     => round($lostUnits, 1),
                     'revenue_impact' => round($impact, 2),
+                    'suggested_order_qty' => $suggestQty !== null ? round($suggestQty, 1) : null,
+                    'suggested_supplier'  => $supplier,
                     'location'       => $oh['location'],
                     'lookback_days'  => $days,
                 ]
@@ -1310,12 +1373,16 @@ class AnomalyDetectionService
         $acc = [];
         InventoryLevel::where('tenant_id', $tenantId)
             ->whereNotNull('location')
-            ->select(['sku', 'location', 'on_hand_qty', 'reorder_point', 'product_id'])
+            ->select(['sku', 'store_id', 'location', 'on_hand_qty', 'reorder_point', 'product_id'])
             ->cursor()
             ->each(function ($l) use (&$acc) {
                 $sku = $l->sku;
                 $oh  = (float) $l->on_hand_qty;
-                $rp  = $l->reorder_point !== null ? (float) $l->reorder_point : null;
+                // B4: fall back to the derived reorder point where the tenant has none,
+                // so the imbalance rule works even without supplied reorder points.
+                $rp  = $l->reorder_point !== null
+                    ? (float) $l->reorder_point
+                    : ($this->replenishment[$l->store_id . '|' . trim((string) $sku)]['reorder_point'] ?? null);
 
                 if (! isset($acc[$sku])) {
                     $acc[$sku] = ['count' => 0, 'out' => null, 'over' => null, 'product_id' => $l->product_id];
