@@ -385,12 +385,6 @@ class FinancialBreakdown extends Page
 
     private function money(float $val): string
     {
-        if (abs($val) >= 1_000_000) {
-            return '$' . number_format($val / 1_000_000, 2) . 'M';
-        }
-        if (abs($val) >= 1_000) {
-            return '$' . number_format($val / 1_000, 1) . 'K';
-        }
-        return '$' . number_format($val, 0);
+        return \App\Support\Money::compact($val, Filament::getTenant()?->currencyCode());
     }
 }

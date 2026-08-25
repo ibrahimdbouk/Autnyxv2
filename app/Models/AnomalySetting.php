@@ -71,10 +71,14 @@ class AnomalySetting extends Model
         // ── Inventory & Supply ───────────────────────────────────────────────
         'stockout_risk' => [
             'label'              => 'Stockout Risk',
-            'description'        => 'On-hand quantity is at or below the reorder point.',
+            'description'        => 'On-hand quantity is at or below the reorder point for a SKU that is still selling — lost sales at risk.',
             'severity'           => 'high',
             'tier'               => 'core',   // Requires: inventory_levels
-            'default_thresholds' => [],
+            // Business-impact floor: only surface stockouts whose lost-sales value
+            // over the horizon clears this amount. A gentle default trims the
+            // trivial tail (a near-dead item on an empty shelf) while keeping
+            // staples; set to 0 for full recall, raise it to focus on the biggest.
+            'default_thresholds' => ['min_revenue' => 100],
         ],
         'safety_stock_breach' => [
             'label'              => 'Safety Stock Breach',
@@ -316,7 +320,7 @@ class AnomalySetting extends Model
         );
     }
 
-    public function getThresholdsSummary(): string
+    public function getThresholdsSummary(?string $currency = null): string
     {
         $thresholds = $this->getEffectiveThresholds();
         if (empty($thresholds)) return '—';
@@ -325,8 +329,8 @@ class AnomalySetting extends Model
         if (isset($thresholds['pct']))         $parts[] = "±{$thresholds['pct']}%";
         if (isset($thresholds['days']))        $parts[] = "{$thresholds['days']} days";
         if (isset($thresholds['days_cover']))  $parts[] = "{$thresholds['days_cover']}d cover";
-        if (isset($thresholds['min_value']))   $parts[] = "min \${$thresholds['min_value']}";
-        if (isset($thresholds['min_revenue'])) $parts[] = "floor \${$thresholds['min_revenue']}";
+        if (isset($thresholds['min_value']))   $parts[] = 'min ' . \App\Support\Money::format($thresholds['min_value'], $currency, 0);
+        if (isset($thresholds['min_revenue'])) $parts[] = 'floor ' . \App\Support\Money::format($thresholds['min_revenue'], $currency, 0);
 
         return implode(', ', $parts);
     }

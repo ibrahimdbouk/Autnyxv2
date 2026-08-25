@@ -51,7 +51,7 @@
                         </td>
                         <td><span class="wi-badge {{ $statusClass($row['status']) }}">{{ str_replace('_',' ',$row['status']) }}</span></td>
                         <td><span class="wi-badge {{ $prioClass($row['priority']) }}">{{ $row['priority'] }}</span></td>
-                        <td>{{ $row['revenue_at_risk'] !== null ? '$'.number_format($row['revenue_at_risk'],0) : '—' }}</td>
+                        <td>{{ $row['revenue_at_risk'] !== null ? \App\Support\Money::format($row['revenue_at_risk'], \Filament\Facades\Filament::getTenant()?->currency, 0) : '—' }}</td>
                         <td>
                             {{ $row['last_change'] ? \Illuminate\Support\Carbon::parse($row['last_change'])->diffForHumans() : '—' }}
                             @if($row['last_message'])

@@ -437,6 +437,7 @@ class EvidenceCollectorService
     private function collectFinancialEvidence(Investigation $investigation, Anomaly $anomaly): void
     {
         $tenantId = $investigation->tenant_id;
+        $cur = \App\Support\Money::symbol(optional(\App\Models\Tenant::find($tenantId))->currency);
         $since    = Carbon::today()->subDays(30)->format('Y-m-d');
 
         // Recent price history for the SKU
@@ -459,7 +460,7 @@ class EvidenceCollectorService
                     'max' => round((float)$prices->max_price, 4),
                     'tx_count' => (int)$prices->tx_count,
                 ],
-                'unit'          => '$',
+                'unit'          => $cur,
                 'direction'     => InvestigationEvidence::DIRECTION_SUPPORTS,
                 'strength'      => InvestigationEvidence::STRENGTH_STRONG,
                 'observed_at'   => now(),
@@ -474,7 +475,7 @@ class EvidenceCollectorService
                 'source'        => 'products',
                 'label'         => "Unit cost (product master)",
                 'value_numeric' => $product->unit_cost,
-                'unit'          => '$',
+                'unit'          => $cur,
                 'direction'     => InvestigationEvidence::DIRECTION_NEUTRAL,
                 'strength'      => InvestigationEvidence::STRENGTH_STRONG,
                 'observed_at'   => now(),

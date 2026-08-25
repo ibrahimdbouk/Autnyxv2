@@ -24,10 +24,11 @@ class AnomalyReportController extends Controller
         abort_unless($user && $user->canAccessTenant($anomaly->tenant), 403);
 
         $pdf = Pdf::loadView('pdf.anomaly-report', [
-            'anomaly'       => $anomaly,
-            'investigation' => $anomaly->investigation,
-            'ruleLabel'     => AnomalySetting::RULES[$anomaly->rule_type]['label'] ?? $anomaly->rule_type,
-            'generatedAt'   => now()->format('d M Y, H:i'),
+            'anomaly'        => $anomaly,
+            'investigation'  => $anomaly->investigation,
+            'ruleLabel'      => AnomalySetting::RULES[$anomaly->rule_type]['label'] ?? $anomaly->rule_type,
+            'generatedAt'    => now()->format('d M Y, H:i'),
+            'currencyPrefix' => \App\Support\Money::prefix($anomaly->tenant->currency ?? null),
         ])->setPaper('a4', 'portrait');
 
         $filename = 'anomaly-report-' . $anomaly->id . '-' . now()->format('Ymd') . '.pdf';

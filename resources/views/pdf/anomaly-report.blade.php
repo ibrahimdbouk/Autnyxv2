@@ -347,7 +347,7 @@
                     <div class="step-num"><div class="step-circle sc-orange">4</div></div>
                     <div class="step-body">
                         <div class="step-label">Revenue at Risk (AI Estimate)</div>
-                        <div class="step-text">${{ number_format($investigation->revenue_at_risk, 2) }}</div>
+                        <div class="step-text">{{ $currencyPrefix }}{{ number_format($investigation->revenue_at_risk, 2) }}</div>
                     </div>
                 </div>
                 @endif
@@ -362,7 +362,7 @@
                             <div class="step-text">
                                 Type: {{ $outcome->outcome_type }}
                                 @if($outcome->observed_recovery)
-                                    · Recovery: ${{ number_format($outcome->observed_recovery, 2) }}
+                                    · Recovery: {{ $currencyPrefix }}{{ number_format($outcome->observed_recovery, 2) }}
                                 @endif
                                 @if($outcome->confirmed_root_cause)
                                     · {{ $outcome->confirmed_root_cause }}

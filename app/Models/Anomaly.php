@@ -117,6 +117,28 @@ class Anomaly extends Model
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    /** This anomaly's estimated business impact (from context.revenue_impact), or null. */
+    public function estimatedImpact(): ?float
+    {
+        $v = $this->context['revenue_impact'] ?? null;
+
+        return $v === null ? null : (float) $v;
+    }
+
+    /**
+     * Total estimated value at risk across a tenant's OPEN anomalies — the
+     * "AED at risk surfaced" headline (B1). Sums context.revenue_impact, which
+     * every money-bearing rule writes. Impact is an estimate (units at risk ×
+     * price), not realised loss.
+     */
+    public static function estimatedValueAtRiskForTenant(int $tenantId): float
+    {
+        return (float) static::query()
+            ->where('tenant_id', $tenantId)
+            ->whereNull('dismissed_at')
+            ->sum(\Illuminate\Support\Facades\DB::raw("COALESCE((context->>'revenue_impact')::numeric, 0)"));
+    }
+
     public function isDismissed(): bool
     {
         return $this->dismissed_at !== null;

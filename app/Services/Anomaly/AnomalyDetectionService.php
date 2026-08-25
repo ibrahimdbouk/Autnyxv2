@@ -11,6 +11,7 @@ use App\Models\PurchaseOrder;
 use App\Models\SalesTransaction;
 use App\Models\SkuProfile;
 use App\Models\Store;
+use App\Support\Money;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -26,6 +27,9 @@ class AnomalyDetectionService
      * Used to delete stale anomalies (condition resolved) while preserving investigation work.
      */
     private array $touchedAnomalyIds = [];
+
+    /** Tenant currency (ISO code) for the current run — money in descriptions is labelled with it. */
+    private string $currency = Money::DEFAULT;
 
     /** @var array<string,float>|null  sku => unit price (selling_price ?? unit_cost), primed per run */
     private ?array $priceMap = null;
@@ -61,6 +65,15 @@ class AnomalyDetectionService
     private array $skuSegments = [];
     private bool $gatingActive = false;
     private int $gatedFlags = 0;
+
+    /**
+     * B2 validation telemetry: per-rule counts of flags actually emitted and
+     * flags suppressed by best-fit gating in the current run. "Would-be flags"
+     * for a rule = emitted + gated; gated / would-be is the noise the gate cut.
+     * @var array<string,int>
+     */
+    private array $emittedByRule = [];
+    private array $gatedByRule = [];
 
     /** Master switch for segment-based rule gating. */
     private const RULE_GATING_ENABLED = true;
@@ -160,6 +173,8 @@ class AnomalyDetectionService
         $this->skuSegments = [];
         $this->gatedFlags  = 0;
         $this->gatingActive = false;
+        $this->emittedByRule = [];
+        $this->gatedByRule   = [];
 
         if (! self::RULE_GATING_ENABLED) return;
 
@@ -208,6 +223,24 @@ class AnomalyDetectionService
         return abs($unitsDelta) * $this->unitPrice($sku);
     }
 
+    /** Format a money amount in the tenant's currency for an anomaly description. */
+    private function money(float $amount): string
+    {
+        return Money::format($amount, $this->currency);
+    }
+
+    /** B2: per-rule flags emitted in the last run. @return array<string,int> */
+    public function emittedByRule(): array { return $this->emittedByRule; }
+
+    /** B2: per-rule flags suppressed by best-fit gating in the last run. @return array<string,int> */
+    public function gatedByRule(): array { return $this->gatedByRule; }
+
+    /** B2: total flags suppressed by best-fit gating in the last run. */
+    public function gatedFlags(): int { return $this->gatedFlags; }
+
+    /** B2: whether best-fit gating was active (profiles present) in the last run. */
+    public function gatingWasActive(): bool { return $this->gatingActive; }
+
     /** Map a revenue-impact figure to a severity tier so money drives priority. */
     private function severityFromImpact(float $impact): string
     {
@@ -227,6 +260,11 @@ class AnomalyDetectionService
         // Headroom for large tenants; the detectors below are written to stream,
         // so this is a safety margin, not a crutch.
         @ini_set('memory_limit', '768M');
+        // Tenant currency (display-only): every money figure in a description is
+        // labelled with it, so alerts read "AED 4,000 at risk" not "$4,000".
+        $this->currency = Money::normalize(
+            DB::table('tenants')->where('id', $tenantId)->value('currency')
+        );
         $this->primePriceMap($tenantId);
 
         $settings = AnomalySetting::where('tenant_id', $tenantId)
@@ -1046,10 +1084,12 @@ class AnomalyDetectionService
     private function detectStockoutRisk(int $tenantId, array $thresholds): void
     {
         $minUnits = (float)($thresholds['min_units'] ?? 3);
-        // No revenue floor by default: an empty shelf for an item people buy is
-        // worth surfacing even when the lost-sales dollar value is small. Impact
-        // still drives severity so high-velocity stockouts rank to the top.
-        $minValue = (float)($thresholds['min_revenue'] ?? 0);
+        // Business-impact floor (B1): suppress stockouts whose lost-sales value
+        // over the horizon is below this, when we know the price. Defaults to a
+        // gentle 100 so the trivial tail drops but staples stay; impact still
+        // drives severity so high-velocity stockouts rank to the top. Only floors
+        // when price is known (see the guard below), never on price-less items.
+        $minValue = (float)($thresholds['min_revenue'] ?? 100);
         $horizon  = (int)($thresholds['lost_sales_days'] ?? 7);
         $days     = $this->demandWindowDays;
 
@@ -1082,7 +1122,7 @@ class AnomalyDetectionService
 
             $this->flag($tenantId, 'stockout_risk', $severity, $sku, (int) $storeId, $oh['product_id'],
                 "SKU {$sku} is at stockout risk at '{$oh['location']}' — {$line}, while it sells ~"
-                . round($dailyDemand, 1) . " units/day (\$" . number_format($impact, 2) . " lost sales at risk over {$horizon} days).",
+                . round($dailyDemand, 1) . " units/day (" . $this->money($impact) . " lost sales at risk over {$horizon} days).",
                 [
                     'on_hand_qty'    => $oh['qty'],
                     'reorder_point'  => $reorder,
@@ -1161,7 +1201,7 @@ class AnomalyDetectionService
             $severity = $cost > 0 ? $this->severityFromImpact($value) : Anomaly::SEVERITY_LOW;
 
             $this->flag($tenantId, 'overstock', $severity, $sku, (int) $storeId, $oh['product_id'],
-                "SKU {$sku} holds " . round($oh['qty']) . " units (\$" . number_format($value, 2) . ") at '{$oh['location']}' "
+                "SKU {$sku} holds " . round($oh['qty']) . " units (" . $this->money($value) . ") at '{$oh['location']}' "
                 . "— about " . round($cover) . " days of cover at its recent rate of " . round($dailyDemand, 1)
                 . " units/day (threshold {$daysCover} days). Working capital tied up in slow-moving stock.",
                 [
@@ -1249,7 +1289,7 @@ class AnomalyDetectionService
             $severity = $cost > 0 ? $this->severityFromImpact($value) : Anomaly::SEVERITY_MEDIUM;
 
             $this->flag($tenantId, 'phantom_inventory', $severity, $sku, (int) $storeId, $oh['product_id'],
-                "SKU {$sku} holds " . round($oh['qty']) . " units (\$" . number_format($value, 2) . ") at '{$oh['location']}' "
+                "SKU {$sku} holds " . round($oh['qty']) . " units (" . $this->money($value) . ") at '{$oh['location']}' "
                 . "but sold only " . round($recent, 1) . " units there in {$days} days — capital tied up in non-moving stock.",
                 [
                     'on_hand_qty'     => $oh['qty'],
@@ -1405,7 +1445,7 @@ class AnomalyDetectionService
 
             $this->flag($tenantId, 'inventory_shrinkage', $severity, $row->sku, $row->store_id, $row->product_id,
                 "SKU {$row->sku} at '{$row->location}' shows " . round($shrinkagePct) . "% inventory shrinkage — "
-                . round($unexplained) . " units (\$" . number_format($value, 2) . ") unaccounted for between "
+                . round($unexplained) . " units (" . $this->money($value) . ") unaccounted for between "
                 . $row->prev_date . " and " . $row->latest_date . ".",
                 [
                     'location'        => $row->location,
@@ -1478,7 +1518,7 @@ class AnomalyDetectionService
 
             $this->flag($tenantId, 'cumulative_shrink', $severity, $r->sku, (int) $r->store_id, $r->product_id,
                 "SKU {$r->sku} at '{$r->location}' shows a concealed shrink pattern — "
-                . round($cum) . " units (\$" . number_format($value, 2) . ") of unexplained loss accumulated across "
+                . round($cum) . " units (" . $this->money($value) . ") of unexplained loss accumulated across "
                 . (int) $r->loss_intervals . " separate declines, masked by restocking in between.",
                 [
                     'location'         => $r->location,
@@ -1544,7 +1584,7 @@ class AnomalyDetectionService
                 $receivedPct = round(($received / $ordered) * 100);
                 $this->flag($tenantId, 'receiving_discrepancy', $severity, $po->sku, null, $po->product_id,
                     "PO #{$po->po_number} from {$po->supplier} (SKU {$po->sku}) was closed with only {$receivedPct}% received "
-                    . "({$po->qty_received} of {$po->qty_ordered} units, \$" . number_format($value, 2) . " short).",
+                    . "({$po->qty_received} of {$po->qty_ordered} units, " . $this->money($value) . " short).",
                     ['po_number' => $po->po_number, 'supplier' => $po->supplier, 'qty_ordered' => $po->qty_ordered, 'qty_received' => $po->qty_received, 'received_pct' => $receivedPct, 'revenue_impact' => round($value, 2)]
                 );
             });
@@ -1638,7 +1678,7 @@ class AnomalyDetectionService
 
             $this->flag($tenantId, 'supplier_fill_rate', $severity, $r->sku, null, $r->product_id,
                 "Supplier '{$r->supplier}' has chronically under-filled SKU {$r->sku} — averaging {$avgFillPct}% fill across "
-                . (int) $r->pos . " POs (" . round($shortUnits) . " units short, \$" . number_format($value, 2) . ").",
+                . (int) $r->pos . " POs (" . round($shortUnits) . " units short, " . $this->money($value) . ").",
                 [
                     'supplier'       => $r->supplier,
                     'pos'            => (int) $r->pos,
@@ -1975,7 +2015,7 @@ class AnomalyDetectionService
             if ($totalValue < $minValue) continue;
 
             $this->flag($tenantId, 'slow_moving_capital', 'medium', $sku, null, $row->product_id,
-                "SKU {$sku} has \$" . number_format($totalValue, 2) . " tied up in inventory "
+                "SKU {$sku} has " . $this->money($totalValue) . " tied up in inventory "
                 . "(" . round($totalQty) . " units × \$" . round($unitCost, 2) . ") with no sales in the last {$days} days.",
                 ['on_hand_qty' => $totalQty, 'unit_cost' => $unitCost, 'inventory_value' => round($totalValue, 2), 'days_without_sales' => $days]
             );
@@ -2200,8 +2240,11 @@ class AnomalyDetectionService
         // that no longer belong.
         if (! $this->ruleAppliesTo($ruleType, $sku, $storeId)) {
             $this->gatedFlags++;
+            $this->gatedByRule[$ruleType] = ($this->gatedByRule[$ruleType] ?? 0) + 1;
             return;
         }
+
+        $this->emittedByRule[$ruleType] = ($this->emittedByRule[$ruleType] ?? 0) + 1;
 
         $anomaly = null;
 

@@ -4,7 +4,9 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\TenantResource\Pages;
 use App\Models\Tenant;
+use App\Support\Money;
 use Filament\Schemas\Components\Section;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
@@ -75,6 +77,15 @@ class TenantResource extends Resource
                 ->helperText('Used in the URL. Only letters, numbers, hyphens and underscores.')
                 ->dehydrateStateUsing(fn (string $state) => Str::slug($state)),
 
+            Select::make('currency')
+                ->label('Currency')
+                ->options(Money::options())
+                ->default(Money::DEFAULT)
+                ->required()
+                ->searchable()
+                ->native(false)
+                ->helperText('Every money value across the platform is shown in this currency. Display only — values are relabelled, not converted, so set this once at onboarding.'),
+
             Section::make('Anomaly Notifications')
                 ->description('Send an email digest when new anomalies are detected. Leave blank to disable.')
                 ->collapsed()
@@ -108,6 +119,11 @@ class TenantResource extends Resource
 
                 TextColumn::make('slug')
                     ->searchable(),
+
+                TextColumn::make('currency')
+                    ->label('Currency')
+                    ->badge()
+                    ->sortable(),
 
                 TextColumn::make('notification_email')
                     ->label('Alert Email')

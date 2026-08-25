@@ -77,12 +77,18 @@ class ReportDataService
         return [$f, $t];
     }
 
+    /** Tenant currency (ISO code) for money formatting within the current report. */
+    private string $currency = \App\Support\Money::DEFAULT;
+
     public function build(string $type, int $tenantId, Carbon $from, Carbon $to): array
     {
+        $tenant = \App\Models\Tenant::find($tenantId);
+        $this->currency = \App\Support\Money::normalize($tenant?->currency);
+
         $base = [
             'type'         => $type,
             'title'        => self::TYPE_LABELS[$type] ?? ucfirst($type),
-            'tenant'       => optional(\App\Models\Tenant::find($tenantId))->name ?? ('Tenant #' . $tenantId),
+            'tenant'       => $tenant?->name ?? ('Tenant #' . $tenantId),
             'period'       => $from->format('M j, Y') . ' – ' . $to->format('M j, Y'),
             'generated_at' => now()->format('M j, Y H:i'),
             'note'         => null,
@@ -482,6 +488,6 @@ class ReportDataService
 
     private function money(float $v): string
     {
-        return '$' . number_format($v, 2);
+        return \App\Support\Money::format($v, $this->currency);
     }
 }

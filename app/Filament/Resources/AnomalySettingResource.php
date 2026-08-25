@@ -4,6 +4,9 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\AnomalySettingResource\Pages;
 use App\Models\AnomalySetting;
+use App\Services\Anomaly\ThresholdRecommenderService;
+use App\Support\Money;
+use Filament\Actions\Action;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\TextInput;
@@ -38,6 +41,30 @@ class AnomalySettingResource extends Resource
     public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool   { return auth()->user()?->canChangeAnomalyThresholds() ?? false; }
     public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool { return false; }
 
+    /** Memoised B3 recommendations for the active tenant (computed once per request). */
+    private static ?array $recCache = null;
+
+    private static function recommendations(): array
+    {
+        if (self::$recCache !== null) return self::$recCache;
+
+        $tenantId = Filament::getTenant()?->id;
+        return self::$recCache = $tenantId
+            ? app(ThresholdRecommenderService::class)->recommendForTenant($tenantId)
+            : ['rules' => [], 'notes' => []];
+    }
+
+    private static function recommendedModalNote(AnomalySetting $record): string
+    {
+        $spec = self::recommendations()['rules'][$record->rule_type] ?? null;
+        if ($spec === null) return '';
+
+        $val = Money::format($spec['recommended'], Filament::getTenant()?->currencyCode(), 0);
+        $key = $spec['key'] === 'min_revenue' ? 'revenue-impact floor' : 'tied-up-value floor';
+
+        return "Set the {$key} to {$val}. {$spec['rationale']} You can fine-tune it afterwards on this rule.";
+    }
+
     // Auto-seed all rules if missing when listing
     public static function getEloquentQuery(): Builder
     {
@@ -50,6 +77,9 @@ class AnomalySettingResource extends Resource
 
     public static function form(Schema $form): Schema
     {
+        // Currency symbol for this tenant, for money-valued threshold fields.
+        $currencySymbol = \App\Support\Money::symbol(Filament::getTenant()?->currencyCode());
+
         // Rules that expose each threshold type
         $pctRules = [
             'sales_spike', 'sales_drop', 'demand_seasonality_breach',
@@ -124,7 +154,7 @@ class AnomalySettingResource extends Resource
                 ->helperText('Materiality floor: only flag when the inventory/shortfall value (qty × unit cost) exceeds this amount. Raise it to shorten the list, lower it for wider recall.')
                 ->numeric()
                 ->minValue(0)
-                ->prefix('$')
+                ->prefix($currencySymbol)
                 ->visible(fn (?AnomalySetting $record) => $record && in_array($record->rule_type, $minValueRules)),
 
             TextInput::make('thresholds.min_revenue')
@@ -132,7 +162,7 @@ class AnomalySettingResource extends Resource
                 ->helperText('Materiality floor: only flag when the estimated revenue at risk exceeds this amount (0 = surface every hit, ranked by impact). Raise it to cut low-value noise.')
                 ->numeric()
                 ->minValue(0)
-                ->prefix('$')
+                ->prefix($currencySymbol)
                 ->visible(fn (?AnomalySetting $record) => $record && in_array($record->rule_type, $minRevenueRules)),
 
             Placeholder::make('no_thresholds')
@@ -171,14 +201,48 @@ class AnomalySettingResource extends Resource
 
                 TextColumn::make('thresholds_summary')
                     ->label('Thresholds')
-                    ->getStateUsing(fn (AnomalySetting $record) => $record->getThresholdsSummary()),
+                    ->getStateUsing(fn (AnomalySetting $record) => $record->getThresholdsSummary(Filament::getTenant()?->currencyCode())),
+
+                TextColumn::make('recommended')
+                    ->label('Recommended floor')
+                    ->badge()
+                    ->color('gray')
+                    ->tooltip(fn (AnomalySetting $record) => self::recommendations()['rules'][$record->rule_type]['rationale'] ?? null)
+                    ->getStateUsing(function (AnomalySetting $record) {
+                        $spec = self::recommendations()['rules'][$record->rule_type] ?? null;
+                        if ($spec === null) return '—';
+                        return Money::format($spec['recommended'], Filament::getTenant()?->currencyCode(), 0);
+                    }),
 
                 ToggleColumn::make('enabled')
                     ->label('Active')
                     ->sortable(),
             ])
             ->defaultSort('rule_type')
-            ->paginated(false);
+            ->paginated(false)
+            ->actions([
+                Action::make('use_recommended')
+                    ->label('Use recommended')
+                    ->icon('heroicon-o-sparkles')
+                    ->color('primary')
+                    ->requiresConfirmation()
+                    ->modalDescription(fn (AnomalySetting $record) => self::recommendedModalNote($record))
+                    ->visible(function (AnomalySetting $record) {
+                        if (! (auth()->user()?->canChangeAnomalyThresholds() ?? false)) return false;
+                        $spec = self::recommendations()['rules'][$record->rule_type] ?? null;
+                        if ($spec === null) return false;
+                        // Only offer when the recommendation differs from the current value.
+                        $current = $record->getEffectiveThresholds()[$spec['key']] ?? null;
+                        return (float) $current !== (float) $spec['recommended'];
+                    })
+                    ->action(function (AnomalySetting $record) {
+                        $spec = self::recommendations()['rules'][$record->rule_type] ?? null;
+                        if ($spec === null) return;
+                        $record->update([
+                            'thresholds' => array_merge($record->thresholds ?? [], [$spec['key'] => $spec['recommended']]),
+                        ]);
+                    }),
+            ]);
     }
 
     public static function getRelations(): array

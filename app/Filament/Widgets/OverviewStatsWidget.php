@@ -44,6 +44,10 @@ class OverviewStatsWidget extends BaseWidget
         $mediumAnomalies = Anomaly::where('tenant_id', $tenantId)->whereNull('dismissed_at')->where('severity', 'medium')->count();
         $totalAnomalies  = Anomaly::where('tenant_id', $tenantId)->whereNull('dismissed_at')->count();
 
+        // B1: aggregate estimated value at risk across open anomalies, in the tenant's currency.
+        $valueAtRisk = $tenantId ? Anomaly::estimatedValueAtRiskForTenant($tenantId) : 0.0;
+        $currency    = Filament::getTenant()?->currencyCode();
+
         $anomalyDesc = match (true) {
             $highAnomalies > 0   => "{$highAnomalies} high severity",
             $mediumAnomalies > 0 => "{$mediumAnomalies} medium severity",
@@ -65,6 +69,13 @@ class OverviewStatsWidget extends BaseWidget
                 ->description($anomalyDesc)
                 ->descriptionIcon($totalAnomalies > 0 ? 'heroicon-m-exclamation-triangle' : 'heroicon-m-check-circle')
                 ->color($highAnomalies > 0 ? 'danger' : ($mediumAnomalies > 0 ? 'warning' : ($totalAnomalies > 0 ? 'info' : 'success')))
+                ->url($anomaliesUrl)
+                ->extraAttributes(['class' => 'cursor-pointer']),
+
+            Stat::make('Est. Value at Risk', \App\Support\Money::compact($valueAtRisk, $currency))
+                ->description('Across open anomalies (estimate)')
+                ->descriptionIcon('heroicon-m-banknotes')
+                ->color($valueAtRisk > 0 ? 'warning' : 'success')
                 ->url($anomaliesUrl)
                 ->extraAttributes(['class' => 'cursor-pointer']),
 

@@ -180,10 +180,9 @@ $categoryTop = $tenantId
     : null;
 
 /* ── Format helpers (closures — safe for multi-render Livewire cycles) ── */
-$dbFormatMoney = static function(float $val): string {
-    if ($val >= 1_000_000) return '$'.number_format($val/1_000_000,2).'M';
-    if ($val >= 1_000)     return '$'.number_format($val/1_000,1).'K';
-    return '$'.number_format($val,0);
+$dbCurrency = \App\Support\Money::normalize(\Filament\Facades\Filament::getTenant()?->currency);
+$dbFormatMoney = static function(float $val) use ($dbCurrency): string {
+    return \App\Support\Money::compact($val, $dbCurrency);
 };
 
 $dbTrend = static function(float $current, float $prev): array {
@@ -933,9 +932,10 @@ document.addEventListener('DOMContentLoaded', function () {
                         ticks: {
                             color: tickColor, font: { size: 10 },
                             callback: function(v) {
-                                if (v >= 1000000) return '$'+(v/1000000).toFixed(1)+'M';
-                                if (v >= 1000)    return '$'+(v/1000).toFixed(0)+'K';
-                                return '$'+v;
+                                var pfx = @json(\App\Support\Money::prefix(\Filament\Facades\Filament::getTenant()?->currency));
+                                if (v >= 1000000) return pfx+(v/1000000).toFixed(1)+'M';
+                                if (v >= 1000)    return pfx+(v/1000).toFixed(0)+'K';
+                                return pfx+v;
                             }
                         }
                     }

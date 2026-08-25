@@ -259,21 +259,21 @@ class InvestigateInvestigation extends Page
                         ->required(),
 
                     TextInput::make('revenue_at_risk')
-                        ->label('Revenue at Risk ($)')
+                        ->label('Revenue at Risk')
                         ->numeric()
-                        ->prefix('$')
+                        ->prefix(\App\Support\Money::symbol(Filament::getTenant()?->currencyCode()))
                         ->helperText('AI estimate — adjust if needed'),
 
                     TextInput::make('observed_recovery')
-                        ->label('Observed Recovery ($)')
+                        ->label('Observed Recovery')
                         ->numeric()
-                        ->prefix('$')
+                        ->prefix(\App\Support\Money::symbol(Filament::getTenant()?->currencyCode()))
                         ->helperText('Actual revenue recovered or loss prevented'),
 
                     TextInput::make('cost_to_resolve')
-                        ->label('Cost to Resolve ($)')
+                        ->label('Cost to Resolve')
                         ->numeric()
-                        ->prefix('$')
+                        ->prefix(\App\Support\Money::symbol(Filament::getTenant()?->currencyCode()))
                         ->helperText('Internal time + remediation cost estimate'),
 
                     Select::make('recovery_method')
