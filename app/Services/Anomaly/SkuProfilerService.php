@@ -48,58 +48,42 @@ class SkuProfilerService
             [$tenantId, $from]
         );
 
-        $profiles = [];   // "store|sku" => row array
+        $profiles = [];   // "store|sku" => row array ("0|sku" = chain-level)
         $revenues = [];   // "store|sku" => revenue (for volume tiers)
 
         foreach ($sales as $r) {
-            $key         = $r->store_id . '|' . $r->sku;
-            $sellingDays = (int) $r->selling_days;
-            $meanNz      = (float) $r->mean_nz;
-            $sd          = $r->sd_nz !== null ? (float) $r->sd_nz : 0.0;
-            $adi         = $sellingDays > 0 ? $windowDays / $sellingDays : null;
-            $cv2         = $meanNz > 0 ? pow($sd / $meanNz, 2) : 0.0;
-
-            $firstSoldRecent = $r->first_sold !== null
-                && substr((string) $r->first_sold, 0, 10) >= $newFrom;
-
-            // NEW = genuinely just appeared (recent first sale) AND little history.
-            // A SKU that sells rarely but has done so for months is NOT new — it's
-            // intermittent/lumpy, and the ADI/CV² classifier captures that. (A
-            // sparse long-tail seller with ~2 sales in 90d has ADI≈45 → intermittent.)
-            $segment = ($firstSoldRecent && $sellingDays < self::MIN_DAYS_TO_CLASSIFY)
-                ? SkuProfile::SEG_NEW
-                : $this->classify($adi, $cv2);
-
-            $slope = $r->slope !== null ? (float) $r->slope : null;
-            $r2    = $r->r2 !== null ? (float) $r->r2 : null;
-
-            $lifecycle = 'mature';
-            if ($firstSoldRecent) {
-                $lifecycle = 'new';
-            } elseif ($slope !== null && $slope < 0 && $r2 !== null && $r2 >= 0.3) {
-                $lifecycle = 'declining';
-            }
-
-            $profiles[$key] = [
-                'tenant_id'     => $tenantId,
-                'sku'           => $r->sku,
-                'store_id'      => (int) $r->store_id,
-                'segment'       => $segment,
-                'lifecycle'     => $lifecycle,
-                'chosen_model'  => $this->modelFor($segment),
-                'window_days'   => $windowDays,
-                'selling_days'  => $sellingDays,
-                'total_units'   => (float) $r->total_units,
-                'total_revenue' => (float) $r->total_revenue,
-                'mean_nonzero'  => round($meanNz, 4),
-                'adi'           => $adi !== null ? round($adi, 4) : null,
-                'cv2'           => round($cv2, 4),
-                'trend_slope'   => $slope !== null ? round($slope, 6) : null,
-                'trend_r2'      => $r2 !== null ? round($r2, 4) : null,
-                'has_inventory' => false,
-                'computed_at'   => $now,
-            ];
+            $key            = $r->store_id . '|' . $r->sku;
+            $profiles[$key] = $this->makeRow($tenantId, (string) $r->sku, (int) $r->store_id, $r, $windowDays, $newFrom, $now);
             $revenues[$key] = (float) $r->total_revenue;
+        }
+
+        // 1b. Chain-level demand shape per SKU (store_id = 0 sentinel), from
+        //     daily totals across all stores. Tenant-wide demand rules gate on
+        //     this: a SKU that's intermittent at one store may be a frequent
+        //     seller chain-wide, where sales_drop/spike DO make sense.
+        $chain = DB::select(
+            "SELECT sku,
+                    COUNT(*)                AS selling_days,
+                    SUM(daily_units)        AS total_units,
+                    SUM(daily_rev)          AS total_revenue,
+                    AVG(daily_units)        AS mean_nz,
+                    STDDEV_SAMP(daily_units) AS sd_nz,
+                    MIN(date)               AS first_sold,
+                    regr_slope(daily_units, EXTRACT(EPOCH FROM date)/86400.0) AS slope,
+                    regr_r2(daily_units,    EXTRACT(EPOCH FROM date)/86400.0) AS r2
+             FROM (
+                 SELECT sku, date, SUM(units_sold) AS daily_units, SUM(revenue) AS daily_rev
+                 FROM sales_daily
+                 WHERE tenant_id = ? AND date >= ?
+                 GROUP BY sku, date
+             ) t
+             GROUP BY sku",
+            [$tenantId, $from]
+        );
+
+        foreach ($chain as $r) {
+            $profiles['0|' . $r->sku] = $this->makeRow($tenantId, (string) $r->sku, 0, $r, $windowDays, $newFrom, $now);
+            // chain rows excluded from store-level volume tiering (revenues not added)
         }
 
         // 2. Latest on-hand per (store, sku): mark has_inventory, and add
@@ -159,6 +143,58 @@ class SkuProfilerService
         }
 
         return count($profiles);
+    }
+
+    /** Build a profile row from an aggregate stats object (store- or chain-level). */
+    private function makeRow(int $tenantId, string $sku, int $storeId, object $r, int $windowDays, string $newFrom, $now): array
+    {
+        $sellingDays = (int) $r->selling_days;
+        $meanNz      = (float) $r->mean_nz;
+        $sd          = $r->sd_nz !== null ? (float) $r->sd_nz : 0.0;
+        $adi         = $sellingDays > 0 ? $windowDays / $sellingDays : null;
+        $cv2         = $meanNz > 0 ? pow($sd / $meanNz, 2) : 0.0;
+
+        $firstSoldRecent = $r->first_sold !== null
+            && substr((string) $r->first_sold, 0, 10) >= $newFrom;
+
+        // NEW = genuinely just appeared (recent first sale) AND little history.
+        // A SKU that sells rarely but has done so for months is NOT new — it's
+        // intermittent/lumpy, which the ADI/CV² classifier captures (a sparse
+        // long-tail seller with ~2 sales in 90d has ADI≈45 → intermittent).
+        $segment = ($firstSoldRecent && $sellingDays < self::MIN_DAYS_TO_CLASSIFY)
+            ? SkuProfile::SEG_NEW
+            : $this->classify($adi, $cv2);
+
+        $slope = $r->slope !== null ? (float) $r->slope : null;
+        $r2    = $r->r2 !== null ? (float) $r->r2 : null;
+
+        $lifecycle = 'mature';
+        if ($firstSoldRecent) {
+            $lifecycle = 'new';
+        } elseif ($slope !== null && $slope < 0 && $r2 !== null && $r2 >= 0.3) {
+            $lifecycle = 'declining';
+        }
+
+        return [
+            'tenant_id'     => $tenantId,
+            'sku'           => $sku,
+            'store_id'      => $storeId,
+            'segment'       => $segment,
+            'volume_tier'   => null,
+            'lifecycle'     => $lifecycle,
+            'chosen_model'  => $this->modelFor($segment),
+            'window_days'   => $windowDays,
+            'selling_days'  => $sellingDays,
+            'total_units'   => (float) $r->total_units,
+            'total_revenue' => (float) $r->total_revenue,
+            'mean_nonzero'  => round($meanNz, 4),
+            'adi'           => $adi !== null ? round($adi, 4) : null,
+            'cv2'           => round($cv2, 4),
+            'trend_slope'   => $slope !== null ? round($slope, 6) : null,
+            'trend_r2'      => $r2 !== null ? round($r2, 4) : null,
+            'has_inventory' => false,
+            'computed_at'   => $now,
+        ];
     }
 
     private function classify(?float $adi, float $cv2): string

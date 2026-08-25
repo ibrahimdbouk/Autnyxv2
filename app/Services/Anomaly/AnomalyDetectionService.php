@@ -9,6 +9,7 @@ use App\Models\InventoryLevel;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
 use App\Models\SalesTransaction;
+use App\Models\SkuProfile;
 use App\Models\Store;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -49,6 +50,20 @@ class AnomalyDetectionService
 
     /** Window (days) the shared recentDemand map was aggregated over. */
     private int $demandWindowDays = 30;
+
+    /**
+     * Best-fit rule gating (Phase 3). Segment per "store_id|sku" ("0|sku" =
+     * chain-level), primed once per run from sku_profiles. A rule is skipped for
+     * a (sku, store/chain) whose segment doesn't list it. Empty map (profiler
+     * never ran) → no gating, so this is purely additive and safe.
+     * @var array<string,string>
+     */
+    private array $skuSegments = [];
+    private bool $gatingActive = false;
+    private int $gatedFlags = 0;
+
+    /** Master switch for segment-based rule gating. */
+    private const RULE_GATING_ENABLED = true;
 
     /**
      * Estimated revenue impact (in the tenant's currency) below which a
@@ -135,6 +150,49 @@ class AnomalyDetectionService
         return $this->priceMap[trim($sku)] ?? 0.0;
     }
 
+    /**
+     * Load the per (store, sku) and chain-level segments so flag() can gate rules
+     * that don't fit an item's demand shape. If sku_profiles is empty for the
+     * tenant, gating stays off (no behavior change).
+     */
+    private function primeSkuSegments(int $tenantId): void
+    {
+        $this->skuSegments = [];
+        $this->gatedFlags  = 0;
+        $this->gatingActive = false;
+
+        if (! self::RULE_GATING_ENABLED) return;
+
+        DB::table('sku_profiles')
+            ->where('tenant_id', $tenantId)
+            ->select(['store_id', 'sku', 'segment'])
+            ->cursor()
+            ->each(function ($p) {
+                $this->skuSegments[$p->store_id . '|' . trim((string) $p->sku)] = $p->segment;
+            });
+
+        $this->gatingActive = ! empty($this->skuSegments);
+    }
+
+    /**
+     * Best-fit gate: should this rule fire for this (sku, store)? Store-level
+     * flags check the store profile (falling back to chain); tenant-wide flags
+     * (null store) check the chain profile. Unknown/absent profile → allowed.
+     */
+    private function ruleAppliesTo(string $ruleType, ?string $sku, ?int $storeId): bool
+    {
+        if (! $this->gatingActive || $sku === null) return true;
+
+        $sku = trim($sku);
+        $segment = $storeId !== null
+            ? ($this->skuSegments[$storeId . '|' . $sku] ?? $this->skuSegments['0|' . $sku] ?? null)
+            : ($this->skuSegments['0|' . $sku] ?? null);
+
+        if ($segment === null) return true; // no profile for this item → don't gate
+
+        return SkuProfile::segmentAllowsRule($segment, $ruleType);
+    }
+
     private function unitCost(?string $sku): float
     {
         if ($sku === null || $this->costMap === null) {
@@ -189,6 +247,7 @@ class AnomalyDetectionService
             $t('overstock')['lookback_days']  ?? 30,
         );
         $this->primeRecentDemand($tenantId, $demandWindow);
+        $this->primeSkuSegments($tenantId);
 
         $rules = [
             // Demand & Sales
@@ -270,6 +329,14 @@ class AnomalyDetectionService
 
                 $q->delete();
             }
+        }
+
+        if ($this->gatingActive) {
+            Log::info('Anomaly detection: best-fit gating active', [
+                'tenant_id'    => $tenantId,
+                'profiles'     => count($this->skuSegments),
+                'gated_flags'  => $this->gatedFlags,
+            ]);
         }
     }
 
@@ -1995,6 +2062,15 @@ class AnomalyDetectionService
         string $description,
         array $context = []
     ): void {
+        // Best-fit gate (Phase 3): skip rules that don't fit this item's demand
+        // segment. Not "touching" the anomaly here means a pre-existing one is
+        // cleaned up by the per-rule stale sweep — so gating also clears anomalies
+        // that no longer belong.
+        if (! $this->ruleAppliesTo($ruleType, $sku, $storeId)) {
+            $this->gatedFlags++;
+            return;
+        }
+
         $anomaly = null;
 
         // For SKU-based rules, look for an existing open anomaly to update rather than recreate.

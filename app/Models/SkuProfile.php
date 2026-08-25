@@ -55,14 +55,22 @@ class SkuProfile extends Model
             || in_array($ruleType, self::ALWAYS_ON, true);
     }
 
-    /** Rules that run regardless of segment (data-integrity / supply / financial). */
+    /** Rules that run regardless of segment (data-integrity / supply / financial / quality). */
     const ALWAYS_ON = [
         'negative_inventory', 'inventory_shrinkage', 'cumulative_shrink',
         'po_overdue', 'po_late_receipt', 'receiving_discrepancy', 'supplier_fill_rate',
         'supplier_lead_time_drift', 'cost_spike', 'margin_erosion', 'discount_signal',
-        'price_anomaly', 'duplicate_transaction_ids', 'sku_master_drift',
-        'import_frequency_gap', 'location_proliferation',
+        'price_anomaly', 'return_rate_spike', 'duplicate_transaction_ids', 'sku_master_drift',
+        'import_frequency_gap', 'location_proliferation', 'revenue_concentration_risk',
+        'channel_mix_shift',
     ];
+
+    /** Whether a rule is relevant for a given segment (used by detection gating). */
+    public static function segmentAllowsRule(string $segment, string $ruleType): bool
+    {
+        return in_array($ruleType, self::ALWAYS_ON, true)
+            || in_array($ruleType, self::rulesForSegment($segment), true);
+    }
 
     public static function rulesForSegment(string $segment): array
     {

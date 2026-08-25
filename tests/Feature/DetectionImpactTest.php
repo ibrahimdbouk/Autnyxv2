@@ -258,6 +258,33 @@ class DetectionImpactTest extends TestCase
         );
     }
 
+    public function test_rule_gating_skips_demand_rule_for_intermittent_sku(): void
+    {
+        Product::create(['tenant_id' => $this->tenant->id, 'sku' => 'GATED',   'name' => 'Intermittent', 'selling_price' => 100]);
+        Product::create(['tenant_id' => $this->tenant->id, 'sku' => 'UNGATED', 'name' => 'Smooth',       'selling_price' => 100]);
+
+        // Chain-level profiles: GATED is intermittent (sales_drop does NOT apply),
+        // UNGATED is smooth (sales_drop applies). store_id = 0 = chain-level.
+        \App\Models\SkuProfile::create(['tenant_id' => $this->tenant->id, 'sku' => 'GATED',   'store_id' => 0, 'segment' => \App\Models\SkuProfile::SEG_INTERMITTENT]);
+        \App\Models\SkuProfile::create(['tenant_id' => $this->tenant->id, 'sku' => 'UNGATED', 'store_id' => 0, 'segment' => \App\Models\SkuProfile::SEG_SMOOTH]);
+
+        // Identical steep drop for both: 100 units historically, 0 recently.
+        foreach (['GATED', 'UNGATED'] as $sku) {
+            $this->sale($sku, now()->subDays(10)->format('Y-m-d'), 100);
+        }
+
+        app(AnomalyDetectionService::class)->runForTenant($this->tenant->id);
+
+        $this->assertNotNull(
+            Anomaly::where('tenant_id', $this->tenant->id)->where('rule_type', 'sales_drop')->where('sku', 'UNGATED')->first(),
+            'sales_drop applies to a smooth SKU and should fire'
+        );
+        $this->assertNull(
+            Anomaly::where('tenant_id', $this->tenant->id)->where('rule_type', 'sales_drop')->where('sku', 'GATED')->first(),
+            'sales_drop should be gated out for an intermittent SKU'
+        );
+    }
+
     public function test_demand_erosion_flags_sustained_slide_not_flat_demand(): void
     {
         $store = Store::create(['tenant_id' => $this->tenant->id, 'name' => 'Store One', 'code' => 'ST01']);
