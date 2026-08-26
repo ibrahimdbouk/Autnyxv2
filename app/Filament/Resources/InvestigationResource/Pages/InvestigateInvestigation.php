@@ -101,6 +101,21 @@ class InvestigateInvestigation extends Page
         }
     }
 
+    /** B8: deterministic root-cause inference for this investigation (memoised per request). */
+    private ?array $causalCache = null;
+
+    public function causalInference(): ?array
+    {
+        if ($this->causalCache !== null) return $this->causalCache ?: null;
+
+        try {
+            $r = app(\App\Services\Anomaly\RootCauseAnalysisService::class)->analyze($this->record);
+            return ($this->causalCache = $r ?? []) ?: null;
+        } catch (\Throwable) {
+            return ($this->causalCache = []) ?: null;
+        }
+    }
+
     /** B4s2/B5: replenishment recommendations for this investigation's stockouts (memoised per request). */
     private ?array $recCache = null;
 

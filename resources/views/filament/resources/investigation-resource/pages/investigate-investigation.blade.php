@@ -415,6 +415,50 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
 </div>
 
 {{-- ════════════════════════════════════════════════════════════════════════
+     B8: Deterministic root-cause inference (retail causal graph)
+     ════════════════════════════════════════════════════════════════════════ --}}
+@php $causal = $this->causalInference(); @endphp
+@if($causal)
+    <style>
+        .inv2-causal { margin-bottom:1.25rem; padding:1rem 1.25rem; }
+        .inv2-causal-kicker { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#0f766e; }
+        .inv2-causal-tier { margin-left:auto; font-size:.68rem; font-weight:700; padding:.15rem .55rem; border-radius:9999px; text-transform:uppercase; letter-spacing:.03em; }
+        .inv2-causal-tier-verified   { background:#dcfce7; color:#166534; }
+        .inv2-causal-tier-likely     { background:#fef3c7; color:#92400e; }
+        .inv2-causal-tier-correlated { background:#f3f4f6; color:#374151; }
+        .inv2-causal-root { margin:.5rem 0 0; font-size:.95rem; font-weight:700; color:#111827; }
+        .inv2-causal-chain { display:flex; align-items:center; flex-wrap:wrap; gap:.35rem; margin-top:.6rem; }
+        .inv2-causal-arrow { color:#0f766e; font-weight:700; }
+        .inv2-causal-node { font-size:.78rem; padding:.2rem .55rem; border-radius:.4rem; background:#f8fafc; border:1px solid #e5e7eb; color:#334155; }
+        .inv2-causal-node-root { background:#e6f3f1; border-color:#99d5cd; font-weight:600; }
+        .inv2-causal-expl { margin:.6rem 0 0; font-size:.8rem; color:#6b7280; line-height:1.5; }
+        .inv2-causal-note { margin:.5rem 0 0; font-size:.68rem; color:#9ca3af; }
+        .dark .inv2-causal-root { color:#f9fafb; }
+        .dark .inv2-causal-node { background:#111827; border-color:#374151; color:#d1d5db; }
+        .dark .inv2-causal-node-root { background:#134e4a; border-color:#0f766e; color:#e6f3f1; }
+        .dark .inv2-causal-expl { color:#9ca3af; }
+    </style>
+    <div class="inv2-card inv2-causal">
+        <div style="display:flex; align-items:center; gap:.5rem; flex-wrap:wrap;">
+            <span class="inv2-causal-kicker">Root cause · inferred (deterministic)</span>
+            <span class="inv2-causal-tier inv2-causal-tier-{{ $causal['tier'] }}">{{ $causal['tier'] }} · {{ $causal['confidence'] }}%</span>
+        </div>
+        <p class="inv2-causal-root">{{ $causal['root_label'] }}</p>
+        <div class="inv2-causal-chain">
+            @foreach($causal['chain'] as $i => $step)
+                @if($i > 0)<span class="inv2-causal-arrow">→</span>@endif
+                <span class="inv2-causal-node {{ $i === 0 ? 'inv2-causal-node-root' : '' }}">{{ $step['label'] }}</span>
+            @endforeach
+        </div>
+        <p class="inv2-causal-expl">{{ $causal['explanation'] }}</p>
+        @if($causal['alternatives'] > 0)
+            <p class="inv2-causal-note">{{ $causal['alternatives'] }} other independent signal chain(s) present — see the evidence panel.</p>
+        @endif
+        <p class="inv2-causal-note">Inferred deterministically from the retail causal graph — the AI narrative below phrases this conclusion, it does not choose it.</p>
+    </div>
+@endif
+
+{{-- ════════════════════════════════════════════════════════════════════════
      MAIN GRID: AI Investigation (left) + Detection Data (right)
      ════════════════════════════════════════════════════════════════════════ --}}
 <div class="inv2-main-grid">
