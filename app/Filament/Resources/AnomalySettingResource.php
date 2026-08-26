@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\AnomalySettingResource\Pages;
 use App\Models\AnomalySetting;
 use App\Services\Anomaly\ThresholdRecommenderService;
+use App\Services\Anomaly\ThresholdTuningService;
 use App\Support\Money;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
@@ -52,6 +53,19 @@ class AnomalySettingResource extends Resource
         return self::$recCache = $tenantId
             ? app(ThresholdRecommenderService::class)->recommendForTenant($tenantId)
             : ['rules' => [], 'notes' => []];
+    }
+
+    /** Memoised B7 outcome-driven tuning suggestions for the active tenant. */
+    private static ?array $tuneCache = null;
+
+    private static function tuningSuggestions(): array
+    {
+        if (self::$tuneCache !== null) return self::$tuneCache;
+
+        $tenantId = Filament::getTenant()?->id;
+        return self::$tuneCache = $tenantId
+            ? app(ThresholdTuningService::class)->suggestionsForTenant($tenantId)
+            : [];
     }
 
     private static function recommendedModalNote(AnomalySetting $record): string
@@ -214,6 +228,20 @@ class AnomalySettingResource extends Resource
                         return Money::format($spec['recommended'], Filament::getTenant()?->currencyCode(), 0);
                     }),
 
+                TextColumn::make('learned')
+                    ->label('Learned (from outcomes)')
+                    ->badge()
+                    ->color('warning')
+                    ->tooltip(fn (AnomalySetting $record) => self::tuningSuggestions()[$record->rule_type]['reason'] ?? null)
+                    ->getStateUsing(function (AnomalySetting $record) {
+                        $s = self::tuningSuggestions()[$record->rule_type] ?? null;
+                        if ($s === null) return '—';
+                        $val = $s['key'] === 'pct'
+                            ? '±' . (int) $s['suggested'] . '%'
+                            : Money::format($s['suggested'], Filament::getTenant()?->currencyCode(), 0);
+                        return $val . ' (' . round($s['fp_rate'] * 100) . '% FP)';
+                    }),
+
                 ToggleColumn::make('enabled')
                     ->label('Active')
                     ->sortable(),
@@ -221,6 +249,31 @@ class AnomalySettingResource extends Resource
             ->defaultSort('rule_type')
             ->paginated(false)
             ->actions([
+                Action::make('apply_learned')
+                    ->label('Apply learned')
+                    ->icon('heroicon-o-academic-cap')
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->modalHeading('Apply learned adjustment')
+                    ->modalDescription(function (AnomalySetting $record) {
+                        $s = self::tuningSuggestions()[$record->rule_type] ?? null;
+                        if ($s === null) return '';
+                        $cur = $s['key'] === 'pct' ? '±' . (int) $s['current'] . '%' : Money::format($s['current'], Filament::getTenant()?->currencyCode(), 0);
+                        $new = $s['key'] === 'pct' ? '±' . (int) $s['suggested'] . '%' : Money::format($s['suggested'], Filament::getTenant()?->currencyCode(), 0);
+                        return "{$s['reason']} Change {$cur} → {$new}. You can fine-tune it afterwards.";
+                    })
+                    ->visible(function (AnomalySetting $record) {
+                        if (! (auth()->user()?->canChangeAnomalyThresholds() ?? false)) return false;
+                        return isset(self::tuningSuggestions()[$record->rule_type]);
+                    })
+                    ->action(function (AnomalySetting $record) {
+                        $s = self::tuningSuggestions()[$record->rule_type] ?? null;
+                        if ($s === null) return;
+                        $record->update([
+                            'thresholds' => app(ThresholdTuningService::class)->applyTo($record, $s),
+                        ]);
+                    }),
+
                 Action::make('use_recommended')
                     ->label('Use recommended')
                     ->icon('heroicon-o-sparkles')

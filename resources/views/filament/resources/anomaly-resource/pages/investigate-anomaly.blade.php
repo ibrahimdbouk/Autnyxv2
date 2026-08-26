@@ -207,6 +207,21 @@
     </div>
 @endif
 
+{{-- ── Demand vs best-fit forecast chart (forecast-break anomalies) ── --}}
+@php
+    $forecastSvg = $record->rule_type === 'demand_forecast_break'
+        ? app(\App\Services\Anomaly\ForecastChartService::class)->svgForAnomaly($record)
+        : null;
+@endphp
+@if($forecastSvg)
+    <div class="ia-card">
+        <p class="ia-label">Demand vs best-fit forecast</p>
+        <p class="ia-title">Why this flagged</p>
+        <p class="ia-desc">Actual daily demand (bars) against this SKU's own Croston/SBA forecast (line) and its tolerance band. The highlighted window is the recent period the rule compared — the deviation there is what triggered the anomaly.</p>
+        <div style="margin-top:.75rem; overflow-x:auto;">{!! $forecastSvg !!}</div>
+    </div>
+@endif
+
 {{-- ── Raw detection context (collapsed) ──────────────────────────── --}}
 @if($record->context)
     <details class="ia-details">

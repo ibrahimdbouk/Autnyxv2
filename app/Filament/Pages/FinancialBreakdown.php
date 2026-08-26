@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Models\Anomaly;
 use App\Models\Investigation;
 use App\Models\InvestigationOutcome;
 use App\Services\OutcomeService;
@@ -40,6 +41,7 @@ class FinancialBreakdown extends Page
 
     /** Valid metrics this page can derive. */
     public const METRICS = [
+        'value_funnel',      // B6: surfaced → at-risk → recovered, the full ROI story
         'revenue_at_risk',   // open/in-progress investigations' AI-estimated risk (dashboard KPI)
         'recovered_mtd',     // observed recovery recorded this calendar month (dashboard KPI)
         'outcome_at_risk',   // revenue at risk snapshotted across ALL recorded outcomes (widget)
@@ -102,6 +104,7 @@ class FinancialBreakdown extends Page
         }
 
         return match ($this->metric) {
+            'value_funnel'      => $this->valueFunnel($tenantId),
             'recovered_mtd'     => $this->recoveredMtd($tenantId),
             'outcome_at_risk'   => $this->outcomeAtRisk($tenantId),
             'observed_recovery' => $this->observedRecovery($tenantId),
@@ -111,10 +114,11 @@ class FinancialBreakdown extends Page
         };
     }
 
-    /** Links back to the four metric tabs, so the page is self-navigable. */
+    /** Links back to the metric tabs, so the page is self-navigable. */
     public function getTabs(): array
     {
         return [
+            ['metric' => 'value_funnel',      'label' => 'Value Funnel'],
             ['metric' => 'revenue_at_risk',   'label' => 'Revenue at Risk'],
             ['metric' => 'recovered_mtd',     'label' => 'Recovered MTD'],
             ['metric' => 'observed_recovery', 'label' => 'Observed Recovery'],
@@ -131,6 +135,39 @@ class FinancialBreakdown extends Page
     }
 
     // ── Metric derivations ──────────────────────────────────────────────────
+
+    /**
+     * B6 — the value funnel: what the engine SURFACED → what was ASSESSED at
+     * risk → what was RECOVERED → the recovery rate. Ties the top of the funnel
+     * (B1's estimated value at risk across open anomalies) to the recovery the
+     * outcome loop already measures, so the ROI story reads end to end. Every
+     * figure is an existing DB aggregate — nothing new is invented here.
+     */
+    private function valueFunnel(int $tenantId): array
+    {
+        $surfaced  = Anomaly::estimatedValueAtRiskForTenant($tenantId);
+        $summary   = app(OutcomeService::class)->tenantSummary($tenantId);
+        $atRisk    = (float) ($summary['total_at_risk'] ?? 0);
+        $recovered = (float) ($summary['total_recovered'] ?? 0);
+        $rate      = $atRisk > 0 ? round($recovered / $atRisk * 100, 1) : null;
+
+        return [
+            'metric'      => 'value_funnel',
+            'label'       => 'Value Funnel',
+            'value'       => $this->money($surfaced),
+            'formula'     => 'Surfaced (est. value at risk across open anomalies) → Assessed at risk (recorded outcomes) → Recovered (observed) → Recovery rate. All deterministic DB aggregates.',
+            'components'  => [
+                ['label' => '1 · Surfaced — est. value at risk (open anomalies)', 'value' => $this->money($surfaced)],
+                ['label' => '2 · Assessed at risk — recorded outcomes',           'value' => $this->money($atRisk)],
+                ['label' => '3 · Recovered — observed',                           'value' => $this->money($recovered)],
+                ['label' => '4 · Recovery rate',                                  'value' => $rate !== null ? $rate . '%' : '—'],
+            ],
+            'rows'        => [],
+            'rowsHeader'  => [],
+            'amountLabel' => '',
+            'empty'       => $surfaced <= 0 && $atRisk <= 0 ? 'No value surfaced or assessed yet — run detection and record some outcomes.' : null,
+        ];
+    }
 
     /**
      * Dashboard "Revenue at Risk" card: SUM(revenue_at_risk) over open /
