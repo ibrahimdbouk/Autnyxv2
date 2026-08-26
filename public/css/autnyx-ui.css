@@ -1,0 +1,220 @@
+/* ==========================================================================
+   Autnyx UI — design tokens + shared primitives (Track U, U1+U2)
+   Single source of truth for the custom Filament views. Loaded globally via a
+   panel render hook (no build step). Everything is token-driven and dark-safe:
+   redefine a token under .dark and every component follows.
+
+   Accent = violet, aligned to the Filament panel primary (Color::Violet).
+   Class prefix: .ax-  (retires the per-page ac-/inv2-/invs-/db-/… silos).
+   ========================================================================== */
+
+:root {
+  /* ---- Accent (violet) ---- */
+  --ax-accent-50:  #f5f3ff;
+  --ax-accent-100: #ede9fe;
+  --ax-accent-200: #ddd6fe;
+  --ax-accent-300: #c4b5fd;
+  --ax-accent-400: #a78bfa;
+  --ax-accent-500: #8b5cf6;
+  --ax-accent-600: #7c3aed;
+  --ax-accent-700: #6d28d9;
+  --ax-accent-800: #5b21b6;
+  --ax-accent-900: #4c1d95;
+  --ax-accent:      var(--ax-accent-600);
+  --ax-accent-strong: var(--ax-accent-700);
+  --ax-accent-fg:   #ffffff;
+  --ax-accent-soft: var(--ax-accent-50);
+  --ax-accent-soft-border: var(--ax-accent-200);
+
+  /* ---- Neutrals / surfaces ---- */
+  --ax-ink:    #111827;
+  --ax-text:   #374151;
+  --ax-muted:  #6b7280;
+  --ax-faint:  #9ca3af;
+  --ax-line:   #e5e7eb;
+  --ax-line-2: #f3f4f6;
+  --ax-bg:     #ffffff;
+  --ax-panel:  #f9fafb;
+  --ax-panel-2:#f8fafc;
+
+  /* ---- Status (semantic) ---- */
+  --ax-success:      #16a34a;  --ax-success-soft:#dcfce7;  --ax-success-fg:#166534;
+  --ax-warning:      #d97706;  --ax-warning-soft:#fef3c7;  --ax-warning-fg:#92400e;
+  --ax-danger:       #dc2626;  --ax-danger-soft: #fee2e2;  --ax-danger-fg: #991b1b;
+  --ax-info:         #2563eb;  --ax-info-soft:   #dbeafe;  --ax-info-fg:   #1e40af;
+  --ax-neutral-soft: #f3f4f6;  --ax-neutral-fg:  #374151;
+
+  /* ---- Radius / shadow / focus ---- */
+  --ax-radius-sm: .375rem;
+  --ax-radius:    .625rem;
+  --ax-radius-lg: .875rem;
+  --ax-radius-pill: 9999px;
+  --ax-shadow-sm: 0 1px 2px rgba(17,24,39,.06);
+  --ax-shadow:    0 1px 4px rgba(17,24,39,.07);
+  --ax-shadow-md: 0 4px 16px rgba(17,24,39,.10);
+  --ax-ring:      0 0 0 3px var(--ax-accent-200);
+
+  /* ---- Typography ---- */
+  --ax-font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --ax-fs-xs: .72rem;  --ax-fs-sm: .8125rem; --ax-fs-md: .875rem;
+  --ax-fs-lg: 1rem;    --ax-fs-xl: 1.25rem;  --ax-fs-2xl: 1.6rem;
+
+  /* ---- Spacing scale ---- */
+  --ax-1: .25rem; --ax-2: .5rem; --ax-3: .75rem; --ax-4: 1rem; --ax-5: 1.25rem; --ax-6: 1.5rem; --ax-8: 2rem;
+
+  /* ---- Chart palette (categorical) ---- */
+  --ax-chart-1: var(--ax-accent-600);
+  --ax-chart-2: #2563eb;
+  --ax-chart-3: #0d9488;
+  --ax-chart-4: #d97706;
+  --ax-chart-5: #db2777;
+  --ax-chart-6: #65a30d;
+  --ax-chart-grid: var(--ax-line);
+  --ax-chart-axis: var(--ax-faint);
+}
+
+.dark {
+  --ax-accent:      var(--ax-accent-500);
+  --ax-accent-strong: var(--ax-accent-400);
+  --ax-accent-soft: #2e1065;
+  --ax-accent-soft-border: #5b21b6;
+
+  --ax-ink:    #f9fafb;
+  --ax-text:   #d1d5db;
+  --ax-muted:  #9ca3af;
+  --ax-faint:  #6b7280;
+  --ax-line:   #374151;
+  --ax-line-2: #1f2937;
+  --ax-bg:     #111827;
+  --ax-panel:  #1f2937;
+  --ax-panel-2:#111827;
+
+  --ax-success-soft:#052e16; --ax-success-fg:#4ade80;
+  --ax-warning-soft:#3b1f04; --ax-warning-fg:#fbbf24;
+  --ax-danger-soft: #3f1212; --ax-danger-fg: #f87171;
+  --ax-info-soft:   #10233f; --ax-info-fg:   #60a5fa;
+  --ax-neutral-soft:#1f2937; --ax-neutral-fg:#d1d5db;
+
+  --ax-shadow-sm: 0 1px 2px rgba(0,0,0,.4);
+  --ax-shadow:    0 1px 4px rgba(0,0,0,.45);
+  --ax-shadow-md: 0 4px 16px rgba(0,0,0,.5);
+  --ax-ring:      0 0 0 3px var(--ax-accent-800);
+  --ax-chart-grid: var(--ax-line);
+}
+
+/* ==========================================================================
+   Primitives
+   ========================================================================== */
+
+/* ---- Card ---- */
+.ax-card {
+  background: var(--ax-bg);
+  border: 1px solid var(--ax-line);
+  border-radius: var(--ax-radius-lg);
+  box-shadow: var(--ax-shadow-sm);
+}
+.ax-card--soft { background: var(--ax-panel); }
+.ax-card--accent { background: var(--ax-accent-soft); border-color: var(--ax-accent-soft-border); }
+.ax-card-head {
+  display: flex; align-items: center; gap: var(--ax-2);
+  padding: var(--ax-4) var(--ax-5);
+  border-bottom: 1px solid var(--ax-line-2);
+}
+.ax-card-title { font-size: var(--ax-fs-md); font-weight: 700; color: var(--ax-ink); margin: 0; flex: 1; }
+.ax-card-actions { margin-left: auto; display: flex; gap: var(--ax-2); align-items: center; }
+.ax-card-body { padding: var(--ax-4) var(--ax-5); color: var(--ax-text); }
+
+/* ---- Section header ---- */
+.ax-section { margin: 0 0 var(--ax-3); }
+.ax-section-kicker { font-size: var(--ax-fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--ax-accent); }
+.ax-section-title { font-size: var(--ax-fs-xl); font-weight: 700; color: var(--ax-ink); margin: .15rem 0 0; }
+.ax-section-sub { font-size: var(--ax-fs-sm); color: var(--ax-muted); margin: .2rem 0 0; }
+
+/* ---- Stat / KPI tile ---- */
+.ax-stat {
+  display: flex; flex-direction: column; gap: .15rem;
+  background: var(--ax-bg); border: 1px solid var(--ax-line);
+  border-top: 3px solid var(--ax-accent);
+  border-radius: var(--ax-radius); padding: var(--ax-4);
+}
+.ax-stat--success { border-top-color: var(--ax-success); }
+.ax-stat--warning { border-top-color: var(--ax-warning); }
+.ax-stat--danger  { border-top-color: var(--ax-danger); }
+.ax-stat--info    { border-top-color: var(--ax-info); }
+a.ax-stat { text-decoration: none; transition: box-shadow .12s, transform .12s; }
+a.ax-stat:hover { box-shadow: var(--ax-shadow-md); transform: translateY(-1px); }
+.ax-stat-label { font-size: var(--ax-fs-xs); text-transform: uppercase; letter-spacing: .04em; color: var(--ax-faint); }
+.ax-stat-value { font-size: var(--ax-fs-2xl); font-weight: 700; color: var(--ax-ink); line-height: 1.1; }
+.ax-stat-foot { font-size: var(--ax-fs-xs); color: var(--ax-muted); display: flex; align-items: center; gap: .3rem; }
+.ax-stat-trend--up   { color: var(--ax-success); }
+.ax-stat-trend--down { color: var(--ax-danger); }
+
+/* ---- Badge / pill ---- */
+.ax-badge {
+  display: inline-flex; align-items: center; gap: .3rem;
+  padding: .18rem .55rem; border-radius: var(--ax-radius-pill);
+  font-size: var(--ax-fs-xs); font-weight: 700; line-height: 1.4; white-space: nowrap;
+  background: var(--ax-neutral-soft); color: var(--ax-neutral-fg);
+}
+.ax-badge--accent  { background: var(--ax-accent-soft); color: var(--ax-accent-strong); }
+.ax-badge--success { background: var(--ax-success-soft); color: var(--ax-success-fg); }
+.ax-badge--warning { background: var(--ax-warning-soft); color: var(--ax-warning-fg); }
+.ax-badge--danger  { background: var(--ax-danger-soft);  color: var(--ax-danger-fg); }
+.ax-badge--info    { background: var(--ax-info-soft);    color: var(--ax-info-fg); }
+/* severity aliases */
+.ax-badge--high   { background: var(--ax-danger-soft);  color: var(--ax-danger-fg); }
+.ax-badge--medium { background: var(--ax-warning-soft); color: var(--ax-warning-fg); }
+.ax-badge--low    { background: var(--ax-info-soft);    color: var(--ax-info-fg); }
+.ax-badge-dot { width: .4rem; height: .4rem; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+
+/* ---- Money ---- */
+.ax-money { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ax-ink); }
+.ax-money--pos { color: var(--ax-success); }
+.ax-money--neg { color: var(--ax-danger); }
+
+/* ---- Meter (confidence / progress) ---- */
+.ax-meter { height: .4rem; border-radius: var(--ax-radius-pill); background: var(--ax-line); overflow: hidden; }
+.ax-meter-fill { height: 100%; border-radius: inherit; background: var(--ax-accent); }
+.ax-meter-fill--success { background: var(--ax-success); }
+.ax-meter-fill--warning { background: var(--ax-warning); }
+.ax-meter-fill--danger  { background: var(--ax-danger); }
+
+/* ---- Causal / step chain ---- */
+.ax-chain { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem; }
+.ax-chain-node { font-size: var(--ax-fs-sm); padding: .2rem .55rem; border-radius: var(--ax-radius-sm); background: var(--ax-panel); border: 1px solid var(--ax-line); color: var(--ax-text); }
+.ax-chain-node--root { background: var(--ax-accent-soft); border-color: var(--ax-accent-soft-border); color: var(--ax-accent-strong); font-weight: 600; }
+.ax-chain-arrow { color: var(--ax-accent); font-weight: 700; }
+
+/* ---- Empty state ---- */
+.ax-empty {
+  background: var(--ax-bg); border: 2px dashed var(--ax-line);
+  border-radius: var(--ax-radius-lg); padding: var(--ax-8) var(--ax-5); text-align: center;
+}
+.ax-empty-icon { width: 3rem; height: 3rem; margin: 0 auto var(--ax-3); display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--ax-panel); color: var(--ax-faint); }
+.ax-empty-title { font-size: var(--ax-fs-md); font-weight: 700; color: var(--ax-ink); margin: 0; }
+.ax-empty-body { font-size: var(--ax-fs-sm); color: var(--ax-muted); max-width: 34rem; margin: .35rem auto 0; line-height: 1.55; }
+
+/* ---- Chart container ---- */
+.ax-chart { background: var(--ax-bg); border: 1px solid var(--ax-line-2); border-radius: var(--ax-radius); padding: var(--ax-3); }
+.ax-chart-title { font-size: var(--ax-fs-sm); font-weight: 600; color: var(--ax-text); margin: 0 0 var(--ax-2); }
+
+/* ---- Layout helpers ---- */
+.ax-row { display: flex; align-items: center; gap: var(--ax-2); }
+.ax-between { display: flex; align-items: center; justify-content: space-between; gap: var(--ax-2); }
+.ax-stack { display: flex; flex-direction: column; gap: var(--ax-2); }
+.ax-grid { display: grid; gap: var(--ax-4); }
+.ax-grid-2 { grid-template-columns: 1fr; }
+.ax-grid-3 { grid-template-columns: 1fr; }
+.ax-grid-4 { grid-template-columns: repeat(2, 1fr); }
+@media (min-width: 768px) {
+  .ax-grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .ax-grid-3 { grid-template-columns: repeat(3, 1fr); }
+  .ax-grid-4 { grid-template-columns: repeat(4, 1fr); }
+}
+.ax-divider { height: 1px; background: var(--ax-line-2); margin: var(--ax-3) 0; border: 0; }
+.ax-muted { color: var(--ax-muted); }
+.ax-faint { color: var(--ax-faint); }
+.ax-mono  { font-variant-numeric: tabular-nums; }
+
+/* ---- Brand logo in the top bar (sized cleanly whatever the file) ---- */
+.fi-logo img, .fi-logo svg { max-height: 1.75rem; width: auto; }

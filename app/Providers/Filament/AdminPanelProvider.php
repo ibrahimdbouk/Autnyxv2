@@ -43,6 +43,16 @@ class AdminPanelProvider extends PanelProvider
                 'primary' => Color::Violet,
             ])
             ->brandName('Autnyx')
+            // Logo slot: appears in the top bar + sign-in page as soon as a file
+            // exists at public/images/autnyx-logo.*; falls back to brand name.
+            ->brandLogo(fn (): ?string => \App\Support\Branding::logoUrl())
+            ->brandLogoHeight('1.75rem')
+            // Global design tokens + primitives (Track U) — no build step.
+            ->renderHook(
+                'panels::head.end',
+                fn (): string => '<link rel="stylesheet" href="'
+                    . asset('css/autnyx-ui.css') . '?v=' . \App\Support\Branding::cssVersion() . '">'
+            )
             ->maxContentWidth('full')
             ->databaseNotifications()
             ->databaseNotificationsPolling('60s')
