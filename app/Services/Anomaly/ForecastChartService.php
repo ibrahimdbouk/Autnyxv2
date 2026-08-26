@@ -151,17 +151,17 @@ class ForecastChartService
         $legend = '<g font-size="9" fill="#6b7280">'
             . '<rect x="' . $padL . '" y="10" width="9" height="9" fill="#94a3b8" rx="1"/><text x="' . ($padL + 13) . '" y="18">Actual</text>'
             . '<rect x="' . ($padL + 60) . '" y="10" width="9" height="9" fill="#b45309" rx="1"/><text x="' . ($padL + 73) . '" y="18">Recent</text>'
-            . '<line x1="' . ($padL + 130) . '" y1="15" x2="' . ($padL + 146) . '" y2="15" stroke="#0f766e" stroke-width="2"/><text x="' . ($padL + 150) . '" y="18">Best-fit forecast</text>'
-            . '<rect x="' . ($padL + 250) . '" y="10" width="16" height="9" fill="#0d9488" opacity="0.15"/><text x="' . ($padL + 270) . '" y="18">Tolerance band</text>'
+            . '<line x1="' . ($padL + 130) . '" y1="15" x2="' . ($padL + 146) . '" y2="15" stroke="#7c3aed" stroke-width="2"/><text x="' . ($padL + 150) . '" y="18">Best-fit forecast</text>'
+            . '<rect x="' . ($padL + 250) . '" y="10" width="16" height="9" fill="#7c3aed" opacity="0.15"/><text x="' . ($padL + 270) . '" y="18">Tolerance band</text>'
             . '</g>';
 
         return '<svg viewBox="0 0 ' . $W . ' ' . $H . '" width="100%" role="img" xmlns="http://www.w3.org/2000/svg" '
             . 'style="max-width:640px;font-family:ui-sans-serif,system-ui,sans-serif;background:#fff;border:1px solid #f3f4f6;border-radius:8px">'
             . $recentShade
-            . '<polygon points="' . $band . '" fill="#0d9488" opacity="0.12"/>'
+            . '<polygon points="' . $band . '" fill="#7c3aed" opacity="0.12"/>'
             . $axis
             . $bars
-            . '<polyline points="' . $exLine . '" fill="none" stroke="#0f766e" stroke-width="2"/>'
+            . '<polyline points="' . $exLine . '" fill="none" stroke="#7c3aed" stroke-width="2"/>'
             . $divider
             . $legend
             . $xlab

@@ -17,6 +17,7 @@ use App\Models\Tenant;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\NavigationGroup;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
@@ -54,6 +55,14 @@ class AdminPanelProvider extends PanelProvider
                     . asset('css/autnyx-ui.css') . '?v=' . \App\Support\Branding::cssVersion() . '">'
             )
             ->maxContentWidth('full')
+            // Coherent left-nav story: the intelligence the product produces first,
+            // then the data behind it, then admin + settings.
+            ->navigationGroups([
+                NavigationGroup::make('Intelligence')->icon('heroicon-o-sparkles'),
+                NavigationGroup::make('Data')->icon('heroicon-o-circle-stack'),
+                NavigationGroup::make('Administration')->icon('heroicon-o-building-office'),
+                NavigationGroup::make('Settings')->icon('heroicon-o-cog-6-tooth'),
+            ])
             ->databaseNotifications()
             ->databaseNotificationsPolling('60s')
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')

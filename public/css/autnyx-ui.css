@@ -215,6 +215,16 @@ a.ax-stat:hover { box-shadow: var(--ax-shadow-md); transform: translateY(-1px); 
 .ax-muted { color: var(--ax-muted); }
 .ax-faint { color: var(--ax-faint); }
 .ax-mono  { font-variant-numeric: tabular-nums; }
+.ax-wrap  { flex-wrap: wrap; }
+
+/* ---- Small utility layer (keeps blades class-driven, not inline) ---- */
+.ax-mt-1 { margin-top: var(--ax-1); } .ax-mt-2 { margin-top: var(--ax-2); } .ax-mt-3 { margin-top: var(--ax-3); } .ax-mt-4 { margin-top: var(--ax-4); } .ax-mt-5 { margin-top: var(--ax-5); }
+.ax-mb-1 { margin-bottom: var(--ax-1); } .ax-mb-2 { margin-bottom: var(--ax-2); } .ax-mb-3 { margin-bottom: var(--ax-3); } .ax-mb-4 { margin-bottom: var(--ax-4); } .ax-mb-5 { margin-bottom: var(--ax-5); } .ax-mb-6 { margin-bottom: var(--ax-6); }
+.ax-m-0 { margin: 0; }
+.ax-text-xs { font-size: var(--ax-fs-xs); } .ax-text-sm { font-size: var(--ax-fs-sm); } .ax-text-md { font-size: var(--ax-fs-md); } .ax-text-lg { font-size: var(--ax-fs-lg); }
+.ax-fw-600 { font-weight: 600; } .ax-fw-700 { font-weight: 700; }
+.ax-ink { color: var(--ax-ink); }
+.ax-lh { line-height: 1.5; }
 
 /* ---- Brand logo in the top bar (sized cleanly whatever the file) ---- */
 .fi-logo img, .fi-logo svg { max-height: 1.75rem; width: auto; }
