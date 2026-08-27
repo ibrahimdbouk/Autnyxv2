@@ -2,17 +2,17 @@
     @php $rows = $this->getRows(); @endphp
 
     <style>
-        .wi-table { width:100%; border-collapse:separate; border-spacing:0; background:#fff; border:1px solid #e5e7eb; border-radius:.875rem; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.06); }
-        .wi-table th { text-align:left; font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; color:#6b7280; padding:.7rem 1rem; background:#f9fafb; border-bottom:1px solid #e5e7eb; }
-        .wi-table td { padding:.8rem 1rem; border-bottom:1px solid #f3f4f6; font-size:.82rem; vertical-align:top; }
+        .wi-table { width:100%; border-collapse:separate; border-spacing:0; background:var(--ax-bg); border:1px solid var(--ax-line); border-radius:.875rem; overflow:hidden; box-shadow:var(--ax-shadow); }
+        .wi-table th { text-align:left; font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; color:var(--ax-muted); padding:.7rem 1rem; background:var(--ax-panel); border-bottom:1px solid var(--ax-line); }
+        .wi-table td { padding:.8rem 1rem; border-bottom:1px solid var(--ax-line-2); font-size:.82rem; vertical-align:top; color:var(--ax-text); }
         .wi-badge { display:inline-block; padding:.15rem .55rem; border-radius:9999px; font-size:.7rem; font-weight:700; text-transform:capitalize; }
-        .b-danger{background:#fee2e2;color:#991b1b;} .b-warning{background:#fef3c7;color:#92400e;}
-        .b-info{background:#dbeafe;color:#1e40af;} .b-success{background:#dcfce7;color:#166534;} .b-gray{background:#f3f4f6;color:#374151;}
-        .wi-link { color:#6d28d9; font-weight:600; text-decoration:none; }
+        .b-danger{background:var(--ax-danger-soft);color:var(--ax-danger-fg);} .b-warning{background:var(--ax-warning-soft);color:var(--ax-warning-fg);}
+        .b-info{background:var(--ax-info-soft);color:var(--ax-info-fg);} .b-success{background:var(--ax-success-soft);color:var(--ax-success-fg);} .b-gray{background:var(--ax-neutral-soft);color:var(--ax-neutral-fg);}
+        .wi-link { color:var(--ax-accent-strong); font-weight:600; text-decoration:none; }
         .wi-link:hover { text-decoration:underline; }
-        .wi-empty { background:#fff; border:1px solid #e5e7eb; border-radius:.875rem; padding:2rem; text-align:center; color:#6b7280; }
-        .wi-btn { font-size:.72rem; color:#dc2626; background:none; border:1px solid #fecaca; border-radius:.4rem; padding:.25rem .5rem; cursor:pointer; }
-        .wi-btn:hover { background:#fef2f2; }
+        .wi-empty { background:var(--ax-bg); border:1px solid var(--ax-line); border-radius:.875rem; padding:2rem; text-align:center; color:var(--ax-muted); }
+        .wi-btn { font-size:.72rem; color:var(--ax-danger); background:none; border:1px solid var(--ax-danger); border-radius:.4rem; padding:.25rem .5rem; cursor:pointer; }
+        .wi-btn:hover { background:var(--ax-danger-soft); }
     </style>
 
     @php
@@ -46,7 +46,7 @@
                                 {{ \Illuminate\Support\Str::limit($inv->title, 60) }}
                             </a>
                             @if($row['via_team'])
-                                <div style="font-size:.68rem;color:#9ca3af;">via team: {{ $row['via_team'] }}</div>
+                                <div style="font-size:.68rem;color:var(--ax-faint);">via team: {{ $row['via_team'] }}</div>
                             @endif
                         </td>
                         <td><span class="wi-badge {{ $statusClass($row['status']) }}">{{ str_replace('_',' ',$row['status']) }}</span></td>
@@ -55,7 +55,7 @@
                         <td>
                             {{ $row['last_change'] ? \Illuminate\Support\Carbon::parse($row['last_change'])->diffForHumans() : '—' }}
                             @if($row['last_message'])
-                                <div style="font-size:.68rem;color:#9ca3af;">{{ \Illuminate\Support\Str::limit($row['last_message'], 60) }}</div>
+                                <div style="font-size:.68rem;color:var(--ax-faint);">{{ \Illuminate\Support\Str::limit($row['last_message'], 60) }}</div>
                             @endif
                         </td>
                         <td>{{ $row['next_expected'] ?? '—' }}</td>

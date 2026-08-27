@@ -69,65 +69,65 @@ $acDueLabel = static function(?string $due): string {
 /* ── KPI row ───────────────────────────────────────────────────────────────── */
 .ac-kpi-row { display:grid; grid-template-columns:repeat(5,1fr); gap:.875rem; }
 .ac-kpi {
-    background:#fff; border:1px solid #e5e7eb; border-radius:.5rem;
+    background:var(--ax-bg); border:1px solid var(--ax-line); border-radius:.5rem;
     padding:.875rem 1rem; display:flex; flex-direction:column; gap:.25rem;
-    box-shadow:0 1px 2px rgba(0,0,0,.04);
+    box-shadow:var(--ax-shadow-sm);
 }
-.ac-kpi-label { font-size:.7rem; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:#9ca3af; }
-.ac-kpi-value { font-size:1.75rem; font-weight:700; color:#111827; line-height:1; }
-.ac-kpi-value.danger { color:#dc2626; }
-.ac-kpi-value.warning { color:#f59e0b; }
-.ac-kpi-value.success { color:#16a34a; }
-.ac-kpi-sub { font-size:.72rem; color:#6b7280; margin-top:.125rem; }
+.ac-kpi-label { font-size:.7rem; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--ax-faint); }
+.ac-kpi-value { font-size:1.75rem; font-weight:700; color:var(--ax-ink); line-height:1; }
+.ac-kpi-value.danger { color:var(--ax-danger); }
+.ac-kpi-value.warning { color:var(--ax-warning); }
+.ac-kpi-value.success { color:var(--ax-success); }
+.ac-kpi-sub { font-size:.72rem; color:var(--ax-muted); margin-top:.125rem; }
 
 /* ── Toolbar ───────────────────────────────────────────────────────────────── */
 .ac-toolbar {
     display:flex; gap:.625rem; align-items:center; flex-wrap:wrap;
-    background:#fff; border:1px solid #e5e7eb; border-radius:.5rem;
-    padding:.625rem .875rem; box-shadow:0 1px 2px rgba(0,0,0,.04);
+    background:var(--ax-bg); border:1px solid var(--ax-line); border-radius:.5rem;
+    padding:.625rem .875rem; box-shadow:var(--ax-shadow-sm);
 }
 .ac-search-wrap { position:relative; flex:1; min-width:180px; max-width:280px; }
-.ac-search-icon { position:absolute; left:.625rem; top:50%; transform:translateY(-50%); color:#9ca3af; width:.875rem; height:.875rem; pointer-events:none; }
+.ac-search-icon { position:absolute; left:.625rem; top:50%; transform:translateY(-50%); color:var(--ax-faint); width:.875rem; height:.875rem; pointer-events:none; }
 .ac-search {
     width:100%; padding:.4rem .625rem .4rem 2rem;
-    border:1px solid #d1d5db; border-radius:.375rem;
-    font-size:.8rem; color:#111827; background:#f9fafb;
+    border:1px solid var(--ax-line); border-radius:.375rem;
+    font-size:.8rem; color:var(--ax-ink); background:var(--ax-panel);
     outline:none; transition:border-color .15s;
 }
-.ac-search:focus { border-color:#7c3aed; background:#fff; }
+.ac-search:focus { border-color:var(--ax-accent); background:var(--ax-bg); }
 .ac-select {
-    padding:.4rem .625rem; border:1px solid #d1d5db; border-radius:.375rem;
-    font-size:.8rem; color:#111827; background:#f9fafb;
+    padding:.4rem .625rem; border:1px solid var(--ax-line); border-radius:.375rem;
+    font-size:.8rem; color:var(--ax-ink); background:var(--ax-panel);
     outline:none; cursor:pointer;
 }
-.ac-select:focus { border-color:#7c3aed; }
+.ac-select:focus { border-color:var(--ax-accent); }
 .ac-spacer { flex:1; }
 .ac-export-btn {
     display:flex; align-items:center; gap:.375rem;
-    padding:.4rem .75rem; background:#f3f4f6;
-    border:1px solid #d1d5db; border-radius:.375rem;
-    font-size:.775rem; font-weight:500; color:#374151;
+    padding:.4rem .75rem; background:var(--ax-neutral-soft);
+    border:1px solid var(--ax-line); border-radius:.375rem;
+    font-size:.775rem; font-weight:500; color:var(--ax-text);
     cursor:pointer; text-decoration:none; transition:background .15s;
 }
-.ac-export-btn:hover { background:#e5e7eb; }
+.ac-export-btn:hover { background:var(--ax-line); }
 
 /* ── Tabs ──────────────────────────────────────────────────────────────────── */
-.ac-tabs { display:flex; gap:0; border-bottom:2px solid #e5e7eb; }
+.ac-tabs { display:flex; gap:0; border-bottom:2px solid var(--ax-line); }
 .ac-tab {
-    padding:.5rem 1rem; font-size:.8rem; font-weight:500; color:#6b7280;
+    padding:.5rem 1rem; font-size:.8rem; font-weight:500; color:var(--ax-muted);
     cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px;
     transition:color .15s, border-color .15s; display:flex; align-items:center; gap:.375rem;
     background:none; border-top:none; border-left:none; border-right:none;
 }
-.ac-tab:hover { color:#374151; }
-.ac-tab.active { color:#6d28d9; border-bottom-color:#6d28d9; font-weight:600; }
+.ac-tab:hover { color:var(--ax-text); }
+.ac-tab.active { color:var(--ax-accent-strong); border-bottom-color:var(--ax-accent-strong); font-weight:600; }
 .ac-tab-count {
-    background:#f3f4f6; color:#6b7280;
+    background:var(--ax-neutral-soft); color:var(--ax-muted);
     border-radius:9999px; font-size:.65rem; font-weight:600;
     padding:.05rem .4rem; min-width:1.25rem; text-align:center;
 }
-.ac-tab.active .ac-tab-count { background:#ede9fe; color:#6d28d9; }
-.ac-tab-count.danger { background:#fee2e2; color:#dc2626; }
+.ac-tab.active .ac-tab-count { background:var(--ax-accent-soft); color:var(--ax-accent-strong); }
+.ac-tab-count.danger { background:var(--ax-danger-soft); color:var(--ax-danger); }
 
 /* ── Main layout ───────────────────────────────────────────────────────────── */
 .ac-main { display:flex; gap:1rem; align-items:flex-start; }
@@ -136,34 +136,34 @@ $acDueLabel = static function(?string $due): string {
 
 /* ── Table card ────────────────────────────────────────────────────────────── */
 .ac-card {
-    background:#fff; border:1px solid #e5e7eb; border-radius:.5rem;
-    box-shadow:0 1px 2px rgba(0,0,0,.04); overflow:hidden;
+    background:var(--ax-bg); border:1px solid var(--ax-line); border-radius:.5rem;
+    box-shadow:var(--ax-shadow-sm); overflow:hidden;
 }
 .ac-table { width:100%; border-collapse:collapse; font-size:.8rem; }
 .ac-table thead th {
     padding:.5rem .75rem; text-align:left; font-size:.68rem; font-weight:600;
-    text-transform:uppercase; letter-spacing:.06em; color:#6b7280;
-    background:#f9fafb; border-bottom:1px solid #e5e7eb; white-space:nowrap;
+    text-transform:uppercase; letter-spacing:.06em; color:var(--ax-muted);
+    background:var(--ax-panel); border-bottom:1px solid var(--ax-line); white-space:nowrap;
     cursor:pointer; user-select:none;
 }
-.ac-table thead th:hover { color:#374151; }
+.ac-table thead th:hover { color:var(--ax-text); }
 .ac-table thead th .sort-icon { margin-left:.25rem; opacity:.5; font-size:.65rem; }
-.ac-table thead th.sorted { color:#6d28d9; }
+.ac-table thead th.sorted { color:var(--ax-accent-strong); }
 .ac-table thead th.sorted .sort-icon { opacity:1; }
 .ac-table tbody tr {
-    border-bottom:1px solid #f3f4f6;
+    border-bottom:1px solid var(--ax-line-2);
     transition:background .1s; cursor:pointer;
 }
-.ac-table tbody tr:hover { background:#fafafa; }
-.ac-table tbody tr.ac-row-selected { background:#faf5ff; border-left:2px solid #7c3aed; }
+.ac-table tbody tr:hover { background:var(--ax-panel); }
+.ac-table tbody tr.ac-row-selected { background:var(--ax-accent-soft); border-left:2px solid var(--ax-accent); }
 .ac-table tbody tr:last-child { border-bottom:none; }
-.ac-table td { padding:.6rem .75rem; color:#374151; vertical-align:middle; }
+.ac-table td { padding:.6rem .75rem; color:var(--ax-text); vertical-align:middle; }
 
 /* ── Priority dot ──────────────────────────────────────────────────────────── */
 .ac-pri-dot { width:.5rem; height:.5rem; border-radius:9999px; display:inline-block; flex-shrink:0; }
-.ac-pri-critical { background:#dc2626; }
-.ac-pri-high     { background:#f59e0b; }
-.ac-pri-medium   { background:#3b82f6; }
+.ac-pri-critical { background:var(--ax-danger); }
+.ac-pri-high     { background:var(--ax-warning); }
+.ac-pri-medium   { background:var(--ax-info); }
 .ac-pri-low      { background:#d1d5db; }
 
 /* ── Status badge ──────────────────────────────────────────────────────────── */
@@ -172,112 +172,112 @@ $acDueLabel = static function(?string $due): string {
     padding:.15rem .5rem; border-radius:9999px;
     font-size:.68rem; font-weight:600; white-space:nowrap;
 }
-.ac-status-unassigned   { background:#f3f4f6; color:#6b7280; }
-.ac-status-assigned     { background:#fef3c7; color:#92400e; }
-.ac-status-acknowledged { background:#dbeafe; color:#1e40af; }
-.ac-status-inprogress   { background:#ede9fe; color:#5b21b6; }
-.ac-status-blocked      { background:#fee2e2; color:#991b1b; }
-.ac-status-completed    { background:#d1fae5; color:#065f46; }
-.ac-status-cancelled    { background:#f3f4f6; color:#9ca3af; }
+.ac-status-unassigned   { background:var(--ax-neutral-soft); color:var(--ax-muted); }
+.ac-status-assigned     { background:var(--ax-warning-soft); color:var(--ax-warning-fg); }
+.ac-status-acknowledged { background:var(--ax-info-soft); color:var(--ax-info-fg); }
+.ac-status-inprogress   { background:var(--ax-accent-soft); color:var(--ax-accent-strong); }
+.ac-status-blocked      { background:var(--ax-danger-soft); color:var(--ax-danger-fg); }
+.ac-status-completed    { background:var(--ax-success-soft); color:var(--ax-success-fg); }
+.ac-status-cancelled    { background:var(--ax-neutral-soft); color:var(--ax-faint); }
 
 /* ── SLA badge ─────────────────────────────────────────────────────────────── */
 .ac-sla { display:inline-flex; align-items:center; gap:.25rem; font-size:.72rem; font-weight:600; white-space:nowrap; }
 .ac-sla-dot { width:.4rem; height:.4rem; border-radius:9999px; }
-.ac-sla-ok       .ac-sla-dot { background:#16a34a; }
-.ac-sla-warning  .ac-sla-dot { background:#f59e0b; }
-.ac-sla-critical .ac-sla-dot { background:#dc2626; }
-.ac-sla-overdue  .ac-sla-dot { background:#dc2626; }
+.ac-sla-ok       .ac-sla-dot { background:var(--ax-success); }
+.ac-sla-warning  .ac-sla-dot { background:var(--ax-warning); }
+.ac-sla-critical .ac-sla-dot { background:var(--ax-danger); }
+.ac-sla-overdue  .ac-sla-dot { background:var(--ax-danger); }
 .ac-sla-none     .ac-sla-dot { background:#d1d5db; }
-.ac-sla-ok      { color:#16a34a; }
-.ac-sla-warning { color:#d97706; }
-.ac-sla-critical{ color:#dc2626; }
-.ac-sla-overdue { color:#dc2626; }
-.ac-sla-none    { color:#9ca3af; }
+.ac-sla-ok      { color:var(--ax-success); }
+.ac-sla-warning { color:var(--ax-warning); }
+.ac-sla-critical{ color:var(--ax-danger); }
+.ac-sla-overdue { color:var(--ax-danger); }
+.ac-sla-none    { color:var(--ax-faint); }
 
 /* ── Action title cell ─────────────────────────────────────────────────────── */
 .ac-action-cell { display:flex; align-items:center; gap:.5rem; }
-.ac-action-title { font-weight:500; color:#111827; font-size:.8rem; line-height:1.3; }
-.ac-action-sub { font-size:.72rem; color:#9ca3af; }
+.ac-action-title { font-weight:500; color:var(--ax-ink); font-size:.8rem; line-height:1.3; }
+.ac-action-sub { font-size:.72rem; color:var(--ax-faint); }
 
 /* ── Assignee chip ─────────────────────────────────────────────────────────── */
 .ac-assignee {
     display:inline-flex; align-items:center; gap:.3rem;
-    font-size:.75rem; color:#374151;
+    font-size:.75rem; color:var(--ax-text);
 }
 .ac-avatar {
     width:1.25rem; height:1.25rem; border-radius:9999px;
-    background:#ede9fe; color:#6d28d9;
+    background:var(--ax-accent-soft); color:var(--ax-accent-strong);
     font-size:.6rem; font-weight:700;
     display:inline-flex; align-items:center; justify-content:center;
     flex-shrink:0;
 }
-.ac-unassigned { font-size:.75rem; color:#9ca3af; font-style:italic; }
+.ac-unassigned { font-size:.75rem; color:var(--ax-faint); font-style:italic; }
 
 /* ── Empty state ───────────────────────────────────────────────────────────── */
-.ac-empty { padding:3rem 1rem; text-align:center; color:#9ca3af; font-size:.875rem; }
+.ac-empty { padding:3rem 1rem; text-align:center; color:var(--ax-faint); font-size:.875rem; }
 .ac-empty-icon { font-size:2rem; margin-bottom:.5rem; }
 
 /* ── Pagination ────────────────────────────────────────────────────────────── */
 .ac-pagination {
     display:flex; align-items:center; justify-content:space-between;
-    padding:.625rem .875rem; border-top:1px solid #f3f4f6;
-    font-size:.775rem; color:#6b7280;
+    padding:.625rem .875rem; border-top:1px solid var(--ax-line-2);
+    font-size:.775rem; color:var(--ax-muted);
 }
 .ac-page-btns { display:flex; gap:.25rem; }
 .ac-page-btn {
-    padding:.3rem .625rem; border:1px solid #d1d5db; border-radius:.25rem;
-    background:#fff; font-size:.775rem; color:#374151;
+    padding:.3rem .625rem; border:1px solid var(--ax-line); border-radius:.25rem;
+    background:var(--ax-bg); font-size:.775rem; color:var(--ax-text);
     cursor:pointer; transition:background .1s;
 }
-.ac-page-btn:hover:not(:disabled) { background:#f9fafb; }
+.ac-page-btn:hover:not(:disabled) { background:var(--ax-panel); }
 .ac-page-btn:disabled { opacity:.4; cursor:default; }
-.ac-page-btn.active { background:#6d28d9; color:#fff; border-color:#6d28d9; }
+.ac-page-btn.active { background:var(--ax-accent-strong); color:var(--ax-accent-fg); border-color:var(--ax-accent-strong); }
 
 /* ── Detail panel ──────────────────────────────────────────────────────────── */
 .ac-detail {
-    background:#fff; border:1px solid #e5e7eb; border-radius:.5rem;
-    box-shadow:0 1px 2px rgba(0,0,0,.04);
+    background:var(--ax-bg); border:1px solid var(--ax-line); border-radius:.5rem;
+    box-shadow:var(--ax-shadow-sm);
 }
 .ac-detail-header {
     display:flex; align-items:flex-start; justify-content:space-between;
-    padding:.875rem 1rem; border-bottom:1px solid #f3f4f6;
+    padding:.875rem 1rem; border-bottom:1px solid var(--ax-line-2);
 }
-.ac-detail-title { font-size:.925rem; font-weight:600; color:#111827; line-height:1.3; }
-.ac-detail-meta { font-size:.75rem; color:#6b7280; margin-top:.25rem; }
+.ac-detail-title { font-size:.925rem; font-weight:600; color:var(--ax-ink); line-height:1.3; }
+.ac-detail-meta { font-size:.75rem; color:var(--ax-muted); margin-top:.25rem; }
 .ac-close-btn {
-    background:none; border:none; cursor:pointer; color:#9ca3af;
+    background:none; border:none; cursor:pointer; color:var(--ax-faint);
     padding:.125rem; line-height:1; font-size:1rem; flex-shrink:0;
     transition:color .15s;
 }
-.ac-close-btn:hover { color:#374151; }
+.ac-close-btn:hover { color:var(--ax-text); }
 .ac-detail-body { padding:1rem; display:flex; flex-direction:column; gap:.875rem; }
 .ac-detail-section { display:flex; flex-direction:column; gap:.375rem; }
-.ac-detail-section-label { font-size:.68rem; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:#9ca3af; }
+.ac-detail-section-label { font-size:.68rem; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--ax-faint); }
 .ac-detail-row { display:flex; align-items:flex-start; gap:.5rem; }
-.ac-detail-key { font-size:.775rem; color:#6b7280; width:6rem; flex-shrink:0; }
-.ac-detail-val { font-size:.775rem; color:#111827; font-weight:500; }
-.ac-detail-desc { font-size:.8rem; color:#374151; line-height:1.5; }
-.ac-detail-actions { display:flex; gap:.5rem; flex-wrap:wrap; padding:.875rem 1rem; border-top:1px solid #f3f4f6; }
+.ac-detail-key { font-size:.775rem; color:var(--ax-muted); width:6rem; flex-shrink:0; }
+.ac-detail-val { font-size:.775rem; color:var(--ax-ink); font-weight:500; }
+.ac-detail-desc { font-size:.8rem; color:var(--ax-text); line-height:1.5; }
+.ac-detail-actions { display:flex; gap:.5rem; flex-wrap:wrap; padding:.875rem 1rem; border-top:1px solid var(--ax-line-2); }
 .ac-btn {
     padding:.375rem .875rem; border-radius:.375rem;
     font-size:.775rem; font-weight:500; cursor:pointer;
     border:1px solid transparent; transition:all .15s;
     display:inline-flex; align-items:center; gap:.375rem;
 }
-.ac-btn-primary   { background:#6d28d9; color:#fff; border-color:#6d28d9; }
-.ac-btn-primary:hover { background:#5b21b6; }
-.ac-btn-secondary { background:#fff; color:#374151; border-color:#d1d5db; }
-.ac-btn-secondary:hover { background:#f9fafb; }
-.ac-btn-danger    { background:#fff; color:#dc2626; border-color:#fca5a5; }
-.ac-btn-danger:hover { background:#fef2f2; }
-.ac-btn-success   { background:#fff; color:#16a34a; border-color:#86efac; }
-.ac-btn-success:hover { background:#f0fdf4; }
+.ac-btn-primary   { background:var(--ax-accent-strong); color:var(--ax-accent-fg); border-color:var(--ax-accent-strong); }
+.ac-btn-primary:hover { background:var(--ax-accent-800); }
+.ac-btn-secondary { background:var(--ax-bg); color:var(--ax-text); border-color:var(--ax-line); }
+.ac-btn-secondary:hover { background:var(--ax-panel); }
+.ac-btn-danger    { background:var(--ax-bg); color:var(--ax-danger); border-color:var(--ax-danger); }
+.ac-btn-danger:hover { background:var(--ax-danger-soft); }
+.ac-btn-success   { background:var(--ax-bg); color:var(--ax-success); border-color:var(--ax-success); }
+.ac-btn-success:hover { background:var(--ax-success-soft); }
 
 /* ── Sidebar cards ─────────────────────────────────────────────────────────── */
-.ac-sc { background:#fff; border:1px solid #e5e7eb; border-radius:.5rem; box-shadow:0 1px 2px rgba(0,0,0,.04); }
+.ac-sc { background:var(--ax-bg); border:1px solid var(--ax-line); border-radius:.5rem; box-shadow:var(--ax-shadow-sm); }
 .ac-sc-head {
-    padding:.625rem .875rem; border-bottom:1px solid #f3f4f6;
-    font-size:.75rem; font-weight:600; color:#374151;
+    padding:.625rem .875rem; border-bottom:1px solid var(--ax-line-2);
+    font-size:.75rem; font-weight:600; color:var(--ax-text);
     display:flex; align-items:center; gap:.375rem;
 }
 .ac-sc-body { padding:.75rem .875rem; }
@@ -285,16 +285,16 @@ $acDueLabel = static function(?string $due): string {
 /* SLA donut */
 .ac-donut-wrap { display:flex; align-items:center; gap:1rem; }
 .ac-donut-legend { display:flex; flex-direction:column; gap:.375rem; flex:1; }
-.ac-donut-item { display:flex; align-items:center; gap:.375rem; font-size:.75rem; color:#374151; }
+.ac-donut-item { display:flex; align-items:center; gap:.375rem; font-size:.75rem; color:var(--ax-text); }
 .ac-donut-dot { width:.5rem; height:.5rem; border-radius:9999px; flex-shrink:0; }
 .ac-donut-val { font-weight:700; margin-left:auto; }
 
 /* By-type bars */
 .ac-type-row { display:flex; flex-direction:column; gap:.5rem; }
 .ac-type-item { display:flex; flex-direction:column; gap:.2rem; }
-.ac-type-label-row { display:flex; justify-content:space-between; font-size:.72rem; color:#374151; }
-.ac-type-bar-bg { background:#f3f4f6; border-radius:9999px; height:.35rem; }
-.ac-type-bar { background:#6d28d9; border-radius:9999px; height:.35rem; transition:width .3s; }
+.ac-type-label-row { display:flex; justify-content:space-between; font-size:.72rem; color:var(--ax-text); }
+.ac-type-bar-bg { background:var(--ax-neutral-soft); border-radius:9999px; height:.35rem; }
+.ac-type-bar { background:var(--ax-accent-strong); border-radius:9999px; height:.35rem; transition:width .3s; }
 
 /* Deadlines */
 .ac-deadline-list { display:flex; flex-direction:column; gap:.5rem; }
@@ -303,12 +303,12 @@ $acDueLabel = static function(?string $due): string {
     padding:.4rem .5rem; border-radius:.375rem;
     transition:background .1s; cursor:pointer;
 }
-.ac-deadline-item:hover { background:#fafafa; }
+.ac-deadline-item:hover { background:var(--ax-panel); }
 .ac-deadline-dot { width:.4rem; height:.4rem; border-radius:9999px; flex-shrink:0; }
 .ac-deadline-info { flex:1; min-width:0; }
-.ac-deadline-title { font-size:.75rem; font-weight:500; color:#111827; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.ac-deadline-time { font-size:.68rem; color:#6b7280; }
-.ac-deadline-time.danger { color:#dc2626; font-weight:600; }
+.ac-deadline-title { font-size:.75rem; font-weight:500; color:var(--ax-ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ac-deadline-time { font-size:.68rem; color:var(--ax-muted); }
+.ac-deadline-time.danger { color:var(--ax-danger); font-weight:600; }
 
 /* ── Modal overlay ─────────────────────────────────────────────────────────── */
 .ac-modal-overlay {
@@ -317,20 +317,20 @@ $acDueLabel = static function(?string $due): string {
     z-index:9999; padding:1rem;
 }
 .ac-modal {
-    background:#fff; border-radius:.75rem; box-shadow:0 20px 60px rgba(0,0,0,.2);
+    background:var(--ax-bg); border-radius:.75rem; box-shadow:0 20px 60px rgba(0,0,0,.2);
     width:100%; max-width:26rem; padding:1.5rem;
     display:flex; flex-direction:column; gap:1rem;
 }
-.ac-modal-title { font-size:1rem; font-weight:700; color:#111827; }
-.ac-modal-sub { font-size:.825rem; color:#6b7280; margin-top:.25rem; }
-.ac-modal-label { font-size:.775rem; font-weight:500; color:#374151; margin-bottom:.375rem; display:block; }
+.ac-modal-title { font-size:1rem; font-weight:700; color:var(--ax-ink); }
+.ac-modal-sub { font-size:.825rem; color:var(--ax-muted); margin-top:.25rem; }
+.ac-modal-label { font-size:.775rem; font-weight:500; color:var(--ax-text); margin-bottom:.375rem; display:block; }
 .ac-modal-textarea {
     width:100%; padding:.5rem .625rem;
-    border:1px solid #d1d5db; border-radius:.375rem;
-    font-size:.825rem; color:#111827; resize:vertical; min-height:5rem;
+    border:1px solid var(--ax-line); border-radius:.375rem;
+    font-size:.825rem; color:var(--ax-ink); background:var(--ax-bg); resize:vertical; min-height:5rem;
     outline:none; transition:border-color .15s; box-sizing:border-box;
 }
-.ac-modal-textarea:focus { border-color:#7c3aed; }
+.ac-modal-textarea:focus { border-color:var(--ax-accent); }
 .ac-modal-footer { display:flex; gap:.5rem; justify-content:flex-end; }
 </style>
 
@@ -443,11 +443,11 @@ $acDueLabel = static function(?string $due): string {
         {{-- Feature 7 — Action Center bulk toolbar --}}
         @php $acSel = count($this->selectedActions); $acMatching = $this->getMatchingActionCount(); $acEff = $this->selectAllMatchingActions ? $acMatching : $acSel; @endphp
         <style>
-            .ac-bulkbar { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; background:#eef2ff; border:1px solid #c7d2fe; border-radius:.6rem; padding:.55rem .75rem; margin-bottom:.75rem; font-size:.78rem; }
-            .ac-bulkbar .cnt { font-weight:700; color:#3730a3; }
-            .ac-bulkbar select, .ac-bulkbar button { font-size:.75rem; border-radius:.4rem; border:1px solid #c7d2fe; padding:.25rem .5rem; background:#fff; cursor:pointer; }
-            .ac-bulkbar button:hover { background:#eef2ff; }
-            .ac-bulkbar .allmatch { color:#4338ca; text-decoration:underline; cursor:pointer; background:none; border:none; }
+            .ac-bulkbar { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; background:var(--ax-accent-soft); border:1px solid var(--ax-accent-soft-border); border-radius:.6rem; padding:.55rem .75rem; margin-bottom:.75rem; font-size:.78rem; }
+            .ac-bulkbar .cnt { font-weight:700; color:var(--ax-accent-strong); }
+            .ac-bulkbar select, .ac-bulkbar button { font-size:.75rem; border-radius:.4rem; border:1px solid var(--ax-accent-soft-border); padding:.25rem .5rem; background:var(--ax-bg); color:var(--ax-text); cursor:pointer; }
+            .ac-bulkbar button:hover { background:var(--ax-accent-soft); }
+            .ac-bulkbar .allmatch { color:var(--ax-accent-strong); text-decoration:underline; cursor:pointer; background:none; border:none; }
             .ac-check input { width:1rem; height:1rem; cursor:pointer; }
         </style>
         @if($acEff > 0)
@@ -456,7 +456,7 @@ $acDueLabel = static function(?string $due): string {
             @if(! $this->selectAllMatchingActions && $acSel > 0 && $acMatching > $acSel)
                 <button type="button" class="allmatch" wire:click="toggleSelectAllMatchingActions">Select all {{ number_format($acMatching) }} matching</button>
             @elseif($this->selectAllMatchingActions)
-                <span style="color:#4338ca;">All matching selected</span>
+                <span style="color:var(--ax-accent-strong);">All matching selected</span>
             @endif
 
             <select wire:model="bulkAssigneeId">
@@ -545,18 +545,18 @@ $acDueLabel = static function(?string $due): string {
                     </td>
                     <td>
                         @if($act->investigation)
-                        <div style="font-size:.775rem;font-weight:500;color:#111827">
+                        <div style="font-size:.775rem;font-weight:500;color:var(--ax-ink)">
                             {{ \Illuminate\Support\Str::limit($act->investigation->title ?? 'Investigation #'.$act->investigation_id, 36) }}
                         </div>
                         @if($act->investigation->primaryStore)
                         <div class="ac-action-sub">{{ $act->investigation->primaryStore->name }}</div>
                         @endif
                         @else
-                        <span style="color:#9ca3af;font-size:.775rem">—</span>
+                        <span style="color:var(--ax-faint);font-size:.775rem">—</span>
                         @endif
                     </td>
                     <td>
-                        <span style="font-size:.775rem;color:#374151">{{ $act->getTypeLabel() }}</span>
+                        <span style="font-size:.775rem;color:var(--ax-text)">{{ $act->getTypeLabel() }}</span>
                     </td>
                     <td>
                         @if($act->assignedTo)
@@ -566,7 +566,7 @@ $acDueLabel = static function(?string $due): string {
                         </div>
                         @elseif($act->assignedTeam)
                         <div class="ac-assignee">
-                            <span class="ac-avatar" style="background:#e0e7ff;color:#3730a3">T</span>
+                            <span class="ac-avatar" style="background:var(--ax-accent-soft);color:var(--ax-accent-strong)">T</span>
                             {{ $act->assignedTeam->name }}
                         </div>
                         @else
@@ -574,7 +574,7 @@ $acDueLabel = static function(?string $due): string {
                         @endif
                     </td>
                     <td>
-                        <span style="font-size:.775rem;color:{{ $act->isOverdue() ? '#dc2626' : '#374151' }};font-weight:{{ $act->isOverdue() ? '600' : '400' }}">
+                        <span style="font-size:.775rem;color:{{ $act->isOverdue() ? 'var(--ax-danger)' : 'var(--ax-text)' }};font-weight:{{ $act->isOverdue() ? '600' : '400' }}">
                             {{ $acDueLabel($act->due_at?->toDateTimeString()) }}
                         </span>
                     </td>
@@ -634,7 +634,7 @@ $acDueLabel = static function(?string $due): string {
                     <div class="ac-detail-meta">
                         <span class="ac-badge {{ $acStatusClass($selectedAct->status) }}">{{ $selectedAct->getStatusLabel() }}</span>
                         &nbsp;
-                        <span style="color:{{ ['critical'=>'#dc2626','high'=>'#f59e0b','medium'=>'#3b82f6'][$selectedAct->priority] ?? '#6b7280' }};font-weight:600;font-size:.72rem">
+                        <span style="color:{{ ['critical'=>'var(--ax-danger)','high'=>'var(--ax-warning)','medium'=>'var(--ax-info)'][$selectedAct->priority] ?? 'var(--ax-muted)' }};font-weight:600;font-size:.72rem">
                             {{ strtoupper($selectedAct->getPriorityLabel()) }}
                         </span>
                         &nbsp;·&nbsp;
@@ -660,7 +660,7 @@ $acDueLabel = static function(?string $due): string {
                         <span class="ac-detail-key">Investigation</span>
                         @if($selectedAct->investigation)
                         <a href="{{ \App\Filament\Resources\InvestigationResource::getUrl('investigate', ['record' => $selectedAct->investigation_id]) }}"
-                           class="ac-detail-val" style="color:#6d28d9;text-decoration:none"
+                           class="ac-detail-val" style="color:var(--ax-accent-strong);text-decoration:none"
                            onclick="event.stopPropagation()">
                             {{ \Illuminate\Support\Str::limit($selectedAct->investigation->title ?? '#'.$selectedAct->investigation_id, 45) }} →
                         </a>
@@ -680,7 +680,7 @@ $acDueLabel = static function(?string $due): string {
                     </div>
                     <div class="ac-detail-row">
                         <span class="ac-detail-key">Due</span>
-                        <span class="ac-detail-val" style="{{ $selectedAct->isOverdue() ? 'color:#dc2626' : '' }}">
+                        <span class="ac-detail-val" style="{{ $selectedAct->isOverdue() ? 'color:var(--ax-danger)' : '' }}">
                             {{ $selectedAct->due_at ? $selectedAct->due_at->format('D M j, Y H:i') : '—' }}
                             @if($selectedAct->isOverdue()) <span style="font-size:.7rem;font-weight:700">(OVERDUE)</span> @endif
                         </span>
@@ -797,10 +797,10 @@ $acDueLabel = static function(?string $due): string {
                 @endphp
                 <div class="ac-donut-wrap">
                     <svg width="72" height="72" viewBox="0 0 72 72" style="flex-shrink:0">
-                        <circle cx="{{ $cx }}" cy="{{ $cy }}" r="{{ $r }}" fill="none" stroke="#f3f4f6" stroke-width="8"/>
+                        <circle cx="{{ $cx }}" cy="{{ $cy }}" r="{{ $r }}" fill="none" stroke="var(--ax-line-2)" stroke-width="8"/>
                         {!! $paths !!}
                         <text x="{{ $cx }}" y="{{ $cy+1 }}" text-anchor="middle" dominant-baseline="middle"
-                              font-size="11" font-weight="700" fill="#111827">{{ $onPct }}%</text>
+                              font-size="11" font-weight="700" fill="var(--ax-ink)">{{ $onPct }}%</text>
                     </svg>
                     <div class="ac-donut-legend">
                         <div class="ac-donut-item">
@@ -816,7 +816,7 @@ $acDueLabel = static function(?string $due): string {
                         <div class="ac-donut-item">
                             <span class="ac-donut-dot" style="background:#dc2626"></span>
                             Overdue
-                            <span class="ac-donut-val" style="color:#dc2626;font-weight:700">{{ $slaData['overdue'] }}</span>
+                            <span class="ac-donut-val" style="color:var(--ax-danger);font-weight:700">{{ $slaData['overdue'] }}</span>
                         </div>
                     </div>
                 </div>
@@ -848,7 +848,7 @@ $acDueLabel = static function(?string $due): string {
                     @endforeach
                 </div>
                 @else
-                <div style="font-size:.775rem;color:#9ca3af;text-align:center;padding:.75rem 0">No active actions</div>
+                <div style="font-size:.775rem;color:var(--ax-faint);text-align:center;padding:.75rem 0">No active actions</div>
                 @endif
             </div>
         </div>
@@ -882,7 +882,7 @@ $acDueLabel = static function(?string $due): string {
                     @endforeach
                 </div>
                 @else
-                <div style="font-size:.775rem;color:#9ca3af;text-align:center;padding:.75rem 0">No deadlines in next 3 days</div>
+                <div style="font-size:.775rem;color:var(--ax-faint);text-align:center;padding:.75rem 0">No deadlines in next 3 days</div>
                 @endif
             </div>
         </div>
@@ -903,7 +903,7 @@ $acDueLabel = static function(?string $due): string {
 
         <div>
             <label class="ac-modal-label" for="completion_notes">
-                Completion Notes <span style="color:#dc2626">*</span>
+                Completion Notes <span style="color:var(--ax-danger)">*</span>
             </label>
             <textarea id="completion_notes"
                       class="ac-modal-textarea"

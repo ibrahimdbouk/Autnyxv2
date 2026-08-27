@@ -2,34 +2,29 @@
     @php [$availFrom, $availTo] = $this->availableRange(); @endphp
 
     <style>
-        .rp-controls { background:#fff; border:1px solid #e5e7eb; border-radius:.875rem; box-shadow:0 1px 4px rgba(0,0,0,.06); padding:1.15rem 1.35rem; margin-bottom:1.25rem; }
-        .rp-controls-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#9ca3af; margin:0 0 .65rem; }
+        .rp-controls { background:var(--ax-bg); border:1px solid var(--ax-line); border-radius:.875rem; box-shadow:var(--ax-shadow); padding:1.15rem 1.35rem; margin-bottom:1.25rem; }
+        .rp-controls-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--ax-faint); margin:0 0 .65rem; }
         .rp-row { display:flex; flex-wrap:wrap; align-items:flex-end; gap:.9rem; }
         .rp-field { display:flex; flex-direction:column; gap:.25rem; }
-        .rp-field label { font-size:.72rem; font-weight:600; color:#6b7280; }
-        .rp-field input { border:1px solid #d1d5db; border-radius:.45rem; padding:.4rem .55rem; font-size:.82rem; background:#fff; color:#111827; }
+        .rp-field label { font-size:.72rem; font-weight:600; color:var(--ax-muted); }
+        .rp-field input { border:1px solid var(--ax-line); border-radius:.45rem; padding:.4rem .55rem; font-size:.82rem; background:var(--ax-bg); color:var(--ax-ink); }
         .rp-presets { display:flex; flex-wrap:wrap; gap:.4rem; margin-left:auto; }
-        .rp-preset { font-size:.72rem; border:1px solid #e5e7eb; background:#f9fafb; color:#374151; border-radius:9999px; padding:.3rem .7rem; cursor:pointer; }
-        .rp-preset:hover { border-color:#c4b5fd; background:#faf5ff; color:#6d28d9; }
-        .rp-hint { margin-top:.6rem; font-size:.72rem; color:#9ca3af; }
+        .rp-preset { font-size:.72rem; border:1px solid var(--ax-line); background:var(--ax-panel); color:var(--ax-text); border-radius:9999px; padding:.3rem .7rem; cursor:pointer; }
+        .rp-preset:hover { border-color:var(--ax-accent-300); background:var(--ax-accent-soft); color:var(--ax-accent-strong); }
+        .rp-hint { margin-top:.6rem; font-size:.72rem; color:var(--ax-faint); }
 
         .rp-grid { display:grid; grid-template-columns:1fr; gap:1rem; }
         @media(min-width:768px){ .rp-grid { grid-template-columns:1fr 1fr; } }
-        .rp-card { background:#fff; border:1px solid #e5e7eb; border-radius:.875rem; box-shadow:0 1px 4px rgba(0,0,0,.06); padding:1.2rem 1.35rem; display:flex; flex-direction:column; }
-        .rp-card-title { font-size:1rem; font-weight:700; color:#111827; display:flex; align-items:center; gap:.5rem; }
+        .rp-card { background:var(--ax-bg); border:1px solid var(--ax-line); border-radius:.875rem; box-shadow:var(--ax-shadow); padding:1.2rem 1.35rem; display:flex; flex-direction:column; }
+        .rp-card-title { font-size:1rem; font-weight:700; color:var(--ax-ink); display:flex; align-items:center; gap:.5rem; }
         .rp-dot { width:.55rem; height:.55rem; border-radius:9999px; flex-shrink:0; }
-        .rp-card-desc { font-size:.82rem; color:#6b7280; line-height:1.55; margin:.5rem 0 1rem; flex:1; }
+        .rp-card-desc { font-size:.82rem; color:var(--ax-muted); line-height:1.55; margin:.5rem 0 1rem; flex:1; }
         .rp-actions { display:flex; gap:.6rem; }
         .rp-btn { display:inline-flex; align-items:center; gap:.4rem; font-size:.8rem; font-weight:600; text-decoration:none; border-radius:.5rem; padding:.5rem .85rem; border:1px solid transparent; }
-        .rp-btn-pdf { background:#6d28d9; color:#fff; }
-        .rp-btn-pdf:hover { background:#5b21b6; }
-        .rp-btn-xlsx { background:#f0fdf4; color:#166534; border-color:#bbf7d0; }
-        .rp-btn-xlsx:hover { background:#dcfce7; }
-
-        .dark .rp-controls, .dark .rp-card { background:#1f2937; border-color:#374151; }
-        .dark .rp-card-title { color:#f9fafb; }
-        .dark .rp-field input { background:#111827; border-color:#374151; color:#f3f4f6; }
-        .dark .rp-preset { background:#111827; border-color:#374151; color:#d1d5db; }
+        .rp-btn-pdf { background:var(--ax-accent-strong); color:var(--ax-accent-fg); }
+        .rp-btn-pdf:hover { background:var(--ax-accent-800); }
+        .rp-btn-xlsx { background:var(--ax-success-soft); color:var(--ax-success-fg); border-color:var(--ax-success-soft); }
+        .rp-btn-xlsx:hover { filter:brightness(.97); }
     </style>
 
     {{-- Date range controls --}}
