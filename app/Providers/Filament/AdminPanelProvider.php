@@ -17,7 +17,6 @@ use App\Models\Tenant;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
-use Filament\Navigation\NavigationGroup;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
@@ -44,25 +43,13 @@ class AdminPanelProvider extends PanelProvider
                 'primary' => Color::Violet,
             ])
             ->brandName('Autnyx')
-            // Logo slot: appears in the top bar + sign-in page as soon as a file
-            // exists at public/images/autnyx-logo.*; falls back to brand name.
-            ->brandLogo(fn (): ?string => \App\Support\Branding::logoUrl())
-            ->brandLogoHeight('1.75rem')
-            // Global design tokens + primitives (Track U) — no build step.
+            // Global design tokens + primitives (Track U) - loaded with no build step.
             ->renderHook(
                 'panels::head.end',
                 fn (): string => '<link rel="stylesheet" href="'
                     . asset('css/autnyx-ui.css') . '?v=' . \App\Support\Branding::cssVersion() . '">'
             )
             ->maxContentWidth('full')
-            // Coherent left-nav story: the intelligence the product produces first,
-            // then the data behind it, then admin + settings.
-            ->navigationGroups([
-                NavigationGroup::make('Intelligence')->icon('heroicon-o-sparkles'),
-                NavigationGroup::make('Data')->icon('heroicon-o-circle-stack'),
-                NavigationGroup::make('Administration')->icon('heroicon-o-building-office'),
-                NavigationGroup::make('Settings')->icon('heroicon-o-cog-6-tooth'),
-            ])
             ->databaseNotifications()
             ->databaseNotificationsPolling('60s')
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
