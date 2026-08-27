@@ -29,8 +29,10 @@ class Supplier extends Model
         return $this->hasMany(PurchaseOrder::class);
     }
 
-    public function products(): HasMany
-    {
-        return $this->hasMany(Product::class);
-    }
+    // NOTE: products are NOT linked to suppliers by a direct FK — the products
+    // table has only a legacy free-text `supplier` column, not `supplier_id`.
+    // A supplier's products are derived through its purchase orders
+    // (purchase_orders.supplier_id + purchase_orders.product_id). Do not add a
+    // hasMany(Product::class) here — it resolves to products.supplier_id, which
+    // does not exist, and throws a SQL error wherever it is queried.
 }

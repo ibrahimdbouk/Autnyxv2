@@ -75,11 +75,13 @@ class SupplierResource extends Resource
                     ->color('primary')
                     ->sortable(),
 
+                // Products aren't linked to suppliers by a direct FK — a supplier
+                // supplies products *through* its purchase orders. Count the distinct
+                // products across this supplier's POs.
                 TextColumn::make('products_count')
-                    ->counts('products')
                     ->label('Products')
                     ->alignCenter()
-                    ->sortable()
+                    ->getStateUsing(fn (Supplier $record): int => $record->purchaseOrders()->distinct()->count('product_id'))
                     ->toggleable(),
             ])
             ->filters([
