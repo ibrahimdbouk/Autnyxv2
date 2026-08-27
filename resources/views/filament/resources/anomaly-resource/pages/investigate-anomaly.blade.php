@@ -9,10 +9,10 @@
 --}}
 <style>
     .ia-card {
-        background:#fff; border:1px solid #e5e7eb; border-radius:.875rem;
-        box-shadow:0 1px 4px rgba(0,0,0,.06); padding:1.25rem 1.5rem; margin-bottom:1.25rem;
+        background:var(--ax-bg); border:1px solid var(--ax-line); border-radius:.875rem;
+        box-shadow:var(--ax-shadow); padding:1.25rem 1.5rem; margin-bottom:1.25rem;
     }
-    .ia-card-violet { background:#f5f3ff; border-color:#ddd6fe; }
+    .ia-card-violet { background:var(--ax-accent-soft); border-color:var(--ax-accent-soft-border); }
     .ia-head { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; }
     .ia-pill {
         display:inline-flex; align-items:center; gap:.35rem;
@@ -20,44 +20,38 @@
         font-size:.75rem; font-weight:600; white-space:nowrap; line-height:1.4;
     }
     .ia-dot { width:.4rem; height:.4rem; border-radius:9999px; flex-shrink:0; }
-    .ia-detected { margin-left:auto; font-size:.8rem; color:#9ca3af; }
-    .ia-desc { margin-top:.85rem; font-size:.875rem; color:#374151; line-height:1.65; }
-    .ia-label { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#7c3aed; margin:0 0 .25rem; }
-    .ia-title { font-size:.95rem; font-weight:700; color:#111827; margin:0; }
+    .ia-detected { margin-left:auto; font-size:.8rem; color:var(--ax-faint); }
+    .ia-desc { margin-top:.85rem; font-size:.875rem; color:var(--ax-text); line-height:1.65; }
+    .ia-label { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--ax-accent); margin:0 0 .25rem; }
+    .ia-title { font-size:.95rem; font-weight:700; color:var(--ax-ink); margin:0; }
     .ia-badges { display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.75rem; }
-    .ia-ai { margin-top:.85rem; font-size:.875rem; color:#374151; line-height:1.6; }
-    .ia-ai-muted { margin-top:.85rem; font-size:.8rem; color:#6b7280; font-style:italic; }
-    .ia-meta { margin-top:.4rem; font-size:.72rem; color:#9ca3af; }
-    .ia-divider { margin-top:1rem; padding-top:1rem; border-top:1px solid #ddd6fe; font-size:.75rem; color:#6d28d9; }
-    .ia-empty { background:#fff; border:2px dashed #e5e7eb; border-radius:.875rem; padding:2.5rem 1.5rem; text-align:center; margin-bottom:1.25rem; }
-    .ia-empty-icon { width:3.25rem; height:3.25rem; margin:0 auto 1rem; display:flex; align-items:center; justify-content:center; border-radius:9999px; background:#f9fafb; color:#9ca3af; }
-    .ia-empty-title { font-size:.9rem; font-weight:700; color:#111827; margin:0; }
-    .ia-empty-body { margin:.4rem auto 0; max-width:34rem; font-size:.85rem; color:#6b7280; line-height:1.55; }
-    .ia-details summary { cursor:pointer; font-size:.75rem; color:#9ca3af; user-select:none; }
-    .ia-details summary:hover { color:#6b7280; }
-    .ia-pre { margin-top:.5rem; border-radius:.5rem; background:#f9fafb; border:1px solid #f3f4f6; padding:1rem; font-size:.72rem; color:#4b5563; overflow-x:auto; }
-
-    .dark .ia-card { background:#1f2937; border-color:#374151; }
-    .dark .ia-card-violet { background:#2e1065; border-color:#5b21b6; }
-    .dark .ia-desc, .dark .ia-ai { color:#d1d5db; }
-    .dark .ia-title, .dark .ia-empty-title { color:#f9fafb; }
-    .dark .ia-empty { border-color:#374151; }
-    .dark .ia-empty-icon { background:#111827; }
-    .dark .ia-pre { background:#111827; border-color:#374151; color:#9ca3af; }
+    .ia-ai { margin-top:.85rem; font-size:.875rem; color:var(--ax-text); line-height:1.6; }
+    .ia-ai-muted { margin-top:.85rem; font-size:.8rem; color:var(--ax-muted); font-style:italic; }
+    .ia-meta { margin-top:.4rem; font-size:.72rem; color:var(--ax-faint); }
+    .ia-divider { margin-top:1rem; padding-top:1rem; border-top:1px solid var(--ax-accent-soft-border); font-size:.75rem; color:var(--ax-accent-strong); }
+    .ia-empty { background:var(--ax-bg); border:2px dashed var(--ax-line); border-radius:.875rem; padding:2.5rem 1.5rem; text-align:center; margin-bottom:1.25rem; }
+    .ia-empty-icon { width:3.25rem; height:3.25rem; margin:0 auto 1rem; display:flex; align-items:center; justify-content:center; border-radius:9999px; background:var(--ax-panel); color:var(--ax-faint); }
+    .ia-empty-title { font-size:.9rem; font-weight:700; color:var(--ax-ink); margin:0; }
+    .ia-empty-body { margin:.4rem auto 0; max-width:34rem; font-size:.85rem; color:var(--ax-muted); line-height:1.55; }
+    .ia-details summary { cursor:pointer; font-size:.75rem; color:var(--ax-faint); user-select:none; }
+    .ia-details summary:hover { color:var(--ax-muted); }
+    .ia-pre { margin-top:.5rem; border-radius:.5rem; background:var(--ax-panel); border:1px solid var(--ax-line-2); padding:1rem; font-size:.72rem; color:var(--ax-text); overflow-x:auto; }
 </style>
 
 @php
     // color name → [background, text]
+    // Token-driven so pills flip correctly in dark mode. Orange folds into
+    // warning and indigo into the violet accent (accent unified to violet).
     $iaPalette = [
-        'red'    => ['#fee2e2', '#991b1b'],
-        'orange' => ['#ffedd5', '#9a3412'],
-        'yellow' => ['#fef3c7', '#92400e'],
-        'green'  => ['#dcfce7', '#166534'],
-        'blue'   => ['#dbeafe', '#1e40af'],
-        'indigo' => ['#e0e7ff', '#3730a3'],
-        'violet' => ['#ede9fe', '#6d28d9'],
-        'purple' => ['#ede9fe', '#6d28d9'],
-        'gray'   => ['#f3f4f6', '#374151'],
+        'red'    => ['var(--ax-danger-soft)',  'var(--ax-danger-fg)'],
+        'orange' => ['var(--ax-warning-soft)', 'var(--ax-warning-fg)'],
+        'yellow' => ['var(--ax-warning-soft)', 'var(--ax-warning-fg)'],
+        'green'  => ['var(--ax-success-soft)', 'var(--ax-success-fg)'],
+        'blue'   => ['var(--ax-info-soft)',    'var(--ax-info-fg)'],
+        'indigo' => ['var(--ax-accent-soft)',  'var(--ax-accent-strong)'],
+        'violet' => ['var(--ax-accent-soft)',  'var(--ax-accent-strong)'],
+        'purple' => ['var(--ax-accent-soft)',  'var(--ax-accent-strong)'],
+        'gray'   => ['var(--ax-neutral-soft)', 'var(--ax-neutral-fg)'],
     ];
     $iaPill = function (string $color) use ($iaPalette): string {
         $c = $iaPalette[$color] ?? $iaPalette['gray'];
@@ -201,7 +195,7 @@
         <p class="ia-empty-body">
             This anomaly has not yet been correlated into an investigation. Investigation correlation runs nightly at 02:00 AM alongside anomaly detection.
         </p>
-        <p class="ia-empty-body" style="margin-top:.75rem; font-size:.75rem; color:#9ca3af;">
+        <p class="ia-empty-body" style="margin-top:.75rem; font-size:.75rem; color:var(--ax-faint);">
             Once correlated, an Investigation object will be created grouping this anomaly with related signals on the same SKU or store. You can then view the full AI-powered analysis, evidence package, and actions from the Investigation page.
         </p>
     </div>
