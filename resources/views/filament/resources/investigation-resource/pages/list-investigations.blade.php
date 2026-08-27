@@ -6,7 +6,7 @@
     height: calc(100vh - 4rem);
     overflow: hidden;
     margin: -1.5rem -1.5rem 0;
-    background: #f9fafb;
+    background: var(--ax-panel);
 }
 .invs-list-pane {
     display: flex;
@@ -14,8 +14,8 @@
     width: 100%;
     overflow: hidden;
     transition: width .25s ease;
-    background: #fff;
-    border-right: 1px solid #e5e7eb;
+    background: var(--ax-bg);
+    border-right: 1px solid var(--ax-line);
 }
 .invs-panel-open .invs-list-pane {
     width: 44%;
@@ -27,48 +27,48 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background: #fff;
+    background: var(--ax-bg);
 }
 
 /* ── LIST HEADER ────────────────────────────────────────────────────────────── */
 .invs-list-header {
     padding: 1.25rem 1.5rem .875rem;
-    border-bottom: 1px solid #f3f4f6;
+    border-bottom: 1px solid var(--ax-line-2);
     flex-shrink: 0;
 }
 .invs-title {
     font-size: 1.375rem;
     font-weight: 700;
-    color: #111827;
+    color: var(--ax-ink);
     line-height: 1.2;
 }
 .invs-subtitle {
     font-size: .875rem;
-    color: #6b7280;
+    color: var(--ax-muted);
     margin-top: .125rem;
 }
 
 /* ── FILTERS ────────────────────────────────────────────────────────────────── */
 .invs-filters {
     padding: .875rem 1.5rem;
-    border-bottom: 1px solid #f3f4f6;
+    border-bottom: 1px solid var(--ax-line-2);
     flex-shrink: 0;
-    background: #fff;
+    background: var(--ax-bg);
 }
 .invs-search {
     width: 100%;
     padding: .5rem .875rem;
-    border: 1px solid #d1d5db;
+    border: 1px solid var(--ax-line);
     border-radius: .5rem;
     font-size: .875rem;
-    color: #111827;
-    background: #f9fafb;
+    color: var(--ax-ink);
+    background: var(--ax-panel);
     margin-bottom: .625rem;
     outline: none;
     transition: border-color .15s;
 }
-.invs-search:focus { border-color: #6366f1; background: #fff; }
-.invs-search::placeholder { color: #9ca3af; }
+.invs-search:focus { border-color: var(--ax-accent); background: var(--ax-bg); }
+.invs-search::placeholder { color: var(--ax-faint); }
 .invs-filter-row {
     display: flex;
     gap: .5rem;
@@ -78,15 +78,15 @@
     flex: 1;
     min-width: 100px;
     padding: .375rem .625rem;
-    border: 1px solid #d1d5db;
+    border: 1px solid var(--ax-line);
     border-radius: .375rem;
     font-size: .8125rem;
-    color: #374151;
-    background: #fff;
+    color: var(--ax-text);
+    background: var(--ax-bg);
     cursor: pointer;
     outline: none;
 }
-.invs-select:focus { border-color: #6366f1; }
+.invs-select:focus { border-color: var(--ax-accent); }
 
 /* ── INVESTIGATION CARDS ────────────────────────────────────────────────────── */
 .invs-cards {
@@ -99,15 +99,15 @@
     align-items: center;
     gap: .875rem;
     padding: .875rem 1.5rem;
-    border-bottom: 1px solid #f3f4f6;
+    border-bottom: 1px solid var(--ax-line-2);
     cursor: pointer;
     transition: background .1s;
     position: relative;
 }
-.invs-card:hover { background: #f9fafb; }
+.invs-card:hover { background: var(--ax-panel); }
 .invs-card-selected {
-    background: #eef2ff !important;
-    border-left: 3px solid #6366f1;
+    background: var(--ax-accent-soft) !important;
+    border-left: 3px solid var(--ax-accent);
     padding-left: calc(1.5rem - 3px);
 }
 .invs-card-icon {
@@ -126,19 +126,19 @@
 .invs-card-entity {
     font-size: .9375rem;
     font-weight: 600;
-    color: #111827;
+    color: var(--ax-ink);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 .invs-card-type {
     font-size: .8125rem;
-    color: #6b7280;
+    color: var(--ax-muted);
     margin-top: .0625rem;
 }
 .invs-card-desc {
     font-size: .8125rem;
-    color: #9ca3af;
+    color: var(--ax-faint);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -152,11 +152,11 @@
 .invs-impact-value {
     font-size: .9375rem;
     font-weight: 700;
-    color: #dc2626;
+    color: var(--ax-danger);
 }
 .invs-impact-label {
     font-size: .6875rem;
-    color: #9ca3af;
+    color: var(--ax-faint);
     margin-top: .125rem;
 }
 .invs-card-meta {
@@ -174,10 +174,10 @@
     border-radius: 9999px;
     letter-spacing: .04em;
 }
-.invs-sev-critical { background: #fee2e2; color: #991b1b; }
-.invs-sev-high     { background: #fef3c7; color: #92400e; }
-.invs-sev-medium   { background: #dbeafe; color: #1e40af; }
-.invs-sev-low      { background: #f3f4f6; color: #374151; }
+.invs-sev-critical { background: var(--ax-danger-soft); color: var(--ax-danger-fg); }
+.invs-sev-high     { background: var(--ax-warning-soft); color: var(--ax-warning-fg); }
+.invs-sev-medium   { background: var(--ax-info-soft); color: var(--ax-info-fg); }
+.invs-sev-low      { background: var(--ax-neutral-soft); color: var(--ax-neutral-fg); }
 .invs-status {
     font-size: .6875rem;
     font-weight: 500;
@@ -185,26 +185,26 @@
     border-radius: 9999px;
     white-space: nowrap;
 }
-.invs-status-open     { background: #fef3c7; color: #92400e; }
-.invs-status-progress { background: #dbeafe; color: #1e40af; }
-.invs-status-resolved { background: #dcfce7; color: #166534; }
-.invs-status-closed   { background: #f3f4f6; color: #374151; }
+.invs-status-open     { background: var(--ax-warning-soft); color: var(--ax-warning-fg); }
+.invs-status-progress { background: var(--ax-info-soft); color: var(--ax-info-fg); }
+.invs-status-resolved { background: var(--ax-success-soft); color: var(--ax-success-fg); }
+.invs-status-closed   { background: var(--ax-neutral-soft); color: var(--ax-neutral-fg); }
 .invs-time {
     font-size: .6875rem;
-    color: #9ca3af;
+    color: var(--ax-faint);
 }
 .invs-card-chevron {
     font-size: 1.25rem;
-    color: #d1d5db;
+    color: var(--ax-faint);
     flex-shrink: 0;
     margin-left: .25rem;
 }
-.invs-card-selected .invs-card-chevron { color: #6366f1; }
+.invs-card-selected .invs-card-chevron { color: var(--ax-accent); }
 .invs-empty {
     padding: 2rem 1.5rem;
     text-align: center;
     font-size: .9375rem;
-    color: #9ca3af;
+    color: var(--ax-faint);
 }
 
 /* ── PAGINATION ─────────────────────────────────────────────────────────────── */
@@ -213,35 +213,35 @@
     align-items: center;
     justify-content: space-between;
     padding: .75rem 1.5rem;
-    border-top: 1px solid #f3f4f6;
-    background: #fff;
+    border-top: 1px solid var(--ax-line-2);
+    background: var(--ax-bg);
     flex-shrink: 0;
 }
 .invs-page-btn {
     width: 2rem;
     height: 2rem;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--ax-line);
     border-radius: .375rem;
     font-size: 1rem;
     cursor: pointer;
-    background: #fff;
-    color: #374151;
+    background: var(--ax-bg);
+    color: var(--ax-text);
     display: flex;
     align-items: center;
     justify-content: center;
     transition: all .15s;
 }
-.invs-page-btn:hover:not(.invs-page-disabled) { background: #f3f4f6; }
-.invs-page-disabled { color: #d1d5db; cursor: not-allowed; }
-.invs-page-info { font-size: .875rem; color: #374151; font-weight: 500; }
-.invs-page-count { font-size: .8125rem; color: #9ca3af; }
+.invs-page-btn:hover:not(.invs-page-disabled) { background: var(--ax-panel); }
+.invs-page-disabled { color: var(--ax-faint); cursor: not-allowed; }
+.invs-page-info { font-size: .875rem; color: var(--ax-text); font-weight: 500; }
+.invs-page-count { font-size: .8125rem; color: var(--ax-faint); }
 
 /* ── QUICK PANEL HEADER ─────────────────────────────────────────────────────── */
 .invs-panel-header {
     padding: 1rem 1.25rem 0;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--ax-line);
     flex-shrink: 0;
-    background: #fff;
+    background: var(--ax-bg);
 }
 .invs-panel-title-row {
     display: flex;
@@ -252,7 +252,7 @@
 .invs-panel-id {
     font-size: .875rem;
     font-weight: 700;
-    color: #111827;
+    color: var(--ax-ink);
 }
 .invs-panel-sev-badge {
     display: inline-flex;
@@ -274,18 +274,18 @@
     width: 2rem;
     height: 2rem;
     border-radius: .375rem;
-    border: 1px solid #e5e7eb;
-    background: #fff;
+    border: 1px solid var(--ax-line);
+    background: var(--ax-bg);
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    color: #6b7280;
+    color: var(--ax-muted);
     font-size: .875rem;
     text-decoration: none;
     transition: all .15s;
 }
-.invs-expand-btn:hover, .invs-close-btn:hover { background: #f3f4f6; color: #111827; }
+.invs-expand-btn:hover, .invs-close-btn:hover { background: var(--ax-panel); color: var(--ax-ink); }
 .invs-tabs {
     display: flex;
     gap: 0;
@@ -295,14 +295,14 @@
     padding: .625rem 1rem;
     font-size: .875rem;
     font-weight: 500;
-    color: #6b7280;
+    color: var(--ax-muted);
     border-bottom: 2px solid transparent;
     cursor: pointer;
     text-decoration: none;
     transition: all .15s;
 }
-.invs-tab:hover { color: #374151; }
-.invs-tab-active { color: #6366f1; border-bottom-color: #6366f1; }
+.invs-tab:hover { color: var(--ax-text); }
+.invs-tab-active { color: var(--ax-accent); border-bottom-color: var(--ax-accent); }
 
 /* ── QUICK PANEL BODY ────────────────────────────────────────────────────────── */
 .invs-panel-body {
@@ -316,8 +316,8 @@
 
 /* ── FACT SECTION ────────────────────────────────────────────────────────────── */
 .invs-fact-section {
-    background: #fff;
-    border: 1px solid #e5e7eb;
+    background: var(--ax-bg);
+    border: 1px solid var(--ax-line);
     border-radius: .625rem;
     padding: 1rem;
 }
@@ -330,16 +330,16 @@
 .invs-fact-entity {
     font-size: 1.125rem;
     font-weight: 700;
-    color: #111827;
+    color: var(--ax-ink);
 }
 .invs-fact-type {
     font-size: .875rem;
-    color: #6b7280;
+    color: var(--ax-muted);
     margin-top: .0625rem;
 }
 .invs-fact-desc {
     font-size: .875rem;
-    color: #374151;
+    color: var(--ax-text);
     line-height: 1.5;
     margin: 0;
 }
@@ -351,8 +351,8 @@
     gap: .625rem;
 }
 .invs-kpi-card {
-    background: #f9fafb;
-    border: 1px solid #e5e7eb;
+    background: var(--ax-panel);
+    border: 1px solid var(--ax-line);
     border-radius: .5rem;
     padding: .75rem;
 }
@@ -361,7 +361,7 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: .05em;
-    color: #9ca3af;
+    color: var(--ax-faint);
     margin-bottom: .25rem;
 }
 .invs-kpi-value {
@@ -369,11 +369,11 @@
     font-weight: 800;
     line-height: 1.1;
 }
-.invs-kpi-red   { color: #dc2626; }
-.invs-kpi-green { color: #16a34a; }
+.invs-kpi-red   { color: var(--ax-danger); }
+.invs-kpi-green { color: var(--ax-success); }
 .invs-kpi-sub {
     font-size: .75rem;
-    color: #6b7280;
+    color: var(--ax-muted);
     margin-top: .25rem;
     line-height: 1.3;
 }
@@ -385,8 +385,8 @@
 
 /* ── WHAT WE THINK ───────────────────────────────────────────────────────────── */
 .invs-inference-section {
-    background: #fafafa;
-    border: 1px solid #e5e7eb;
+    background: var(--ax-panel);
+    border: 1px solid var(--ax-line);
     border-radius: .625rem;
     padding: .875rem 1rem;
 }
@@ -395,7 +395,7 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: .05em;
-    color: #9ca3af;
+    color: var(--ax-faint);
     margin-bottom: .5rem;
     display: flex;
     align-items: center;
@@ -404,8 +404,8 @@
 .invs-inference-marker {
     display: inline-flex;
     padding: .125rem .4rem;
-    background: #fef3c7;
-    color: #92400e;
+    background: var(--ax-warning-soft);
+    color: var(--ax-warning-fg);
     border-radius: .25rem;
     font-size: .625rem;
     font-weight: 700;
@@ -413,7 +413,7 @@
 }
 .invs-inference-text {
     font-size: .9375rem;
-    color: #111827;
+    color: var(--ax-ink);
     line-height: 1.6;
     font-weight: 500;
     margin: 0 0 .625rem;
@@ -427,32 +427,32 @@
     padding: .25rem .625rem;
     border-radius: 9999px;
 }
-.invs-ev-strong      { background: #dcfce7; color: #166534; }
-.invs-ev-moderate    { background: #fef3c7; color: #92400e; }
-.invs-ev-insufficient{ background: #f3f4f6; color: #6b7280; }
+.invs-ev-strong      { background: var(--ax-success-soft); color: var(--ax-success-fg); }
+.invs-ev-moderate    { background: var(--ax-warning-soft); color: var(--ax-warning-fg); }
+.invs-ev-insufficient{ background: var(--ax-neutral-soft); color: var(--ax-muted); }
 
 /* ── CONFIDENCE-GATED ACTION ─────────────────────────────────────────────────── */
 .invs-action-section {
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--ax-line);
     border-radius: .625rem;
     padding: .875rem 1rem;
-    background: #fff;
+    background: var(--ax-bg);
 }
 .invs-action-title {
     font-size: 1.0625rem;
     font-weight: 700;
-    color: #111827;
+    color: var(--ax-ink);
     margin: .375rem 0;
 }
 .invs-action-meta {
     font-size: .8125rem;
-    color: #6b7280;
+    color: var(--ax-muted);
     margin-top: .25rem;
 }
 .invs-action-note {
     font-size: .8125rem;
-    color: #92400e;
-    background: #fef9c3;
+    color: var(--ax-warning-fg);
+    background: var(--ax-warning-soft);
     border-radius: .375rem;
     padding: .375rem .625rem;
     margin: .5rem 0;
@@ -463,15 +463,15 @@
     margin-top: .75rem;
 }
 .invs-incomplete-banner {
-    background: #fffbeb;
-    border: 1px solid #fde68a;
+    background: var(--ax-warning-soft);
+    border: 1px solid var(--ax-warning-soft);
     border-radius: .5rem;
     padding: .75rem;
 }
 .invs-btn-primary {
     padding: .5rem 1rem;
-    background: #6366f1;
-    color: #fff;
+    background: var(--ax-accent);
+    color: var(--ax-accent-fg);
     border: none;
     border-radius: .375rem;
     font-size: .875rem;
@@ -481,12 +481,12 @@
     text-decoration: none;
     display: inline-block;
 }
-.invs-btn-primary:hover { background: #4f46e5; }
+.invs-btn-primary:hover { background: var(--ax-accent-strong); }
 .invs-btn-secondary {
     padding: .5rem 1rem;
-    background: #fff;
-    color: #6366f1;
-    border: 1.5px solid #6366f1;
+    background: var(--ax-bg);
+    color: var(--ax-accent);
+    border: 1.5px solid var(--ax-accent);
     border-radius: .375rem;
     font-size: .875rem;
     font-weight: 600;
@@ -495,24 +495,24 @@
     text-decoration: none;
     display: inline-block;
 }
-.invs-btn-secondary:hover { background: #eef2ff; }
+.invs-btn-secondary:hover { background: var(--ax-accent-soft); }
 .invs-btn-ghost {
     padding: .5rem 1rem;
     background: transparent;
-    color: #6b7280;
-    border: 1px solid #e5e7eb;
+    color: var(--ax-muted);
+    border: 1px solid var(--ax-line);
     border-radius: .375rem;
     font-size: .875rem;
     font-weight: 500;
     cursor: pointer;
     transition: all .15s;
 }
-.invs-btn-ghost:hover { background: #f9fafb; color: #374151; }
+.invs-btn-ghost:hover { background: var(--ax-panel); color: var(--ax-text); }
 .invs-btn-warning {
     padding: .5rem 1rem;
-    background: #fef3c7;
-    color: #92400e;
-    border: 1px solid #fde68a;
+    background: var(--ax-warning-soft);
+    color: var(--ax-warning-fg);
+    border: 1px solid var(--ax-warning-soft);
     border-radius: .375rem;
     font-size: .875rem;
     font-weight: 600;
@@ -521,14 +521,14 @@
     text-decoration: none;
     display: inline-block;
 }
-.invs-btn-warning:hover { background: #fde68a; }
+.invs-btn-warning:hover { filter: brightness(.97); }
 
 /* ── EVIDENCE GRID ───────────────────────────────────────────────────────────── */
 .invs-evidence-section {
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--ax-line);
     border-radius: .625rem;
     padding: .875rem 1rem;
-    background: #fff;
+    background: var(--ax-bg);
 }
 .invs-section-header {
     display: flex;
@@ -538,7 +538,7 @@
 }
 .invs-link {
     font-size: .8125rem;
-    color: #6366f1;
+    color: var(--ax-accent);
     text-decoration: none;
     font-weight: 500;
 }
@@ -549,8 +549,8 @@
     gap: .5rem;
 }
 .invs-ev-card {
-    background: #f9fafb;
-    border: 1px solid #f3f4f6;
+    background: var(--ax-panel);
+    border: 1px solid var(--ax-line-2);
     border-radius: .5rem;
     padding: .625rem .75rem;
 }
@@ -564,7 +564,7 @@
 .invs-ev-label {
     font-size: .8125rem;
     font-weight: 600;
-    color: #111827;
+    color: var(--ax-ink);
     line-height: 1.3;
 }
 .invs-ev-strength {
@@ -575,26 +575,26 @@
     flex-shrink: 0;
     white-space: nowrap;
 }
-.invs-ev-tag-strong   { background: #dcfce7; color: #166534; }
-.invs-ev-tag-moderate { background: #fef3c7; color: #92400e; }
-.invs-ev-tag-weak     { background: #f3f4f6; color: #6b7280; }
+.invs-ev-tag-strong   { background: var(--ax-success-soft); color: var(--ax-success-fg); }
+.invs-ev-tag-moderate { background: var(--ax-warning-soft); color: var(--ax-warning-fg); }
+.invs-ev-tag-weak     { background: var(--ax-neutral-soft); color: var(--ax-muted); }
 .invs-ev-value {
     font-size: .9375rem;
     font-weight: 700;
-    color: #374151;
+    color: var(--ax-text);
 }
 .invs-ev-source {
     font-size: .6875rem;
-    color: #9ca3af;
+    color: var(--ax-faint);
     margin-top: .125rem;
 }
 
 /* ── ASSIGNMENT ──────────────────────────────────────────────────────────────── */
 .invs-assignment-section {
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--ax-line);
     border-radius: .625rem;
     padding: .875rem 1rem;
-    background: #fff;
+    background: var(--ax-bg);
 }
 .invs-assigned-state {
     display: flex;
@@ -617,7 +617,7 @@
 .invs-assigned-name {
     font-size: .9375rem;
     font-weight: 600;
-    color: #111827;
+    color: var(--ax-ink);
 }
 .invs-unassigned-state {
     display: flex;
@@ -639,14 +639,14 @@
     padding: .25rem .625rem;
     border-radius: .375rem;
 }
-.invs-sla-ok      { background: #dcfce7; color: #166534; }
-.invs-sla-overdue { background: #fee2e2; color: #991b1b; }
+.invs-sla-ok      { background: var(--ax-success-soft); color: var(--ax-success-fg); }
+.invs-sla-overdue { background: var(--ax-danger-soft); color: var(--ax-danger-fg); }
 .invs-assign-btns { display: flex; gap: .5rem; flex-wrap: wrap; }
 
 /* ── PANEL META + EXPAND BUTTON ──────────────────────────────────────────────── */
 .invs-panel-meta {
     font-size: .75rem;
-    color: #9ca3af;
+    color: var(--ax-faint);
     padding: .375rem 0;
 }
 .invs-expand-full {
@@ -656,24 +656,24 @@
     gap: .375rem;
     width: 100%;
     padding: .875rem;
-    background: #f9fafb;
-    border: 1.5px solid #e5e7eb;
+    background: var(--ax-panel);
+    border: 1.5px solid var(--ax-line);
     border-radius: .625rem;
     font-size: .9375rem;
     font-weight: 600;
-    color: #374151;
+    color: var(--ax-text);
     text-decoration: none;
     cursor: pointer;
     transition: all .15s;
     margin-top: .25rem;
 }
-.invs-expand-full:hover { background: #eef2ff; border-color: #c7d2fe; color: #4f46e5; }
+.invs-expand-full:hover { background: var(--ax-accent-soft); border-color: var(--ax-accent-soft-border); color: var(--ax-accent-strong); }
 
 /* ── RESPONSIVE ──────────────────────────────────────────────────────────────── */
 @media (max-width: 900px) {
     .invs-wrap { flex-direction: column; height: auto; overflow: visible; }
     .invs-list-pane { width: 100% !important; min-width: 0; height: 50vh; }
-    .invs-panel { width: 100%; min-width: 0; border-left: none; border-top: 1px solid #e5e7eb; }
+    .invs-panel { width: 100%; min-width: 0; border-left: none; border-top: 1px solid var(--ax-line); }
     .invs-kpi-row { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 640px) {
@@ -682,49 +682,8 @@
     .invs-card-meta { min-width: 0; }
 }
 
-/* ── DARK MODE ───────────────────────────────────────────────────────────────── */
-.dark .invs-wrap              { background: #0f172a; }
-.dark .invs-list-pane         { background: #1e293b; border-color: #334155; }
-.dark .invs-list-header       { border-color: #334155; }
-.dark .invs-title             { color: #f1f5f9; }
-.dark .invs-subtitle          { color: #94a3b8; }
-.dark .invs-filters           { background: #1e293b; border-color: #334155; }
-.dark .invs-search            { background: #0f172a; border-color: #475569; color: #f1f5f9; }
-.dark .invs-search::placeholder { color: #64748b; }
-.dark .invs-select            { background: #0f172a; border-color: #475569; color: #e2e8f0; }
-.dark .invs-card              { border-color: #1e293b; }
-.dark .invs-card:hover        { background: #1e293b; }
-.dark .invs-card-selected     { background: #1e1b4b !important; border-color: #6366f1; }
-.dark .invs-card-entity       { color: #f1f5f9; }
-.dark .invs-card-type         { color: #94a3b8; }
-.dark .invs-card-desc         { color: #64748b; }
-.dark .invs-panel             { background: #1e293b; }
-.dark .invs-panel-header      { background: #1e293b; border-color: #334155; }
-.dark .invs-panel-id          { color: #f1f5f9; }
-.dark .invs-panel-body        { background: #1e293b; }
-.dark .invs-fact-section,
-.dark .invs-action-section,
-.dark .invs-evidence-section,
-.dark .invs-assignment-section { background: #0f172a; border-color: #334155; }
-.dark .invs-fact-entity       { color: #f1f5f9; }
-.dark .invs-fact-type         { color: #94a3b8; }
-.dark .invs-fact-desc         { color: #cbd5e1; }
-.dark .invs-kpi-card          { background: #0f172a; border-color: #334155; }
-.dark .invs-inference-section { background: #0f172a; border-color: #334155; }
-.dark .invs-inference-text    { color: #e2e8f0; }
-.dark .invs-action-title      { color: #f1f5f9; }
-.dark .invs-action-meta       { color: #94a3b8; }
-.dark .invs-ev-card           { background: #1e293b; border-color: #334155; }
-.dark .invs-ev-label          { color: #f1f5f9; }
-.dark .invs-ev-value          { color: #e2e8f0; }
-.dark .invs-ev-source         { color: #64748b; }
-.dark .invs-assigned-name     { color: #f1f5f9; }
-.dark .invs-expand-full       { background: #0f172a; border-color: #334155; color: #e2e8f0; }
-.dark .invs-expand-full:hover { background: #1e1b4b; border-color: #6366f1; color: #a5b4fc; }
-.dark .invs-pagination        { background: #1e293b; border-color: #334155; }
-.dark .invs-page-btn          { background: #0f172a; border-color: #334155; color: #e2e8f0; }
-.dark .invs-page-info         { color: #e2e8f0; }
-.dark .invs-page-count        { color: #64748b; }
+{{-- Dark mode is handled entirely by the design tokens above — every color
+     resolves from an --ax-* var that flips under .dark. No bespoke overrides. --}}
 </style>
 
 @php
@@ -843,12 +802,12 @@ if ($selected) {
              $selected above holds the side-panel Investigation model (or null). --}}
         @php $selCount = count($this->selected); $matchingCount = $this->getMatchingCount(); $effCount = $this->selectAllMatching ? $matchingCount : $selCount; @endphp
         <style>
-            .invs-bulkbar { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; background:#eef2ff; border:1px solid #c7d2fe; border-radius:.6rem; padding:.55rem .75rem; margin-bottom:.75rem; font-size:.78rem; }
-            .invs-bulkbar .cnt { font-weight:700; color:#3730a3; }
-            .invs-bulkbar select, .invs-bulkbar button { font-size:.75rem; border-radius:.4rem; border:1px solid #c7d2fe; padding:.25rem .5rem; background:#fff; cursor:pointer; }
-            .invs-bulkbar button:hover { background:#eef2ff; }
-            .invs-bulkbar .danger { border-color:#fecaca; color:#b91c1c; }
-            .invs-bulkbar .allmatch { color:#4338ca; text-decoration:underline; cursor:pointer; background:none; border:none; }
+            .invs-bulkbar { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; background:var(--ax-accent-soft); border:1px solid var(--ax-accent-soft-border); border-radius:.6rem; padding:.55rem .75rem; margin-bottom:.75rem; font-size:.78rem; }
+            .invs-bulkbar .cnt { font-weight:700; color:var(--ax-accent-strong); }
+            .invs-bulkbar select, .invs-bulkbar button { font-size:.75rem; border-radius:.4rem; border:1px solid var(--ax-accent-soft-border); padding:.25rem .5rem; background:var(--ax-bg); color:var(--ax-text); cursor:pointer; }
+            .invs-bulkbar button:hover { background:var(--ax-accent-soft); }
+            .invs-bulkbar .danger { border-color:var(--ax-danger); color:var(--ax-danger); }
+            .invs-bulkbar .allmatch { color:var(--ax-accent-strong); text-decoration:underline; cursor:pointer; background:none; border:none; }
             .invs-check { display:flex; align-items:center; padding-right:.25rem; }
             .invs-check input { width:1rem; height:1rem; cursor:pointer; }
         </style>
@@ -858,7 +817,7 @@ if ($selected) {
             @if(! $this->selectAllMatching && $selCount > 0 && $matchingCount > $selCount)
                 <button type="button" class="allmatch" wire:click="toggleSelectAllMatching">Select all {{ number_format($matchingCount) }} matching</button>
             @elseif($this->selectAllMatching)
-                <span style="color:#4338ca;">All matching selected</span>
+                <span style="color:var(--ax-accent-strong);">All matching selected</span>
             @endif
 
             <button type="button" wire:click="bulkAssignToMe">Assign to me</button>
@@ -911,14 +870,14 @@ if ($selected) {
                     default       => 'invs-status-open',
                 };
                 $iconBg    = match($inv->priority) {
-                    'critical','high' => '#fee2e2',
-                    'medium'          => '#fef3c7',
-                    default           => '#dbeafe',
+                    'critical','high' => 'var(--ax-danger-soft)',
+                    'medium'          => 'var(--ax-warning-soft)',
+                    default           => 'var(--ax-info-soft)',
                 };
                 $iconColor = match($inv->priority) {
-                    'critical','high' => '#dc2626',
-                    'medium'          => '#d97706',
-                    default           => '#2563eb',
+                    'critical','high' => 'var(--ax-danger)',
+                    'medium'          => 'var(--ax-warning)',
+                    default           => 'var(--ax-info)',
                 };
             @endphp
             <div
@@ -956,7 +915,7 @@ if ($selected) {
                     </div>
                     <div class="invs-impact-label">at risk</div>
                     @else
-                    <div class="invs-impact-value" style="color:#9ca3af">—</div>
+                    <div class="invs-impact-value" style="color:var(--ax-faint)">—</div>
                     @endif
                 </div>
 
@@ -1004,10 +963,10 @@ if ($selected) {
                     <div class="invs-panel-id">Investigation: {{ $invId }}</div>
                     @php
                         $sevStyle = match($selected->priority) {
-                            'critical' => 'background:#fee2e2;color:#991b1b',
-                            'high'     => 'background:#fef3c7;color:#92400e',
-                            'medium'   => 'background:#dbeafe;color:#1e40af',
-                            default    => 'background:#f3f4f6;color:#374151',
+                            'critical' => 'background:var(--ax-danger-soft);color:var(--ax-danger-fg)',
+                            'high'     => 'background:var(--ax-warning-soft);color:var(--ax-warning-fg)',
+                            'medium'   => 'background:var(--ax-info-soft);color:var(--ax-info-fg)',
+                            default    => 'background:var(--ax-neutral-soft);color:var(--ax-neutral-fg)',
                         };
                     @endphp
                     <span class="invs-panel-sev-badge" style="{{ $sevStyle }}">
@@ -1036,8 +995,8 @@ if ($selected) {
             <div class="invs-fact-section">
                 <div class="invs-fact-header">
                     @php
-                        $factIconBg    = match($selected->priority) { 'critical','high' => '#fee2e2', 'medium' => '#fef3c7', default => '#dbeafe' };
-                        $factIconColor = match($selected->priority) { 'critical','high' => '#dc2626', 'medium' => '#d97706', default => '#2563eb' };
+                        $factIconBg    = match($selected->priority) { 'critical','high' => 'var(--ax-danger-soft)', 'medium' => 'var(--ax-warning-soft)', default => 'var(--ax-info-soft)' };
+                        $factIconColor = match($selected->priority) { 'critical','high' => 'var(--ax-danger)', 'medium' => 'var(--ax-warning)', default => 'var(--ax-info)' };
                     @endphp
                     <div style="width:3rem;height:3rem;border-radius:50%;background:{{ $factIconBg }};display:flex;align-items:center;justify-content:center;flex-shrink:0">
                         <svg style="width:1.5rem;height:1.5rem;color:{{ $factIconColor }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1077,10 +1036,10 @@ if ($selected) {
                     <div class="invs-kpi-label">Evidence Strength</div>
                     <div class="invs-evidence-dots">
                         @for($i=1; $i<=5; $i++)
-                        <span style="color:{{ $i <= $evidenceDots ? '#22c55e' : '#d1d5db' }}">&#9679;</span>
+                        <span style="color:{{ $i <= $evidenceDots ? 'var(--ax-success)' : 'var(--ax-line)' }}">&#9679;</span>
                         @endfor
                     </div>
-                    <div class="invs-kpi-sub" style="font-weight:600;color:#111827">{{ $evidenceStrengthLabel }}</div>
+                    <div class="invs-kpi-sub" style="font-weight:600;color:var(--ax-ink)">{{ $evidenceStrengthLabel }}</div>
                 </div>
 
                 <div class="invs-kpi-card">
@@ -1140,14 +1099,14 @@ if ($selected) {
 
                 @else
                     <div class="invs-incomplete-banner">
-                        <div style="font-weight:700;color:#92400e;margin-bottom:.375rem">Investigation Incomplete</div>
-                        <p style="font-size:.875rem;color:#78350f;margin:.25rem 0">
+                        <div style="font-weight:700;color:var(--ax-warning-fg);margin-bottom:.375rem">Investigation Incomplete</div>
+                        <p style="font-size:.875rem;color:var(--ax-warning-fg);margin:.25rem 0">
                             {{ $selected->ai_summary
                                 ? \Illuminate\Support\Str::limit($selected->ai_summary, 120)
                                 : 'Sales decline confirmed, but available data does not establish a reliable primary driver.' }}
                         </p>
-                        <div style="font-size:.8125rem;font-weight:700;color:#92400e;margin-top:.625rem">Next Best Step</div>
-                        <p style="font-size:.8125rem;color:#78350f;margin:.25rem 0">
+                        <div style="font-size:.8125rem;font-weight:700;color:var(--ax-warning-fg);margin-top:.625rem">Next Best Step</div>
+                        <p style="font-size:.8125rem;color:var(--ax-warning-fg);margin:.25rem 0">
                             {{ $selected->ai_recommended_action ?? 'Review availability, pricing, and recent operational changes.' }}
                         </p>
                         <a href="{{ $expandUrl }}" class="invs-btn-warning">Open Investigation</a>
@@ -1186,13 +1145,13 @@ if ($selected) {
                 @if($selected->assignedTeam || $selected->assignedUser)
                     <div class="invs-assigned-state">
                         <div class="invs-assigned-info">
-                            <span class="invs-assigned-dot" style="background:#22c55e"></span>
+                            <span class="invs-assigned-dot" style="background:var(--ax-success)"></span>
                             <div>
                                 <div class="invs-assigned-name">
                                     {{ $selected->assignedUser?->name ?? $selected->assignedTeam?->name }}
                                 </div>
                                 @if($selected->assignedTeam && $selected->assignedUser)
-                                <div style="font-size:.75rem;color:#6b7280">{{ $selected->assignedTeam->name }}</div>
+                                <div style="font-size:.75rem;color:var(--ax-muted)">{{ $selected->assignedTeam->name }}</div>
                                 @endif
                             </div>
                         </div>

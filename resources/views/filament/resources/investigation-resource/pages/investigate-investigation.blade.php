@@ -12,10 +12,10 @@
 
 /* ── Info bar card ─────────────────────────────────────────────────────── */
 .inv2-infobar {
-    background:#fff;
-    border:1px solid #e5e7eb;
+    background:var(--ax-bg);
+    border:1px solid var(--ax-line);
     border-radius:.875rem;
-    box-shadow:0 1px 4px rgba(0,0,0,.07);
+    box-shadow:var(--ax-shadow);
     padding:1.25rem 1.5rem;
     margin-bottom:1.5rem;
     display:flex;
@@ -28,7 +28,7 @@
 .inv2-infobar-left  { flex:1; min-width:0; display:flex; flex-direction:column; gap:.875rem; }
 .inv2-infobar-right { flex-shrink:0; display:flex; flex-direction:column; gap:.5rem; min-width:220px; }
 .inv2-badge-group { display:flex; flex-direction:column; gap:.25rem; }
-.inv2-badge-group-label { font-size:.65rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:#9ca3af; }
+.inv2-badge-group-label { font-size:.65rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--ax-faint); }
 .inv2-badges-row { display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; }
 
 /* ── Badges ─────────────────────────────────────────────────────────────── */
@@ -40,19 +40,19 @@
     white-space:nowrap;
     line-height:1.4;
 }
-.inv2-badge-danger   { background:#fee2e2; color:#991b1b; }
-.inv2-badge-warning  { background:#fef3c7; color:#92400e; }
-.inv2-badge-info     { background:#dbeafe; color:#1e40af; }
-.inv2-badge-success  { background:#dcfce7; color:#166534; }
-.inv2-badge-gray     { background:#f3f4f6; color:#374151; }
-.inv2-badge-purple   { background:#ede9fe; color:#6d28d9; }
+.inv2-badge-danger   { background:var(--ax-danger-soft); color:var(--ax-danger-fg); }
+.inv2-badge-warning  { background:var(--ax-warning-soft); color:var(--ax-warning-fg); }
+.inv2-badge-info     { background:var(--ax-info-soft); color:var(--ax-info-fg); }
+.inv2-badge-success  { background:var(--ax-success-soft); color:var(--ax-success-fg); }
+.inv2-badge-gray     { background:var(--ax-neutral-soft); color:var(--ax-neutral-fg); }
+.inv2-badge-purple   { background:var(--ax-accent-soft); color:var(--ax-accent-strong); }
 
 /* ── Info bar description & divider ─────────────────────────────────────── */
-.inv2-infobar-desc { font-size:.875rem; color:#374151; line-height:1.65; }
-.inv2-infobar-divider { height:1px; background:#f3f4f6; margin:.5rem 0; }
+.inv2-infobar-desc { font-size:.875rem; color:var(--ax-text); line-height:1.65; }
+.inv2-infobar-divider { height:1px; background:var(--ax-line-2); margin:.5rem 0; }
 .inv2-infobar-right-row { display:flex; justify-content:space-between; gap:.5rem; }
-.inv2-infobar-right-label { font-size:.75rem; color:#9ca3af; font-weight:500; white-space:nowrap; }
-.inv2-infobar-right-value { font-size:.8125rem; color:#374151; font-weight:600; text-align:right; }
+.inv2-infobar-right-label { font-size:.75rem; color:var(--ax-faint); font-weight:500; white-space:nowrap; }
+.inv2-infobar-right-value { font-size:.8125rem; color:var(--ax-text); font-weight:600; text-align:right; }
 
 /* ── 2-column main grid ─────────────────────────────────────────────────── */
 .inv2-main-grid {
@@ -77,10 +77,10 @@
 
 /* ── Cards ──────────────────────────────────────────────────────────────── */
 .inv2-card {
-    background:#fff;
-    border:1px solid #e5e7eb;
+    background:var(--ax-bg);
+    border:1px solid var(--ax-line);
     border-radius:.875rem;
-    box-shadow:0 1px 4px rgba(0,0,0,.07);
+    box-shadow:var(--ax-shadow);
     overflow:hidden;
     display:flex;
     flex-direction:column;
@@ -88,15 +88,17 @@
 .inv2-card-head {
     display:flex; align-items:center; gap:.5rem;
     padding:.7rem 1.25rem;
-    border-bottom:1px solid #e5e7eb;
+    border-bottom:1px solid var(--ax-line);
+    background:var(--ax-panel);
+    color:var(--ax-text);
     font-size:.8rem; font-weight:700;
     text-transform:uppercase; letter-spacing:.05em;
 }
 .inv2-card-body { padding:1rem 1.25rem; }
 
-/* ── AI card header — purple gradient ───────────────────────────────────── */
+/* ── AI card header — violet gradient ───────────────────────────────────── */
 .inv2-ai-head {
-    background:linear-gradient(120deg,#4f46e5 0%,#7c3aed 100%);
+    background:linear-gradient(120deg,var(--ax-accent-800) 0%,var(--ax-accent-600) 100%);
     color:#fff;
     padding:.875rem 1.25rem;
     display:flex; align-items:center; gap:.625rem;
@@ -115,7 +117,7 @@
 
 /* ── AI accordion steps ─────────────────────────────────────────────────── */
 .inv2-steps { padding:.625rem 0; }
-.inv2-step { border-bottom:1px solid #f3f4f6; }
+.inv2-step { border-bottom:1px solid var(--ax-line-2); }
 .inv2-step:last-child { border-bottom:none; }
 details.inv2-step summary { list-style:none; cursor:pointer; }
 details.inv2-step summary::-webkit-details-marker { display:none; }
@@ -124,65 +126,65 @@ details.inv2-step summary::-webkit-details-marker { display:none; }
     padding:.7rem 1.25rem;
     user-select:none;
 }
-.inv2-step-summary:hover { background:#faf5ff; }
+.inv2-step-summary:hover { background:var(--ax-accent-soft); }
 .inv2-step-num {
     flex-shrink:0;
     width:1.5rem; height:1.5rem;
     border-radius:50%;
-    background:#ede9fe;
-    color:#6d28d9;
+    background:var(--ax-accent-soft);
+    color:var(--ax-accent-strong);
     font-size:.7rem; font-weight:800;
     display:flex; align-items:center; justify-content:center;
     margin-top:.1rem;
 }
 .inv2-step-q {
-    flex:1; font-size:.8125rem; font-weight:600; color:#374151; line-height:1.45;
+    flex:1; font-size:.8125rem; font-weight:600; color:var(--ax-text); line-height:1.45;
 }
 .inv2-step-chevron {
     flex-shrink:0; width:1rem; height:1rem;
-    color:#9ca3af; margin-top:.15rem;
+    color:var(--ax-faint); margin-top:.15rem;
     transition:transform .2s;
 }
 details[open].inv2-step .inv2-step-chevron { transform:rotate(90deg); }
 .inv2-step-body {
     padding:.125rem 1.25rem .875rem 3.5rem;
-    font-size:.8125rem; color:#374151; line-height:1.65;
+    font-size:.8125rem; color:var(--ax-text); line-height:1.65;
 }
 .inv2-ai-footer {
     padding:.75rem 1.25rem;
-    border-top:1px solid #ede9fe;
-    font-size:.725rem; color:#9ca3af;
-    background:#faf5ff;
+    border-top:1px solid var(--ax-accent-soft-border);
+    font-size:.725rem; color:var(--ax-muted);
+    background:var(--ax-accent-soft);
     display:flex; align-items:center; gap:.4rem;
 }
 
 /* ── Detection data table ───────────────────────────────────────────────── */
 .inv2-detect-head {
-    background:#f8fafc;
+    background:var(--ax-panel-2);
     padding:.7rem 1.25rem;
     display:flex; align-items:center; gap:.5rem;
-    border-bottom:1px solid #e5e7eb;
+    border-bottom:1px solid var(--ax-line);
     font-size:.8rem; font-weight:700;
-    text-transform:uppercase; letter-spacing:.05em; color:#374151;
+    text-transform:uppercase; letter-spacing:.05em; color:var(--ax-text);
 }
 .inv2-detect-table { width:100%; border-collapse:collapse; }
 .inv2-detect-table th {
     font-size:.7rem; font-weight:700; text-transform:uppercase;
-    letter-spacing:.05em; color:#6b7280;
+    letter-spacing:.05em; color:var(--ax-muted);
     padding:.55rem 1.25rem;
-    border-bottom:1px solid #e5e7eb;
+    border-bottom:1px solid var(--ax-line);
     text-align:left;
-    background:#f9fafb;
+    background:var(--ax-panel);
 }
 .inv2-detect-table td {
     padding:.55rem 1.25rem;
-    font-size:.8125rem; color:#374151;
-    border-bottom:1px solid #f3f4f6;
+    font-size:.8125rem; color:var(--ax-text);
+    border-bottom:1px solid var(--ax-line-2);
     line-height:1.4;
 }
 .inv2-detect-table tr:last-child td { border-bottom:none; }
-.inv2-detect-table tbody tr:nth-child(even) td { background:#fafafa; }
-.inv2-detect-table td:last-child { font-weight:600; color:#111827; text-align:right; }
+.inv2-detect-table tbody tr:nth-child(even) td { background:var(--ax-panel); }
+.inv2-detect-table td:last-child { font-weight:600; color:var(--ax-ink); text-align:right; }
 
 /* ── Action Taken card ──────────────────────────────────────────────────── */
 .inv2-action-head {
@@ -196,54 +198,23 @@ details[open].inv2-step .inv2-step-chevron { transform:rotate(90deg); }
 .inv2-action-row {
     display:flex; gap:.75rem;
     padding:.7rem 1.25rem;
-    border-bottom:1px solid #f3f4f6;
+    border-bottom:1px solid var(--ax-line-2);
     align-items:flex-start;
 }
 .inv2-action-row:last-child { border-bottom:none; }
-.inv2-action-label { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#9ca3af; min-width:110px; flex-shrink:0; margin-top:.1rem; }
-.inv2-action-value { font-size:.8125rem; color:#374151; line-height:1.5; }
+.inv2-action-label { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--ax-faint); min-width:110px; flex-shrink:0; margin-top:.1rem; }
+.inv2-action-value { font-size:.8125rem; color:var(--ax-text); line-height:1.5; }
 
 /* ── Resolution card ────────────────────────────────────────────────────── */
 .inv2-res-head {
-    background:linear-gradient(120deg,#3730a3 0%,#4f46e5 100%);
+    background:linear-gradient(120deg,var(--ax-accent-900) 0%,var(--ax-accent-700) 100%);
     color:#fff;
     padding:.7rem 1.25rem;
     display:flex; align-items:center; gap:.5rem;
     font-size:.8rem; font-weight:700;
     text-transform:uppercase; letter-spacing:.05em;
 }
-.inv2-empty { padding:1.5rem 1.25rem; font-size:.8125rem; color:#9ca3af; text-align:center; }
-
-/* ── Dark mode ──────────────────────────────────────────────────────────── */
-.dark .inv2-infobar         { background:#1f2937; border-color:#374151; }
-.dark .inv2-infobar-divider { background:#374151; }
-.dark .inv2-infobar-desc    { color:#d1d5db; }
-.dark .inv2-infobar-right-label { color:#6b7280; }
-.dark .inv2-infobar-right-value { color:#e5e7eb; }
-.dark .inv2-badge-group-label   { color:#6b7280; }
-.dark .inv2-card            { background:#1f2937; border-color:#374151; }
-.dark .inv2-card-head       { background:#111827; border-color:#374151; color:#d1d5db; }
-.dark .inv2-step-summary:hover  { background:#2e1065; }
-.dark .inv2-step-q          { color:#e5e7eb; }
-.dark .inv2-step            { border-color:#374151; }
-.dark .inv2-step-body       { color:#d1d5db; }
-.dark .inv2-step-num        { background:#3b0764; color:#c4b5fd; }
-.dark .inv2-ai-footer       { background:#1e1b4b; border-color:#3730a3; color:#818cf8; }
-.dark .inv2-detect-head     { background:#111827; border-color:#374151; color:#d1d5db; }
-.dark .inv2-detect-table th { background:#111827; color:#9ca3af; border-color:#374151; }
-.dark .inv2-detect-table td { color:#d1d5db; border-color:#374151; }
-.dark .inv2-detect-table tbody tr:nth-child(even) td { background:#111827; }
-.dark .inv2-detect-table td:last-child { color:#f9fafb; }
-.dark .inv2-action-row      { border-color:#374151; }
-.dark .inv2-action-label    { color:#6b7280; }
-.dark .inv2-action-value    { color:#d1d5db; }
-.dark .inv2-empty           { color:#6b7280; }
-.dark .inv2-badge-danger    { background:#450a0a; color:#f87171; }
-.dark .inv2-badge-warning   { background:#451a03; color:#fbbf24; }
-.dark .inv2-badge-info      { background:#172554; color:#93c5fd; }
-.dark .inv2-badge-success   { background:#052e16; color:#4ade80; }
-.dark .inv2-badge-gray      { background:#374151; color:#d1d5db; }
-.dark .inv2-badge-purple    { background:#2e1065; color:#c4b5fd; }
+.inv2-empty { padding:1.5rem 1.25rem; font-size:.8125rem; color:var(--ax-faint); text-align:center; }
 </style>
 
 @php
@@ -370,7 +341,7 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
 
         @if($record->description)
         <div>
-            <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9ca3af;margin-bottom:.375rem">Description</div>
+            <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ax-faint);margin-bottom:.375rem">Description</div>
             <p class="inv2-infobar-desc">{{ $record->description }}</p>
         </div>
         @endif
@@ -559,7 +530,7 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
     {{-- ── RIGHT: Detection Data (Raw Context) ──────────────────────────── --}}
     <div class="inv2-card">
         <div class="inv2-detect-head">
-            <svg style="width:1rem;height:1rem;color:#6b7280" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <svg style="width:1rem;height:1rem;color:var(--ax-muted)" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
             </svg>
             Detection Data (Raw Context)
@@ -606,7 +577,7 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
         @if($completedAction)
             <div class="inv2-action-row">
                 <span class="inv2-action-label">Action</span>
-                <span class="inv2-action-value" style="font-weight:600;color:#111827">{{ $completedAction->title }}</span>
+                <span class="inv2-action-value" style="font-weight:600;color:var(--ax-ink)">{{ $completedAction->title }}</span>
             </div>
             @if($completedAction->description)
             <div class="inv2-action-row">
@@ -623,7 +594,7 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                 <span class="inv2-action-label">Taken By</span>
                 <span class="inv2-action-value">
                     {{ $completedAction->assignedTo->name }}
-                    @if($completedAction->assignedTo->is_super_admin ?? false)<span style="color:#9ca3af"> (Admin)</span>@endif
+                    @if($completedAction->assignedTo->is_super_admin ?? false)<span style="color:var(--ax-faint)"> (Admin)</span>@endif
                 </span>
             </div>
             @endif
@@ -693,17 +664,17 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
 
             @if($record->outcome)
             @php $outcome = $record->outcome; @endphp
-            <div class="inv2-action-row" style="background:#f0fdf4;flex-wrap:wrap;gap:.5rem">
+            <div class="inv2-action-row" style="background:var(--ax-success-soft);flex-wrap:wrap;gap:.5rem">
                 <span class="inv2-action-label">Financial</span>
                 <span class="inv2-action-value" style="display:flex;gap:1rem;flex-wrap:wrap">
                     @if($outcome->revenue_at_risk)
-                    <span style="color:#dc2626">At Risk: ${{ number_format($outcome->revenue_at_risk,0) }}</span>
+                    <span style="color:var(--ax-danger)">At Risk: ${{ number_format($outcome->revenue_at_risk,0) }}</span>
                     @endif
                     @if($outcome->observed_recovery)
-                    <span style="color:#16a34a">Recovered: ${{ number_format($outcome->observed_recovery,0) }}</span>
+                    <span style="color:var(--ax-success)">Recovered: ${{ number_format($outcome->observed_recovery,0) }}</span>
                     @endif
                     @if($outcome->getRecoveryRate() !== null)
-                    <span style="color:#2563eb">Rate: {{ $outcome->getRecoveryRate() }}%</span>
+                    <span style="color:var(--ax-info)">Rate: {{ $outcome->getRecoveryRate() }}%</span>
                     @endif
                 </span>
             </div>
@@ -718,23 +689,21 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
 {{-- ═══ M23 — Data-health caveats + Watch/Snooze status + Collaboration ═══ --}}
 <style>
     .col-wrap { display:flex; flex-direction:column; gap:1.25rem; margin-top:1.25rem; }
-    .col-caveat { background:#fffbeb; border:1px solid #fde68a; border-radius:.75rem; padding:.9rem 1.15rem; color:#92400e; font-size:.82rem; }
+    .col-caveat { background:var(--ax-warning-soft); border:1px solid var(--ax-warning-soft); border-radius:.75rem; padding:.9rem 1.15rem; color:var(--ax-warning-fg); font-size:.82rem; }
     .col-caveat strong { display:block; margin-bottom:.3rem; }
     .col-status-row { display:flex; flex-wrap:wrap; gap:.75rem; }
     .col-chip { display:inline-flex; align-items:center; gap:.4rem; padding:.35rem .75rem; border-radius:9999px; font-size:.75rem; font-weight:600; }
-    .col-chip.watch { background:#dbeafe; color:#1e40af; }
-    .col-chip.snooze { background:#fef3c7; color:#92400e; }
-    .col-card { background:#fff; border:1px solid #e5e7eb; border-radius:.875rem; box-shadow:0 1px 4px rgba(0,0,0,.07); overflow:hidden; }
-    .col-card-head { display:flex; align-items:center; gap:.5rem; padding:.75rem 1.25rem; border-bottom:1px solid #f3f4f6; font-weight:700; font-size:.9rem; color:#111827; }
+    .col-chip.watch { background:var(--ax-info-soft); color:var(--ax-info-fg); }
+    .col-chip.snooze { background:var(--ax-warning-soft); color:var(--ax-warning-fg); }
+    .col-card { background:var(--ax-bg); border:1px solid var(--ax-line); border-radius:.875rem; box-shadow:var(--ax-shadow); overflow:hidden; }
+    .col-card-head { display:flex; align-items:center; gap:.5rem; padding:.75rem 1.25rem; border-bottom:1px solid var(--ax-line-2); background:var(--ax-panel); font-weight:700; font-size:.9rem; color:var(--ax-ink); }
     .col-card-body { padding:1rem 1.25rem; display:flex; flex-direction:column; gap:.9rem; }
-    .col-comment { display:flex; flex-direction:column; gap:.25rem; padding-bottom:.85rem; border-bottom:1px dashed #f3f4f6; }
+    .col-comment { display:flex; flex-direction:column; gap:.25rem; padding-bottom:.85rem; border-bottom:1px dashed var(--ax-line-2); }
     .col-comment:last-child { border-bottom:none; padding-bottom:0; }
-    .col-comment-meta { font-size:.72rem; color:#9ca3af; }
-    .col-comment-author { font-weight:700; color:#374151; }
-    .col-comment-body { font-size:.85rem; color:#1f2937; line-height:1.55; white-space:pre-wrap; }
-    .col-empty { color:#9ca3af; font-size:.82rem; }
-    .dark .col-card { background:#1f2937; border-color:#374151; }
-    .dark .col-card-head { background:#111827; border-color:#374151; color:#d1d5db; }
+    .col-comment-meta { font-size:.72rem; color:var(--ax-faint); }
+    .col-comment-author { font-weight:700; color:var(--ax-text); }
+    .col-comment-body { font-size:.85rem; color:var(--ax-ink); line-height:1.55; white-space:pre-wrap; }
+    .col-empty { color:var(--ax-faint); font-size:.82rem; }
 </style>
 
 <div class="col-wrap">
@@ -772,7 +741,7 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
     <div class="col-card">
         <div class="col-card-head">
             Collaboration
-            <span style="margin-left:auto;font-weight:500;color:#9ca3af;font-size:.75rem;">{{ $record->comments->count() }} comment(s)</span>
+            <span style="margin-left:auto;font-weight:500;color:var(--ax-faint);font-size:.75rem;">{{ $record->comments->count() }} comment(s)</span>
         </div>
         <div class="col-card-body">
             @php $comments = $record->comments->whereNull('parent_id'); @endphp
@@ -781,7 +750,7 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                     <div class="col-comment-meta">
                         <span class="col-comment-author">{{ $comment->getAuthorLabel() }}</span>
                         · {{ $comment->created_at->diffForHumans() }}
-                        @if($comment->isFromEmail()) · <span style="color:#92400e;">via email</span> @endif
+                        @if($comment->isFromEmail()) · <span style="color:var(--ax-warning-fg);">via email</span> @endif
                         @if($comment->wasEdited()) · edited @endif
                     </div>
                     <div class="col-comment-body">{{ $comment->body }}</div>
