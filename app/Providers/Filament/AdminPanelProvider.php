@@ -43,7 +43,7 @@ class AdminPanelProvider extends PanelProvider
                 'primary' => Color::Violet,
             ])
             ->brandName('Autnyx')
-            // Global design tokens + primitives (Track U) - loaded with no build step.
+            // Global design tokens + primitives (Track U) — no build step.
             ->renderHook(
                 'panels::head.end',
                 fn (): string => '<link rel="stylesheet" href="'
