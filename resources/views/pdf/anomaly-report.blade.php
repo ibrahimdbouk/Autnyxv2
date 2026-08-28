@@ -130,14 +130,14 @@
         }
         .step-badge { margin-bottom: 4px; }
 
-        /* Step colours */
-        .sc-blue   { background: #3b82f6; }
-        .sc-violet { background: #8b5cf6; }
-        .sc-orange { background: #f97316; }
-        .sc-red    { background: #ef4444; }
-        .sc-teal   { background: #14b8a6; }
-        .sc-indigo { background: #6366f1; }
-        .sc-green  { background: #22c55e; }
+        /* Step colours — aligned to the app's design-system chart palette (AX_SERIES) */
+        .sc-blue   { background: #2563eb; }
+        .sc-violet { background: #7c3aed; }
+        .sc-orange { background: #d97706; }
+        .sc-red    { background: #dc2626; }
+        .sc-teal   { background: #0d9488; }
+        .sc-indigo { background: #a855f7; }
+        .sc-green  { background: #16a34a; }
 
         /* ── Action / resolution boxes ── */
         .action-box {

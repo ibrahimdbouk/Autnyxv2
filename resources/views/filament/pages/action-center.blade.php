@@ -873,7 +873,7 @@ $acDueLabel = static function(?string $due): string {
                         $isOv   = $dlDue && $dlDue->isPast();
                         $dlDot  = $isOv ? '#dc2626' : ($dlDue && $dlDue->diffInHours(now()) < 4 ? '#f59e0b' : '#16a34a');
                     @endphp
-                    <div class="ac-deadline-item" wire:click="selectAction({{ $dl['id'] }})">
+                    <div class="ac-deadline-item" wire:click="selectAction({{ $dl['id'] }})" wire:keydown.enter="selectAction({{ $dl['id'] }})" tabindex="0" role="button" aria-label="Open action: {{ \Illuminate\Support\Str::limit($dl['title'], 34) }}">
                         <span class="ac-deadline-dot" style="background:{{ $dlDot }}"></span>
                         <div class="ac-deadline-info">
                             <div class="ac-deadline-title">{{ \Illuminate\Support\Str::limit($dl['title'], 34) }}</div>

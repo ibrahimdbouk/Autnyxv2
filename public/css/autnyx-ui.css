@@ -30,7 +30,7 @@
   --ax-ink:    #111827;
   --ax-text:   #374151;
   --ax-muted:  #6b7280;
-  --ax-faint:  #9ca3af;
+  --ax-faint:  #858c99;  /* darkened from #9ca3af for AA — micro-labels/meta; muted+ for body text */
   --ax-line:   #e5e7eb;
   --ax-line-2: #f3f4f6;
   --ax-bg:     #ffffff;
@@ -82,7 +82,7 @@
   --ax-ink:    #f9fafb;
   --ax-text:   #d1d5db;
   --ax-muted:  #9ca3af;
-  --ax-faint:  #6b7280;
+  --ax-faint:  #828a98;  /* lightened from #6b7280 for AA contrast on dark surfaces */
   --ax-line:   #374151;
   --ax-line-2: #1f2937;
   --ax-bg:     #111827;
@@ -286,4 +286,17 @@ a.ax-stat:hover { box-shadow: var(--ax-shadow-md); transform: translateY(-1px); 
 .ax-sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ---- Print: drop chrome, flatten to ink-on-paper, keep cards intact ---- */
+@media print {
+  .fi-sidebar, .fi-topbar, .fi-sidebar-nav, .fi-breadcrumbs { display: none !important; }
+  .fi-main, .fi-page { margin: 0 !important; padding: 0 !important; max-width: none !important; }
+  body, .fi-body { background: #fff !important; }
+  .ax-card, .db-card, .db-kpi, .inv2-card, .inv2-infobar, .ac-card, .ac-detail, .ac-sc,
+  .fb-card, .fb-hero, .qc-card, .dh-card, .dh-summary, .invs-fact-section, .col-card {
+    box-shadow: none !important;
+    break-inside: avoid;
+  }
+  a { text-decoration: none; color: inherit; }
 }

@@ -581,7 +581,7 @@ a.db-kpi:hover::after { opacity:1; }
                     $pct = round(($driver->cnt / $totalDriverAnomalies) * 100);
                     $driverUrl = \App\Filament\Resources\AnomalyResource::getUrl('index', ['tableFilters' => ['rule_type' => ['value' => $driver->rule_type]]]);
                 @endphp
-                <tr class="db-driver-link" onclick="window.location.href='{{ $driverUrl }}'" title="View {{ $dbRuleLabel($driver->rule_type) }} anomalies">
+                <tr class="db-driver-link" onclick="window.location.href='{{ $driverUrl }}'" onkeydown="if(event.key==='Enter'){window.location.href='{{ $driverUrl }}'}" tabindex="0" role="link" aria-label="View {{ $dbRuleLabel($driver->rule_type) }} anomalies" title="View {{ $dbRuleLabel($driver->rule_type) }} anomalies">
                     <td style="width:40%">
                         <span class="db-driver-name">{{ $dbRuleLabel($driver->rule_type) }}</span>
                     </td>
