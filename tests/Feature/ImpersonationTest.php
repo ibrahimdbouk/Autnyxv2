@@ -44,6 +44,11 @@ class ImpersonationTest extends TestCase
 
         $this->assertAuthenticatedAs($this->admin);
         $this->assertSame($super->id, session(ImpersonationController::SESSION_KEY));
+        // Regression: the session password hash must track the swapped-in user,
+        // or AuthenticateSession force-logs-out (→ route('login') 500) on the
+        // next panel request.
+        $hashKey = 'password_hash_' . \Illuminate\Support\Facades\Auth::getDefaultDriver();
+        $this->assertSame($this->admin->getAuthPassword(), session($hashKey));
         $this->assertDatabaseHas('audit_logs', [
             'tenant_id'  => $this->tenant->id,
             'event_type' => AuditLog::EVENT_IMPERSONATION_STARTED,
@@ -54,6 +59,7 @@ class ImpersonationTest extends TestCase
 
         $this->assertAuthenticatedAs($super);
         $this->assertNull(session(ImpersonationController::SESSION_KEY));
+        $this->assertSame($super->getAuthPassword(), session($hashKey), 'hash restored to the super admin');
         $this->assertDatabaseHas('audit_logs', [
             'tenant_id'  => $this->tenant->id,
             'event_type' => AuditLog::EVENT_IMPERSONATION_STOPPED,

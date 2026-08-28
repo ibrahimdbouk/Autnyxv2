@@ -35,6 +35,7 @@ class ImpersonationController extends Controller
         $actorEmail = $actor->email;
 
         Auth::login($target);
+        $this->syncSessionPasswordHash($target);
         // Store AFTER login so it survives the login's session migration.
         session()->put(self::SESSION_KEY, $actorId);
 
@@ -60,6 +61,7 @@ class ImpersonationController extends Controller
 
         Auth::login($impersonator);
         session()->regenerate();
+        $this->syncSessionPasswordHash($impersonator);
 
         $this->audit(
             $wasActingAs?->tenant_id ?? $impersonator->tenant_id,
@@ -69,6 +71,21 @@ class ImpersonationController extends Controller
         );
 
         return redirect('/ops');
+    }
+
+    /**
+     * Keep the session's stored password hash in step with the user we just
+     * switched to. The admin panel runs Laravel's AuthenticateSession middleware,
+     * which force-logs-out (and redirects to route('login')) the moment the
+     * session hash no longer matches the current user — exactly what a user swap
+     * does. Updating it here makes impersonation transparent to that middleware.
+     */
+    private function syncSessionPasswordHash(User $user): void
+    {
+        session()->put(
+            'password_hash_' . Auth::getDefaultDriver(),
+            $user->getAuthPassword(),
+        );
     }
 
     private function audit(?int $tenantId, ?int $userId, string $event, string $description): void

@@ -11,6 +11,12 @@ Route::get('/', function () {
     return view('welcome');
 });
 
+// Safety net: Laravel's AuthenticateSession middleware redirects to a route
+// named `login` when it force-logs-out a session; Filament names its own login
+// routes per-panel, so without this a forced logout 500s. Points at the tenant
+// panel login.
+Route::get('/login', fn () => redirect('/admin/login'))->name('login');
+
 // 1b — per-tenant OIDC single sign-on (session-backed state/nonce via `web`).
 Route::prefix('sso')->group(function () {
     Route::get('/start', [SsoController::class, 'start'])->name('sso.start');
