@@ -3,11 +3,18 @@
 namespace App\Services\Ops;
 
 use App\Models\Anomaly;
+use App\Models\AuditLog;
+use App\Models\Import;
+use App\Models\Investigation;
 use App\Models\InventoryLevel;
 use App\Models\Product;
+use App\Models\PurchaseOrder;
 use App\Models\SalesTransaction;
+use App\Models\Store;
+use App\Models\Supplier;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\Recovery\AnomalyRecoveryService;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -89,6 +96,70 @@ class TenantUsageService
             'observed_recovery'  => (float) ($recovery[$t->id] ?? 0),
             'last_ingestion_at'  => $lastIngestion[$t->id] ?? null,
         ])->all();
+    }
+
+    /**
+     * Full profile for one tenant — the /ops deep-dive.
+     *
+     * @return array<string,mixed>
+     */
+    public function forTenant(Tenant $tenant): array
+    {
+        $id = $tenant->id;
+
+        $recovery = app(AnomalyRecoveryService::class)->summary($id);
+
+        $anomaliesBySeverity = Anomaly::where('tenant_id', $id)->active()
+            ->selectRaw('severity, COUNT(*) AS c')->groupBy('severity')->pluck('c', 'severity')->all();
+
+        $sso = $tenant->ssoConnection;
+
+        return [
+            'tenant'   => $tenant,
+            'currency' => $tenant->currencyCode(),
+            'volumes'  => [
+                'users'           => User::where('tenant_id', $id)->count(),
+                'admins'          => User::where('tenant_id', $id)->where('is_tenant_admin', true)->count(),
+                'stores'          => Store::where('tenant_id', $id)->count(),
+                'products'        => Product::where('tenant_id', $id)->count(),
+                'sales_rows'      => SalesTransaction::where('tenant_id', $id)->count(),
+                'inventory_rows'  => InventoryLevel::where('tenant_id', $id)->count(),
+                'purchase_orders' => PurchaseOrder::where('tenant_id', $id)->count(),
+                'suppliers'       => Supplier::where('tenant_id', $id)->count(),
+            ],
+            'anomalies' => [
+                'active'   => Anomaly::where('tenant_id', $id)->active()->count(),
+                'resolved' => Anomaly::where('tenant_id', $id)->where('lifecycle_state', Anomaly::LIFECYCLE_RESOLVED)->count(),
+                'high'     => (int) ($anomaliesBySeverity['high'] ?? 0),
+                'medium'   => (int) ($anomaliesBySeverity['medium'] ?? 0),
+                'low'      => (int) ($anomaliesBySeverity['low'] ?? 0),
+            ],
+            'investigations' => [
+                'total' => Investigation::where('tenant_id', $id)->count(),
+                'open'  => Investigation::where('tenant_id', $id)
+                    ->whereIn('status', [Investigation::STATUS_OPEN, Investigation::STATUS_IN_PROGRESS])->count(),
+            ],
+            'recovery' => [
+                'observed_total' => (float) $recovery['observed_total'],
+                'observed_mtd'   => (float) $recovery['observed_mtd'],
+                'active_at_risk' => (float) $recovery['active_at_risk'],
+                'clear_rate'     => $recovery['clear_rate'],
+            ],
+            'sso' => [
+                'enabled' => (bool) ($sso?->enabled),
+                'label'   => $sso?->label,
+                'issuer'  => $sso?->issuer,
+            ],
+            'recent_imports' => Import::where('tenant_id', $id)
+                ->orderByDesc('created_at')->limit(5)
+                ->get(['id', 'data_type', 'status', 'total_rows', 'created_at']),
+            'recent_activity' => AuditLog::where('tenant_id', $id)
+                ->orderByDesc('created_at')->limit(15)
+                ->get(['event_type', 'description', 'user_id', 'created_at']),
+            'users' => User::where('tenant_id', $id)
+                ->orderByDesc('is_tenant_admin')->orderBy('name')
+                ->get(['id', 'name', 'email', 'is_tenant_admin', 'is_super_admin', 'last_login_at']),
+        ];
     }
 
     /**

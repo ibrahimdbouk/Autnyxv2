@@ -38,6 +38,9 @@ return [
 
         // Audit log — kept long for compliance (~3 years).
         'audit_logs'          => ['days' => (int) env('RETAIN_AUDIT_DAYS', 1095),       'column' => 'created_at'],
+
+        // Scheduled-task run history (ops health) — short.
+        'job_runs'            => ['days' => (int) env('RETAIN_JOB_RUNS_DAYS', 90),      'column' => 'ran_at'],
     ],
 
 ];

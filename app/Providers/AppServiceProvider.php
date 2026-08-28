@@ -78,6 +78,24 @@ class AppServiceProvider extends ServiceProvider
             fn () => \Illuminate\Validation\Rules\Password::min(10)->mixedCase()->numbers()
         );
 
+        // Ops observability — record scheduled-task runs + auth activity.
+        \Illuminate\Support\Facades\Event::listen(
+            \Illuminate\Console\Events\ScheduledTaskFinished::class,
+            [\App\Listeners\RecordScheduledTaskRun::class, 'finished'],
+        );
+        \Illuminate\Support\Facades\Event::listen(
+            \Illuminate\Console\Events\ScheduledTaskFailed::class,
+            [\App\Listeners\RecordScheduledTaskRun::class, 'failed'],
+        );
+        \Illuminate\Support\Facades\Event::listen(
+            \Illuminate\Auth\Events\Login::class,
+            [\App\Listeners\RecordAuthActivity::class, 'login'],
+        );
+        \Illuminate\Support\Facades\Event::listen(
+            \Illuminate\Auth\Events\Failed::class,
+            [\App\Listeners\RecordAuthActivity::class, 'failed'],
+        );
+
         // Nightly automation pipeline (M9 + M10 + M11 + M15 corrected order)
         //
         // IMPORTANT: baselines must run BEFORE detection so that detection

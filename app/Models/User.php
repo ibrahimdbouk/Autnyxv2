@@ -39,6 +39,7 @@ class User extends Authenticatable implements FilamentUser, HasTenants
             'is_super_admin'    => 'boolean',
             'is_tenant_admin'   => 'boolean',
             'visible_screens'   => 'array',
+            'last_login_at'     => 'datetime',
         ];
     }
 
@@ -277,6 +278,11 @@ class User extends Authenticatable implements FilamentUser, HasTenants
 
     /**
      * Super-admins can access any tenant; regular users only their own.
+     *
+     * Suspension (2e/2b) lockout: a suspended tenant's own users are blocked
+     * from its panel until it is reactivated. Super admins are exempt (they
+     * manage suspension), and an active impersonation session is exempt too so
+     * support can still inspect a suspended tenant.
      */
     public function canAccessTenant(Model $tenant): bool
     {
@@ -284,6 +290,16 @@ class User extends Authenticatable implements FilamentUser, HasTenants
             return true;
         }
 
-        return $this->tenant_id === $tenant->id;
+        if ($this->tenant_id !== $tenant->id) {
+            return false;
+        }
+
+        // Locked out while suspended — unless this is a super-admin impersonating.
+        if (($tenant->status ?? Tenant::STATUS_ACTIVE) === Tenant::STATUS_SUSPENDED
+            && ! session()->has(\App\Http\Controllers\ImpersonationController::SESSION_KEY)) {
+            return false;
+        }
+
+        return true;
     }
 }
