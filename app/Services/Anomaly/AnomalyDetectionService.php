@@ -24,11 +24,41 @@ class AnomalyDetectionService
     ) {}
 
     /**
-     * Recovery lifecycle (R2) — rule families whose per-subject evaluability the
-     * reconciler can confirm from the primed input maps, so a cleared subject can
-     * be advanced toward recovery. Rules outside these families stay conservative
-     * (a cleared subject goes dormant, never auto-resolves) until R2b broadens
-     * coverage. Recovery is only ever claimed where the rule's input was present.
+     * Recovery lifecycle (R2/R2c) — rule families whose per-subject evaluability
+     * the reconciler can confirm from a primed input set, so a cleared subject can
+     * be advanced toward recovery only where the rule's input was actually present
+     * this run. A subject whose input vanished stays dormant — a data gap is never
+     * read as recovery.
+     *
+     * Each family is gated on the input that DETERMINES whether the rule could
+     * evaluate the subject:
+     *   • INVENTORY   → the primed on-hand snapshot (a subject with no inventory
+     *                   row this run wasn't evaluated).
+     *   • DEMAND      → the primed recent-demand set (no recent sales = not
+     *                   evaluated; can't tell recovery from a quiet gap).
+     *   • FIN_SALES   → recent priced sales (price_anomaly / margin_erosion read
+     *                   the last-30d transaction stream; no recent sales = the
+     *                   SKU couldn't be priced this run). Uses the demand set.
+     *   • COST        → PurchaseOrder unit-cost rows (cost_spike can only flag a
+     *                   SKU that HAS PO cost data; if that data vanished, dormant).
+     *   • CAPITAL     → the on-hand snapshot (slow_moving_capital values on-hand
+     *                   inventory; no inventory row = not evaluated).
+     *
+     * Rules NOT listed here keep the prior "rule ran and didn't flag = cleared"
+     * fallback ON PURPOSE, because there a gap can't masquerade as recovery:
+     *   • discount_signal — a pure product-master check (list price vs. cost); the
+     *     master is present whenever detection runs, so a fixed price is real
+     *     recovery, not a data gap.
+     *   • revenue_concentration_risk / store_outlier — tenant/store-level (sku is
+     *     null → already evaluable-by-default).
+     *   • PO / supplier rules (po_overdue, receiving_discrepancy, po_late_receipt,
+     *     supplier_fill_rate, supplier_lead_time_drift) — subjects keyed by PO /
+     *     supplier, not sku/store; "PO no longer overdue = received" is genuine
+     *     recovery, and strict gating would need PO/supplier priming that would
+     *     freeze legitimate recoveries.
+     *   • data-quality rules (import_frequency_gap, duplicate_transaction_ids,
+     *     sku_master_drift, location_proliferation) — tenant/source-wide scans;
+     *     "no longer firing = fixed" is exactly correct.
      */
     private const INVENTORY_COVERAGE = [
         'stockout_risk', 'safety_stock_breach', 'negative_inventory', 'overstock',
@@ -39,6 +69,15 @@ class AnomalyDetectionService
         'sales_spike', 'sales_drop', 'demand_seasonality_breach', 'demand_erosion',
         'demand_forecast_break', 'return_rate_spike', 'cannibalization_signal', 'channel_mix_shift',
     ];
+
+    /** R2c — financial per-SKU rules that read the recent priced-sales stream. */
+    private const FIN_SALES_COVERAGE = ['price_anomaly', 'margin_erosion'];
+
+    /** R2c — cost_spike: only ever flags a SKU that has PurchaseOrder cost data. */
+    private const COST_COVERAGE = ['cost_spike'];
+
+    /** R2c — slow_moving_capital: values on-hand inventory per SKU. */
+    private const CAPITAL_COVERAGE = ['slow_moving_capital'];
 
     /**
      * Tracks anomaly IDs touched by the current rule run.
@@ -54,6 +93,14 @@ class AnomalyDetectionService
 
     /** @var array<string,float>|null  sku => unit cost (unit_cost ?? selling_price), primed per run */
     private ?array $costMap = null;
+
+    /**
+     * R2c — SKUs that have PurchaseOrder unit-cost data this run, primed once.
+     * cost_spike can only flag a SKU present here, so it is the exact evaluability
+     * signal for the cost family: a SKU whose PO cost data vanished is a data gap,
+     * not a recovery. @var array<string,true>|null
+     */
+    private ?array $poCostSkus = null;
 
     /**
      * Latest on-hand snapshot per "store_id|sku", primed ONCE per run and shared
@@ -126,6 +173,26 @@ class AnomalyDetectionService
                 $sku = trim((string) $p->sku);
                 $this->priceMap[$sku] = (float) ($p->selling_price ?: $p->unit_cost ?: 0);
                 $this->costMap[$sku]  = (float) ($p->unit_cost ?: $p->selling_price ?: 0);
+            });
+    }
+
+    /**
+     * R2c — prime the set of SKUs that have PurchaseOrder unit-cost data. This is
+     * the exact input cost_spike keys off (it groups PO rows by SKU), so a cleared
+     * cost_spike anomaly may only be advanced toward recovery when its SKU still
+     * appears here; if the PO cost data vanished the anomaly stays dormant. One
+     * light DISTINCT query.
+     */
+    private function primeCostCoverage(int $tenantId): void
+    {
+        $this->poCostSkus = [];
+
+        PurchaseOrder::where('tenant_id', $tenantId)
+            ->where('unit_cost', '>', 0)
+            ->distinct()
+            ->pluck('sku')
+            ->each(function ($sku): void {
+                $this->poCostSkus[trim((string) $sku)] = true;
             });
     }
 
@@ -329,8 +396,8 @@ class AnomalyDetectionService
      * cleared subject can be advanced toward recovery; a subject whose input
      * vanished stays dormant (never read as recovered).
      *
-     * @return array{0:array<string,true>,1:array<string,true>,2:array<string,true>,3:array<string,true>}
-     *         [invPairs("store|sku"), invSkus(sku), demPairs("store|sku"), demSkus(sku)]
+     * @return array{0:array<string,true>,1:array<string,true>,2:array<string,true>,3:array<string,true>,4:array<string,true>}
+     *         [invPairs("store|sku"), invSkus(sku), demPairs("store|sku"), demSkus(sku), costSkus(sku)]
      */
     private function buildCoverageSets(): array
     {
@@ -347,47 +414,69 @@ class AnomalyDetectionService
             $demSkus[$sku] = true;
         }
 
-        return [$invPairs, $invSkus, $demPairs, $demSkus];
+        // R2c — cost coverage is a pure SKU set primed from PurchaseOrder rows.
+        $costSkus = $this->poCostSkus ?? [];
+
+        return [$invPairs, $invSkus, $demPairs, $demSkus, $costSkus];
     }
 
     /**
      * Build the evaluability closure the reconciler uses for one rule. Strict
-     * coverage gating (dormant on a data gap) applies only to per-SKU
-     * demand/inventory subjects, where phantom recovery is the real risk;
-     * store-level and unmapped families fall back to the prior "rule ran and
-     * didn't flag = cleared" behaviour so they still resolve, not pile up. R2b
-     * broadens strict coverage to the remaining families.
+     * coverage gating (dormant on a data gap) applies to the per-SKU families
+     * whose input we can confirm from a primed set — inventory, demand, and
+     * (R2c) the financial-sales, cost, and capital families. Store/tenant-level
+     * rules and the families where a gap cannot masquerade as recovery
+     * (discount_signal, PO/supplier, data-quality) fall back to the prior "rule
+     * ran and didn't flag = cleared" behaviour, on purpose (see the coverage
+     * constants' docblock).
      *
      * @param  array<string,true>  $invPairs
      * @param  array<string,true>  $invSkus
      * @param  array<string,true>  $demPairs
      * @param  array<string,true>  $demSkus
+     * @param  array<string,true>  $costSkus
      */
-    private function evaluabilityFor(string $ruleType, array $invPairs, array $invSkus, array $demPairs, array $demSkus): \Closure
+    private function evaluabilityFor(string $ruleType, array $invPairs, array $invSkus, array $demPairs, array $demSkus, array $costSkus): \Closure
     {
         $isInventory = in_array($ruleType, self::INVENTORY_COVERAGE, true);
         $isDemand    = in_array($ruleType, self::DEMAND_COVERAGE, true);
+        // R2c families. Financial-sales and capital reuse the demand / inventory
+        // primed sets (their input IS recent sales / on-hand inventory); cost has
+        // its own PurchaseOrder-derived set.
+        $isFinSales  = in_array($ruleType, self::FIN_SALES_COVERAGE, true);
+        $isCost      = in_array($ruleType, self::COST_COVERAGE, true);
+        $isCapital   = in_array($ruleType, self::CAPITAL_COVERAGE, true);
 
-        return function (Anomaly $anomaly) use ($isInventory, $isDemand, $invPairs, $invSkus, $demPairs, $demSkus): bool {
+        return function (Anomaly $anomaly) use (
+            $isInventory, $isDemand, $isFinSales, $isCost, $isCapital,
+            $invPairs, $invSkus, $demPairs, $demSkus, $costSkus
+        ): bool {
             $sku = $anomaly->sku;
 
-            // Strict coverage gating applies only to per-SKU demand/inventory
-            // subjects, where a data gap masquerading as recovery is the real
-            // risk. Store-level and unmapped-family subjects fall back to the
-            // prior behaviour (a rule that ran and didn't flag = cleared), so
-            // they still resolve instead of piling up. R2b broadens strict
-            // coverage to the remaining families.
-            if ($sku === null || (! $isInventory && ! $isDemand)) {
+            // No SKU, or a family we deliberately don't gate → prior behaviour
+            // (a rule that ran and didn't flag = cleared), so those still resolve
+            // instead of piling up.
+            if ($sku === null || (! $isInventory && ! $isDemand && ! $isFinSales && ! $isCost && ! $isCapital)) {
                 return true;
             }
 
             $pair = ($anomaly->store_id ?? '') . '|' . $sku;
 
+            // On-hand inventory presence (inventory rules + capital rule).
             if ($isInventory) {
                 return $anomaly->store_id !== null ? isset($invPairs[$pair]) : isset($invSkus[$sku]);
             }
+            if ($isCapital) {
+                // slow_moving_capital is sku-level (store null on the anomaly).
+                return isset($invSkus[$sku]);
+            }
 
-            // demand family
+            // PurchaseOrder cost presence (cost_spike, sku-level).
+            if ($isCost) {
+                return isset($costSkus[$sku]);
+            }
+
+            // Recent (priced) sales presence — demand family + financial-sales.
             return $anomaly->store_id !== null
                 ? (isset($demPairs[$pair]) || isset($demSkus[$sku]))
                 : isset($demSkus[$sku]);
@@ -456,6 +545,7 @@ class AnomalyDetectionService
         $this->primeRecentDemand($tenantId, $demandWindow);
         $this->primeReplenishment($tenantId); // B4: derived reorder points (after snapshot)
         $this->primeSkuSegments($tenantId);
+        $this->primeCostCoverage($tenantId);  // R2c: cost_spike evaluability signal
 
         $rules = [
             // Demand & Sales
@@ -509,7 +599,7 @@ class AnomalyDetectionService
         // stale-sweep. A subject that stops failing is now advanced through
         // clearing → resolved (so recovery can be MEASURED) instead of deleted.
         $reconciler = new LifecycleReconciler();
-        [$invPairs, $invSkus, $demPairs, $demSkus] = $this->buildCoverageSets();
+        [$invPairs, $invSkus, $demPairs, $demSkus, $costSkus] = $this->buildCoverageSets();
         $confirmRunsFor = $this->confirmRunsResolver();
 
         foreach ($rules as $ruleType => $detector) {
@@ -539,7 +629,7 @@ class AnomalyDetectionService
                     $tenantId,
                     $ruleType,
                     $this->touchedAnomalyIds,
-                    $this->evaluabilityFor($ruleType, $invPairs, $invSkus, $demPairs, $demSkus),
+                    $this->evaluabilityFor($ruleType, $invPairs, $invSkus, $demPairs, $demSkus, $costSkus),
                     $confirmRunsFor,
                 );
             }
