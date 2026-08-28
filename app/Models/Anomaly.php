@@ -204,8 +204,20 @@ class Anomaly extends Model
     {
         return (float) static::query()
             ->where('tenant_id', $tenantId)
-            ->whereNull('dismissed_at')
+            ->active()
             ->sum(\Illuminate\Support\Facades\DB::raw("COALESCE((context->>'revenue_impact')::numeric, 0)"));
+    }
+
+    /**
+     * Active = still a live problem: not dismissed and not recovery-resolved.
+     * (Before R2 cleared anomalies were deleted; now they persist as `resolved`
+     * so recovery can be measured — so "active" must exclude them everywhere the
+     * app counts open anomalies / value-at-risk.)
+     */
+    public function scopeActive($query)
+    {
+        return $query->whereNull('dismissed_at')
+            ->where('lifecycle_state', '!=', self::LIFECYCLE_RESOLVED);
     }
 
     public function isDismissed(): bool

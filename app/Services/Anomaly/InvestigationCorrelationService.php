@@ -40,7 +40,7 @@ class InvestigationCorrelationService
     {
         $unlinked = Anomaly::where('tenant_id', $tenantId)
             ->whereNull('investigation_id')
-            ->whereNull('dismissed_at')
+            ->active()
             ->get();
 
         // Feature 6 — suppression is enforced HERE, at surfacing time. Suppressed

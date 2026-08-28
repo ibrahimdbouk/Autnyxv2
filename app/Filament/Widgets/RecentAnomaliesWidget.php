@@ -25,7 +25,7 @@ class RecentAnomaliesWidget extends BaseTableWidget
             ->query(
                 Anomaly::query()
                     ->where('tenant_id', $tenantId)
-                    ->whereNull('dismissed_at')
+                    ->active()
                     ->orderByRaw("CASE severity WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END")
                     ->orderByDesc('detected_at')
             )

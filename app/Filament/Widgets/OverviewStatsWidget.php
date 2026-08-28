@@ -40,9 +40,9 @@ class OverviewStatsWidget extends BaseWidget
             ->whereIn('status', [Import::STATUS_UPLOADED, Import::STATUS_MAPPING_REVIEW, Import::STATUS_IMPORTING])
             ->count();
 
-        $highAnomalies   = Anomaly::where('tenant_id', $tenantId)->whereNull('dismissed_at')->where('severity', 'high')->count();
-        $mediumAnomalies = Anomaly::where('tenant_id', $tenantId)->whereNull('dismissed_at')->where('severity', 'medium')->count();
-        $totalAnomalies  = Anomaly::where('tenant_id', $tenantId)->whereNull('dismissed_at')->count();
+        $highAnomalies   = Anomaly::where('tenant_id', $tenantId)->active()->where('severity', 'high')->count();
+        $mediumAnomalies = Anomaly::where('tenant_id', $tenantId)->active()->where('severity', 'medium')->count();
+        $totalAnomalies  = Anomaly::where('tenant_id', $tenantId)->active()->count();
 
         // B1: aggregate estimated value at risk across open anomalies, in the tenant's currency.
         $valueAtRisk = $tenantId ? Anomaly::estimatedValueAtRiskForTenant($tenantId) : 0.0;

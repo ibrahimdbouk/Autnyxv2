@@ -11,6 +11,7 @@ use App\Models\PurchaseOrder;
 use App\Models\SalesTransaction;
 use App\Models\SkuProfile;
 use App\Models\Store;
+use App\Services\Recovery\LifecycleReconciler;
 use App\Support\Money;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -21,6 +22,23 @@ class AnomalyDetectionService
     public function __construct(
         private readonly BaselineCalculatorService $baselines
     ) {}
+
+    /**
+     * Recovery lifecycle (R2) — rule families whose per-subject evaluability the
+     * reconciler can confirm from the primed input maps, so a cleared subject can
+     * be advanced toward recovery. Rules outside these families stay conservative
+     * (a cleared subject goes dormant, never auto-resolves) until R2b broadens
+     * coverage. Recovery is only ever claimed where the rule's input was present.
+     */
+    private const INVENTORY_COVERAGE = [
+        'stockout_risk', 'safety_stock_breach', 'negative_inventory', 'overstock',
+        'phantom_inventory', 'dead_stock', 'multi_location_imbalance', 'reorder_point_staleness',
+    ];
+
+    private const DEMAND_COVERAGE = [
+        'sales_spike', 'sales_drop', 'demand_seasonality_breach', 'demand_erosion',
+        'demand_forecast_break', 'return_rate_spike', 'cannibalization_signal', 'channel_mix_shift',
+    ];
 
     /**
      * Tracks anomaly IDs touched by the current rule run.
@@ -305,8 +323,81 @@ class AnomalyDetectionService
     }
 
     /**
+     * Recovery lifecycle (R2): per-subject evaluability sets, built once from the
+     * primed input maps — no per-rule instrumentation. A subject counts as
+     * "evaluated" this run if the rule's input data was present for it, so a
+     * cleared subject can be advanced toward recovery; a subject whose input
+     * vanished stays dormant (never read as recovered).
+     *
+     * @return array{0:array<string,true>,1:array<string,true>,2:array<string,true>,3:array<string,true>}
+     *         [invPairs("store|sku"), invSkus(sku), demPairs("store|sku"), demSkus(sku)]
+     */
+    private function buildCoverageSets(): array
+    {
+        $invPairs = $invSkus = $demPairs = $demSkus = [];
+
+        foreach (array_keys($this->latestOnHand ?? []) as $key) {
+            $invPairs[$key] = true;
+            $sku = strstr((string) $key, '|') !== false ? substr((string) $key, strpos((string) $key, '|') + 1) : (string) $key;
+            $invSkus[$sku] = true;
+        }
+        foreach (array_keys($this->recentDemand ?? []) as $key) {
+            $demPairs[$key] = true;
+            $sku = strstr((string) $key, '|') !== false ? substr((string) $key, strpos((string) $key, '|') + 1) : (string) $key;
+            $demSkus[$sku] = true;
+        }
+
+        return [$invPairs, $invSkus, $demPairs, $demSkus];
+    }
+
+    /**
+     * Build the evaluability closure the reconciler uses for one rule. Strict
+     * coverage gating (dormant on a data gap) applies only to per-SKU
+     * demand/inventory subjects, where phantom recovery is the real risk;
+     * store-level and unmapped families fall back to the prior "rule ran and
+     * didn't flag = cleared" behaviour so they still resolve, not pile up. R2b
+     * broadens strict coverage to the remaining families.
+     *
+     * @param  array<string,true>  $invPairs
+     * @param  array<string,true>  $invSkus
+     * @param  array<string,true>  $demPairs
+     * @param  array<string,true>  $demSkus
+     */
+    private function evaluabilityFor(string $ruleType, array $invPairs, array $invSkus, array $demPairs, array $demSkus): \Closure
+    {
+        $isInventory = in_array($ruleType, self::INVENTORY_COVERAGE, true);
+        $isDemand    = in_array($ruleType, self::DEMAND_COVERAGE, true);
+
+        return function (Anomaly $anomaly) use ($isInventory, $isDemand, $invPairs, $invSkus, $demPairs, $demSkus): bool {
+            $sku = $anomaly->sku;
+
+            // Strict coverage gating applies only to per-SKU demand/inventory
+            // subjects, where a data gap masquerading as recovery is the real
+            // risk. Store-level and unmapped-family subjects fall back to the
+            // prior behaviour (a rule that ran and didn't flag = cleared), so
+            // they still resolve instead of piling up. R2b broadens strict
+            // coverage to the remaining families.
+            if ($sku === null || (! $isInventory && ! $isDemand)) {
+                return true;
+            }
+
+            $pair = ($anomaly->store_id ?? '') . '|' . $sku;
+
+            if ($isInventory) {
+                return $anomaly->store_id !== null ? isset($invPairs[$pair]) : isset($invSkus[$sku]);
+            }
+
+            // demand family
+            return $anomaly->store_id !== null
+                ? (isset($demPairs[$pair]) || isset($demSkus[$sku]))
+                : isset($demSkus[$sku]);
+        };
+    }
+
+    /**
      * Run all enabled rules for a tenant and store results in the anomalies table.
-     * Existing open anomalies are upserted (investigation fields preserved); stale ones are deleted.
+     * Existing open anomalies are upserted (investigation fields preserved); a
+     * subject that stops failing is advanced through the recovery lifecycle (R2).
      */
     public function runForTenant(int $tenantId): void
     {
@@ -390,6 +481,12 @@ class AnomalyDetectionService
             'location_proliferation'     => fn () => $this->detectLocationProliferation($tenantId, $t('location_proliferation')),
         ];
 
+        // Recovery lifecycle (R2): the reconciler replaces the old destructive
+        // stale-sweep. A subject that stops failing is now advanced through
+        // clearing → resolved (so recovery can be MEASURED) instead of deleted.
+        $reconciler = new LifecycleReconciler();
+        [$invPairs, $invSkus, $demPairs, $demSkus] = $this->buildCoverageSets();
+
         foreach ($rules as $ruleType => $detector) {
             $setting = $settings->get($ruleType);
             if (!$setting || !$setting->enabled) {
@@ -410,18 +507,15 @@ class AnomalyDetectionService
                 ]);
             }
 
-            // Only clean up stale anomalies if the rule ran without errors.
-            // This prevents wiping valid anomalies when the detector throws.
+            // Only reconcile if the rule ran without errors — a thrown detector
+            // must never let its open anomalies drift toward false recovery.
             if ($succeeded) {
-                $q = Anomaly::where('tenant_id', $tenantId)
-                    ->where('rule_type', $ruleType)
-                    ->whereNull('dismissed_at');
-
-                if (!empty($this->touchedAnomalyIds)) {
-                    $q->whereNotIn('id', $this->touchedAnomalyIds);
-                }
-
-                $q->delete();
+                $reconciler->reconcileRule(
+                    $tenantId,
+                    $ruleType,
+                    $this->touchedAnomalyIds,
+                    $this->evaluabilityFor($ruleType, $invPairs, $invSkus, $demPairs, $demSkus),
+                );
             }
         }
 
@@ -2329,7 +2423,11 @@ class AnomalyDetectionService
             $query = Anomaly::where('tenant_id', $tenantId)
                 ->where('rule_type', $ruleType)
                 ->where('sku', $sku)
-                ->whereNull('dismissed_at');
+                ->whereNull('dismissed_at')
+                // Recovery lifecycle (R2): never reopen a RESOLVED episode — a
+                // subject that fails again after recovery is a fresh episode
+                // (new row), so recovery history stays intact.
+                ->where('lifecycle_state', '!=', Anomaly::LIFECYCLE_RESOLVED);
 
             if ($storeId !== null) {
                 $query->where('store_id', $storeId);

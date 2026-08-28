@@ -34,8 +34,10 @@ class AnomalyResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        // Default: only show open (non-dismissed) anomalies
-        return parent::getEloquentQuery()->whereNull('dismissed_at');
+        // Default: only show active anomalies — not dismissed, and not
+        // recovery-resolved (resolved episodes are retained for measurement but
+        // are no longer a live problem).
+        return parent::getEloquentQuery()->active();
     }
 
     public static function getNavigationBadge(): ?string
@@ -44,7 +46,7 @@ class AnomalyResource extends Resource
         if (!$tenantId) return null;
 
         $count = Anomaly::where('tenant_id', $tenantId)
-            ->whereNull('dismissed_at')
+            ->active()
             ->where('severity', 'high')
             ->count();
 
