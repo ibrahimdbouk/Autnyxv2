@@ -23,6 +23,7 @@ class User extends Authenticatable implements FilamentUser, HasTenants
         'tenant_id',
         'is_super_admin',
         'is_tenant_admin',
+        'visible_screens',
     ];
 
     protected $hidden = [
@@ -37,7 +38,46 @@ class User extends Authenticatable implements FilamentUser, HasTenants
             'password'          => 'hashed',
             'is_super_admin'    => 'boolean',
             'is_tenant_admin'   => 'boolean',
+            'visible_screens'   => 'array',
         ];
+    }
+
+    /**
+     * 1a — audit access-control changes (screen visibility + role) so grants and
+     * revocations are traceable (SOC 2 / ISO 27001). Append-only, best-effort:
+     * an audit failure must never block the user save.
+     */
+    protected static function booted(): void
+    {
+        static::updated(function (User $user): void {
+            $watched = ['visible_screens', 'is_tenant_admin', 'is_super_admin'];
+            $changed = array_values(array_intersect($watched, array_keys($user->getChanges())));
+
+            // audit_logs.tenant_id is NOT NULL — skip tenantless (platform) users.
+            if ($changed === [] || $user->tenant_id === null) {
+                return;
+            }
+
+            try {
+                $old = [];
+                $new = [];
+                foreach ($changed as $field) {
+                    $old[$field] = $user->getOriginal($field);
+                    $new[$field] = $user->getAttribute($field);
+                }
+
+                AuditLog::create([
+                    'tenant_id'   => $user->tenant_id,
+                    'user_id'     => auth()->id(),
+                    'event_type'  => AuditLog::EVENT_SCREEN_ACCESS_CHANGED,
+                    'description' => 'Access changed for ' . ($user->email ?? ('user #' . $user->id)),
+                    'old_value'   => $old,
+                    'new_value'   => $new,
+                ]);
+            } catch (\Throwable $e) {
+                // best-effort — never break the save on an audit write.
+            }
+        });
     }
 
     // ---------- Relationships ----------
@@ -71,6 +111,33 @@ class User extends Authenticatable implements FilamentUser, HasTenants
     public function canManageUsers(): bool
     {
         return $this->is_super_admin || $this->is_tenant_admin;
+    }
+
+    /**
+     * 1a — may this user see the given gate-able screen (a key from
+     * App\Support\Screens\ScreenRegistry)?
+     *
+     *   • admins (super / tenant) → always true (they see everything).
+     *   • visible_screens is null → unrestricted (see all gate-able screens).
+     *   • visible_screens is an array → only the keys it contains.
+     *
+     * The Dashboard and other always-on screens are never registered as
+     * gate-able, so a restricted user is never left without a landing page.
+     */
+    public function canSeeScreen(string $screenKey): bool
+    {
+        if ($this->is_super_admin || $this->is_tenant_admin) {
+            return true;
+        }
+
+        $allowed = $this->visible_screens;
+
+        // Null / unset = unrestricted; an explicit list restricts to its keys.
+        if ($allowed === null) {
+            return true;
+        }
+
+        return in_array($screenKey, $allowed, true);
     }
 
     /**

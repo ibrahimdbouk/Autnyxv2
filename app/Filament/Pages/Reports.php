@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Filament\Pages;
+use App\Filament\Concerns\GatesPageByScreen;
 
 use App\Services\Reporting\ReportDataService;
 use Filament\Facades\Filament;
@@ -16,6 +17,9 @@ use Illuminate\Support\Carbon;
  */
 class Reports extends Page
 {
+    use GatesPageByScreen;
+
+    const SCREEN_KEY = 'reports';
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-document-arrow-down';
 
     protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';

@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Filament\Resources;
+use App\Filament\Concerns\GatesResourceByScreen;
 
 use App\Filament\Resources\SupplierResource\Pages;
 use App\Models\Supplier;
@@ -11,6 +12,9 @@ use Filament\Tables\Table;
 
 class SupplierResource extends Resource
 {
+    use GatesResourceByScreen;
+
+    const SCREEN_KEY = 'suppliers';
     protected static ?string $model = Supplier::class;
 
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-truck';

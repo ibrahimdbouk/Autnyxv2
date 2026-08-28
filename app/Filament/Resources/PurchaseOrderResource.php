@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Filament\Resources;
+use App\Filament\Concerns\GatesResourceByScreen;
 
 use App\Filament\Resources\PurchaseOrderResource\Pages;
 use App\Models\PurchaseOrder;
@@ -12,6 +13,9 @@ use Filament\Tables\Table;
 
 class PurchaseOrderResource extends Resource
 {
+    use GatesResourceByScreen;
+
+    const SCREEN_KEY = 'purchase_orders';
     protected static ?string $model = PurchaseOrder::class;
 
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-truck';

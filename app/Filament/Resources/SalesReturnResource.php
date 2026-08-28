@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Filament\Resources;
+use App\Filament\Concerns\GatesResourceByScreen;
 
 use App\Filament\Resources\SalesReturnResource\Pages;
 use App\Models\SalesReturn;
@@ -15,6 +16,9 @@ use Illuminate\Database\Eloquent\Builder;
 
 class SalesReturnResource extends Resource
 {
+    use GatesResourceByScreen;
+
+    const SCREEN_KEY = 'returns';
     protected static ?string $model = SalesReturn::class;
 
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-arrow-uturn-left';

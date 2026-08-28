@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Filament\Pages;
+use App\Filament\Concerns\GatesPageByScreen;
 
 use App\Models\DataHealthSnapshot;
 use App\Services\DataHealth\DataHealthService;
@@ -19,6 +20,9 @@ use Illuminate\Support\Collection;
  */
 class DataHealthCenter extends Page
 {
+    use GatesPageByScreen;
+
+    const SCREEN_KEY = 'data_health';
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-heart';
 
     protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';

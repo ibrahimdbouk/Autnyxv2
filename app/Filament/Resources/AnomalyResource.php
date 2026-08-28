@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Filament\Resources;
+use App\Filament\Concerns\GatesResourceByScreen;
 
 use App\Filament\Resources\AnomalyResource\Pages;
 use App\Models\Anomaly;
@@ -18,6 +19,9 @@ use Illuminate\Support\Collection;
 
 class AnomalyResource extends Resource
 {
+    use GatesResourceByScreen;
+
+    const SCREEN_KEY = 'anomalies';
     protected static ?string $model = Anomaly::class;
 
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-exclamation-triangle';

@@ -29,6 +29,8 @@ class AuditLog extends Model
     const EVENT_SUPPRESSION_ENDED  = 'suppression_ended';
     const EVENT_BULK_ACTION        = 'bulk_action';
     const EVENT_OUTCOME_MEASURED   = 'outcome_measured';
+    // 1a — access control (SOC 2 / ISO 27001: log permission changes)
+    const EVENT_SCREEN_ACCESS_CHANGED = 'screen_access_changed';
 
     // Append-only — no updated_at
     public $timestamps  = false;

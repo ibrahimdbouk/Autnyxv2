@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Filament\Pages;
+use App\Filament\Concerns\GatesPageByScreen;
 
 use App\Jobs\BulkActionCenterJob;
 use App\Models\Action;
@@ -15,6 +16,9 @@ use Livewire\Attributes\Url;
 
 class ActionCenter extends Page
 {
+    use GatesPageByScreen;
+
+    const SCREEN_KEY = 'action_center';
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-clipboard-document-check';
 
     protected static ?string $navigationLabel = 'Action Center';

@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Filament\Resources;
+use App\Filament\Concerns\GatesResourceByScreen;
 
 use App\Filament\Resources\InvestigationResource\Pages;
 use App\Models\Investigation;
@@ -15,6 +16,9 @@ use Illuminate\Database\Eloquent\Builder;
 
 class InvestigationResource extends Resource
 {
+    use GatesResourceByScreen;
+
+    const SCREEN_KEY = 'investigations';
     protected static ?string $model = Investigation::class;
 
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-magnifying-glass';

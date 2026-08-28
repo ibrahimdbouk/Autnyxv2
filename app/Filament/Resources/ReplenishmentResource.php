@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Filament\Resources;
+use App\Filament\Concerns\GatesResourceByScreen;
 
 use App\Filament\Resources\ReplenishmentResource\Pages;
 use App\Models\SkuReplenishment;
@@ -19,6 +20,9 @@ use Illuminate\Database\Eloquent\Builder;
  */
 class ReplenishmentResource extends Resource
 {
+    use GatesResourceByScreen;
+
+    const SCREEN_KEY = 'replenishment';
     protected static ?string $model = SkuReplenishment::class;
 
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-shopping-cart';

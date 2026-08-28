@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Filament\Pages;
+use App\Filament\Concerns\GatesPageByScreen;
 
 use App\Models\Investigation;
 use App\Services\Watch\WatchEvaluationService;
@@ -15,6 +16,9 @@ use Illuminate\Support\Collection;
  */
 class WatchedInvestigations extends Page
 {
+    use GatesPageByScreen;
+
+    const SCREEN_KEY = 'watched';
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-eye';
 
     protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';

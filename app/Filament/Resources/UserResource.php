@@ -4,10 +4,13 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\UserResource\Pages;
 use App\Models\User;
+use App\Support\Screens\ScreenRegistry;
 use Filament\Schemas\Components\Section;
+use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
@@ -80,8 +83,9 @@ class UserResource extends Resource
             Section::make('Role')->schema([
                 Toggle::make('is_tenant_admin')
                     ->label('Tenant Admin')
-                    ->helperText('Tenant admins can manage users, imports, and settings within this organisation.')
+                    ->helperText('Tenant admins can manage users, imports, and settings within this organisation — and see every screen.')
                     ->default(false)
+                    ->live()
                     ->visible(fn () => !auth()->user()?->is_super_admin
                         ? true  // tenant admins can toggle this
                         : true),
@@ -90,8 +94,26 @@ class UserResource extends Resource
                     ->label('Super Admin')
                     ->helperText('Super admins have full access to all organisations and platform settings.')
                     ->default(false)
+                    ->live()
                     ->visible(fn () => auth()->user()?->is_super_admin ?? false),
             ]),
+
+            // 1a — screen visibility. Only meaningful for a plain "user"; admins
+            // always see everything, so this is hidden the moment either admin
+            // toggle is on. Tick the screens this user may see; unticking all
+            // leaves them with just the Dashboard.
+            Section::make('Screen Access')
+                ->description('Choose which screens this user can see. Admins always see everything.')
+                ->schema([
+                    CheckboxList::make('visible_screens')
+                        ->hiddenLabel()
+                        ->options(ScreenRegistry::options())
+                        ->default(ScreenRegistry::keys())
+                        ->columns(3)
+                        ->bulkToggleable()
+                        ->gridDirection('row'),
+                ])
+                ->visible(fn (Get $get): bool => ! $get('is_tenant_admin') && ! $get('is_super_admin')),
         ]);
     }
 

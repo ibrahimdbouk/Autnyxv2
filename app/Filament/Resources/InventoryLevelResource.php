@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Filament\Resources;
+use App\Filament\Concerns\GatesResourceByScreen;
 
 use App\Filament\Resources\InventoryLevelResource\Pages;
 use App\Models\InventoryLevel;
@@ -11,6 +12,9 @@ use Filament\Tables\Table;
 
 class InventoryLevelResource extends Resource
 {
+    use GatesResourceByScreen;
+
+    const SCREEN_KEY = 'inventory';
     protected static ?string $model = InventoryLevel::class;
 
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-archive-box';

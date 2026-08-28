@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Filament\Resources;
+use App\Filament\Concerns\GatesResourceByScreen;
 
 use App\Filament\Resources\SalesTransactionResource\Pages;
 use App\Models\SalesTransaction;
@@ -15,6 +16,9 @@ use Illuminate\Database\Eloquent\Builder;
 
 class SalesTransactionResource extends Resource
 {
+    use GatesResourceByScreen;
+
+    const SCREEN_KEY = 'sales';
     protected static ?string $model = SalesTransaction::class;
 
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-shopping-cart';

@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Filament\Resources;
+use App\Filament\Concerns\GatesResourceByScreen;
 
 use App\Filament\Resources\ProductResource\Pages;
 use App\Models\Product;
@@ -12,6 +13,9 @@ use Filament\Tables\Table;
 
 class ProductResource extends Resource
 {
+    use GatesResourceByScreen;
+
+    const SCREEN_KEY = 'products';
     protected static ?string $model = Product::class;
 
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-cube';
