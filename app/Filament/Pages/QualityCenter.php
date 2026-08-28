@@ -21,7 +21,7 @@ class QualityCenter extends Page
 
     protected static ?string $navigationLabel = 'Quality Center';
 
-    protected static ?int $navigationSort = 5;
+    protected static ?int $navigationSort = 6;
 
     protected static ?string $slug = 'quality-center';
 

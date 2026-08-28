@@ -59,8 +59,8 @@ class SalesTrendChartWidget extends BaseChartWidget
                 [
                     'label'           => 'Revenue ($)',
                     'data'            => $revenue,
-                    'borderColor'     => '#7c3aed',
-                    'backgroundColor' => 'rgba(124, 58, 237, 0.08)',
+                    'borderColor'     => self::AX_SERIES[0],
+                    'backgroundColor' => self::axFill(self::AX_SERIES[0], 0.10),
                     'fill'            => true,
                     'tension'         => 0.4,
                     'pointRadius'     => 3,
@@ -68,8 +68,8 @@ class SalesTrendChartWidget extends BaseChartWidget
                 [
                     'label'           => 'Units Sold',
                     'data'            => $units,
-                    'borderColor'     => '#10b981',
-                    'backgroundColor' => 'rgba(16, 185, 129, 0.08)',
+                    'borderColor'     => self::AX_SERIES[2],
+                    'backgroundColor' => self::axFill(self::AX_SERIES[2], 0.08),
                     'fill'            => false,
                     'tension'         => 0.4,
                     'pointRadius'     => 3,
@@ -88,7 +88,7 @@ class SalesTrendChartWidget extends BaseChartWidget
                 'tooltip' => ['mode' => 'index', 'intersect' => false],
             ],
             'scales' => [
-                'y' => ['beginAtZero' => true, 'grid' => ['color' => 'rgba(0,0,0,0.05)']],
+                'y' => ['beginAtZero' => true, 'grid' => ['color' => self::AX_GRID]],
                 'x' => ['grid' => ['display' => false]],
             ],
             'interaction' => ['mode' => 'index'],

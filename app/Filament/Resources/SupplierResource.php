@@ -19,7 +19,7 @@ class SupplierResource extends Resource
 
     protected static ?string $navigationLabel = 'Suppliers';
 
-    protected static ?int $navigationSort = 7;
+    protected static ?int $navigationSort = 8;
 
     // Read-only: suppliers are created/enriched during import
     public static function canCreate(): bool { return false; }

@@ -22,7 +22,7 @@ class Reports extends Page
 
     protected static ?string $navigationLabel = 'Reports';
 
-    protected static ?int $navigationSort = 6;
+    protected static ?int $navigationSort = 7;
 
     protected static ?string $slug = 'reports';
 

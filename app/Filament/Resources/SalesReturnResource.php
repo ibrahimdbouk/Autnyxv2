@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\SalesReturnResource\Pages;
 use App\Models\SalesReturn;
+use Filament\Facades\Filament;
 use Filament\Forms\Components\DatePicker;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
@@ -22,7 +23,7 @@ class SalesReturnResource extends Resource
 
     protected static ?string $navigationLabel = 'Returns';
 
-    protected static ?int $navigationSort = 4;
+    protected static ?int $navigationSort = 5;
 
     // Read-only
     public static function canCreate(): bool { return false; }
@@ -31,6 +32,8 @@ class SalesReturnResource extends Resource
 
     public static function table(Table $table): Table
     {
+        $currency = Filament::getTenant()?->currencyCode() ?? 'USD';
+
         return $table
             ->columns([
                 TextColumn::make('date')
@@ -56,7 +59,7 @@ class SalesReturnResource extends Resource
 
                 TextColumn::make('value')
                     ->label('Value')
-                    ->money('USD')
+                    ->money($currency)
                     ->placeholder('—')
                     ->sortable(),
 

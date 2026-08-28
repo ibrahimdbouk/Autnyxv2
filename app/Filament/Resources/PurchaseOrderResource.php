@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\PurchaseOrderResource\Pages;
 use App\Models\PurchaseOrder;
+use Filament\Facades\Filament;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
@@ -19,7 +20,7 @@ class PurchaseOrderResource extends Resource
 
     protected static ?string $navigationLabel = 'Purchase Orders';
 
-    protected static ?int $navigationSort = 5;
+    protected static ?int $navigationSort = 7;
 
     // Read-only
     public static function canCreate(): bool    { return false; }
@@ -28,6 +29,8 @@ class PurchaseOrderResource extends Resource
 
     public static function table(Table $table): Table
     {
+        $currency = Filament::getTenant()?->currencyCode() ?? 'USD';
+
         return $table
             ->columns([
                 TextColumn::make('po_number')
@@ -61,7 +64,7 @@ class PurchaseOrderResource extends Resource
 
                 TextColumn::make('unit_cost')
                     ->label('Unit Cost')
-                    ->money('USD')
+                    ->money($currency)
                     ->sortable(),
 
                 TextColumn::make('order_date')
@@ -92,6 +95,9 @@ class PurchaseOrderResource extends Resource
                     )
                     ->label('Supplier'),
             ])
+            ->emptyStateIcon('heroicon-o-truck')
+            ->emptyStateHeading('No purchase orders yet')
+            ->emptyStateDescription('Purchase orders appear here after a PO import.')
             ->defaultSort('order_date', 'desc');
     }
 

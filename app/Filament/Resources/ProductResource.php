@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\ProductResource\Pages;
 use App\Models\Product;
+use Filament\Facades\Filament;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
@@ -17,7 +18,7 @@ class ProductResource extends Resource
 
     protected static \UnitEnum|string|null $navigationGroup = 'Data';
 
-    protected static ?int $navigationSort = 2;
+    protected static ?int $navigationSort = 3;
 
     // Read-only: no create / edit / delete
     public static function canCreate(): bool    { return false; }
@@ -26,6 +27,9 @@ class ProductResource extends Resource
 
     public static function table(Table $table): Table
     {
+        // Money columns follow the tenant's display currency (B1 — relabel, no conversion).
+        $currency = Filament::getTenant()?->currencyCode() ?? 'USD';
+
         return $table
             ->columns([
                 TextColumn::make('sku')
@@ -50,12 +54,12 @@ class ProductResource extends Resource
 
                 TextColumn::make('unit_cost')
                     ->label('Unit Cost')
-                    ->money('USD')
+                    ->money($currency)
                     ->sortable(),
 
                 TextColumn::make('selling_price')
                     ->label('Selling Price')
-                    ->money('USD')
+                    ->money($currency)
                     ->sortable(),
 
                 TextColumn::make('supplier')
@@ -73,6 +77,9 @@ class ProductResource extends Resource
                     )
                     ->label('Category'),
             ])
+            ->emptyStateIcon('heroicon-o-cube')
+            ->emptyStateHeading('No products yet')
+            ->emptyStateDescription('Products appear here after a master-data import.')
             ->defaultSort('name');
     }
 

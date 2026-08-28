@@ -25,7 +25,7 @@ class DataHealthCenter extends Page
 
     protected static ?string $navigationLabel = 'Data Health';
 
-    protected static ?int $navigationSort = 4;
+    protected static ?int $navigationSort = 5;
 
     protected static ?string $slug = 'data-health';
 

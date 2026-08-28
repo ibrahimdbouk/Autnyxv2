@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\SalesTransactionResource\Pages;
 use App\Models\SalesTransaction;
+use Filament\Facades\Filament;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
@@ -22,7 +23,7 @@ class SalesTransactionResource extends Resource
 
     protected static ?string $navigationLabel = 'Sales';
 
-    protected static ?int $navigationSort = 3;
+    protected static ?int $navigationSort = 4;
 
     // Read-only
     public static function canCreate(): bool    { return false; }
@@ -31,6 +32,8 @@ class SalesTransactionResource extends Resource
 
     public static function table(Table $table): Table
     {
+        $currency = Filament::getTenant()?->currencyCode() ?? 'USD';
+
         return $table
             ->columns([
                 TextColumn::make('transaction_id')
@@ -59,12 +62,12 @@ class SalesTransactionResource extends Resource
 
                 TextColumn::make('unit_price')
                     ->label('Unit Price')
-                    ->money('USD')
+                    ->money($currency)
                     ->sortable(),
 
                 TextColumn::make('total_amount')
                     ->label('Total')
-                    ->money('USD')
+                    ->money($currency)
                     ->sortable()
                     ->weight('bold'),
             ])
@@ -91,6 +94,9 @@ class SalesTransactionResource extends Resource
                             ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('date', '<=', $d));
                     }),
             ])
+            ->emptyStateIcon('heroicon-o-shopping-cart')
+            ->emptyStateHeading('No sales yet')
+            ->emptyStateDescription('Sales transactions appear here after a sales import.')
             ->defaultSort('date', 'desc');
     }
 

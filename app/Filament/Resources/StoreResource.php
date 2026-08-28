@@ -16,7 +16,7 @@ class StoreResource extends Resource
 
     protected static \UnitEnum|string|null $navigationGroup = 'Data';
 
-    protected static ?int $navigationSort = 6;
+    protected static ?int $navigationSort = 9;
 
     // Read-only: stores are created automatically during import
     public static function canCreate(): bool    { return false; }

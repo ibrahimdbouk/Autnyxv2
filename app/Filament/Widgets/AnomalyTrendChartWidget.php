@@ -56,8 +56,8 @@ class AnomalyTrendChartWidget extends BaseChartWidget
                 [
                     'label'           => 'High',
                     'data'            => $high,
-                    'borderColor'     => '#ef4444',
-                    'backgroundColor' => 'rgba(239, 68, 68, 0.08)',
+                    'borderColor'     => self::AX_DANGER,
+                    'backgroundColor' => self::axFill(self::AX_DANGER, 0.08),
                     'fill'            => false,
                     'tension'         => 0.4,
                     'pointRadius'     => 3,
@@ -65,8 +65,8 @@ class AnomalyTrendChartWidget extends BaseChartWidget
                 [
                     'label'           => 'Medium',
                     'data'            => $medium,
-                    'borderColor'     => '#f59e0b',
-                    'backgroundColor' => 'rgba(245, 158, 11, 0.08)',
+                    'borderColor'     => self::AX_WARNING,
+                    'backgroundColor' => self::axFill(self::AX_WARNING, 0.08),
                     'fill'            => false,
                     'tension'         => 0.4,
                     'pointRadius'     => 3,
@@ -74,8 +74,8 @@ class AnomalyTrendChartWidget extends BaseChartWidget
                 [
                     'label'           => 'Low',
                     'data'            => $low,
-                    'borderColor'     => '#3b82f6',
-                    'backgroundColor' => 'rgba(59, 130, 246, 0.08)',
+                    'borderColor'     => self::AX_INFO,
+                    'backgroundColor' => self::axFill(self::AX_INFO, 0.08),
                     'fill'            => false,
                     'tension'         => 0.4,
                     'pointRadius'     => 3,
@@ -96,7 +96,7 @@ class AnomalyTrendChartWidget extends BaseChartWidget
                 'y' => [
                     'beginAtZero' => true,
                     'ticks'       => ['stepSize' => 1],
-                    'grid'        => ['color' => 'rgba(0,0,0,0.05)'],
+                    'grid'        => ['color' => self::AX_GRID],
                 ],
                 'x' => ['grid' => ['display' => false]],
             ],

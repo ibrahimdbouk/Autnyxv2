@@ -27,7 +27,7 @@ class ReplenishmentResource extends Resource
 
     protected static ?string $navigationLabel = 'Replenishment';
 
-    protected static ?int $navigationSort = 3;
+    protected static ?int $navigationSort = 4;
 
     // Read-only: these are computed nightly, not hand-edited.
     public static function canCreate(): bool { return false; }

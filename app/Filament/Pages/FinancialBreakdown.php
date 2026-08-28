@@ -31,6 +31,8 @@ class FinancialBreakdown extends Page
 
     protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';
 
+    protected static ?int $navigationSort = 8;
+
     protected static ?string $slug = 'financial-breakdown';
 
     protected string $view = 'filament.pages.financial-breakdown';

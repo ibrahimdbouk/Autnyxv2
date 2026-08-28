@@ -19,7 +19,7 @@ class InventoryLevelResource extends Resource
 
     protected static ?string $navigationLabel = 'Inventory';
 
-    protected static ?int $navigationSort = 4;
+    protected static ?int $navigationSort = 6;
 
     // Read-only
     public static function canCreate(): bool    { return false; }
@@ -77,6 +77,9 @@ class InventoryLevelResource extends Resource
                     )
                     ->label('Location'),
             ])
+            ->emptyStateIcon('heroicon-o-archive-box')
+            ->emptyStateHeading('No inventory records yet')
+            ->emptyStateDescription('Inventory levels appear here after an inventory import.')
             ->defaultSort('sku');
     }
 

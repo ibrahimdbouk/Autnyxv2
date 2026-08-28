@@ -41,18 +41,8 @@ class TopSkusChartWidget extends BaseChartWidget
             ->limit(10)
             ->get();
 
-        $colors = [
-            'rgba(124,58,237,0.75)',
-            'rgba(99,102,241,0.75)',
-            'rgba(59,130,246,0.75)',
-            'rgba(16,185,129,0.75)',
-            'rgba(20,184,166,0.75)',
-            'rgba(245,158,11,0.75)',
-            'rgba(239,68,68,0.75)',
-            'rgba(236,72,153,0.75)',
-            'rgba(168,85,247,0.75)',
-            'rgba(14,165,233,0.75)',
-        ];
+        // Unified categorical palette (design-system --ax-chart-* scale).
+        $colors = array_map(fn (string $hex): string => self::axFill($hex, 0.78), self::AX_SERIES);
 
         return [
             'datasets' => [
@@ -74,7 +64,7 @@ class TopSkusChartWidget extends BaseChartWidget
             'indexAxis' => 'y',
             'plugins'   => ['legend' => ['display' => false]],
             'scales'    => [
-                'x' => ['beginAtZero' => true, 'grid' => ['color' => 'rgba(0,0,0,0.05)']],
+                'x' => ['beginAtZero' => true, 'grid' => ['color' => self::AX_GRID]],
                 'y' => ['grid' => ['display' => false]],
             ],
         ];

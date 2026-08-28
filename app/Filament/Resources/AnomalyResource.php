@@ -113,6 +113,9 @@ class AnomalyResource extends Resource
                     ->since()
                     ->sortable(),
             ])
+            ->emptyStateIcon('heroicon-o-check-circle')
+            ->emptyStateHeading('No anomalies detected')
+            ->emptyStateDescription('Detection runs nightly. Anomalies appear here once your sales, inventory and PO data has been ingested.')
             ->defaultSort('severity', 'desc')
             ->filters([
                 SelectFilter::make('severity')

@@ -44,8 +44,8 @@ class StoreComparisonWidget extends BaseChartWidget
                 [
                     'label'           => 'Anomalies',
                     'data'            => $counts,
-                    'backgroundColor' => '#7c3aed',
-                    'borderColor'     => '#6d28d9',
+                    'backgroundColor' => self::axFill(self::AX_ACCENT, 0.85),
+                    'borderColor'     => self::AX_ACCENT,
                     'borderWidth'     => 1,
                     'borderRadius'    => 4,
                 ],
@@ -65,7 +65,7 @@ class StoreComparisonWidget extends BaseChartWidget
                 'y' => [
                     'beginAtZero' => true,
                     'ticks'       => ['stepSize' => 1],
-                    'grid'        => ['color' => 'rgba(0,0,0,0.05)'],
+                    'grid'        => ['color' => self::AX_GRID],
                 ],
                 'x' => ['grid' => ['display' => false]],
             ],

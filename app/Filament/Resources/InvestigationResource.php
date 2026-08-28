@@ -117,6 +117,9 @@ class InvestigationResource extends Resource
                     ->since()
                     ->sortable(),
             ])
+            ->emptyStateIcon('heroicon-o-magnifying-glass')
+            ->emptyStateHeading('No investigations yet')
+            ->emptyStateDescription('Investigations are correlated from related anomalies nightly. Once detection finds connected signals, they are grouped here.')
             ->defaultSort('opened_at', 'desc')
             ->filters([
                 SelectFilter::make('status')

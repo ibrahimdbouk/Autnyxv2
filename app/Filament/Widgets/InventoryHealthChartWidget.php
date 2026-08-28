@@ -70,9 +70,9 @@ class InventoryHealthChartWidget extends BaseChartWidget
         if ($rows->isEmpty()) {
             return [
                 'datasets' => [
-                    ['label' => 'Healthy',  'data' => [], 'backgroundColor' => 'rgba(16,185,129,0.75)'],
-                    ['label' => 'At Risk',  'data' => [], 'backgroundColor' => 'rgba(245,158,11,0.75)'],
-                    ['label' => 'Stockout', 'data' => [], 'backgroundColor' => 'rgba(239,68,68,0.75)'],
+                    ['label' => 'Healthy',  'data' => [], 'backgroundColor' => self::axFill(self::AX_SUCCESS, 0.78)],
+                    ['label' => 'At Risk',  'data' => [], 'backgroundColor' => self::axFill(self::AX_WARNING, 0.78)],
+                    ['label' => 'Stockout', 'data' => [], 'backgroundColor' => self::axFill(self::AX_DANGER, 0.78)],
                 ],
                 'labels' => [],
             ];
@@ -83,19 +83,19 @@ class InventoryHealthChartWidget extends BaseChartWidget
                 [
                     'label'           => 'Healthy',
                     'data'            => $rows->pluck('healthy')->map(fn ($v) => (int) $v)->values()->toArray(),
-                    'backgroundColor' => 'rgba(16,185,129,0.75)',
+                    'backgroundColor' => self::axFill(self::AX_SUCCESS, 0.78),
                     'borderRadius'    => 3,
                 ],
                 [
                     'label'           => 'At Risk',
                     'data'            => $rows->pluck('at_risk')->map(fn ($v) => (int) $v)->values()->toArray(),
-                    'backgroundColor' => 'rgba(245,158,11,0.75)',
+                    'backgroundColor' => self::axFill(self::AX_WARNING, 0.78),
                     'borderRadius'    => 3,
                 ],
                 [
                     'label'           => 'Stockout',
                     'data'            => $rows->pluck('stockout')->map(fn ($v) => (int) $v)->values()->toArray(),
-                    'backgroundColor' => 'rgba(239,68,68,0.75)',
+                    'backgroundColor' => self::axFill(self::AX_DANGER, 0.78),
                     'borderRadius'    => 3,
                 ],
             ],
@@ -111,7 +111,7 @@ class InventoryHealthChartWidget extends BaseChartWidget
             ],
             'scales' => [
                 'x' => ['stacked' => true, 'grid' => ['display' => false]],
-                'y' => ['stacked' => true, 'beginAtZero' => true, 'grid' => ['color' => 'rgba(0,0,0,0.05)']],
+                'y' => ['stacked' => true, 'beginAtZero' => true, 'grid' => ['color' => self::AX_GRID]],
             ],
         ];
     }
