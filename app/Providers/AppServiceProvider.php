@@ -170,6 +170,14 @@ class AppServiceProvider extends ServiceProvider
                 ->withoutOverlapping()
                 ->runInBackground()
                 ->appendOutputTo(storage_path('logs/sftp-poll.log'));
+
+            // 04:30 — Enforce data retention (2e). Runs after the full analytics
+            // pipeline so nothing purges data the night's jobs still need.
+            $schedule->command(\App\Console\Commands\PurgeOldDataCommand::class)
+                ->dailyAt('04:30')
+                ->withoutOverlapping()
+                ->runInBackground()
+                ->appendOutputTo(storage_path('logs/data-purge.log'));
         });
     }
 }
