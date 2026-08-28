@@ -3,10 +3,13 @@
 namespace App\Filament\Pages;
 
 use App\Models\Anomaly;
+use App\Models\AnomalySetting;
 use App\Models\Investigation;
 use App\Models\InvestigationOutcome;
+use App\Models\Store;
 use App\Services\OutcomeService;
 use App\Services\Outcome\RecoveryReportService;
+use App\Services\Recovery\AnomalyRecoveryService;
 use Filament\Facades\Filament;
 use Filament\Pages\Page;
 use Livewire\Attributes\Url;
@@ -46,6 +49,7 @@ class FinancialBreakdown extends Page
         'value_funnel',      // B6: surfaced → at-risk → recovered, the full ROI story
         'revenue_at_risk',   // open/in-progress investigations' AI-estimated risk (dashboard KPI)
         'recovered_mtd',     // observed recovery recorded this calendar month (dashboard KPI)
+        'observed_cleared',  // R3: data-only observed recovery from the anomaly lifecycle
         'outcome_at_risk',   // revenue at risk snapshotted across ALL recorded outcomes (widget)
         'observed_recovery', // analyst-confirmed recovery across ALL outcomes (widget)
         'recovery_rate',     // recovered / at-risk across outcomes (widget)
@@ -74,6 +78,7 @@ class FinancialBreakdown extends Page
     {
         return match ($this->metric) {
             'recovered_mtd'     => 'Recovered This Month',
+            'observed_cleared'  => 'Observed Cleared (Data-Only)',
             'outcome_at_risk'   => 'Revenue at Risk (Outcomes)',
             'observed_recovery' => 'Observed Recovery',
             'recovery_rate'     => 'Recovery Rate',
@@ -108,6 +113,7 @@ class FinancialBreakdown extends Page
         return match ($this->metric) {
             'value_funnel'      => $this->valueFunnel($tenantId),
             'recovered_mtd'     => $this->recoveredMtd($tenantId),
+            'observed_cleared'  => $this->observedCleared($tenantId),
             'outcome_at_risk'   => $this->outcomeAtRisk($tenantId),
             'observed_recovery' => $this->observedRecovery($tenantId),
             'recovery_rate'     => $this->recoveryRate($tenantId),
@@ -123,6 +129,7 @@ class FinancialBreakdown extends Page
             ['metric' => 'value_funnel',      'label' => 'Value Funnel'],
             ['metric' => 'revenue_at_risk',   'label' => 'Revenue at Risk'],
             ['metric' => 'recovered_mtd',     'label' => 'Recovered MTD'],
+            ['metric' => 'observed_cleared',  'label' => 'Observed Cleared'],
             ['metric' => 'observed_recovery', 'label' => 'Observed Recovery'],
             ['metric' => 'recovery_rate',     'label' => 'Recovery Rate'],
             ['metric' => 'false_positives',   'label' => 'False Positives'],
@@ -153,21 +160,33 @@ class FinancialBreakdown extends Page
         $recovered = (float) ($summary['total_recovered'] ?? 0);
         $rate      = $atRisk > 0 ? round($recovered / $atRisk * 100, 1) : null;
 
+        // R3 — observed (data-only) recovery straight from the anomaly lifecycle,
+        // kept strictly SEPARATE from the attributed figure above. This is value
+        // that stopped being at risk because the condition cleared and stayed
+        // clear across evaluated runs — no cause claimed, and never summed with
+        // attributed recovery (they measure different things).
+        $obs = app(AnomalyRecoveryService::class)->summary($tenantId);
+
         return [
             'metric'      => 'value_funnel',
             'label'       => 'Value Funnel',
             'value'       => $this->money($surfaced),
-            'formula'     => 'Surfaced (est. value at risk across open anomalies) → Assessed at risk (recorded outcomes) → Recovered (observed) → Recovery rate. All deterministic DB aggregates.',
+            'formula'     => 'Surfaced (est. value at risk across open anomalies) → Observed cleared (lifecycle, data-only) → Attributed recovery (recorded outcomes) → Recovery rate. Observed and attributed are separate lenses, never added together. All deterministic DB aggregates.',
             'components'  => [
-                ['label' => '1 · Surfaced — est. value at risk (open anomalies)', 'value' => $this->money($surfaced)],
-                ['label' => '2 · Assessed at risk — recorded outcomes',           'value' => $this->money($atRisk)],
-                ['label' => '3 · Recovered — observed',                           'value' => $this->money($recovered)],
-                ['label' => '4 · Recovery rate',                                  'value' => $rate !== null ? $rate . '%' : '—'],
+                ['label' => '1 · Surfaced — est. value at risk (open anomalies)',        'value' => $this->money($surfaced)],
+                ['label' => '2 · Observed cleared — lifecycle, no cause claimed',        'value' => $this->money((float) $obs['observed_total'])],
+                ['label' => '   ↳ still at risk (active episodes)',                      'value' => $this->money((float) $obs['active_at_risk'])],
+                ['label' => '   ↳ observed clear rate',                                  'value' => $obs['clear_rate'] !== null ? $obs['clear_rate'] . '%' : '—'],
+                ['label' => '3 · Attributed at risk — recorded outcomes',               'value' => $this->money($atRisk)],
+                ['label' => '4 · Attributed recovery — analyst/action confirmed',       'value' => $this->money($recovered)],
+                ['label' => '5 · Attributed recovery rate',                             'value' => $rate !== null ? $rate . '%' : '—'],
             ],
             'rows'        => [],
             'rowsHeader'  => [],
             'amountLabel' => '',
-            'empty'       => $surfaced <= 0 && $atRisk <= 0 ? 'No value surfaced or assessed yet — run detection and record some outcomes.' : null,
+            'empty'       => $surfaced <= 0 && $atRisk <= 0 && (float) $obs['observed_total'] <= 0
+                ? 'No value surfaced, cleared, or assessed yet — run detection and let the lifecycle observe some recoveries.'
+                : null,
         ];
     }
 
@@ -243,6 +262,49 @@ class FinancialBreakdown extends Page
             'rowsHeader'  => ['Investigation', 'SKU', 'Recovery Method', 'Observed Recovery'],
             'rows'        => $this->outcomeRows($outcomes, 'observed_recovery'),
             'empty'       => 'No recovery has been recorded this month.',
+        ];
+    }
+
+    /**
+     * R3 — "Observed Cleared (Data-Only)": Σ value_at_open over anomaly episodes
+     * the lifecycle marked `resolved` this month (excluding backfilled history).
+     * This is OBSERVED recovery — the engine watched the condition clear and stay
+     * clear across evaluated runs — with NO cause attributed. It is deliberately
+     * separate from "Recovered MTD" (attributed, analyst/action-confirmed) and the
+     * two are never added together.
+     */
+    private function observedCleared(int $tenantId): array
+    {
+        $svc     = app(AnomalyRecoveryService::class);
+        $summary = $svc->summary($tenantId);
+        $mtd     = $svc->mtd($tenantId);
+        $byRule  = $svc->byRuleFamily($tenantId, now()->startOfMonth(), null);
+        $rows    = $svc->resolvedRows($tenantId, now()->startOfMonth(), null);
+
+        $components = [
+            ['label' => 'Episodes cleared this month',            'value' => number_format((int) $mtd['count'])],
+            ['label' => 'Observed cleared this month',            'value' => $this->money((float) $mtd['amount'])],
+            ['label' => 'Observed cleared (all time)',            'value' => $this->money((float) $summary['observed_total'])],
+            ['label' => 'Still at risk (active episodes)',        'value' => $this->money((float) $summary['active_at_risk'])],
+            ['label' => 'Observed clear rate',                    'value' => $summary['clear_rate'] !== null ? $summary['clear_rate'] . '%' : '—'],
+        ];
+        if ((int) $summary['backfilled_excluded'] > 0) {
+            $components[] = ['label' => 'Backfilled episodes excluded (historical)', 'value' => number_format((int) $summary['backfilled_excluded'])];
+        }
+        foreach (array_slice($byRule, 0, 6) as $b) {
+            $components[] = ['label' => '• ' . $b['label'] . ' (' . $b['count'] . ')', 'value' => $this->money($b['recovered'])];
+        }
+
+        return [
+            'metric'      => $this->metric,
+            'label'       => 'Observed Cleared (Data-Only)',
+            'value'       => $this->money((float) $mtd['amount']),
+            'formula'     => 'Σ value_at_open for every anomaly episode the lifecycle confirmed `resolved` since ' . now()->startOfMonth()->format('M j, Y') . ', excluding backfilled history. Observed recovery: the condition cleared and stayed clear across evaluated runs — no cause is claimed, and this is never added to attributed Recovered MTD.',
+            'components'  => $components,
+            'amountLabel' => 'Value Cleared',
+            'rowsHeader'  => ['Anomaly', 'SKU / Store', 'Cleared', 'Value Cleared'],
+            'rows'        => $this->anomalyRows($rows),
+            'empty'       => 'No anomalies have been observed clearing this month yet.',
         ];
     }
 
@@ -417,9 +479,42 @@ class FinancialBreakdown extends Page
         })->all();
     }
 
+    /**
+     * Drill-down rows for observed-cleared anomaly episodes.
+     *
+     * @param  \Illuminate\Support\Collection<int,Anomaly>  $anomalies
+     * @return array<int,array<string,mixed>>
+     */
+    private function anomalyRows($anomalies): array
+    {
+        $storeIds = $anomalies->pluck('store_id')->filter()->unique()->all();
+        $stores   = $storeIds
+            ? Store::whereIn('id', $storeIds)->pluck('name', 'id')->all()
+            : [];
+
+        return $anomalies->map(function (Anomaly $a) use ($stores) {
+            $label = AnomalySetting::RULES[$a->rule_type]['label'] ?? ucwords(str_replace('_', ' ', (string) $a->rule_type));
+            $scope = $a->sku ?: ($a->store_id ? ($stores[$a->store_id] ?? ('Store #' . $a->store_id)) : '—');
+
+            return [
+                'id'     => $a->id,
+                'url'    => $this->anomalyUrl($a->id),
+                'title'  => $label . ' #' . $a->id,
+                'sku'    => $scope,
+                'meta'   => $a->resolved_at ? $a->resolved_at->format('M j, Y') : '—',
+                'amount' => $this->money((float) ($a->value_at_open ?? 0)),
+            ];
+        })->all();
+    }
+
     private function investigateUrl(int $investigationId): string
     {
         return \App\Filament\Resources\InvestigationResource::getUrl('investigate', ['record' => $investigationId]);
+    }
+
+    private function anomalyUrl(int $anomalyId): string
+    {
+        return \App\Filament\Resources\AnomalyResource::getUrl('investigate', ['record' => $anomalyId]);
     }
 
     private function money(float $val): string

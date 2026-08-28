@@ -10,6 +10,7 @@ use App\Models\InvestigationEvidence;
 use App\Models\InvestigationOutcome;
 use App\Models\Suppression;
 use App\Services\Outcome\RecoveryReportService;
+use App\Services\Recovery\AnomalyRecoveryService;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -30,6 +31,7 @@ class QualityMetricsService
         return [
             'funnel'          => $this->funnel($tenantId),
             'rates'           => $this->rates($tenantId),
+            'recovery'        => $this->recoveryLifecycle($tenantId),
             'evidence'        => $this->evidenceQuality($tenantId),
             'action_quality'  => $this->actionQuality($tenantId),
             'rule_performance'=> $this->rulePerformance($tenantId),
@@ -103,6 +105,63 @@ class QualityMetricsService
                 'actions'        => $totalActions,
                 'resolved'       => $resolvedInv,
             ],
+        ];
+    }
+
+    /**
+     * Recovery-lifecycle health (R3) — how the deterministic anomaly lifecycle
+     * (R1/R2) is actually moving: how many subjects are live vs. cleared, how
+     * fast they clear, how often they recur, and how much value has been observed
+     * clearing. Every figure is DB truth written by the reconciler — OBSERVED,
+     * never attributed to an action.
+     */
+    public function recoveryLifecycle(int $tenantId): array
+    {
+        $states = DB::table('anomalies')
+            ->where('tenant_id', $tenantId)
+            ->whereNull('dismissed_at')
+            ->groupBy('lifecycle_state')
+            ->selectRaw('lifecycle_state, COUNT(*) AS cnt')
+            ->pluck('cnt', 'lifecycle_state')
+            ->all();
+
+        $open       = (int) ($states[Anomaly::LIFECYCLE_OPEN] ?? 0);
+        $persisting = (int) ($states[Anomaly::LIFECYCLE_PERSISTING] ?? 0);
+        $clearing   = (int) ($states[Anomaly::LIFECYCLE_CLEARING] ?? 0);
+        $resolved   = (int) ($states[Anomaly::LIFECYCLE_RESOLVED] ?? 0);
+        $active     = $open + $persisting + $clearing;
+
+        // Mean days open→resolved, genuinely observed episodes only (Postgres).
+        $meanDays = DB::table('anomalies')
+            ->where('tenant_id', $tenantId)
+            ->where('lifecycle_state', Anomaly::LIFECYCLE_RESOLVED)
+            ->where(fn ($w) => $w->where('backfilled', false)->orWhereNull('backfilled'))
+            ->whereNotNull('resolved_at')
+            ->whereNotNull('first_seen_at')
+            ->selectRaw('AVG(EXTRACT(EPOCH FROM (resolved_at - first_seen_at)) / 86400.0) AS d')
+            ->value('d');
+
+        // Recurrence: episodes that are a re-emergence of an earlier resolved one.
+        $recurrences = (int) Anomaly::where('tenant_id', $tenantId)
+            ->whereNotNull('previous_episode_id')
+            ->count();
+
+        $recoverySummary = app(AnomalyRecoveryService::class)->summary($tenantId);
+
+        return [
+            'active'              => $active,
+            'open'                => $open,
+            'persisting'          => $persisting,
+            'clearing'            => $clearing,
+            'resolved'            => $resolved,
+            'clearing_share'      => $this->pct($clearing, $active),
+            'clear_rate'          => $recoverySummary['clear_rate'],
+            'observed_total'      => (float) $recoverySummary['observed_total'],
+            'observed_mtd'        => (float) $recoverySummary['observed_mtd'],
+            'active_at_risk'      => (float) $recoverySummary['active_at_risk'],
+            'backfilled_excluded' => (int) $recoverySummary['backfilled_excluded'],
+            'mean_days_to_clear'  => $meanDays !== null ? round((float) $meanDays, 1) : null,
+            'recurrences'         => $recurrences,
         ];
     }
 

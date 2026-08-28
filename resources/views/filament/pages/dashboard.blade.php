@@ -68,6 +68,15 @@ $prevRecoveredMTD = $tenantId
         ->sum('observed_recovery') ?? 0)
     : 0;
 
+/* ── KPI: Observed Cleared MTD (R3 — data-only, from the anomaly lifecycle) ──
+   Value that stopped being at risk because the condition cleared and stayed
+   clear across evaluated runs. OBSERVED, no cause claimed — deliberately
+   separate from the attributed "Recovered MTD" above; the two are never summed. */
+$recoverySvc = app(\App\Services\Recovery\AnomalyRecoveryService::class);
+$observedClearedMTD     = $tenantId ? (float) $recoverySvc->mtd($tenantId)['amount'] : 0;
+$prevObservedClearedMTD = $tenantId ? (float) $recoverySvc->prevMtd($tenantId)['amount'] : 0;
+$observedClearedDaily   = $tenantId ? $recoverySvc->dailySeries($tenantId, 30) : [];
+
 /* ── Status breakdown (for donut chart) ───────────────────────────────── */
 $statusBreakdown = $tenantId
     ? \App\Models\Investigation::where('tenant_id',$tenantId)
@@ -102,11 +111,13 @@ $recoveryDailyRaw = $tenantId
 $chartLabels = [];
 $chartAtRisk = [];
 $chartRecovered = [];
+$chartObsCleared = [];
 for ($i = 29; $i >= 0; $i--) {
     $d = $now->copy()->subDays($i)->format('Y-m-d');
-    $chartLabels[]    = $now->copy()->subDays($i)->format('M j');
-    $chartAtRisk[]    = round($revenueDailyRaw[$d] ?? 0, 2);
-    $chartRecovered[] = round($recoveryDailyRaw[$d] ?? 0, 2);
+    $chartLabels[]     = $now->copy()->subDays($i)->format('M j');
+    $chartAtRisk[]     = round($revenueDailyRaw[$d] ?? 0, 2);
+    $chartRecovered[]  = round($recoveryDailyRaw[$d] ?? 0, 2);
+    $chartObsCleared[] = round($observedClearedDaily[$d] ?? 0, 2);
 }
 
 /* ── Top drivers ───────────────────────────────────────────────────────── */
@@ -195,6 +206,7 @@ $riskTrend   = $dbTrend((float)$revenueAtRisk, (float)$prevRevenueAtRisk);
 $openTrend   = $dbTrend((float)$openCount, (float)$prevOpenCount);
 $highTrend   = $dbTrend((float)$highPriorityCount, (float)$prevHighCount);
 $recTrend    = $dbTrend((float)$recoveredMTD, (float)$prevRecoveredMTD);
+$obsTrend    = $dbTrend((float)$observedClearedMTD, (float)$prevObservedClearedMTD);
 
 $dbRuleLabel = static function(string $ruleType): string {
     $map = [
@@ -252,10 +264,12 @@ $dbSparkline = static function(array $values, string $color = '#6d28d9', int $w 
 $statusValues = array_values($statusBreakdown ?: [0]);
 $riskSparkData  = array_slice($chartAtRisk, -7);
 $recSparkData   = array_slice($chartRecovered, -7);
+$obsSparkData   = array_slice($chartObsCleared, -7);
 
 /* ── Drill-down URLs for the KPI cards ─────────────────────────────────── */
 $urlRevenueAtRisk = \App\Filament\Pages\FinancialBreakdown::getUrl(['metric' => 'revenue_at_risk']);
 $urlRecoveredMtd  = \App\Filament\Pages\FinancialBreakdown::getUrl(['metric' => 'recovered_mtd']);
+$urlObservedCleared = \App\Filament\Pages\FinancialBreakdown::getUrl(['metric' => 'observed_cleared']);
 $urlOpenInv       = \App\Filament\Resources\InvestigationResource::getUrl('index', ['status' => 'open']);
 $urlHighPriority  = \App\Filament\Resources\InvestigationResource::getUrl('index', ['status' => 'open', 'priority' => 'high_critical']);
 $urlOverdue       = \App\Filament\Pages\ActionCenter::getUrl(['tab' => 'overdue']);
@@ -515,15 +529,26 @@ a.db-kpi:hover::after { opacity:1; }
         <div class="db-kpi-spark">{!! $dbSparkline([$overdueCount, $overdueCount], '#dc2626') !!}</div>
     </a>
 
-    {{-- Recovered MTD --}}
+    {{-- Recovered MTD (attributed — analyst/action confirmed) --}}
     <a href="{{ $urlRecoveredMtd }}" class="db-kpi" title="See how Recovered MTD is derived">
         <div class="db-kpi-label">Recovered MTD</div>
         <div class="db-kpi-value" style="color:#16a34a">{{ $dbFormatMoney((float)$recoveredMTD) }}</div>
         <div class="db-kpi-trend {{ $recTrend['dir'] === 'up' ? 'db-trend-up' : ($recTrend['dir'] === 'down' ? 'db-trend-down' : 'db-trend-flat') }}">
             @if($recTrend['dir'] === 'up') ↑ @elseif($recTrend['dir'] === 'down') ↓ @else — @endif
-            @if($recTrend['pct'] !== null) {{ $recTrend['pct'] }}% vs prev month @else Month to date @endif
+            @if($recTrend['pct'] !== null) {{ $recTrend['pct'] }}% vs prev month @else Attributed · month to date @endif
         </div>
         <div class="db-kpi-spark">{!! $dbSparkline($recSparkData, '#16a34a') !!}</div>
+    </a>
+
+    {{-- Observed Cleared MTD (R3 — data-only lifecycle recovery, no cause claimed) --}}
+    <a href="{{ $urlObservedCleared }}" class="db-kpi" title="Value no longer at risk because anomalies cleared and stayed clear — observed, not attributed to any action">
+        <div class="db-kpi-label">Observed Cleared MTD</div>
+        <div class="db-kpi-value" style="color:#0d9488">{{ $dbFormatMoney((float)$observedClearedMTD) }}</div>
+        <div class="db-kpi-trend {{ $obsTrend['dir'] === 'up' ? 'db-trend-up' : ($obsTrend['dir'] === 'down' ? 'db-trend-down' : 'db-trend-flat') }}">
+            @if($obsTrend['dir'] === 'up') ↑ @elseif($obsTrend['dir'] === 'down') ↓ @else — @endif
+            @if($obsTrend['pct'] !== null) {{ $obsTrend['pct'] }}% vs prev month @else Data-only · month to date @endif
+        </div>
+        <div class="db-kpi-spark">{!! $dbSparkline($obsSparkData, '#0d9488') !!}</div>
     </a>
 
 </div>

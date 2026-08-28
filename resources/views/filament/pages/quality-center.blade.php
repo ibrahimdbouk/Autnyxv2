@@ -73,6 +73,38 @@
             </div>
         </div>
 
+        {{-- Recovery lifecycle (R3) — observed, deterministic, no cause claimed --}}
+        @php
+            $rec = $r['recovery'] ?? [];
+            $ccy = \Filament\Facades\Filament::getTenant()?->currencyCode();
+            $mny = fn ($v) => \App\Support\Money::compact((float) $v, $ccy);
+        @endphp
+        <div class="qc-card">
+            <h3>Recovery lifecycle · observed</h3>
+            <div class="body">
+                <div class="qc-grid">
+                    <div class="qc-tile"><div class="lbl">Observed cleared (MTD)</div><div class="val" style="color:#0d9488">{{ $mny($rec['observed_mtd'] ?? 0) }}</div></div>
+                    <div class="qc-tile"><div class="lbl">Still at risk (active)</div><div class="val">{{ $mny($rec['active_at_risk'] ?? 0) }}</div></div>
+                    <div class="qc-tile"><div class="lbl">Observed clear rate</div><div class="val">{{ ($rec['clear_rate'] ?? null) !== null ? $rec['clear_rate'].'%' : '—' }}</div></div>
+                    <div class="qc-tile"><div class="lbl">Mean days to clear</div><div class="val">{{ ($rec['mean_days_to_clear'] ?? null) !== null ? $rec['mean_days_to_clear'] : '—' }}</div></div>
+                </div>
+                <table class="qc-tbl" style="margin-top:1rem;">
+                    <thead><tr><th>Live · open</th><th>Live · persisting</th><th>Clearing</th><th>Resolved</th><th>Recurrences</th></tr></thead>
+                    <tbody><tr>
+                        <td>{{ number_format($rec['open'] ?? 0) }}</td>
+                        <td>{{ number_format($rec['persisting'] ?? 0) }}</td>
+                        <td>{{ number_format($rec['clearing'] ?? 0) }}</td>
+                        <td>{{ number_format($rec['resolved'] ?? 0) }}</td>
+                        <td>{{ number_format($rec['recurrences'] ?? 0) }}</td>
+                    </tr></tbody>
+                </table>
+                <div class="qc-muted" style="margin-top:.6rem;">
+                    Observed recovery = value that stopped being at risk because the condition cleared and stayed clear across evaluated runs. No cause is attributed — kept separate from analyst-confirmed recovery.
+                    @if(($rec['backfilled_excluded'] ?? 0) > 0) {{ number_format($rec['backfilled_excluded']) }} backfilled (historical) episodes are excluded from these figures. @endif
+                </div>
+            </div>
+        </div>
+
         <div class="qc-grid" style="grid-template-columns:1fr;">
             {{-- Evidence quality + action quality --}}
             @php $ev = $r['evidence'] ?? []; $aq = $r['action_quality'] ?? []; $times = $r['times'] ?? []; @endphp
