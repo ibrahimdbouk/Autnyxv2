@@ -16,9 +16,10 @@ class LoginResponse implements LoginResponseContract
     public function toResponse($request): RedirectResponse
     {
         $user = auth()->user();
+        $panels = Filament::getPanels();
 
-        if ($user && $user->is_super_admin && Filament::hasPanel('ops')) {
-            return redirect()->to(Filament::getPanel('ops')->getUrl());
+        if ($user && $user->is_super_admin && isset($panels['ops'])) {
+            return redirect()->to($panels['ops']->getUrl());
         }
 
         $panel = Filament::getCurrentPanel() ?? Filament::getDefaultPanel();
