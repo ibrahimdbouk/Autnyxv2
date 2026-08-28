@@ -883,6 +883,10 @@ if ($selected) {
             <div
                 class="invs-card {{ $isSelected ? 'invs-card-selected' : '' }}"
                 wire:click="selectInvestigation({{ $inv->id }})"
+                wire:keydown.enter="selectInvestigation({{ $inv->id }})"
+                tabindex="0"
+                role="button"
+                aria-label="Open investigation: {{ $entityName }}"
                 wire:key="inv-{{ $inv->id }}"
             >
                 <label class="invs-check" wire:click.stop>
@@ -938,12 +942,12 @@ if ($selected) {
             @if($investigations->onFirstPage())
                 <span class="invs-page-btn invs-page-disabled">‹</span>
             @else
-                <button class="invs-page-btn" wire:click="$set('currentPage', {{ $investigations->currentPage() - 1 }})">‹</button>
+                <button class="invs-page-btn" aria-label="Previous page" wire:click="$set('currentPage', {{ $investigations->currentPage() - 1 }})">‹</button>
             @endif
             <span class="invs-page-count">{{ number_format($investigations->total()) }} total</span>
             <span class="invs-page-info">Page {{ $investigations->currentPage() }} / {{ $investigations->lastPage() }}</span>
             @if($investigations->hasMorePages())
-                <button class="invs-page-btn" wire:click="$set('currentPage', {{ $investigations->currentPage() + 1 }})">›</button>
+                <button class="invs-page-btn" aria-label="Next page" wire:click="$set('currentPage', {{ $investigations->currentPage() + 1 }})">›</button>
             @else
                 <span class="invs-page-btn invs-page-disabled">›</span>
             @endif
@@ -974,12 +978,12 @@ if ($selected) {
                     </span>
                 </div>
                 <div class="invs-panel-actions">
-                    <a href="{{ $expandUrl }}" class="invs-expand-btn" title="Expand to full investigation">
+                    <a href="{{ $expandUrl }}" class="invs-expand-btn" title="Expand to full investigation" aria-label="Expand to full investigation">
                         <svg style="width:1rem;height:1rem" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
                         </svg>
                     </a>
-                    <button wire:click="closePanel" class="invs-close-btn">&#x2715;</button>
+                    <button wire:click="closePanel" class="invs-close-btn" aria-label="Close panel">&#x2715;</button>
                 </div>
             </div>
             <div class="invs-tabs">

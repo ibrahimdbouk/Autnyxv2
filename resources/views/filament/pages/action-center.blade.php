@@ -525,6 +525,9 @@ $acDueLabel = static function(?string $due): string {
                         : null;
                 @endphp
                 <tr wire:click="selectAction({{ $act->id }})"
+                    wire:keydown.enter="selectAction({{ $act->id }})"
+                    tabindex="0" role="button"
+                    aria-label="Open action: {{ \Illuminate\Support\Str::limit($act->title, 55) }}"
                     class="{{ $this->selectedActionId === $act->id ? 'ac-row-selected' : '' }}">
                     <td class="ac-check" wire:click.stop>
                         <input type="checkbox"
@@ -641,7 +644,7 @@ $acDueLabel = static function(?string $due): string {
                         <span>{{ $selectedAct->getTypeLabel() }}</span>
                     </div>
                 </div>
-                <button class="ac-close-btn" wire:click="closePanel()">✕</button>
+                <button class="ac-close-btn" wire:click="closePanel()" aria-label="Close detail panel">✕</button>
             </div>
 
             <div class="ac-detail-body">
