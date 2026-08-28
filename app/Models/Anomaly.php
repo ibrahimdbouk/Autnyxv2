@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\Recovery\AnomalyIdentity;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -23,6 +24,14 @@ class Anomaly extends Model
     const STATUS_ACTION_TAKEN      = 'action_taken';
     const STATUS_RESOLVED          = 'resolved';
     const STATUS_UNRESOLVED        = 'unresolved';
+
+    // ── Recovery lifecycle (R1) ───────────────────────────────────────────────
+    // States advanced by the nightly reconciliation job (R2). Recurrence after
+    // resolution is modelled as a fresh episode linked via previous_episode_id.
+    const LIFECYCLE_OPEN       = 'open';
+    const LIFECYCLE_PERSISTING = 'persisting';
+    const LIFECYCLE_CLEARING   = 'clearing';
+    const LIFECYCLE_RESOLVED   = 'resolved';
 
     // ── Confidence tiers ──────────────────────────────────────────────────────
     const CONFIDENCE_ESTABLISHED = 'established';
@@ -69,6 +78,18 @@ class Anomaly extends Model
         'action_notes',
         'resolved_at',
         'resolution_notes',
+        // Recovery lifecycle (R1)
+        'identity_key',
+        'episode_seq',
+        'lifecycle_state',
+        'first_seen_at',
+        'last_seen_at',
+        'cleared_at',
+        'clear_streak',
+        'occurrence_count',
+        'previous_episode_id',
+        'value_at_open',
+        'backfilled',
     ];
 
     protected $casts = [
@@ -81,7 +102,49 @@ class Anomaly extends Model
         'ai_generated_at'       => 'datetime',
         'action_taken_at'       => 'datetime',
         'resolved_at'           => 'datetime',
+        // Recovery lifecycle (R1)
+        'first_seen_at'         => 'datetime',
+        'last_seen_at'          => 'datetime',
+        'cleared_at'            => 'datetime',
+        'value_at_open'         => 'float',
+        'episode_seq'           => 'integer',
+        'clear_streak'          => 'integer',
+        'occurrence_count'      => 'integer',
+        'backfilled'            => 'boolean',
     ];
+
+    // ── Boot: materialise derived identity + freeze value-at-open on create ────
+    // Identity is deterministic (a pure function of tenant/rule/store/sku), so
+    // computing it here is materialising a derived value, not a lifecycle
+    // decision — the R2 reconciliation job stays the single writer of *status*.
+    protected static function booted(): void
+    {
+        static::creating(function (Anomaly $anomaly): void {
+            if (empty($anomaly->identity_key)) {
+                $anomaly->identity_key = AnomalyIdentity::forAnomaly($anomaly);
+            }
+            if ($anomaly->first_seen_at === null) {
+                $anomaly->first_seen_at = $anomaly->detected_at ?: now();
+            }
+            if ($anomaly->last_seen_at === null) {
+                $anomaly->last_seen_at = $anomaly->first_seen_at;
+            }
+            if ($anomaly->value_at_open === null) {
+                $ctx = $anomaly->context;
+                $impact = is_array($ctx) ? ($ctx['revenue_impact'] ?? null) : null;
+                $anomaly->value_at_open = $impact !== null ? (float) $impact : null;
+            }
+            if (empty($anomaly->lifecycle_state)) {
+                $anomaly->lifecycle_state = self::LIFECYCLE_OPEN;
+            }
+            // Materialise the DB defaults in-memory so a freshly-created model is
+            // correct without a round-trip. R2 may pass episode_seq explicitly.
+            $anomaly->episode_seq      = $anomaly->episode_seq ?: 1;
+            $anomaly->occurrence_count = $anomaly->occurrence_count ?: 1;
+            $anomaly->clear_streak     = $anomaly->clear_streak ?? 0;
+            $anomaly->backfilled       = $anomaly->backfilled ?? false;
+        });
+    }
 
     // ── Relationships ─────────────────────────────────────────────────────────
 
@@ -113,6 +176,12 @@ class Anomaly extends Model
     public function investigationEntities(): HasMany
     {
         return $this->hasMany(InvestigationEntity::class);
+    }
+
+    /** The prior episode of this same subject, when this row is a recurrence (R2). */
+    public function previousEpisode(): BelongsTo
+    {
+        return $this->belongsTo(Anomaly::class, 'previous_episode_id');
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
