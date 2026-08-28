@@ -58,6 +58,13 @@ class AppServiceProvider extends ServiceProvider
                 touch($path);
             }
         }
+
+        // Super admins land on the /ops control plane after login (not a tenant
+        // data dashboard). See App\Http\Responses\LoginResponse.
+        $this->app->bind(
+            \Filament\Http\Responses\Auth\Contracts\LoginResponse::class,
+            \App\Http\Responses\LoginResponse::class,
+        );
     }
 
     /**
