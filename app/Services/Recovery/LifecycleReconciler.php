@@ -31,18 +31,37 @@ class LifecycleReconciler
     public const DEFAULT_CONFIRM_RUNS = 2;
 
     /**
+     * How many consecutive evaluated-healthy runs each demand segment needs
+     * before recovery is confirmed. Intermittent/lumpy SKUs are quiet by nature,
+     * so a single "no failure" run can just be a demand gap — they require more
+     * confirmation than smooth series before we call it recovery.
+     */
+    public const SEGMENT_CONFIRM_RUNS = [
+        'smooth'       => 2,
+        'erratic'      => 3,
+        'intermittent' => 3,
+        'lumpy'        => 4,
+    ];
+
+    public static function confirmRunsForSegment(?string $segment): int
+    {
+        return self::SEGMENT_CONFIRM_RUNS[$segment] ?? self::DEFAULT_CONFIRM_RUNS;
+    }
+
+    /**
      * @param  int[]  $touchedIds  anomaly ids flagged (still failing) this run
      * @param  \Closure(Anomaly): bool  $evaluable  was this subject actually evaluated this run?
+     * @param  int|\Closure|null  $confirmRuns  fixed N, or a \Closure(Anomaly): int for
+     *                                          per-subject (segment-aware) confirmation.
      */
     public function reconcileRule(
         int $tenantId,
         string $ruleType,
         array $touchedIds,
         \Closure $evaluable,
-        ?int $confirmRuns = null,
+        int|\Closure|null $confirmRuns = null,
         ?CarbonInterface $now = null,
     ): void {
-        $confirmRuns = max(1, $confirmRuns ?? self::DEFAULT_CONFIRM_RUNS);
         $now = $now ? Carbon::instance($now) : Carbon::now();
         $touched = array_flip(array_map('intval', $touchedIds));
 
@@ -58,7 +77,10 @@ class LifecycleReconciler
                 if (isset($touched[$anomaly->id])) {
                     $this->markFailing($anomaly, $now);
                 } elseif ($evaluable($anomaly)) {
-                    $this->markClearing($anomaly, $confirmRuns, $now);
+                    $n = $confirmRuns instanceof \Closure
+                        ? (int) $confirmRuns($anomaly)
+                        : (int) ($confirmRuns ?? self::DEFAULT_CONFIRM_RUNS);
+                    $this->markClearing($anomaly, max(1, $n), $now);
                 }
                 // else: dormant — not touched and not evaluable this run (data gap).
                 //       Leave it exactly as it was; never resolve on absence of data.

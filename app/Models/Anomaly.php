@@ -123,6 +123,26 @@ class Anomaly extends Model
             if (empty($anomaly->identity_key)) {
                 $anomaly->identity_key = AnomalyIdentity::forAnomaly($anomaly);
             }
+            // Recurrence (R2b): a new row for a subject that already has history is
+            // a fresh EPISODE. Link it to the latest prior episode and take the
+            // next episode_seq — computed here (before insert) so the unique
+            // (tenant_id, identity_key, episode_seq) constraint always holds.
+            // `flag()` only creates a new row when no ACTIVE episode exists, so
+            // the prior is a resolved (or dismissed) episode.
+            if ($anomaly->previous_episode_id === null && ! empty($anomaly->identity_key)) {
+                $prior = self::where('tenant_id', $anomaly->tenant_id)
+                    ->where('identity_key', $anomaly->identity_key)
+                    ->orderByDesc('episode_seq')
+                    ->orderByDesc('id')
+                    ->first(['id', 'episode_seq']);
+
+                if ($prior !== null) {
+                    $anomaly->previous_episode_id = $prior->id;
+                    if (empty($anomaly->episode_seq) || (int) $anomaly->episode_seq <= 1) {
+                        $anomaly->episode_seq = (int) $prior->episode_seq + 1;
+                    }
+                }
+            }
             if ($anomaly->first_seen_at === null) {
                 $anomaly->first_seen_at = $anomaly->detected_at ?: now();
             }

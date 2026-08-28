@@ -395,6 +395,30 @@ class AnomalyDetectionService
     }
 
     /**
+     * Recovery lifecycle (R2b): a per-subject confirmation resolver the reconciler
+     * uses to decide how many consecutive healthy runs confirm recovery. Keys off
+     * the SKU's demand segment (from the primed profiles) — intermittent/lumpy
+     * items need more confirmation than smooth series, so a quiet gap is not
+     * mistaken for recovery. Falls back to the default when no profile exists.
+     */
+    private function confirmRunsResolver(): \Closure
+    {
+        $segments = $this->skuSegments;
+
+        return function (Anomaly $anomaly) use ($segments): int {
+            $sku = $anomaly->sku !== null ? trim($anomaly->sku) : null;
+            if ($sku === null) {
+                return LifecycleReconciler::DEFAULT_CONFIRM_RUNS;
+            }
+            $segment = $anomaly->store_id !== null
+                ? ($segments[$anomaly->store_id . '|' . $sku] ?? $segments['0|' . $sku] ?? null)
+                : ($segments['0|' . $sku] ?? null);
+
+            return LifecycleReconciler::confirmRunsForSegment($segment);
+        };
+    }
+
+    /**
      * Run all enabled rules for a tenant and store results in the anomalies table.
      * Existing open anomalies are upserted (investigation fields preserved); a
      * subject that stops failing is advanced through the recovery lifecycle (R2).
@@ -486,6 +510,7 @@ class AnomalyDetectionService
         // clearing → resolved (so recovery can be MEASURED) instead of deleted.
         $reconciler = new LifecycleReconciler();
         [$invPairs, $invSkus, $demPairs, $demSkus] = $this->buildCoverageSets();
+        $confirmRunsFor = $this->confirmRunsResolver();
 
         foreach ($rules as $ruleType => $detector) {
             $setting = $settings->get($ruleType);
@@ -515,6 +540,7 @@ class AnomalyDetectionService
                     $ruleType,
                     $this->touchedAnomalyIds,
                     $this->evaluabilityFor($ruleType, $invPairs, $invSkus, $demPairs, $demSkus),
+                    $confirmRunsFor,
                 );
             }
         }
