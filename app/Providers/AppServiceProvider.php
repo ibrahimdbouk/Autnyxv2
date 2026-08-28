@@ -72,6 +72,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // 3b — org-wide strong password policy (applied wherever a password is
+        // validated via Password::defaults(), e.g. the user form).
+        \Illuminate\Validation\Rules\Password::defaults(
+            fn () => \Illuminate\Validation\Rules\Password::min(10)->mixedCase()->numbers()
+        );
+
         // Nightly automation pipeline (M9 + M10 + M11 + M15 corrected order)
         //
         // IMPORTANT: baselines must run BEFORE detection so that detection

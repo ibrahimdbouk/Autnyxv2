@@ -94,7 +94,7 @@ class UserResource extends Resource
                     ->password()
                     ->revealable()
                     ->required(fn (string $operation) => $operation === 'create')
-                    ->minLength(8)
+                    ->rule(\Illuminate\Validation\Rules\Password::defaults())
                     ->dehydrateStateUsing(fn (?string $state) => $state ? Hash::make($state) : null)
                     ->dehydrated(fn (?string $state) => filled($state))
                     ->helperText(fn (string $operation) => $operation === 'edit'

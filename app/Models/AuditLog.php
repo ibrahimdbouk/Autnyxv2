@@ -39,6 +39,8 @@ class AuditLog extends Model
     const EVENT_TENANT_CREATED           = 'tenant_created';
     const EVENT_IMPERSONATION_STARTED    = 'impersonation_started';
     const EVENT_IMPERSONATION_STOPPED    = 'impersonation_stopped';
+    // 3b — data export (SOC 2 / ISO: log who exported what)
+    const EVENT_DATA_EXPORTED            = 'data_exported';
 
     // Append-only — no updated_at
     public $timestamps  = false;

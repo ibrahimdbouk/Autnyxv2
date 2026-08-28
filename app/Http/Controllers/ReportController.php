@@ -24,6 +24,9 @@ class ReportController extends Controller
         $tenant = Tenant::findOrFail((int) request('tenant'));
         abort_unless($user && $user->canAccessTenant($tenant), 403);
 
+        // 3b — audit the export (SOC 2 / ISO).
+        \App\Support\ExportAudit::log($tenant->id, $type . ' report', $format);
+
         [$from, $to] = $data->clampRange($tenant->id, request('from'), request('to'));
         $payload = $data->build($type, $tenant->id, $from, $to);
 

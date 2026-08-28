@@ -23,6 +23,9 @@ class AnomalyReportController extends Controller
         $user = auth()->user();
         abort_unless($user && $user->canAccessTenant($anomaly->tenant), 403);
 
+        // 3b — audit the export (SOC 2 / ISO).
+        \App\Support\ExportAudit::log($anomaly->tenant_id, 'anomaly report #' . $anomaly->id, 'pdf');
+
         $pdf = Pdf::loadView('pdf.anomaly-report', [
             'anomaly'        => $anomaly,
             'investigation'  => $anomaly->investigation,

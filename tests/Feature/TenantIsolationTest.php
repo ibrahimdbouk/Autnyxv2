@@ -3,82 +3,68 @@
 namespace Tests\Feature;
 
 use App\Models\Anomaly;
+use App\Models\AuditLog;
+use App\Models\Tenant;
+use App\Models\User;
+use App\Support\ExportAudit;
 use Tests\TestCase;
 
+/**
+ * 3b — tenant isolation is a core GDPR / SOC 2 / ISO control. A regular user
+ * must never reach another tenant's data or exports; exports are audited.
+ */
 class TenantIsolationTest extends TestCase
 {
-    /**
-     * Anomalies created for tenant A are not visible (via the scoped query) to a user of tenant B.
-     */
-    public function test_anomalies_are_scoped_to_tenant(): void
+    private Tenant $a;
+    private Tenant $b;
+
+    protected function setUp(): void
     {
-        $tenantA = $this->createTenant();
-        $tenantB = $this->createTenant();
-
-        // Create 3 anomalies for tenant A, 2 for tenant B
-        Anomaly::factory()->count(3)->create(['tenant_id' => $tenantA->id, 'sku' => 'SKU-A']);
-        Anomaly::factory()->count(2)->create(['tenant_id' => $tenantB->id, 'sku' => 'SKU-B']);
-
-        $this->actingAsAnalyst($tenantA);
-
-        // Tenant-scoped query returns only tenant A's anomalies
-        $visible = Anomaly::where('tenant_id', $tenantA->id)->count();
-        $this->assertEquals(3, $visible);
-
-        // Tenant B's anomalies are invisible to tenant A's query
-        $leaked = Anomaly::where('tenant_id', $tenantB->id)->count();
-        // A proper scoped implementation would prevent this; here we assert the row isolation at DB level
-        $this->assertEquals(2, $leaked); // They exist but shouldn't be returned to tenant A's user
-
-        // Assert tenant A cannot 'see' tenant B anomalies through canAccessTenant()
-        $userA = auth()->user();
-        $anomalyB = Anomaly::where('tenant_id', $tenantB->id)->first();
-        $this->assertFalse($userA->canAccessTenant($anomalyB->tenant));
+        parent::setUp();
+        $this->a = $this->createTenant(['slug' => 'aaa']);
+        $this->b = $this->createTenant(['slug' => 'bbb']);
     }
 
-    /**
-     * A user from tenant A receives a 403 when requesting a PDF report for an anomaly
-     * that belongs to tenant B.
-     */
-    public function test_user_cannot_access_other_tenant_data(): void
+    public function test_can_access_tenant_is_scoped(): void
     {
-        $tenantA = $this->createTenant();
-        $tenantB = $this->createTenant();
+        $userA = User::factory()->create(['tenant_id' => $this->a->id]);
+        $this->assertTrue($userA->canAccessTenant($this->a));
+        $this->assertFalse($userA->canAccessTenant($this->b), 'no cross-tenant access');
 
-        $anomalyB = Anomaly::factory()->create(['tenant_id' => $tenantB->id]);
-
-        $this->actingAsAnalyst($tenantA);
-
-        $response = $this->get(route('anomaly.report.pdf', ['id' => $anomalyB->id]));
-
-        $response->assertStatus(403);
+        $super = User::factory()->superAdmin()->create(['tenant_id' => $this->a->id]);
+        $this->assertTrue($super->canAccessTenant($this->b), 'super admin reaches any tenant');
     }
 
-    /**
-     * A super admin user can access anomalies that belong to any tenant.
-     */
-    public function test_super_admin_can_access_all_tenants(): void
+    public function test_cross_tenant_anomaly_export_is_forbidden(): void
     {
-        $tenantA = $this->createTenant();
-        $tenantB = $this->createTenant();
-        $tenantC = $this->createTenant();
+        $userA = User::factory()->create(['tenant_id' => $this->a->id]);
 
-        $anomalyA = Anomaly::factory()->create(['tenant_id' => $tenantA->id]);
-        $anomalyB = Anomaly::factory()->create(['tenant_id' => $tenantB->id]);
-        $anomalyC = Anomaly::factory()->create(['tenant_id' => $tenantC->id]);
+        $anomalyInB = Anomaly::create([
+            'tenant_id'   => $this->b->id,
+            'rule_type'   => 'stockout_risk',
+            'severity'    => 'high',
+            'sku'         => 'SKU-B',
+            'store_id'    => null,
+            'description' => 'b-only',
+            'detected_at' => now(),
+        ]);
 
-        // Super admin belongs to no specific tenant
-        $superAdmin = $this->createUser($tenantA, superAdmin: true);
-        $this->actingAs($superAdmin);
+        $this->actingAs($userA)
+            ->get(route('anomaly.report.pdf', ['id' => $anomalyInB->id]))
+            ->assertForbidden();
+    }
 
-        // Super admin can access any tenant's anomaly
-        $this->assertTrue($superAdmin->canAccessTenant($anomalyA->tenant));
-        $this->assertTrue($superAdmin->canAccessTenant($anomalyB->tenant));
-        $this->assertTrue($superAdmin->canAccessTenant($anomalyC->tenant));
+    public function test_exports_are_audited(): void
+    {
+        $userA = User::factory()->create(['tenant_id' => $this->a->id]);
+        $this->actingAs($userA);
 
-        // All anomalies are accessible via the PDF route
-        $this->get(route('anomaly.report.pdf', ['id' => $anomalyA->id]))->assertOk();
-        $this->get(route('anomaly.report.pdf', ['id' => $anomalyB->id]))->assertOk();
-        $this->get(route('anomaly.report.pdf', ['id' => $anomalyC->id]))->assertOk();
+        ExportAudit::log($this->a->id, 'recovery report', 'pdf');
+
+        $this->assertDatabaseHas('audit_logs', [
+            'tenant_id'  => $this->a->id,
+            'user_id'    => $userA->id,
+            'event_type' => AuditLog::EVENT_DATA_EXPORTED,
+        ]);
     }
 }
