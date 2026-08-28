@@ -31,6 +31,10 @@ class AuditLog extends Model
     const EVENT_OUTCOME_MEASURED   = 'outcome_measured';
     // 1a — access control (SOC 2 / ISO 27001: log permission changes)
     const EVENT_SCREEN_ACCESS_CHANGED = 'screen_access_changed';
+    // 1b — SSO / authentication events
+    const EVENT_SSO_LOGIN          = 'sso_login';
+    const EVENT_SSO_LOGIN_FAILED   = 'sso_login_failed';
+    const EVENT_SSO_PROVISIONED    = 'sso_provisioned';
 
     // Append-only — no updated_at
     public $timestamps  = false;

@@ -3,10 +3,19 @@
 use App\Http\Controllers\AnomalyReportController;
 use App\Http\Controllers\InboundEmailController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\SsoController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
     return view('welcome');
+});
+
+// 1b — per-tenant OIDC single sign-on (session-backed state/nonce via `web`).
+Route::prefix('sso')->group(function () {
+    Route::get('/start', [SsoController::class, 'start'])->name('sso.start');
+    Route::post('/start', [SsoController::class, 'discover'])->name('sso.discover');
+    Route::get('/{tenant}/redirect', [SsoController::class, 'redirect'])->name('sso.redirect');
+    Route::get('/{tenant}/callback', [SsoController::class, 'callback'])->name('sso.callback');
 });
 
 // Inbound email → investigation comment (secret-protected, CSRF-exempt).

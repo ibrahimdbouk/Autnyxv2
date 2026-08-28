@@ -49,6 +49,13 @@ class AdminPanelProvider extends PanelProvider
                 fn (): string => '<link rel="stylesheet" href="'
                     . asset('css/autnyx-ui.css') . '?v=' . \App\Support\Branding::cssVersion() . '">'
             )
+            // 1b — offer SSO from the password login page (break-glass stays here).
+            ->renderHook(
+                'panels::auth.login.form.after',
+                fn (): string => '<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--gray-200,#e5e7eb);text-align:center;font-size:.85rem;">'
+                    . '<a href="' . url('/sso/start') . '" style="color:var(--primary-600,#6d28d9);font-weight:600;text-decoration:none;">Sign in with single sign-on</a>'
+                    . '</div>'
+            )
             ->maxContentWidth('full')
             ->databaseNotifications()
             ->databaseNotificationsPolling('60s')
