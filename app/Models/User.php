@@ -43,12 +43,51 @@ class User extends Authenticatable implements FilamentUser, HasTenants
     }
 
     /**
+     * The protected platform owner — the single super-super-admin. Identified by
+     * email (config/autnyx.php › owner_email) so it survives re-seeding.
+     */
+    public function isOwner(): bool
+    {
+        $ownerEmail = strtolower(trim((string) config('autnyx.owner_email')));
+
+        return $ownerEmail !== '' && strtolower(trim((string) $this->email)) === $ownerEmail;
+    }
+
+    /**
      * 1a — audit access-control changes (screen visibility + role) so grants and
      * revocations are traceable (SOC 2 / ISO 27001). Append-only, best-effort:
      * an audit failure must never block the user save.
+     *
+     * Also enforces the owner protections (undemotable, only the owner mints
+     * super admins, undeletable) at the MODEL level — the hard code, not just the
+     * UI — so they hold on every path.
      */
     protected static function booted(): void
     {
+        static::saving(function (User $user): void {
+            // The owner is always a super admin — never demote them.
+            if ($user->isOwner()) {
+                $user->is_super_admin = true;
+                return;
+            }
+
+            // Only the owner may grant super-admin. Backstop for the owner-only
+            // UI toggle: if a non-owner actor tries to elevate someone, silently
+            // revert. Seeding / console (no authenticated actor) is trusted.
+            if ($user->isDirty('is_super_admin') && $user->is_super_admin) {
+                $actor = auth()->user();
+                if ($actor !== null && ! $actor->isOwner()) {
+                    $user->is_super_admin = (bool) ($user->getOriginal('is_super_admin') ?? false);
+                }
+            }
+        });
+
+        static::deleting(function (User $user): void {
+            if ($user->isOwner()) {
+                throw new \RuntimeException('The owner account is protected and cannot be deleted.');
+            }
+        });
+
         static::updated(function (User $user): void {
             $watched = ['visible_screens', 'is_tenant_admin', 'is_super_admin'];
             $changed = array_values(array_intersect($watched, array_keys($user->getChanges())));

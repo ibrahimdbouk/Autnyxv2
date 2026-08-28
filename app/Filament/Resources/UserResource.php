@@ -10,10 +10,12 @@ use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
+use Filament\Facades\Filament;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Hash;
 
 class UserResource extends Resource
@@ -40,16 +42,36 @@ class UserResource extends Resource
 
     public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
     {
-        return auth()->user()?->canManageUsers() ?? false;
+        $user = auth()->user();
+        if (! $user) return false;
+        // Only the owner can edit the owner account.
+        if ($record->isOwner() && ! $user->isOwner()) return false;
+
+        return $user->canManageUsers();
     }
 
     public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
     {
-        // Prevent self-deletion and super-admin deletion by non-super-admins
         $user = auth()->user();
-        if (!$user || $record->id === $user->id) return false;
-        if ($record->is_super_admin && !$user->is_super_admin) return false;
+        if (! $user || $record->id === $user->id) return false;
+        // The owner account is protected — nobody can delete it.
+        if ($record->isOwner()) return false;
+        // Super admins can only be removed by other super admins.
+        if ($record->is_super_admin && ! $user->is_super_admin) return false;
+
         return $user->canManageUsers();
+    }
+
+    /**
+     * Scope user management to the current tenant, so a tenant admin only ever
+     * sees and manages users within their own organisation.
+     */
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+        $tenantId = Filament::getTenant()?->id;
+
+        return $tenantId ? $query->where('tenant_id', $tenantId) : $query;
     }
 
     public static function form(Schema $form): Schema
@@ -92,10 +114,11 @@ class UserResource extends Resource
 
                 Toggle::make('is_super_admin')
                     ->label('Super Admin')
-                    ->helperText('Super admins have full access to all organisations and platform settings.')
+                    ->helperText('Super admins have full access to all organisations and the control plane. Only the owner can grant this.')
                     ->default(false)
                     ->live()
-                    ->visible(fn () => auth()->user()?->is_super_admin ?? false),
+                    ->disabled(fn (?User $record) => $record?->isOwner() ?? false) // owner stays super
+                    ->visible(fn () => auth()->user()?->isOwner() ?? false),
             ]),
 
             // 1a — screen visibility. Only meaningful for a plain "user"; admins
