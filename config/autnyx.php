@@ -34,4 +34,24 @@ return [
     */
     'storage_disk' => env('AUTNYX_STORAGE_DISK', 'local'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Content-Security-Policy (3b)
+    |--------------------------------------------------------------------------
+    |
+    | 'report'  → send Content-Security-Policy-Report-Only (browsers evaluate and
+    |             log violations to the console but never block — safe default;
+    |             use it to validate the policy against every page).
+    | 'enforce' → send Content-Security-Policy (blocks violations).
+    | 'off'     → no CSP header.
+    |
+    | The policy allows what a Filament/Livewire/Alpine app needs: same-origin
+    | assets, inline scripts/styles (Filament injects these), and Chart.js from
+    | cdnjs — while locking down framing, base-uri, form-action, and objects.
+    | 'unsafe-inline'/'unsafe-eval' are unavoidable with Alpine and can't be
+    | tightened without CSP nonces (a larger change).
+    |
+    */
+    'csp_mode' => env('CSP_MODE', 'report'),
+
 ];
