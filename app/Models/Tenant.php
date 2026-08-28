@@ -12,9 +12,25 @@ class Tenant extends Model
 {
     use HasFactory;
 
+    // ── Subscription (2b — lightweight; full billing deferred) ────────────────
+    const PLAN_TRIAL      = 'trial';
+    const PLAN_STANDARD   = 'standard';
+    const PLAN_ENTERPRISE = 'enterprise';
+
+    const STATUS_ACTIVE    = 'active';
+    const STATUS_SUSPENDED = 'suspended';
+
+    const PLAN_LABELS = [
+        self::PLAN_TRIAL      => 'Trial',
+        self::PLAN_STANDARD   => 'Standard',
+        self::PLAN_ENTERPRISE => 'Enterprise',
+    ];
+
     protected $fillable = [
         'name',
         'slug',
+        'plan',
+        'status',
         'currency',
         'settings',
         'notification_email',
@@ -39,6 +55,22 @@ class Tenant extends Model
     public function ssoConnection(): HasOne
     {
         return $this->hasOne(SsoConnection::class);
+    }
+
+    /** 2c — this tenant's admin users (impersonation targets). */
+    public function admins(): HasMany
+    {
+        return $this->hasMany(User::class)->where('is_tenant_admin', true);
+    }
+
+    public function isActive(): bool
+    {
+        return ($this->status ?? self::STATUS_ACTIVE) === self::STATUS_ACTIVE;
+    }
+
+    public function planLabel(): string
+    {
+        return self::PLAN_LABELS[$this->plan] ?? ucfirst((string) ($this->plan ?: 'trial'));
     }
 
     // ---------- Currency (display-only) ----------

@@ -211,11 +211,16 @@ class User extends Authenticatable implements FilamentUser, HasTenants
     // ---------- Filament Contracts ----------
 
     /**
-     * All authenticated users may access the panel.
-     * Resource-level permissions control what they see inside it.
+     * The tenant panel is open to all authenticated users (screen visibility
+     * controls what they see inside it); the /ops control plane (2a) is
+     * super-admin only.
      */
     public function canAccessPanel(Panel $panel): bool
     {
+        if ($panel->getId() === 'ops') {
+            return (bool) $this->is_super_admin;
+        }
+
         return true;
     }
 

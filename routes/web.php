@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AnomalyReportController;
+use App\Http\Controllers\ImpersonationController;
 use App\Http\Controllers\InboundEmailController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SsoController;
@@ -21,6 +22,13 @@ Route::prefix('sso')->group(function () {
 // Inbound email → investigation comment (secret-protected, CSRF-exempt).
 Route::post('/webhooks/inbound-email', [InboundEmailController::class, 'handle'])
     ->name('webhooks.inbound-email');
+
+// 2c — super-admin impersonation ("enter tenant as admin"). Kept off the /ops
+// path prefix so it never collides with the ops panel's own routes.
+Route::middleware(['auth'])->group(function () {
+    Route::get('/impersonate/leave', [ImpersonationController::class, 'stop'])->name('ops.leave-impersonation');
+    Route::get('/impersonate/{tenant}', [ImpersonationController::class, 'start'])->name('ops.impersonate');
+});
 
 // Reports & PDF exports — protected by Filament's auth middleware
 Route::middleware(['auth'])->group(function () {

@@ -35,6 +35,10 @@ class AuditLog extends Model
     const EVENT_SSO_LOGIN          = 'sso_login';
     const EVENT_SSO_LOGIN_FAILED   = 'sso_login_failed';
     const EVENT_SSO_PROVISIONED    = 'sso_provisioned';
+    // 2 — super-admin control plane
+    const EVENT_TENANT_CREATED           = 'tenant_created';
+    const EVENT_IMPERSONATION_STARTED    = 'impersonation_started';
+    const EVENT_IMPERSONATION_STOPPED    = 'impersonation_stopped';
 
     // Append-only — no updated_at
     public $timestamps  = false;

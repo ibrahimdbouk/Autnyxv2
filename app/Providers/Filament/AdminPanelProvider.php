@@ -56,6 +56,22 @@ class AdminPanelProvider extends PanelProvider
                     . '<a href="' . url('/sso/start') . '" style="color:var(--primary-600,#6d28d9);font-weight:600;text-decoration:none;">Sign in with single sign-on</a>'
                     . '</div>'
             )
+            // 2c — impersonation banner: always-visible while a super admin is
+            // acting as a tenant user, with a one-click exit.
+            ->renderHook(
+                'panels::body.start',
+                function (): string {
+                    if (! session()->has(\App\Http\Controllers\ImpersonationController::SESSION_KEY)) {
+                        return '';
+                    }
+                    $who = e(auth()->user()?->email ?? 'a tenant user');
+
+                    return '<div style="position:sticky;top:0;z-index:50;background:#b45309;color:#fff;padding:.5rem 1rem;font-size:.85rem;display:flex;align-items:center;justify-content:center;gap:1rem;">'
+                        . '<span>You are viewing as <strong>' . $who . '</strong>. Actions are recorded.</span>'
+                        . '<a href="' . url('/impersonate/leave') . '" style="color:#fff;font-weight:700;text-decoration:underline;">Leave</a>'
+                        . '</div>';
+                }
+            )
             ->maxContentWidth('full')
             ->databaseNotifications()
             ->databaseNotificationsPolling('60s')
