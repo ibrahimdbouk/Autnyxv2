@@ -9,6 +9,7 @@ use App\Services\Anomaly\InvestigationCorrelationService;
 use App\Services\Import\ColumnMappingService;
 use App\Services\Import\FileReaderService;
 use App\Services\Import\ImportProcessorService;
+use App\Services\Storage\TenantStorage;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\FileUpload;
@@ -101,8 +102,22 @@ class ListImports extends ListRecords
                     }
 
                     try {
-                        $filePath = Storage::disk('local')->path($f);
                         $tenantId = Filament::getTenant()->id;
+
+                        // 3a — relocate the staged upload into private,
+                        // tenant-isolated storage (durable + encrypted on S3),
+                        // then read the sample from wherever it now lives.
+                        $storage = app(TenantStorage::class);
+                        $ext = pathinfo($f, PATHINFO_EXTENSION) ?: 'csv';
+                        $securePath = $storage->putStream(
+                            $tenantId,
+                            TenantStorage::CATEGORY_IMPORTS,
+                            Storage::disk('local')->readStream($f),
+                            $ext,
+                        );
+                        Storage::disk('local')->delete($f); // drop the staging copy
+
+                        $filePath = $storage->localPath($storage->diskName(), $securePath);
 
                         $reader = app(FileReaderService::class);
                         $result = $reader->read($filePath);
@@ -110,9 +125,9 @@ class ListImports extends ListRecords
                         $import = Import::create([
                             'tenant_id'         => $tenantId,
                             'user_id'           => Auth::id(),
-                            'original_filename' => $f,
-                            'disk'              => 'local',
-                            'path'              => $f,
+                            'original_filename' => basename($f),
+                            'disk'              => $storage->diskName(),
+                            'path'              => $securePath,
                             'data_type'         => $dt,
                             'status'            => Import::STATUS_UPLOADED,
                             'sample_rows'       => $result['rows'],

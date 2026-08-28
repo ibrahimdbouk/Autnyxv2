@@ -19,4 +19,19 @@ return [
     */
     'owner_email' => env('OWNER_EMAIL', 'ibrahim@autnyx.com'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Secure file storage (3a)
+    |--------------------------------------------------------------------------
+    |
+    | The private disk that tenant uploads/exports are written to, always under a
+    | per-tenant path prefix (see App\Services\Storage\TenantStorage). Defaults to
+    | the local private disk; set AUTNYX_STORAGE_DISK=s3 (with AWS_* + SSE) to get
+    | durable, server-side-encrypted, tenant-isolated object storage — no code
+    | change. The local disk on Laravel Cloud is ephemeral, so S3 (or the
+    | platform's private storage) is the intended production target.
+    |
+    */
+    'storage_disk' => env('AUTNYX_STORAGE_DISK', 'local'),
+
 ];

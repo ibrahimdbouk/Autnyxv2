@@ -210,7 +210,7 @@ class ImportProcessorService
                 ->get()
                 ->keyBy('source_header');
 
-            $filePath = Storage::disk($import->disk)->path($import->path);
+            $filePath = app(\App\Services\Storage\TenantStorage::class)->localPath($import->disk, $import->path);
             $allRows  = $this->readAllRows($filePath);
 
             $total    = count($allRows);
@@ -310,7 +310,7 @@ class ImportProcessorService
             ->keyBy('source_header');
 
         $offset   = (int) $import->process_cursor;
-        $filePath = Storage::disk($import->disk)->path($import->path);
+        $filePath = app(\App\Services\Storage\TenantStorage::class)->localPath($import->disk, $import->path);
 
         try {
             /** @var FileReaderService $reader */

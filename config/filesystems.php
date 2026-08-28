@@ -32,6 +32,14 @@ return [
             'url' => env('AWS_URL'),
             'endpoint' => env('AWS_ENDPOINT'),
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
+            // 3a — private by default; server-side encryption at rest. Set
+            // AWS_SERVER_SIDE_ENCRYPTION=aws:kms (+ AWS_SSE_KMS_KEY_ID) for KMS,
+            // or leave as AES256 for S3-managed keys.
+            'visibility' => 'private',
+            'options' => array_filter([
+                'ServerSideEncryption' => env('AWS_SERVER_SIDE_ENCRYPTION', 'AES256'),
+                'SSEKMSKeyId'          => env('AWS_SSE_KMS_KEY_ID'),
+            ]),
             'throw' => false,
             'report' => false,
         ],
