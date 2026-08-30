@@ -165,9 +165,32 @@ class ImportProcessorService
             return 0;
         }
 
+        // Incremental detection (Slice 1) — capture the (store, SKU) subjects
+        // about to be removed, so the next run re-checks them. Collect BEFORE
+        // the delete. Only the store-SKU-keyed datasets carry these columns.
+        $dirtyKeys = [];
+        if (in_array($import->data_type, [Import::TYPE_SALES, Import::TYPE_INVENTORY, Import::TYPE_RETURNS], true)) {
+            $dirtyKeys = $modelClass::where('tenant_id', $import->tenant_id)
+                ->where('import_id', $import->id)
+                ->whereNotNull('store_id')
+                ->whereNotNull('sku')
+                ->distinct()
+                ->get(['store_id', 'sku'])
+                ->map(fn ($r) => ['store_id' => $r->store_id, 'sku' => $r->sku])
+                ->all();
+        }
+
         $deleted = $modelClass::where('tenant_id', $import->tenant_id)
             ->where('import_id', $import->id)
             ->delete();
+
+        if (! empty($dirtyKeys)) {
+            app(\App\Services\Detection\DirtyKeyRecorder::class)->record(
+                $import->tenant_id,
+                $dirtyKeys,
+                \App\Models\DetectionDirtyKey::REASON_ROLLBACK,
+            );
+        }
 
         $import->update([
             'status'        => Import::STATUS_ROLLED_BACK,
@@ -389,6 +412,26 @@ class ImportProcessorService
                         }
                     }
                 }
+            }
+        }
+
+        // Incremental detection (Slice 1) — queue the (store, SKU) subjects this
+        // chunk touched so the next detection run can scan only what changed.
+        // Ships dark: the queue is populated but not yet consumed. Best-effort.
+        if ($table !== null && ! empty($batch)) {
+            $dirty = [];
+            foreach ($batch as $entry) {
+                $a = $entry['attrs'];
+                if (isset($a['store_id'], $a['sku']) && $a['store_id'] !== null && $a['sku'] !== null) {
+                    $dirty[$a['store_id'] . '|' . $a['sku']] = ['store_id' => $a['store_id'], 'sku' => $a['sku']];
+                }
+            }
+            if (! empty($dirty)) {
+                app(\App\Services\Detection\DirtyKeyRecorder::class)->record(
+                    $import->tenant_id,
+                    array_values($dirty),
+                    \App\Models\DetectionDirtyKey::REASON_IMPORT,
+                );
             }
         }
 
