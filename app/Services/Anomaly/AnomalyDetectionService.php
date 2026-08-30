@@ -775,6 +775,11 @@ class AnomalyDetectionService
                 );
             }
         }
+
+        // Optional store-level pass (off unless the tenant enables `store_level`).
+        if ($thresholds['store_level'] ?? false) {
+            $this->storeSalesSwing($tenantId, 'sales_spike', $thresholds, false);
+        }
     }
 
     private function detectSalesDrop(int $tenantId, array $thresholds): void
@@ -831,6 +836,11 @@ class AnomalyDetectionService
                      'days' => $days, 'revenue_impact' => round($impact, 2)]
                 );
             }
+        }
+
+        // Optional store-level pass (off unless the tenant enables `store_level`).
+        if ($thresholds['store_level'] ?? false) {
+            $this->storeSalesSwing($tenantId, 'sales_drop', $thresholds, true);
         }
     }
 
@@ -2555,6 +2565,87 @@ class AnomalyDetectionService
     /**
      * Returns [recentSalesBySku, historicalSalesBySku, numComparablePeriods]
      */
+    /**
+     * Store-level recent-vs-historical sales, keyed "store_id|sku". Powers the
+     * optional store-level sales pass (a real single-store swing is diluted by
+     * the tenant-wide comparison across all stores). SKU-scoped in incremental mode.
+     *
+     * @return array{0:\Illuminate\Support\Collection,1:\Illuminate\Support\Collection,2:int}
+     */
+    private function salesComparisonByStore(int $tenantId, int $days): array
+    {
+        $recentStart = Carbon::today()->subDays($days)->format('Y-m-d');
+        $histEnd     = Carbon::today()->subDays($days)->format('Y-m-d');
+        $histStart   = Carbon::today()->subDays($days + 28)->format('Y-m-d');
+
+        $agg = fn ($q) => $q->whereNotNull('store_id')
+            ->when($this->scope, fn ($qq) => $this->scope->constrain($qq))
+            ->selectRaw('store_id, sku, SUM(quantity) as qty')
+            ->groupBy('store_id', 'sku')
+            ->get()
+            ->mapWithKeys(fn ($r) => [$r->store_id . '|' . $r->sku => (float) $r->qty]);
+
+        $recent     = $agg(SalesTransaction::where('tenant_id', $tenantId)->where('date', '>=', $recentStart));
+        $historical = $agg(SalesTransaction::where('tenant_id', $tenantId)->whereBetween('date', [$histStart, $histEnd]));
+
+        return [$recent, $historical, max(1, (int) round(28 / $days))];
+    }
+
+    /**
+     * Optional store-level pass for sales_spike / sales_drop. Off by default
+     * (`store_level` threshold); gated by min_revenue AND a minimum absolute-units
+     * floor (`store_min_units`) so a small store's normal wobble doesn't flood the
+     * worklist. Flags per (store, sku) — distinct from the tenant-wide anomaly.
+     */
+    private function storeSalesSwing(int $tenantId, string $ruleType, array $thresholds, bool $isDrop): void
+    {
+        $pct        = (float) ($thresholds['pct'] ?? ($isDrop ? 30 : 50));
+        $days       = (int) ($thresholds['days'] ?? 7);
+        $minRevenue = (float) ($thresholds['min_revenue'] ?? self::DEFAULT_MIN_REVENUE);
+        $minUnits   = (float) ($thresholds['store_min_units'] ?? 20); // anti-flood: real per-store volume only
+
+        [$recent, $historical, $periods] = $this->salesComparisonByStore($tenantId, $days);
+
+        foreach (($isDrop ? $historical : $recent)->keys() as $key) {
+            $parts = explode('|', (string) $key, 2);
+            if (count($parts) !== 2 || $parts[1] === '') {
+                continue;
+            }
+            [$storeId, $sku] = $parts;
+
+            $histQty   = (float) ($historical->get($key) ?? 0);
+            $recentQty = (float) ($recent->get($key) ?? 0);
+            if ($histQty <= 0) {
+                continue;
+            }
+            $avgQty = $histQty / $periods;
+
+            $changePct = $isDrop ? (($avgQty - $recentQty) / $avgQty) * 100 : (($recentQty - $avgQty) / $avgQty) * 100;
+            $units     = $isDrop ? max(0.0, $avgQty - $recentQty) : max(0.0, $recentQty - $avgQty);
+            if ($changePct < $pct || $units < $minUnits) {
+                continue;
+            }
+
+            $price  = $this->unitPrice($sku);
+            $impact = $units * $price;
+            if ($price > 0 && $impact < $minRevenue) {
+                continue;
+            }
+            $severity = $price > 0
+                ? $this->severityFromImpact($impact)
+                : ($isDrop ? Anomaly::SEVERITY_MEDIUM : Anomaly::SEVERITY_LOW);
+
+            $this->flag($tenantId, $ruleType, $severity, $sku, (int) $storeId, null,
+                "SKU {$sku} at store {$storeId} " . ($isDrop ? 'dropped' : 'spiked') . ' ' . round(abs($changePct))
+                . "% vs its {$days}-day average (recent: " . round($recentQty) . ', avg: ' . round($avgQty)
+                . ' units) — a store-level swing the tenant-wide view dilutes.',
+                ['scope' => 'store', 'store_id' => (int) $storeId, 'recent_qty' => $recentQty,
+                 'avg_qty' => round($avgQty, 2), 'change_pct' => round($changePct, 1),
+                 'units' => round($units, 1), 'days' => $days, 'revenue_impact' => round($impact, 2)]
+            );
+        }
+    }
+
     private function salesComparison(int $tenantId, int $days): array
     {
         $recentStart = Carbon::today()->subDays($days)->format('Y-m-d');
