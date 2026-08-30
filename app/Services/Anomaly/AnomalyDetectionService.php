@@ -150,6 +150,14 @@ class AnomalyDetectionService
     private ?\App\Services\Detection\RunScope $scope = null;
 
     /**
+     * Aggregate mode (Slice 4): run ONLY the rules the incremental per-key run
+     * skips — the cross-SKU / absence / supplier-&-PO families — on a full scan.
+     * The nightly cadence pairs a scoped incremental run (per-key) with an
+     * aggregate run (the rest); the weekly full sweep is the catch-all backstop.
+     */
+    private bool $aggregateOnly = false;
+
+    /**
      * Rules that incremental mode runs. These read ONLY the SKU-scoped primed
      * maps or salesComparison(), so scoping those sources makes them incremental
      * with correct reconciler evaluability. Every other rule (raw-SQL per-key
@@ -559,11 +567,12 @@ class AnomalyDetectionService
      * Existing open anomalies are upserted (investigation fields preserved); a
      * subject that stops failing is advanced through the recovery lifecycle (R2).
      */
-    public function runForTenant(int $tenantId, ?\App\Services\Detection\RunScope $scope = null): void
+    public function runForTenant(int $tenantId, ?\App\Services\Detection\RunScope $scope = null, bool $aggregateOnly = false): void
     {
-        // Set per call (each call overwrites), so a subsequent full run on a
-        // reused instance is never accidentally scoped. null = full scan.
-        $this->scope = $scope;
+        // Set per call (each call overwrites), so a subsequent run on a reused
+        // instance is never accidentally scoped. null scope = full scan.
+        $this->scope         = $scope;
+        $this->aggregateOnly = $aggregateOnly;
 
         AnomalySetting::seedForTenant($tenantId);
         // Headroom for large tenants; the detectors below are written to stream,
@@ -660,8 +669,14 @@ class AnomalyDetectionService
             }
 
             // Incremental mode runs only the SKU-scoped rule families (Slice 2);
-            // every other rule is left to the full run.
+            // every other rule is left to the aggregate/full run.
             if ($this->scope !== null && ! in_array($ruleType, self::INCREMENTAL_RULES, true)) {
+                continue;
+            }
+
+            // Aggregate mode (Slice 4) runs the complement — only the rules the
+            // per-key incremental run skips — on a full scan.
+            if ($this->aggregateOnly && in_array($ruleType, self::INCREMENTAL_RULES, true)) {
                 continue;
             }
 

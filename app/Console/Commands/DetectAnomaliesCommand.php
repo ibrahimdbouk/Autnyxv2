@@ -14,7 +14,7 @@ class DetectAnomaliesCommand extends Command
 {
     protected $signature = 'anomalies:detect
         {--tenant= : Specific tenant ID}
-        {--mode= : full|incremental (default: config detection.mode)}';
+        {--mode= : full|incremental|aggregate (default: config detection.mode)}';
 
     protected $description = 'Run all anomaly detection rules for every tenant (or a specific one), then correlate into Investigations';
 
@@ -22,14 +22,14 @@ class DetectAnomaliesCommand extends Command
         AnomalyDetectionService $detector,
         InvestigationCorrelationService $correlator
     ): int {
-        $incremental = ($this->option('mode') ?: config('detection.mode', 'full')) === 'incremental';
-        $tenantId    = $this->option('tenant');
+        $mode     = $this->option('mode') ?: config('detection.mode', 'full');
+        $tenantId = $this->option('tenant');
 
         if ($tenantId) {
-            $this->info('Detecting anomalies for tenant ' . $tenantId . ' (' . ($incremental ? 'incremental' : 'full') . ')…');
+            $this->info('Detecting anomalies for tenant ' . $tenantId . ' (' . $mode . ')…');
             try {
                 $tenant = Tenant::findOrFail((int) $tenantId);
-                $this->runTenant($detector, $correlator, $tenant, $incremental);
+                $this->runTenant($detector, $correlator, $tenant, $mode);
                 $this->info('Done.');
             } catch (\Throwable $e) {
                 $this->error("Failed: {$e->getMessage()}");
@@ -49,14 +49,14 @@ class DetectAnomaliesCommand extends Command
             return Command::SUCCESS;
         }
 
-        $this->info('Running anomaly detection for ' . $tenants->count() . ' tenant(s) (' . ($incremental ? 'incremental' : 'full') . ')…');
+        $this->info('Running anomaly detection for ' . $tenants->count() . ' tenant(s) (' . $mode . ')…');
         $bar = $this->output->createProgressBar($tenants->count());
         $bar->start();
 
         $errors = 0;
         foreach ($tenants as $tenant) {
             try {
-                $this->runTenant($detector, $correlator, $tenant, $incremental);
+                $this->runTenant($detector, $correlator, $tenant, $mode);
             } catch (\Throwable $e) {
                 $errors++;
                 Log::error("[anomalies:detect] Tenant {$tenant->id}: {$e->getMessage()}");
@@ -81,20 +81,33 @@ class DetectAnomaliesCommand extends Command
     /**
      * Run detection for one tenant in the chosen mode, then correlate.
      *
-     * Incremental: scan only the changed + still-open SKUs; on success, consume
-     * the dirty-key queue up to the id folded into the scope and advance the
-     * watermark. A too-broad change set (scope === null) falls back to a full
-     * scan for that tenant and clears its whole queue.
+     *  full        — scan everything (unchanged); then clear the dirty queue so
+     *                it can't grow unbounded while running in full mode.
+     *  aggregate   — run only the rules the per-key incremental run skips, full
+     *                scan; does not touch the queue (the incremental run owns it).
+     *  incremental — scan only the changed + still-open SKUs; on success, consume
+     *                the queue up to the id folded into the scope and advance the
+     *                watermark. A too-broad change set falls back to a full scan.
      */
     private function runTenant(
         AnomalyDetectionService $detector,
         InvestigationCorrelationService $correlator,
         Tenant $tenant,
-        bool $incremental
+        string $mode
     ): void {
-        if (! $incremental) {
+        if ($mode === 'aggregate') {
+            $detector->runForTenant($tenant->id, null, true);
+            $correlator->correlateForTenant($tenant->id);
+
+            return;
+        }
+
+        if ($mode !== 'incremental') {
+            // Full scan.
             $detector->runForTenant($tenant->id);
             $correlator->correlateForTenant($tenant->id);
+            DetectionDirtyKey::where('tenant_id', $tenant->id)->delete();
+            $this->stampWatermark($tenant->id);
 
             return;
         }

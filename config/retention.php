@@ -41,6 +41,10 @@ return [
 
         // Scheduled-task run history (ops health) — short.
         'job_runs'            => ['days' => (int) env('RETAIN_JOB_RUNS_DAYS', 90),      'column' => 'ran_at'],
+
+        // Incremental-detection dirty queue — normally consumed nightly; this is
+        // a safety net so a stalled consumer can't grow it without bound.
+        'detection_dirty_keys' => ['days' => (int) env('RETAIN_DIRTY_KEYS_DAYS', 30),  'column' => 'created_at'],
     ],
 
 ];

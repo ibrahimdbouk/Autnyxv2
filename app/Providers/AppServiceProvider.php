@@ -130,12 +130,35 @@ class AppServiceProvider extends ServiceProvider
                 ->runInBackground()
                 ->appendOutputTo(storage_path('logs/baselines.log'));
 
-            // 02:00 — Run all detection rules for every tenant (consumes fresh baselines)
+            // 02:00 — Run detection for every tenant (consumes fresh baselines).
+            // Mode from config: 'full' scans everything; 'incremental' scans only
+            // the changed + still-open SKUs (detection_dirty_keys). See
+            // claude/incremental-detection-design.md.
             $schedule->command(DetectAnomaliesCommand::class)
                 ->dailyAt('02:00')
                 ->withoutOverlapping()
                 ->runInBackground()
                 ->appendOutputTo(storage_path('logs/anomaly-detect.log'));
+
+            if (config('detection.mode', 'full') === 'incremental') {
+                // 02:20 — Aggregate pass: the cross-SKU / absence / supplier-&-PO
+                // rules the per-key incremental run skips, on a full scan (cheap
+                // aggregates), so they still run every night.
+                $schedule->command(DetectAnomaliesCommand::class, ['--mode' => 'aggregate'])
+                    ->dailyAt('02:20')
+                    ->withoutOverlapping()
+                    ->runInBackground()
+                    ->appendOutputTo(storage_path('logs/anomaly-detect-agg.log'));
+
+                // Sun 01:15 — Weekly full-sweep backstop: catches baseline/profile
+                // drift and absence-based first detections the incremental path
+                // can miss. The only O(catalogue) detection job left.
+                $schedule->command(DetectAnomaliesCommand::class, ['--mode' => 'full'])
+                    ->weeklyOn(0, '01:15')
+                    ->withoutOverlapping()
+                    ->runInBackground()
+                    ->appendOutputTo(storage_path('logs/anomaly-detect-full.log'));
+            }
 
             // 02:30 — Send digest emails for new anomalies
             $schedule->command(NotifyAnomaliesCommand::class)
