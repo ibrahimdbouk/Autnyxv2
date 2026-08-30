@@ -157,6 +157,7 @@ class AnomalyDetectionService
      * and covered by the full run; Slice 2b/Slice 4 extend this set.
      */
     public const INCREMENTAL_RULES = [
+        // Slice 2 — map-read + salesComparison families
         'stockout_risk',
         'negative_inventory',
         'overstock',
@@ -165,7 +166,23 @@ class AnomalyDetectionService
         'multi_location_imbalance',
         'sales_spike',
         'sales_drop',
+        // Slice 2b — raw-SQL per-key rules (scoped in their own queries)
+        'inventory_shrinkage',
+        'cumulative_shrink',
+        'demand_erosion',
+        'demand_forecast_break',
     ];
+
+    /**
+     * A guarded SQL fragment + bindings for raw DB::select() rules. Returns
+     * ['', []] in full mode, so raw queries are byte-identical when unscoped.
+     *
+     * @return array{0:string,1:array<int,string>}
+     */
+    private function scopeSql(string $skuColumn = 'sku'): array
+    {
+        return $this->scope ? $this->scope->sqlClause($skuColumn) : ['', []];
+    }
 
     /**
      * B2 validation telemetry: per-rule counts of flags actually emitted and
@@ -1192,6 +1209,8 @@ class AnomalyDetectionService
 
         $from = Carbon::today()->subDays($days)->format('Y-m-d');
 
+        [$scopeSql, $scopeBind] = $this->scopeSql('sku');
+
         $rows = DB::select(
             "SELECT store_id, sku,
                     regr_slope(units_sold, EXTRACT(EPOCH FROM date)/86400.0)     AS slope,
@@ -1201,12 +1220,12 @@ class AnomalyDetectionService
                     MIN(EXTRACT(EPOCH FROM date)/86400.0) AS x0,
                     MAX(EXTRACT(EPOCH FROM date)/86400.0) AS x1
              FROM sales_daily
-             WHERE tenant_id = ? AND date >= ?
+             WHERE tenant_id = ? AND date >= ?{$scopeSql}
              GROUP BY store_id, sku
              HAVING COUNT(*) >= 8
                 AND SUM(units_sold) >= ?
                 AND regr_slope(units_sold, EXTRACT(EPOCH FROM date)/86400.0) < 0",
-            [$tenantId, $from, $minUnits]
+            array_merge([$tenantId, $from], $scopeBind, [$minUnits])
         );
 
         foreach ($rows as $r) {
@@ -1272,6 +1291,7 @@ class AnomalyDetectionService
         DB::table('sku_profiles')
             ->where('tenant_id', $tenantId)->where('store_id', 0)
             ->whereIn('segment', $applicable)
+            ->when($this->scope, fn ($q) => $this->scope->constrain($q))
             ->select(['sku', 'segment', 'cv2'])
             ->cursor()
             ->each(function ($p) use (&$prof) {
@@ -1345,6 +1365,7 @@ class AnomalyDetectionService
         $rows = DB::table('sales_daily')
             ->where('tenant_id', $tenantId)
             ->where('date', '>=', $windowFrom)
+            ->when($this->scope, fn ($q) => $this->scope->constrain($q))
             ->selectRaw("sku, TO_CHAR(date, 'YYYY-MM-DD') AS d, SUM(units_sold) AS u")
             ->groupBy('sku', 'date')
             ->orderBy('sku')->orderBy('date')
@@ -1717,6 +1738,8 @@ class AnomalyDetectionService
         $pct      = (float)($thresholds['pct'] ?? 20);
         $minValue = (float)($thresholds['min_value'] ?? self::DEFAULT_MIN_REVENUE);
 
+        [$scopeSql, $scopeBind] = $this->scopeSql('sku');
+
         $rows = DB::select(
             "WITH drops AS (
                 SELECT store_id, sku, location, product_id, latest_qty, prev_qty, prev_date, latest_date
@@ -1728,7 +1751,7 @@ class AnomalyDetectionService
                            LEAD(as_of_date) OVER w AS prev_date,
                            ROW_NUMBER()     OVER w AS rn
                     FROM inventory_levels
-                    WHERE tenant_id = ? AND as_of_date IS NOT NULL AND location IS NOT NULL
+                    WHERE tenant_id = ? AND as_of_date IS NOT NULL AND location IS NOT NULL{$scopeSql}
                     WINDOW w AS (PARTITION BY sku, location ORDER BY as_of_date DESC)
                 ) t
                 WHERE rn = 1 AND prev_qty IS NOT NULL AND prev_qty > 0 AND latest_qty < prev_qty
@@ -1747,7 +1770,7 @@ class AnomalyDetectionService
             ) sd ON TRUE
             WHERE (d.prev_qty - COALESCE(sd.q, 0) - d.latest_qty) > 0
               AND ((d.prev_qty - COALESCE(sd.q, 0) - d.latest_qty) / d.prev_qty) * 100 >= ?",
-            [$tenantId, $tenantId, $pct]
+            array_merge([$tenantId], $scopeBind, [$tenantId, $pct])
         );
 
         foreach ($rows as $row) {
@@ -1798,6 +1821,8 @@ class AnomalyDetectionService
         $minValue     = (float)($thresholds['min_value'] ?? 1000);
         $minIntervals = (int)($thresholds['min_intervals'] ?? 3);
 
+        [$scopeSql, $scopeBind] = $this->scopeSql('sku');
+
         $rows = DB::select(
             "WITH ivals AS (
                 SELECT store_id, sku, location, product_id,
@@ -1806,7 +1831,7 @@ class AnomalyDetectionService
                        LAG(as_of_date)  OVER w AS prev_date,
                        as_of_date              AS curr_date
                 FROM inventory_levels
-                WHERE tenant_id = ? AND as_of_date IS NOT NULL AND location IS NOT NULL
+                WHERE tenant_id = ? AND as_of_date IS NOT NULL AND location IS NOT NULL{$scopeSql}
                 WINDOW w AS (PARTITION BY sku, location ORDER BY as_of_date ASC)
             ),
             drops AS (
@@ -1825,7 +1850,7 @@ class AnomalyDetectionService
             GROUP BY d.store_id, d.sku, d.location
             HAVING SUM(GREATEST(0, d.prev_qty - COALESCE(s.sales, 0) - d.curr_qty)) > 0
                AND COUNT(*) FILTER (WHERE (d.prev_qty - COALESCE(s.sales, 0) - d.curr_qty) > 0) >= ?",
-            [$tenantId, $tenantId, $minIntervals]
+            array_merge([$tenantId], $scopeBind, [$tenantId, $minIntervals])
         );
 
         foreach ($rows as $r) {

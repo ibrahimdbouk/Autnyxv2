@@ -95,4 +95,22 @@ class RunScope
 
         return $query->whereIn($skuColumn, $this->skus);
     }
+
+    /**
+     * A guarded SQL fragment (plus its bindings) for raw DB::select() rules —
+     * appended inside a WHERE as "AND <col> IN (?, ?, …)". Empty scope → "AND 1 = 0".
+     * Callers merge the returned bindings positionally where the fragment sits.
+     *
+     * @return array{0:string,1:array<int,string>}
+     */
+    public function sqlClause(string $skuColumn = 'sku'): array
+    {
+        if ($this->skus === []) {
+            return [' AND 1 = 0', []];
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($this->skus), '?'));
+
+        return [" AND {$skuColumn} IN ({$placeholders})", $this->skus];
+    }
 }

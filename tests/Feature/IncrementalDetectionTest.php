@@ -62,6 +62,32 @@ class IncrementalDetectionTest extends TestCase
         $this->assertDatabaseHas('anomalies', ['tenant_id' => $t->id, 'rule_type' => 'negative_inventory', 'sku' => 'OTHER']);
     }
 
+    public function test_incremental_scopes_the_raw_shrinkage_rule(): void
+    {
+        $t     = $this->createTenant();
+        $store = Store::create(['tenant_id' => $t->id, 'name' => 'S1', 'code' => 'ST1']);
+
+        // Two SKUs each with an unexplained drop (100 → 50, no sales) — a 50% shrink.
+        foreach (['SHRINK', 'OTHERSHRINK'] as $sku) {
+            InventoryLevel::factory()->create([
+                'tenant_id' => $t->id, 'store_id' => $store->id, 'sku' => $sku, 'location' => 'L1',
+                'on_hand_qty' => 100, 'as_of_date' => now()->subDays(10)->toDateString(),
+            ]);
+            InventoryLevel::factory()->create([
+                'tenant_id' => $t->id, 'store_id' => $store->id, 'sku' => $sku, 'location' => 'L1',
+                'on_hand_qty' => 50, 'as_of_date' => now()->toDateString(),
+            ]);
+        }
+
+        app(DirtyKeyRecorder::class)->record($t->id, [['store_id' => $store->id, 'sku' => 'SHRINK']]);
+
+        $scope = RunScope::forTenant($t->id, 20000);
+        app(AnomalyDetectionService::class)->runForTenant($t->id, $scope);
+
+        $this->assertDatabaseHas('anomalies', ['tenant_id' => $t->id, 'rule_type' => 'inventory_shrinkage', 'sku' => 'SHRINK']);
+        $this->assertDatabaseMissing('anomalies', ['tenant_id' => $t->id, 'rule_type' => 'inventory_shrinkage', 'sku' => 'OTHERSHRINK']);
+    }
+
     public function test_scope_union_includes_open_anomaly_subjects(): void
     {
         $t     = $this->createTenant();
