@@ -17,7 +17,7 @@ use Tests\TestCase;
  */
 class DetectionModesTest extends TestCase
 {
-    private function seed(): array
+    private function seedNegative(): array
     {
         $t     = $this->createTenant();
         $store = Store::create(['tenant_id' => $t->id, 'name' => 'S1', 'code' => 'ST1']);
@@ -32,7 +32,7 @@ class DetectionModesTest extends TestCase
 
     public function test_aggregate_mode_skips_allowlist_rules(): void
     {
-        [$t] = $this->seed();
+        [$t] = $this->seedNegative();
 
         // negative_inventory is an allowlist (per-key) rule → aggregate mode must skip it.
         app(AnomalyDetectionService::class)->runForTenant($t->id, null, true);
@@ -44,7 +44,7 @@ class DetectionModesTest extends TestCase
 
     public function test_full_mode_clears_the_dirty_queue(): void
     {
-        [$t] = $this->seed();
+        [$t] = $this->seedNegative();
         $this->assertSame(1, DetectionDirtyKey::where('tenant_id', $t->id)->count());
 
         $this->artisan('anomalies:detect', ['--tenant' => $t->id, '--mode' => 'full'])
@@ -59,7 +59,7 @@ class DetectionModesTest extends TestCase
 
     public function test_shadow_diff_reports_parity_and_writes_nothing(): void
     {
-        [$t] = $this->seed();
+        [$t] = $this->seedNegative();
 
         $this->artisan('detection:shadow-diff', ['--tenant' => $t->id])
             ->assertSuccessful();
