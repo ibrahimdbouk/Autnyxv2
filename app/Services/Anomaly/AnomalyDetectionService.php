@@ -142,6 +142,32 @@ class AnomalyDetectionService
     private int $gatedFlags = 0;
 
     /**
+     * Incremental detection (Slice 2): when set, the primed maps and the scoped
+     * rule families below are restricted to this SKU set; null = full scan
+     * (unchanged behaviour). Every scoping site is guarded by `->when($this->scope …)`
+     * so a full run is byte-identical to before. See claude/incremental-detection-design.md.
+     */
+    private ?\App\Services\Detection\RunScope $scope = null;
+
+    /**
+     * Rules that incremental mode runs. These read ONLY the SKU-scoped primed
+     * maps or salesComparison(), so scoping those sources makes them incremental
+     * with correct reconciler evaluability. Every other rule (raw-SQL per-key
+     * rules and aggregate/absence rules) is skipped in incremental mode for now
+     * and covered by the full run; Slice 2b/Slice 4 extend this set.
+     */
+    public const INCREMENTAL_RULES = [
+        'stockout_risk',
+        'negative_inventory',
+        'overstock',
+        'phantom_inventory',
+        'safety_stock_breach',
+        'multi_location_imbalance',
+        'sales_spike',
+        'sales_drop',
+    ];
+
+    /**
      * B2 validation telemetry: per-rule counts of flags actually emitted and
      * flags suppressed by best-fit gating in the current run. "Would-be flags"
      * for a rule = emitted + gated; gated / would-be is the noise the gate cut.
@@ -210,6 +236,7 @@ class AnomalyDetectionService
         DB::table('inventory_levels')
             ->where('tenant_id', $tenantId)
             ->whereNotNull('store_id')
+            ->when($this->scope, fn ($q) => $this->scope->constrain($q))
             ->select(['store_id', 'sku', 'on_hand_qty', 'reorder_point', 'product_id', 'location', 'as_of_date'])
             ->orderByRaw('store_id, sku, as_of_date DESC NULLS LAST')
             ->distinct(['store_id', 'sku']) // DISTINCT ON (store_id, sku) via the Postgres driver
@@ -241,6 +268,7 @@ class AnomalyDetectionService
         DB::table('sales_daily')
             ->where('tenant_id', $tenantId)
             ->where('date', '>=', $from)
+            ->when($this->scope, fn ($q) => $this->scope->constrain($q))
             ->selectRaw('store_id, sku, SUM(units_sold) as u')
             ->groupBy('store_id', 'sku')
             ->cursor()
@@ -274,6 +302,7 @@ class AnomalyDetectionService
 
         DB::table('sku_replenishment')
             ->where('tenant_id', $tenantId)
+            ->when($this->scope, fn ($q) => $this->scope->constrain($q))
             ->select(['store_id', 'sku', 'reorder_point', 'suggested_order_qty', 'order_up_to', 'supplier'])
             ->cursor()
             ->each(function ($r) {
@@ -319,6 +348,7 @@ class AnomalyDetectionService
 
         DB::table('sku_profiles')
             ->where('tenant_id', $tenantId)
+            ->when($this->scope, fn ($q) => $this->scope->constrain($q))
             ->select(['store_id', 'sku', 'segment'])
             ->cursor()
             ->each(function ($p) {
@@ -512,8 +542,12 @@ class AnomalyDetectionService
      * Existing open anomalies are upserted (investigation fields preserved); a
      * subject that stops failing is advanced through the recovery lifecycle (R2).
      */
-    public function runForTenant(int $tenantId): void
+    public function runForTenant(int $tenantId, ?\App\Services\Detection\RunScope $scope = null): void
     {
+        // Set per call (each call overwrites), so a subsequent full run on a
+        // reused instance is never accidentally scoped. null = full scan.
+        $this->scope = $scope;
+
         AnomalySetting::seedForTenant($tenantId);
         // Headroom for large tenants; the detectors below are written to stream,
         // so this is a safety margin, not a crutch.
@@ -605,6 +639,12 @@ class AnomalyDetectionService
         foreach ($rules as $ruleType => $detector) {
             $setting = $settings->get($ruleType);
             if (!$setting || !$setting->enabled) {
+                continue;
+            }
+
+            // Incremental mode runs only the SKU-scoped rule families (Slice 2);
+            // every other rule is left to the full run.
+            if ($this->scope !== null && ! in_array($ruleType, self::INCREMENTAL_RULES, true)) {
                 continue;
             }
 
@@ -2483,6 +2523,7 @@ class AnomalyDetectionService
 
         $recent = SalesTransaction::where('tenant_id', $tenantId)
             ->where('date', '>=', $recentStart)
+            ->when($this->scope, fn ($q) => $this->scope->constrain($q))
             ->selectRaw('sku, SUM(quantity) as qty')
             ->groupBy('sku')
             ->pluck('qty', 'sku')
@@ -2490,6 +2531,7 @@ class AnomalyDetectionService
 
         $historical = SalesTransaction::where('tenant_id', $tenantId)
             ->whereBetween('date', [$histStart, $histEnd])
+            ->when($this->scope, fn ($q) => $this->scope->constrain($q))
             ->selectRaw('sku, SUM(quantity) as qty')
             ->groupBy('sku')
             ->pluck('qty', 'sku')

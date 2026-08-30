@@ -39,9 +39,10 @@ class Tenant extends Model
     ];
 
     protected $casts = [
-        'settings'         => 'array',
-        'notify_on_high'   => 'boolean',
-        'notify_on_medium' => 'boolean',
+        'settings'          => 'array',
+        'notify_on_high'    => 'boolean',
+        'notify_on_medium'  => 'boolean',
+        'last_detection_at' => 'datetime',
     ];
 
     // ---------- Relationships ----------
