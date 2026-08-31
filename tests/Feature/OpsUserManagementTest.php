@@ -35,10 +35,16 @@ class OpsUserManagementTest extends TestCase
     {
         $tenant = $this->createTenant();
 
-        $this->actingAs($this->createUser($tenant, admin: true));
+        // Create both up front, with no actor authenticated — otherwise the User
+        // owner-protection hook (only the owner may mint super admins) would strip
+        // the super-admin flag when a non-owner is the acting user.
+        $tenantAdmin = $this->createUser($tenant, admin: true);
+        $superAdmin = $this->createUser($tenant, superAdmin: true);
+
+        $this->actingAs($tenantAdmin);
         $this->assertFalse(UserResource::canViewAny(), 'a tenant admin must not manage users in ops');
 
-        $this->actingAs($this->createUser($tenant, superAdmin: true));
+        $this->actingAs($superAdmin);
         $this->assertTrue(UserResource::canViewAny());
     }
 
