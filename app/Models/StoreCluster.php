@@ -18,6 +18,7 @@ class StoreCluster extends Model
 
     protected $fillable = [
         'tenant_id',
+        'cluster_set_id',
         'method',
         'objective',
         'key',
@@ -35,6 +36,11 @@ class StoreCluster extends Model
     public function tenant(): BelongsTo
     {
         return $this->belongsTo(Tenant::class);
+    }
+
+    public function clusterSet(): BelongsTo
+    {
+        return $this->belongsTo(ClusterSet::class);
     }
 
     public function stores(): BelongsToMany

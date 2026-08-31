@@ -96,6 +96,8 @@ return [
             'app/Models/SkuProfile.php',
             'app/Models/StoreCluster.php',
             'app/Models/StoreFeature.php',
+            'app/Models/ClusterSet.php',
+            'app/Models/ClusterPin.php',
             'app/Platform/Intelligence/',   // clustering + store feature layer
         ],
 

@@ -152,7 +152,8 @@ class StoreClusterResource extends Resource
             ->actions([
                 EditAction::make(),
                 DeleteAction::make()
-                    ->after(fn () => app(ClusterService::class)->markCustomised(Filament::getTenant()?->id ?? 0)),
+                    ->after(fn (StoreCluster $record) => app(ClusterService::class)
+                        ->removeClusterPins($record->tenant_id, $record->objective ?? StoreCluster::OBJECTIVE_GENERAL, $record->key)),
             ]);
     }
 

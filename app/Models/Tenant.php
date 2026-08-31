@@ -106,22 +106,6 @@ class Tenant extends Model
         return in_array($app, $this->enabledApps(), true);
     }
 
-    // ---------- Store clustering ----------
-
-    /** True once the tenant has manually amended their clusters (nightly rebuild then leaves them alone). */
-    public function clusteringCustomised(): bool
-    {
-        return (bool) ($this->settings['clustering_customised'] ?? false);
-    }
-
-    public function setClusteringCustomised(bool $customised): void
-    {
-        $settings = $this->settings ?? [];
-        $settings['clustering_customised'] = $customised;
-        $this->settings = $settings;
-        $this->save();
-    }
-
     public function planLabel(): string
     {
         return self::PLAN_LABELS[$this->plan] ?? ucfirst((string) ($this->plan ?: 'trial'));

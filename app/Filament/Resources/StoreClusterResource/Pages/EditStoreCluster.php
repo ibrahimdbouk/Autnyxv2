@@ -16,14 +16,18 @@ class EditStoreCluster extends EditRecord
     {
         return [
             DeleteAction::make()
-                ->after(fn () => app(ClusterService::class)->markCustomised(Filament::getTenant()?->id ?? 0)),
+                ->after(fn () => app(ClusterService::class)->removeClusterPins(
+                    $this->record->tenant_id,
+                    $this->record->objective ?? \App\Models\StoreCluster::OBJECTIVE_GENERAL,
+                    $this->record->key,
+                )),
         ];
     }
 
-    /** A store lives in one cluster: pull its stores out of any other group, mark customised. */
+    /** Persist the edit as pins (survives the nightly rebuild) and keep single-membership. */
     protected function afterSave(): void
     {
-        app(ClusterService::class)->enforceSingleMembership($this->record);
+        app(ClusterService::class)->applyManualEdit($this->record);
     }
 
     protected function getRedirectUrl(): string

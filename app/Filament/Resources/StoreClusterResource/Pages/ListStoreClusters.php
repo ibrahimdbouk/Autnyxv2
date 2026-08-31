@@ -32,9 +32,9 @@ class ListStoreClusters extends ListRecords
             ->where('method', $method)
             ->exists();
 
-        if (! $tenant->clusteringCustomised()
-            && ! $hasClusters
-            && Store::where('tenant_id', $tenant->id)->exists()) {
+        // Rebuild is always safe now (it re-applies pins), so just ensure the
+        // page isn't empty on first visit.
+        if (! $hasClusters && Store::where('tenant_id', $tenant->id)->exists()) {
             app(ClusterService::class)->rebuild($tenant->id);
         }
     }
@@ -46,8 +46,8 @@ class ListStoreClusters extends ListRecords
             return null;
         }
 
-        $base = $tenant->clusteringCustomised()
-            ? 'These clusters are customised by you. New stores stay unassigned until you add them, or you can reset to the recommended grouping.'
+        $base = app(ClusterService::class)->hasPins($tenant->id)
+            ? 'You’ve customised these clusters. Untouched stores still re-cluster automatically and new stores are placed for you; your pinned changes stay put until you reset.'
             : 'Recommended peer groups, by store format and region. Rebuilt automatically as your stores change. Edit any group to make them your own.';
 
         $unassigned = count(app(ClusterService::class)->unassignedStoreIds($tenant->id));
@@ -66,7 +66,7 @@ class ListStoreClusters extends ListRecords
                 ->label('Reset to recommended')
                 ->icon('heroicon-o-arrow-path')
                 ->color('gray')
-                ->visible(fn () => (bool) Filament::getTenant()?->clusteringCustomised())
+                ->visible(fn () => ($t = Filament::getTenant()) && app(ClusterService::class)->hasPins($t->id))
                 ->requiresConfirmation()
                 ->modalHeading('Reset clusters')
                 ->modalDescription('Discard your changes and regenerate the recommended clusters from store format and region?')
