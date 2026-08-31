@@ -44,7 +44,7 @@ class StoreClusterViewTest extends TestCase
         return $store;
     }
 
-    private function status(string $url): int
+    private function httpStatus(string $url): int
     {
         return $this->get($url)->baseResponse->getStatusCode();
     }
@@ -58,7 +58,7 @@ class StoreClusterViewTest extends TestCase
         ]);
         $this->store('S2'); // no profile → placeholder path
 
-        $status = $this->status(StoreResource::getUrl('index', ['tenant' => $this->tenant]));
+        $status = $this->httpStatus(StoreResource::getUrl('index', ['tenant' => $this->tenant]));
         $this->assertLessThan(500, $status, "Stores index returned HTTP $status");
     }
 
@@ -76,7 +76,7 @@ class StoreClusterViewTest extends TestCase
         ]);
         $cluster->stores()->attach([$a->id, $b->id]);
 
-        $status = $this->status(StoreClusterResource::getUrl('detail', ['record' => $cluster, 'tenant' => $this->tenant]));
+        $status = $this->httpStatus(StoreClusterResource::getUrl('detail', ['record' => $cluster, 'tenant' => $this->tenant]));
         $this->assertLessThan(500, $status, "Attribute cluster view returned HTTP $status");
     }
 
@@ -94,7 +94,7 @@ class StoreClusterViewTest extends TestCase
         ]);
         $cluster->stores()->attach([$a->id]);
 
-        $status = $this->status(StoreClusterResource::getUrl('detail', ['record' => $cluster, 'tenant' => $this->tenant]));
+        $status = $this->httpStatus(StoreClusterResource::getUrl('detail', ['record' => $cluster, 'tenant' => $this->tenant]));
         $this->assertLessThan(500, $status, "Demand cluster view returned HTTP $status");
     }
 }
