@@ -14,6 +14,7 @@ use App\Console\Commands\NotifyAnomaliesCommand;
 use App\Console\Commands\PollSftpCommand;
 use App\Console\Commands\ComputeReplenishmentCommand;
 use App\Console\Commands\ProfileSkusCommand;
+use App\Console\Commands\ProfileStoresCommand;
 use App\Console\Commands\RebuildClustersCommand;
 use App\Services\Import\ImportProcessorService;
 use Illuminate\Console\Scheduling\Schedule;
@@ -124,6 +125,15 @@ class AppServiceProvider extends ServiceProvider
                 ->withoutOverlapping()
                 ->runInBackground()
                 ->appendOutputTo(storage_path('logs/sku-profile.log'));
+
+            // 00:47 — Recompute the store feature layer (Platform\Intelligence).
+            //          After sku:profile so it can aggregate the fresh demand shape;
+            //          the durable behavioural asset clustering + assortment read.
+            $schedule->command(ProfileStoresCommand::class)
+                ->dailyAt('00:47')
+                ->withoutOverlapping()
+                ->runInBackground()
+                ->appendOutputTo(storage_path('logs/store-profile.log'));
 
             // 00:50 — Derive reorder points / safety stock / suggested order qty
             //          (B4) from the fresh profiles, before detection consumes them.

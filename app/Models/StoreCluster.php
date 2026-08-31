@@ -13,9 +13,13 @@ use Illuminate\Support\Facades\DB;
  */
 class StoreCluster extends Model
 {
+    /** Default clustering objective — the operational grouping shown everywhere today. */
+    const OBJECTIVE_GENERAL = 'general';
+
     protected $fillable = [
         'tenant_id',
         'method',
+        'objective',
         'key',
         'label',
         'params',

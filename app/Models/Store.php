@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Store extends Model
 {
@@ -32,5 +33,11 @@ class Store extends Model
     public function inventoryLevels(): HasMany
     {
         return $this->hasMany(InventoryLevel::class);
+    }
+
+    /** This store's behavioural feature vector (Platform\Intelligence), if computed. */
+    public function feature(): HasOne
+    {
+        return $this->hasOne(StoreFeature::class);
     }
 }

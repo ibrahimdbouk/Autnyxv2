@@ -95,7 +95,8 @@ return [
             'app/Services/Anomaly/SeasonalityService.php',
             'app/Models/SkuProfile.php',
             'app/Models/StoreCluster.php',
-            'app/Platform/Intelligence/',   // store clustering primitive
+            'app/Models/StoreFeature.php',
+            'app/Platform/Intelligence/',   // clustering + store feature layer
         ],
 
         // The unified "suggested response" layer.
