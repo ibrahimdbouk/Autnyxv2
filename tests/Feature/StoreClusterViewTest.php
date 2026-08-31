@@ -76,7 +76,7 @@ class StoreClusterViewTest extends TestCase
         ]);
         $cluster->stores()->attach([$a->id, $b->id]);
 
-        $status = $this->status(StoreClusterResource::getUrl('view', ['record' => $cluster, 'tenant' => $this->tenant]));
+        $status = $this->status(StoreClusterResource::getUrl('detail', ['record' => $cluster, 'tenant' => $this->tenant]));
         $this->assertLessThan(500, $status, "Attribute cluster view returned HTTP $status");
     }
 
@@ -94,7 +94,7 @@ class StoreClusterViewTest extends TestCase
         ]);
         $cluster->stores()->attach([$a->id]);
 
-        $status = $this->status(StoreClusterResource::getUrl('view', ['record' => $cluster, 'tenant' => $this->tenant]));
+        $status = $this->status(StoreClusterResource::getUrl('detail', ['record' => $cluster, 'tenant' => $this->tenant]));
         $this->assertLessThan(500, $status, "Demand cluster view returned HTTP $status");
     }
 }
