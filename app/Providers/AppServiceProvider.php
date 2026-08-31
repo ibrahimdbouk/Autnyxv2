@@ -109,15 +109,6 @@ class AppServiceProvider extends ServiceProvider
                 ->name('recover-stuck-imports')
                 ->withoutOverlapping();
 
-            // 00:40 — Rebuild store clusters (Platform\Intelligence\Clustering).
-            //          Depends only on the store master, so it runs early and is
-            //          available to every app that reads peer groups.
-            $schedule->command(RebuildClustersCommand::class)
-                ->dailyAt('00:40')
-                ->withoutOverlapping()
-                ->runInBackground()
-                ->appendOutputTo(storage_path('logs/clusters-rebuild.log'));
-
             // 00:45 — Classify each (SKU, store) into sku_profiles (best-fit layer).
             //          Runs before baselines/detection so those can consult it.
             $schedule->command(ProfileSkusCommand::class)
@@ -134,6 +125,16 @@ class AppServiceProvider extends ServiceProvider
                 ->withoutOverlapping()
                 ->runInBackground()
                 ->appendOutputTo(storage_path('logs/store-profile.log'));
+
+            // 00:52 — Rebuild store clusters (Platform\Intelligence\Clustering).
+            //          After the store feature layer so behavioural (demand) clustering,
+            //          when enabled, reads fresh features. Attribute clustering (default)
+            //          only needs the store master, so ordering is harmless for it.
+            $schedule->command(RebuildClustersCommand::class)
+                ->dailyAt('00:52')
+                ->withoutOverlapping()
+                ->runInBackground()
+                ->appendOutputTo(storage_path('logs/clusters-rebuild.log'));
 
             // 00:50 — Derive reorder points / safety stock / suggested order qty
             //          (B4) from the fresh profiles, before detection consumes them.
