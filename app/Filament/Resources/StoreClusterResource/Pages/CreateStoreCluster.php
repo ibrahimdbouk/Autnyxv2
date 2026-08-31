@@ -16,7 +16,7 @@ class CreateStoreCluster extends CreateRecord
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         $data['tenant_id'] = Filament::getTenant()?->id;
-        $data['method'] = config('clustering.strategy', 'attribute');
+        $data['method'] = app(ClusterService::class)->activeMethod(Filament::getTenant()?->id ?? 0);
         $data['objective'] = \App\Models\StoreCluster::OBJECTIVE_GENERAL;
         $data['key'] = 'custom-' . Str::slug($data['label'] ?? 'group') . '-' . Str::lower(Str::random(5));
         $data['params'] = null; // custom groups have no attribute definition

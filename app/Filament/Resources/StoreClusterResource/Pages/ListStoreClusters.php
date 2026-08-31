@@ -26,16 +26,16 @@ class ListStoreClusters extends ListRecords
             return;
         }
 
-        $method = config('clustering.strategy', 'attribute');
+        $method = app(ClusterService::class)->activeMethod($tenant->id);
         $hasClusters = StoreCluster::query()
             ->where('tenant_id', $tenant->id)
             ->where('method', $method)
             ->exists();
 
         // Rebuild is always safe now (it re-applies pins), so just ensure the
-        // page isn't empty on first visit.
+        // page isn't empty on first visit, using the tenant's active strategy.
         if (! $hasClusters && Store::where('tenant_id', $tenant->id)->exists()) {
-            app(ClusterService::class)->rebuild($tenant->id);
+            app(ClusterService::class)->rebuild($tenant->id, $method);
         }
     }
 
@@ -46,9 +46,13 @@ class ListStoreClusters extends ListRecords
             return null;
         }
 
+        $isDemand = app(ClusterService::class)->activeMethod($tenant->id) === 'demand';
+
         $base = app(ClusterService::class)->hasPins($tenant->id)
             ? 'You’ve customised these clusters. Untouched stores still re-cluster automatically and new stores are placed for you; your pinned changes stay put until you reset.'
-            : 'Recommended peer groups, by store format and region. Rebuilt automatically as your stores change. Edit any group to make them your own.';
+            : ($isDemand
+                ? 'Behavioural peer groups, by how your stores actually trade. Rebuilt automatically as your data changes. Edit any group to make them your own.'
+                : 'Recommended peer groups, by store format and region. Rebuilt automatically as your stores change. Edit any group to make them your own.');
 
         $unassigned = count(app(ClusterService::class)->unassignedStoreIds($tenant->id));
 
@@ -60,6 +64,13 @@ class ListStoreClusters extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('methods')
+                ->label('Clustering method')
+                ->icon('heroicon-o-arrows-right-left')
+                ->color('gray')
+                ->visible(fn () => auth()->user()?->is_tenant_admin || auth()->user()?->is_super_admin)
+                ->url(fn () => \App\Filament\Pages\ClusteringMethod::getUrl()),
+
             CreateAction::make()->label('Add cluster'),
 
             Action::make('reset')

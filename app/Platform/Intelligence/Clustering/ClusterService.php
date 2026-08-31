@@ -6,6 +6,7 @@ use App\Models\ClusterPin;
 use App\Models\ClusterSet;
 use App\Models\Store;
 use App\Models\StoreCluster;
+use App\Models\StoreFeature;
 use App\Models\Tenant;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -33,6 +34,8 @@ class ClusterService
         ?string $method = null,
         string $objective = StoreCluster::OBJECTIVE_GENERAL,
     ): int {
+        // No explicit method → use the tenant's active strategy (attribute | demand).
+        $method = $method ?? $this->activeMethod($tenantId);
         $strategy = $this->factory->make($method);
         $strategyMethod = $strategy->method();
 
@@ -146,15 +149,101 @@ class ClusterService
         return md5(implode('|', $parts));
     }
 
-    /** Rebuild every tenant. Returns [tenantId => clustersWritten]. */
+    /**
+     * Rebuild every tenant with EACH tenant's active strategy (so a tenant on
+     * behavioural clustering gets demand clusters, one on structural gets attribute).
+     * An explicit $method overrides that for all tenants. Returns [tenantId => count].
+     */
     public function rebuildAll(?string $method = null, string $objective = StoreCluster::OBJECTIVE_GENERAL): array
     {
         $out = [];
         Tenant::query()->orderBy('id')->pluck('id')->each(function (int $id) use (&$out, $method, $objective) {
-            $out[$id] = $this->rebuild($id, $method, $objective);
+            $out[$id] = $this->rebuild($id, $method, $objective); // rebuild() resolves the active strategy when $method is null
         });
 
         return $out;
+    }
+
+    // ---------- Active strategy (per tenant) ----------
+
+    /** The clustering strategy this tenant is on ('attribute' | 'demand'), falling back to config. */
+    public function activeMethod(int $tenantId): string
+    {
+        $chosen = Tenant::find($tenantId)?->settings['clustering_strategy'] ?? null;
+        $valid = array_keys((array) config('clustering.strategies', []));
+
+        return ($chosen && in_array($chosen, $valid, true))
+            ? $chosen
+            : (string) config('clustering.strategy', 'attribute');
+    }
+
+    /**
+     * Switch a tenant to a clustering strategy. Because pins reference the current
+     * strategy's cluster keys, changing strategy clears them for a clean switch.
+     */
+    public function setActiveMethod(int $tenantId, string $method): void
+    {
+        $tenant = Tenant::find($tenantId);
+        if (! $tenant) {
+            return;
+        }
+
+        $changed = $this->activeMethod($tenantId) !== $method;
+
+        $settings = $tenant->settings ?? [];
+        $settings['clustering_strategy'] = $method;
+        $tenant->settings = $settings;
+        $tenant->save();
+
+        if ($changed) {
+            ClusterPin::query()
+                ->where('tenant_id', $tenantId)
+                ->where('objective', StoreCluster::OBJECTIVE_GENERAL)
+                ->delete();
+        }
+    }
+
+    /**
+     * Compute an attribute-vs-demand comparison for a tenant WITHOUT persisting —
+     * strategies are pure. Powers the "preview before you switch" screen.
+     *
+     * @return array{active:string, demand_available:bool, attribute:array, demand:array, crosstab:array}
+     */
+    public function compare(int $tenantId): array
+    {
+        $attribute = $this->factory->make('attribute')->cluster($tenantId);
+        $demand = $this->factory->make('demand')->cluster($tenantId);
+
+        $demandByStore = [];
+        foreach ($demand as $group) {
+            foreach ($group['store_ids'] as $storeId) {
+                $demandByStore[(int) $storeId] = $group['label'];
+            }
+        }
+
+        $crosstab = [];
+        foreach ($attribute as $group) {
+            $split = [];
+            foreach ($group['store_ids'] as $storeId) {
+                $label = $demandByStore[(int) $storeId] ?? '(unprofiled)';
+                $split[$label] = ($split[$label] ?? 0) + 1;
+            }
+            arsort($split);
+            $crosstab[] = [
+                'label'    => $group['label'],
+                'count'    => count($group['store_ids']),
+                'split'    => $split,
+                'is_split' => count($split) > 1,
+            ];
+        }
+
+        return [
+            'active'           => $this->activeMethod($tenantId),
+            'demand_available' => StoreFeature::query()->where('tenant_id', $tenantId)->where('revenue', '>', 0)->exists(),
+            'attribute'        => $attribute,
+            'demand'           => $demand,
+            'crosstab'         => $crosstab,
+        ];
     }
 
     /** A tenant's clusters (with stores) for the given/default method + objective. */

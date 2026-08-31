@@ -50,7 +50,7 @@ class StoreClusterResource extends Resource
     {
         return parent::getEloquentQuery()
             ->where('tenant_id', Filament::getTenant()?->id)
-            ->where('method', config('clustering.strategy', 'attribute'))
+            ->where('method', app(ClusterService::class)->activeMethod(Filament::getTenant()?->id ?? 0))
             ->where('objective', StoreCluster::OBJECTIVE_GENERAL)
             ->withCount('stores');
     }
