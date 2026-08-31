@@ -45,6 +45,7 @@ return [
     'scan_paths' => [
         'app/Services',
         'app/Models',
+        'app/Platform',
     ],
 
     /*
@@ -88,12 +89,13 @@ return [
             'app/Models/DataHealthSnapshot.php',
         ],
 
-        // Shared analytics: demand characterisation, seasonality, (clustering
-        // lands here next).
+        // Shared analytics: demand characterisation, seasonality, clustering.
         'Platform\\Intelligence' => [
             'app/Services/Anomaly/SkuProfilerService.php',
             'app/Services/Anomaly/SeasonalityService.php',
             'app/Models/SkuProfile.php',
+            'app/Models/StoreCluster.php',
+            'app/Platform/Intelligence/',   // store clustering primitive
         ],
 
         // The unified "suggested response" layer.

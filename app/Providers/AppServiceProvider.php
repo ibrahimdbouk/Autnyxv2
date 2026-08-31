@@ -14,6 +14,7 @@ use App\Console\Commands\NotifyAnomaliesCommand;
 use App\Console\Commands\PollSftpCommand;
 use App\Console\Commands\ComputeReplenishmentCommand;
 use App\Console\Commands\ProfileSkusCommand;
+use App\Console\Commands\RebuildClustersCommand;
 use App\Services\Import\ImportProcessorService;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\ServiceProvider;
@@ -106,6 +107,15 @@ class AppServiceProvider extends ServiceProvider
                 ->everyFiveMinutes()
                 ->name('recover-stuck-imports')
                 ->withoutOverlapping();
+
+            // 00:40 — Rebuild store clusters (Platform\Intelligence\Clustering).
+            //          Depends only on the store master, so it runs early and is
+            //          available to every app that reads peer groups.
+            $schedule->command(RebuildClustersCommand::class)
+                ->dailyAt('00:40')
+                ->withoutOverlapping()
+                ->runInBackground()
+                ->appendOutputTo(storage_path('logs/clusters-rebuild.log'));
 
             // 00:45 — Classify each (SKU, store) into sku_profiles (best-fit layer).
             //          Runs before baselines/detection so those can consult it.

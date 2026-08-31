@@ -16,7 +16,7 @@ use Illuminate\Support\Str;
 class TenantProvisioner
 {
     /**
-     * @param  array{name:string,slug?:string,plan?:string,status?:string,currency?:string}  $tenantData
+     * @param  array{name:string,slug?:string,plan?:string,status?:string,currency?:string,apps?:array}  $tenantData
      * @param  array{name?:string,email?:string,password?:string}  $adminData
      */
     public function create(array $tenantData, array $adminData = []): Tenant
@@ -27,6 +27,7 @@ class TenantProvisioner
                 'slug'     => $this->uniqueSlug($tenantData['slug'] ?? $tenantData['name']),
                 'plan'     => $tenantData['plan'] ?? Tenant::PLAN_TRIAL,
                 'status'   => $tenantData['status'] ?? Tenant::STATUS_ACTIVE,
+                'apps'     => ! empty($tenantData['apps']) ? array_values($tenantData['apps']) : Tenant::DEFAULT_APPS,
                 'currency' => $tenantData['currency'] ?? 'USD',
             ]);
 

@@ -5,6 +5,7 @@ namespace App\Filament\Ops\Resources;
 use App\Filament\Ops\Resources\TenantResource\Pages;
 use App\Models\Tenant;
 use Filament\Actions\Action;
+use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
@@ -74,6 +75,21 @@ class TenantResource extends Resource
                     ->maxLength(3),
             ])->columns(2),
 
+            Section::make('Apps')
+                ->description('Which Autnyx apps this tenant can use. Root-Cause is the built app; others become available as they ship.')
+                ->schema([
+                    CheckboxList::make('apps')
+                        ->hiddenLabel()
+                        ->options(Tenant::APP_LABELS)
+                        ->descriptions([
+                            Tenant::APP_ROOT_CAUSE     => 'Detection, investigation and recovery (live).',
+                            Tenant::APP_ASSORTMENT     => 'Distribution-gap intelligence (in development).',
+                            Tenant::APP_TASK_EXECUTION => 'Cross-app task queue and outcomes (in development).',
+                        ])
+                        ->default(Tenant::DEFAULT_APPS)
+                        ->columns(1),
+                ]),
+
             Section::make('First administrator')
                 ->description('Create the tenant’s first admin account. They can add the rest of their team.')
                 ->visibleOn('create')
@@ -102,6 +118,15 @@ class TenantResource extends Resource
                     ->color('warning'),
                 TextColumn::make('status')->badge()
                     ->color(fn (string $state) => $state === Tenant::STATUS_ACTIVE ? 'success' : 'danger'),
+                TextColumn::make('apps_label')->label('Apps')->badge()->color('primary')
+                    ->state(fn (Tenant $record) => collect($record->enabledApps())
+                        ->map(fn (string $app) => match ($app) {
+                            Tenant::APP_ROOT_CAUSE     => 'Root-Cause',
+                            Tenant::APP_ASSORTMENT     => 'Assortment',
+                            Tenant::APP_TASK_EXECUTION => 'Tasks',
+                            default                    => $app,
+                        })
+                        ->all()),
                 TextColumn::make('users_count')->counts('users')->label('Users'),
                 TextColumn::make('created_at')->since()->label('Created')->sortable(),
             ])

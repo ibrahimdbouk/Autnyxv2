@@ -21,6 +21,7 @@ class CreateTenant extends CreateRecord
                 'slug'     => $data['slug'] ?? null,
                 'plan'     => $data['plan'] ?? Tenant::PLAN_TRIAL,
                 'status'   => $data['status'] ?? Tenant::STATUS_ACTIVE,
+                'apps'     => $data['apps'] ?? Tenant::DEFAULT_APPS,
                 'currency' => $data['currency'] ?? 'USD',
             ],
             [

@@ -26,11 +26,26 @@ class Tenant extends Model
         self::PLAN_ENTERPRISE => 'Enterprise',
     ];
 
+    // ── App entitlements — Autnyx is a platform; a tenant holds a subset of apps.
+    const APP_ROOT_CAUSE     = 'root_cause';
+    const APP_ASSORTMENT     = 'assortment';
+    const APP_TASK_EXECUTION = 'task_execution';
+
+    const APP_LABELS = [
+        self::APP_ROOT_CAUSE     => 'Root-Cause Intelligence',
+        self::APP_ASSORTMENT     => 'Assortment Intelligence',
+        self::APP_TASK_EXECUTION => 'Task Execution',
+    ];
+
+    /** What a tenant gets by default / falls back to: the one built app. */
+    const DEFAULT_APPS = [self::APP_ROOT_CAUSE];
+
     protected $fillable = [
         'name',
         'slug',
         'plan',
         'status',
+        'apps',
         'currency',
         'settings',
         'notification_email',
@@ -39,6 +54,7 @@ class Tenant extends Model
     ];
 
     protected $casts = [
+        'apps'              => 'array',
         'settings'          => 'array',
         'notify_on_high'    => 'boolean',
         'notify_on_medium'  => 'boolean',
@@ -67,6 +83,27 @@ class Tenant extends Model
     public function isActive(): bool
     {
         return ($this->status ?? self::STATUS_ACTIVE) === self::STATUS_ACTIVE;
+    }
+
+    // ---------- App entitlements ----------
+
+    /** The apps this tenant may use, always valid and non-empty (falls back to Root-Cause). */
+    public function enabledApps(): array
+    {
+        $apps = $this->apps;
+        if (! is_array($apps) || $apps === []) {
+            return self::DEFAULT_APPS;
+        }
+
+        // Ignore anything not a known app so a stale value can never grant access.
+        $valid = array_values(array_intersect($apps, array_keys(self::APP_LABELS)));
+
+        return $valid === [] ? self::DEFAULT_APPS : $valid;
+    }
+
+    public function hasApp(string $app): bool
+    {
+        return in_array($app, $this->enabledApps(), true);
     }
 
     public function planLabel(): string
