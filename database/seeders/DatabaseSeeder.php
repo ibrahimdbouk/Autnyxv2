@@ -21,7 +21,10 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // 2. Create or retrieve the initial super-admin account.
+        // 2. Create or retrieve the Autnyx tenant's admin account. This is a
+        //    TENANT admin of the Autnyx tenant — NOT a super admin. Platform/ops
+        //    access belongs to the owner (config/autnyx.php › owner_email); extra
+        //    super admins are minted by the owner, not seeded here.
         $admin = User::firstOrCreate(
             ['email' => env('ADMIN_EMAIL', 'admin@autnyx.io')],
             [
@@ -29,15 +32,18 @@ class DatabaseSeeder extends Seeder
                 'password'          => Hash::make(env('ADMIN_PASSWORD', 'Autnyx2026!')),
                 'email_verified_at' => now(),
                 'tenant_id'         => $tenant->id,
-                'is_super_admin'    => true,
+                'is_tenant_admin'   => true,
+                'is_super_admin'    => false,
             ]
         );
 
-        // If the user already existed (e.g. created via artisan), backfill tenant + super-admin flag.
+        // Keep it a tenant admin of Autnyx on every deploy — and demote it if it
+        // was previously a super admin.
         if (! $admin->wasRecentlyCreated) {
             $admin->update([
-                'tenant_id'      => $tenant->id,
-                'is_super_admin' => true,
+                'tenant_id'       => $tenant->id,
+                'is_tenant_admin' => true,
+                'is_super_admin'  => false,
             ]);
         }
 
