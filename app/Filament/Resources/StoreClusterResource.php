@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\StoreClusterResource\Pages;
 use App\Models\StoreCluster;
 use App\Platform\Intelligence\Clustering\ClusterService;
+use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Facades\Filament;
@@ -149,7 +150,11 @@ class StoreClusterResource extends Resource
                     ->state(fn (StoreCluster $record) => number_format($record->metrics()['skus'])),
             ])
             ->defaultSort('label')
+            ->recordUrl(fn (StoreCluster $record) => static::getUrl('view', ['record' => $record]))
             ->actions([
+                Action::make('view')
+                    ->label('View')->icon('heroicon-o-eye')->color('gray')
+                    ->url(fn (StoreCluster $record) => static::getUrl('view', ['record' => $record])),
                 EditAction::make(),
                 DeleteAction::make()
                     ->after(fn (StoreCluster $record) => app(ClusterService::class)
@@ -168,6 +173,7 @@ class StoreClusterResource extends Resource
         return [
             'index'  => Pages\ListStoreClusters::route('/'),
             'create' => Pages\CreateStoreCluster::route('/create'),
+            'view'   => Pages\ViewStoreCluster::route('/{record}/view'),
             'edit'   => Pages\EditStoreCluster::route('/{record}/edit'),
         ];
     }
