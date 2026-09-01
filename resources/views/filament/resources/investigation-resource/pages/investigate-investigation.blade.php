@@ -251,23 +251,61 @@ $aiStatusBadge = match($record->ai_confidence ?? null) {
     default       => 'inv2-badge-gray',
 };
 
-/* ── Step 2: supporting evidence summary ──────────────────────────────── */
-$supportingEvidence = $record->evidence->where('direction','supports');
-$evidenceText = $supportingEvidence->count()
-    ? $supportingEvidence->map(fn($e) => $e->label.': '.$e->getFormattedValue())->implode(', ')
-    : 'No supporting evidence collected yet.';
+/* ── Evidence grouping helper ─────────────────────────────────────────────
+   The evidence collector emits one row per store, so a chain-wide signal
+   arrives as e.g. 15 identical "Current on-hand quantity" rows. Rendering
+   those verbatim is the "long and unclear" problem. This collapses a group of
+   same-label rows into one readable line: a numeric range (with a zero count)
+   when the values are numbers, otherwise a short distinct-value list. ─────── */
+$numify = function ($s) {
+    $n = preg_replace('/[^\d.\-]/', '', (string) $s);
+    return ($n !== '' && is_numeric($n)) ? (float) $n : null;
+};
+$trimNum = fn ($f) => rtrim(rtrim(number_format((float) $f, 2), '0'), '.');
+$summariseValues = function ($items) use ($numify, $trimNum) {
+    if ($items->count() === 1) {
+        return $items->first()->getFormattedValue();
+    }
+    $nums = $items->map(fn ($e) => $numify($e->getFormattedValue()));
+    if (! $nums->contains(null)) {
+        $zeros = $nums->filter(fn ($v) => $v == 0.0)->count();
+        $note  = $zeros ? ' (' . $zeros . ' at zero)' : '';
+        return $items->count() . ' locations, ' . $trimNum($nums->min()) . '–' . $trimNum($nums->max()) . $note;
+    }
+    $distinct = $items->map(fn ($e) => $e->getFormattedValue())->unique()->values();
+    return $distinct->take(6)->implode(', ') . ($distinct->count() > 6 ? ' +' . ($distinct->count() - 6) . ' more' : '');
+};
 
-/* ── Step 3: contributing factors ─────────────────────────────────────── */
-$neutralEvidence  = $record->evidence->where('direction','context');
-$anomalyDescs     = $record->anomalies->pluck('description')->filter()->values();
-$contribFactors   = $anomalyDescs->merge($neutralEvidence->pluck('label'))->unique()->take(5);
-$contribText      = $contribFactors->count()
-    ? $contribFactors->implode('; ')
+/* ── Step 2: supporting evidence — grouped so identical labels don't repeat ─ */
+$supportingEvidence = $record->evidence->where('direction','supports');
+$evidenceText = $supportingEvidence->isEmpty()
+    ? 'No supporting evidence collected yet.'
+    : $supportingEvidence->groupBy('label')
+        ->map(fn ($items, $label) => $label . ': ' . $summariseValues($items))
+        ->implode('. ') . '.';
+
+/* ── Step 3: contributing factors — de-duplicate near-identical lines ────── */
+$neutralEvidence = $record->evidence->where('direction','context');
+$rawFactors = $record->anomalies->pluck('description')->filter()
+    ->merge($neutralEvidence->pluck('label'))->filter();
+$factorGroups = [];
+foreach ($rawFactors as $f) {
+    $key = preg_replace('/\s+/', ' ', trim(preg_replace('/\d+|ST\d+|AED[\d.,]*/i', '', (string) $f)));
+    if (! isset($factorGroups[$key])) {
+        $factorGroups[$key] = ['sample' => $f, 'n' => 0];
+    }
+    $factorGroups[$key]['n']++;
+}
+$contribText = count($factorGroups)
+    ? collect($factorGroups)->take(4)
+        ->map(fn ($g) => $g['n'] > 1 ? $g['sample'] . ' (and ' . ($g['n'] - 1) . ' similar)' : $g['sample'])
+        ->implode('; ')
     : 'Multiple correlated signals detected across the investigation window.';
 
-/* ── Step 4: business impact ──────────────────────────────────────────── */
+/* ── Step 4: business impact (tenant currency, not a hardcoded $) ────────── */
+$curr = \App\Support\Money::symbol(\Filament\Facades\Filament::getTenant()?->currencyCode());
 $impactText = $record->revenue_at_risk
-    ? 'Estimated revenue at risk: $'.number_format($record->revenue_at_risk, 2).'.'
+    ? 'Estimated revenue at risk: ' . $curr . number_format($record->revenue_at_risk, 2) . '.'
     : 'Revenue impact not yet quantified.';
 
 /* ── Step 6: long-term fix ────────────────────────────────────────────── */
@@ -275,23 +313,26 @@ $ltFix = $record->root_cause_notes
     ?? $record->outcome?->confirmed_root_cause
     ?? 'No long-term remediation notes recorded. Once the root cause is confirmed, document the systemic fix here.';
 
-/* ── Step 7: KPIs derived from rule types ─────────────────────────────── */
+/* ── Step 7: KPIs derived from the real rule types ────────────────────── */
 $ruleKpiMap = [
-    'sales_velocity_drop'  => ['Daily Sales Velocity','7-Day Rolling Average','Week-on-Week Revenue'],
-    'stockout_risk'        => ['On-Hand Inventory Level','Days of Cover','Replenishment Lead Time'],
-    'overstock_risk'       => ['Inventory Turnover Rate','Weeks of Supply','Sell-Through Rate'],
-    'po_delay'             => ['PO Fill Rate','Delivery Lead Time','Supplier On-Time %'],
-    'return_spike'         => ['Return Rate','Net Sales Volume','Customer Satisfaction'],
-    'default'              => ['Revenue at Risk','Anomaly Recurrence Rate','Resolution Time (hrs)'],
+    'sales_drop'         => ['Daily Sales Velocity','7-Day Rolling Average','Week-on-Week Revenue'],
+    'sales_spike'        => ['Daily Sales Velocity','7-Day Rolling Average','Week-on-Week Revenue'],
+    'stockout_risk'      => ['On-Hand Inventory Level','Days of Cover','Replenishment Lead Time'],
+    'overstock'          => ['Inventory Turnover Rate','Weeks of Supply','Sell-Through Rate'],
+    'phantom_inventory'  => ['On-Hand vs Demand','Weeks of Supply','Sell-Through Rate'],
+    'po_overdue'         => ['PO Fill Rate','Delivery Lead Time','Supplier On-Time %'],
+    'po_late_receipt'    => ['PO Fill Rate','Delivery Lead Time','Supplier On-Time %'],
+    'return_rate_spike'  => ['Return Rate','Net Sales Volume','Sell-Through Rate'],
+    'default'            => ['Revenue at Risk','Anomaly Recurrence Rate','Resolution Time (hrs)'],
 ];
 $ruleType = $primaryAnomaly?->rule_type ?? 'default';
 $kpiList  = $ruleKpiMap[$ruleType] ?? $ruleKpiMap['default'];
 
-/* ── Detection data: evidence items or primary anomaly context ─────────── */
+/* ── Detection data: grouped evidence, else primary anomaly context ─────── */
 $detectionRows = [];
 if ($record->evidence->count()) {
-    foreach ($record->evidence->take(10) as $ev) {
-        $detectionRows[] = ['label' => $ev->label, 'value' => $ev->getFormattedValue()];
+    foreach ($record->evidence->groupBy('label')->take(12) as $label => $items) {
+        $detectionRows[] = ['label' => $label, 'value' => $summariseValues($items)];
     }
 } elseif ($primaryAnomaly && is_array($primaryAnomaly->context)) {
     foreach ($primaryAnomaly->context as $k => $v) {

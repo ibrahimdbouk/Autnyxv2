@@ -198,10 +198,10 @@ EVIDENCE PACKAGE:
 
 Respond with ONLY a valid JSON object in this exact format (no markdown, no code blocks):
 {
-  "summary": "2-3 sentence plain-English summary of what is happening and why it matters",
-  "root_cause": "Most likely root cause based on the evidence. Use 'Unknown' if evidence is insufficient.",
+  "summary": "ONE sentence: what is happening and why it matters.",
+  "root_cause": "1-2 sentences naming the single most likely cause and the reasoning. Use 'Unknown' if evidence is insufficient.",
   "confidence": "one of: established | probable | suspected | unknown",
-  "recommended_action": "The single most important action the team should take right now",
+  "recommended_action": "ONE concrete next step the team should take now — an imperative sentence.",
   "revenue_at_risk": null
 }
 
@@ -211,8 +211,13 @@ Confidence guidance:
 - suspected: limited evidence; plausible but unconfirmed
 - unknown: contradicting signals or insufficient data
 
-For revenue_at_risk: estimate in USD if you can (e.g. days_of_cover × daily_revenue), otherwise null.
-Be concise. Each field should be 1-3 sentences maximum.
+For revenue_at_risk: estimate a number if you can (e.g. days_of_cover × daily_revenue), otherwise null.
+
+WRITING RULES — the UI already shows the raw evidence table, so:
+- INTERPRET the evidence; do NOT list, restate, or enumerate the raw numbers.
+- No preamble, no restating the question, no filler. Get straight to the point.
+- Keep every field tight: at most 2 sentences. Shorter is better.
+- Write for a busy ops manager who wants the answer, not the working.
 PROMPT;
     }
 
