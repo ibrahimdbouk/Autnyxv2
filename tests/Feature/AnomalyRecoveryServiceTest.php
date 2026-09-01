@@ -67,7 +67,11 @@ class AnomalyRecoveryServiceTest extends TestCase
         $this->resolved(100, now()->subDays(2));
         $this->resolved(250, now()->subDays(5));
 
-        $out = $this->svc->observedInWindow($this->tenant->id, now()->startOfMonth(), null);
+        // Window start is a fixed lookback, not startOfMonth(): on the first days
+        // of a month the 2-/5-day-old resolutions fall in the previous month, so a
+        // month-to-date start would (correctly) exclude them and this sum would be
+        // 0. The month-boundary behaviour is covered separately below.
+        $out = $this->svc->observedInWindow($this->tenant->id, now()->subDays(10), null);
 
         $this->assertSame(350.0, $out['amount']);
         $this->assertSame(2, $out['count']);
