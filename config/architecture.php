@@ -64,6 +64,8 @@ return [
             'app/Models/Product.php',
             'app/Models/Store.php',
             'app/Models/LocationNode.php',
+            'app/Models/ProductNode.php',
+            'app/Models/Concerns/HasHierarchy.php',
             'app/Models/SalesTransaction.php',
             'app/Models/SalesDaily.php',
             'app/Models/SalesReturn.php',
