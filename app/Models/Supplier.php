@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Supplier extends Model
 {
@@ -27,6 +28,12 @@ class Supplier extends Model
     public function purchaseOrders(): HasMany
     {
         return $this->hasMany(PurchaseOrder::class);
+    }
+
+    /** This supplier's leaf node in the canonical Supplier hierarchy (P1.1). */
+    public function supplierNode(): HasOne
+    {
+        return $this->hasOne(SupplierNode::class);
     }
 
     // NOTE: products are NOT linked to suppliers by a direct FK — the products
