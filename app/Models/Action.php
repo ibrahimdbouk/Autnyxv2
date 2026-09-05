@@ -184,4 +184,38 @@ class Action extends Model
         if (!$this->due_at) return null;
         return (int) now()->diffInHours($this->due_at, false);
     }
+
+    protected static function booted(): void
+    {
+        parent::booted();
+
+        // P1.2 — mirror each new remediation action into the event backbone.
+        // Best-effort: capture must never break action creation.
+        static::created(function (self $action): void {
+            try {
+                $tenantId = \App\Models\Investigation::whereKey($action->investigation_id)->value('tenant_id');
+                if (! $tenantId) {
+                    return;
+                }
+                app(\App\Services\Platform\EventStore::class)->append([
+                    'tenant_id'   => $tenantId,
+                    'event_type'  => \App\Models\PlatformEvent::TYPE_ACTION,
+                    'occurred_at' => $action->created_at ?? now(),
+                    'source'      => 'recovery',
+                    'source_ref'  => 'action:' . $action->id,
+                    'payload'     => [
+                        'action_id'        => $action->id,
+                        'action_type'      => $action->action_type,
+                        'title'            => $action->title,
+                        'status'           => $action->status,
+                        'priority'         => $action->priority,
+                        'investigation_id' => $action->investigation_id,
+                        'anomaly_id'       => $action->anomaly_id,
+                    ],
+                ]);
+            } catch (\Throwable $e) {
+                // best-effort
+            }
+        });
+    }
 }

@@ -186,4 +186,37 @@ class InvestigationOutcome extends Model
         }
         return round(($this->observed_recovery / $this->revenue_at_risk) * 100, 1);
     }
+
+    protected static function booted(): void
+    {
+        parent::booted();
+
+        // P1.2 — mirror each recorded outcome into the event backbone.
+        // Best-effort: capture must never break outcome recording.
+        static::created(function (self $outcome): void {
+            try {
+                if (! $outcome->tenant_id) {
+                    return;
+                }
+                app(\App\Services\Platform\EventStore::class)->append([
+                    'tenant_id'   => $outcome->tenant_id,
+                    'event_type'  => \App\Models\PlatformEvent::TYPE_OUTCOME,
+                    'occurred_at' => $outcome->recorded_at ?? now(),
+                    'source'      => 'recovery',
+                    'source_ref'  => 'outcome:' . $outcome->id,
+                    'value'       => $outcome->observed_recovery,
+                    'payload'     => [
+                        'outcome_id'        => $outcome->id,
+                        'outcome_type'      => $outcome->outcome_type,
+                        'revenue_at_risk'   => $outcome->revenue_at_risk,
+                        'observed_recovery' => $outcome->observed_recovery,
+                        'recovery_method'   => $outcome->recovery_method,
+                        'investigation_id'  => $outcome->investigation_id,
+                    ],
+                ]);
+            } catch (\Throwable $e) {
+                // best-effort
+            }
+        });
+    }
 }

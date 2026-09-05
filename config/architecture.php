@@ -67,6 +67,8 @@ return [
             'app/Models/ProductNode.php',
             'app/Models/SupplierNode.php',
             'app/Models/CalendarNode.php',
+            'app/Models/PromotionNode.php',
+            'app/Models/PlatformEvent.php',
             'app/Models/Concerns/HasHierarchy.php',
             'app/Models/SalesTransaction.php',
             'app/Models/SalesDaily.php',
@@ -76,6 +78,7 @@ return [
             'app/Models/PurchaseOrder.php',
             'app/Models/Supplier.php',
             'app/Services/Sales/',
+            'app/Services/Platform/',
         ],
 
         // Getting operational data in and keeping it clean.
