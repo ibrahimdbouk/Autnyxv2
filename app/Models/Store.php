@@ -40,4 +40,10 @@ class Store extends Model
     {
         return $this->hasOne(StoreFeature::class);
     }
+
+    /** This store's leaf node in the canonical Location hierarchy (P1.1). */
+    public function locationNode(): HasOne
+    {
+        return $this->hasOne(LocationNode::class);
+    }
 }

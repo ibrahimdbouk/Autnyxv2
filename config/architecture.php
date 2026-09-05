@@ -63,6 +63,7 @@ return [
         'Platform\\Data' => [
             'app/Models/Product.php',
             'app/Models/Store.php',
+            'app/Models/LocationNode.php',
             'app/Models/SalesTransaction.php',
             'app/Models/SalesDaily.php',
             'app/Models/SalesReturn.php',
