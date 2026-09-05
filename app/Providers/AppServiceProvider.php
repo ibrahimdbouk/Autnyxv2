@@ -246,6 +246,14 @@ class AppServiceProvider extends ServiceProvider
                 ->withoutOverlapping()
                 ->runInBackground()
                 ->appendOutputTo(storage_path('logs/data-purge.log'));
+
+            // 05:00 — Proactive health check: alert on failed/stale nightly jobs
+            // (runs last, after the whole pipeline has had its chance to run).
+            $schedule->command(\App\Console\Commands\SystemHealthCheckCommand::class)
+                ->dailyAt('05:00')
+                ->withoutOverlapping()
+                ->runInBackground()
+                ->appendOutputTo(storage_path('logs/health-check.log'));
         });
     }
 }

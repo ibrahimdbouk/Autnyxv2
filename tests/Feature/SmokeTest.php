@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Tenant;
 use Filament\Facades\Filament;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 use Throwable;
 
@@ -41,9 +42,8 @@ class SmokeTest extends TestCase
 
     /**
      * Every auto-discovered Filament Resource: its index (list) page.
-     *
-     * @dataProvider resourceProvider
      */
+    #[DataProvider('resourceProvider')]
     public function test_resource_index_page_does_not_500(string $resourceClass): void
     {
         if (!class_exists($resourceClass)) {
@@ -67,9 +67,8 @@ class SmokeTest extends TestCase
 
     /**
      * Every custom Filament Page.
-     *
-     * @dataProvider pageProvider
      */
+    #[DataProvider('pageProvider')]
     public function test_custom_page_does_not_500(string $pageClass): void
     {
         if (!class_exists($pageClass)) {
@@ -226,6 +225,7 @@ class SmokeTest extends TestCase
         return array_map(
             fn ($c) => [$ns . $c],
             [
+                'Account',
                 'Dashboard',
                 'ActionCenter',
                 'DataHealthCenter',

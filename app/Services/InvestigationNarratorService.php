@@ -72,6 +72,7 @@ class InvestigationNarratorService
                     'body'           => $response->body(),
                     'investigation'  => $investigation->id,
                 ]);
+                $this->recordFailure("Anthropic API {$response->status()} (investigation #{$investigation->id})");
                 return $investigation;
             }
 
@@ -103,9 +104,29 @@ class InvestigationNarratorService
                 'investigation' => $investigation->id,
                 'trace'         => $e->getTraceAsString(),
             ]);
+            $this->recordFailure('Narrator exception: ' . $e->getMessage());
         }
 
         return $investigation->fresh();
+    }
+
+    /**
+     * Surface an AI-call failure in the ops observability layer (job_runs), so a
+     * run of bad Anthropic responses shows up on Platform Health / the health
+     * check rather than only in the log. Best-effort.
+     */
+    private function recordFailure(string $message): void
+    {
+        try {
+            \App\Models\JobRun::create([
+                'command' => 'ai:narrate',
+                'status'  => \App\Models\JobRun::STATUS_FAILED,
+                'message' => \Illuminate\Support\Str::limit($message, 500),
+                'ran_at'  => now(),
+            ]);
+        } catch (\Throwable $e) {
+            // best-effort — never let observability break narration
+        }
     }
 
     /**

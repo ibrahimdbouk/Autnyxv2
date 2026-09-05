@@ -70,6 +70,54 @@ class PlatformHealthService
         ];
     }
 
+    /**
+     * Critical daily commands whose latest SUCCESS is older than their SLA (or
+     * that have never succeeded despite the pipeline having run). This is what
+     * catches a nightly job silently not running — e.g. under hibernation.
+     *
+     * @return array<int,array{command:string,last_success:?string,max_hours:int}>
+     */
+    public function staleCommands(): array
+    {
+        // command => max hours since last success before it's considered stale.
+        $expected = [
+            'baselines:compute' => 26,
+            'anomalies:detect'  => 26,
+            'anomalies:notify'  => 26,
+        ];
+
+        // Only judge staleness once the pipeline has run at least once (avoids a
+        // brand-new environment reporting everything stale before its first night).
+        try {
+            if (! JobRun::query()->exists()) {
+                return [];
+            }
+        } catch (Throwable $e) {
+            return [];
+        }
+
+        $stale = [];
+        foreach ($expected as $command => $maxHours) {
+            $lastOk = JobRun::where('command', $command)
+                ->where('status', JobRun::STATUS_SUCCESS)
+                ->orderByDesc('ran_at')
+                ->value('ran_at');
+
+            $isStale = $lastOk === null
+                || \Illuminate\Support\Carbon::parse($lastOk)->lt(now()->subHours($maxHours));
+
+            if ($isStale) {
+                $stale[] = [
+                    'command'      => $command,
+                    'last_success' => $lastOk ? (string) $lastOk : null,
+                    'max_hours'    => $maxHours,
+                ];
+            }
+        }
+
+        return $stale;
+    }
+
     /** Failed queue jobs (best-effort — the table may not exist on sync driver). */
     public function failedQueueJobs(): int
     {
@@ -115,9 +163,11 @@ class PlatformHealthService
             ->exists();
 
         $imports = $this->imports();
+        $stale   = $this->staleCommands();
 
         return [
-            'pipeline_ok'    => ! $recentFailure,
+            'pipeline_ok'    => ! $recentFailure && empty($stale),
+            'stale'          => $stale,
             'failed_jobs'    => $this->failedQueueJobs(),
             'stuck_imports'  => $imports['stuck'],
             'failed_imports' => $imports['failed'],
