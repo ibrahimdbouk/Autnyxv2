@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasEffectiveDating;
 use App\Models\Concerns\HasHierarchy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -19,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class LocationNode extends Model
 {
     use HasHierarchy;
+    use HasEffectiveDating;
 
     public const TYPE_BANNER = 'banner';
     public const TYPE_REGION = 'region';
@@ -35,12 +37,14 @@ class LocationNode extends Model
         'attributes',
         'effective_from',
         'effective_to',
+        'recorded_at',
     ];
 
     protected $casts = [
         'attributes'     => 'array',
         'effective_from' => 'date',
         'effective_to'   => 'date',
+        'recorded_at'    => 'datetime',
     ];
 
     public function tenant(): BelongsTo

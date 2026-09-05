@@ -70,6 +70,7 @@ return [
             'app/Models/PromotionNode.php',
             'app/Models/PlatformEvent.php',
             'app/Models/Concerns/HasHierarchy.php',
+            'app/Models/Concerns/HasEffectiveDating.php',
             'app/Models/SalesTransaction.php',
             'app/Models/SalesDaily.php',
             'app/Models/SalesReturn.php',
