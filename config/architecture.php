@@ -82,6 +82,17 @@ return [
             'app/Services/Platform/',
         ],
 
+        // P1.4 — governed metric layer (definitions + registry + read service).
+        'Platform\\Metrics' => [
+            'app/Platform/Metrics/',
+        ],
+
+        // P1.5 — the feature store (generic versioned/time-series features).
+        'Platform\\Features' => [
+            'app/Platform/Features/',
+            'app/Models/FeatureValue.php',
+        ],
+
         // Getting operational data in and keeping it clean.
         'Platform\\Ingestion' => [
             'app/Services/Import/',

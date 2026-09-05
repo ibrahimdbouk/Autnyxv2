@@ -67,6 +67,9 @@ class AppServiceProvider extends ServiceProvider
             \Filament\Auth\Http\Responses\Contracts\LoginResponse::class,
             \App\Http\Responses\LoginResponse::class,
         );
+
+        // P1.4 — the governed metric registry (apps register their metrics into it).
+        $this->app->singleton(\App\Platform\Metrics\MetricRegistry::class);
     }
 
     /**
@@ -79,6 +82,10 @@ class AppServiceProvider extends ServiceProvider
         \Illuminate\Validation\Rules\Password::defaults(
             fn () => \Illuminate\Validation\Rules\Password::min(10)->mixedCase()->numbers()
         );
+
+        // P1.4 — register the Root-Cause app's governed metrics into the platform
+        // metric registry. The platform owns the framework; the app owns its KPIs.
+        $this->registerMetrics();
 
         // Ops observability — record scheduled-task runs + auth activity.
         \Illuminate\Support\Facades\Event::listen(
@@ -255,5 +262,49 @@ class AppServiceProvider extends ServiceProvider
                 ->runInBackground()
                 ->appendOutputTo(storage_path('logs/health-check.log'));
         });
+    }
+
+    /**
+     * P1.4 — register the Root-Cause app's KPIs into the platform metric registry.
+     * The resolvers read from the app's own models; the platform governs the unit,
+     * the version, and access — so every surface reads the same definition.
+     */
+    private function registerMetrics(): void
+    {
+        $registry = $this->app->make(\App\Platform\Metrics\MetricRegistry::class);
+        $D = \App\Platform\Metrics\MetricDefinition::class;
+
+        $make = fn (string $key, string $label, string $unit, string $desc, int $version, \Closure $resolver)
+            => $registry->register(new $D($key, $label, $unit, $desc, $version, $resolver));
+
+        $make('revenue_at_risk', 'Revenue at Risk', $D::UNIT_MONEY,
+            'Sum of revenue at risk across open/in-progress investigations.', 1,
+            fn (int $t) => (float) \App\Models\Investigation::where('tenant_id', $t)
+                ->whereIn('status', ['open', 'in_progress'])->sum('revenue_at_risk'));
+
+        $make('observed_recovery', 'Observed Recovery', $D::UNIT_MONEY,
+            'Total observed recovery recorded across investigation outcomes.', 1,
+            fn (int $t) => (float) \App\Models\InvestigationOutcome::where('tenant_id', $t)->sum('observed_recovery'));
+
+        $make('recovery_rate', 'Recovery Rate', $D::UNIT_PERCENT,
+            'Observed recovery as a percentage of revenue at risk (across outcomes).', 1,
+            function (int $t) {
+                $risk = (float) \App\Models\InvestigationOutcome::where('tenant_id', $t)->sum('revenue_at_risk');
+                $rec  = (float) \App\Models\InvestigationOutcome::where('tenant_id', $t)->sum('observed_recovery');
+                return $risk > 0 ? round($rec / $risk * 100, 1) : 0.0;
+            });
+
+        $make('open_investigations', 'Open Investigations', $D::UNIT_COUNT,
+            'Investigations currently open or in progress.', 1,
+            fn (int $t) => (float) \App\Models\Investigation::where('tenant_id', $t)
+                ->whereIn('status', ['open', 'in_progress'])->count());
+
+        $make('false_positive_rate', 'False Positive Rate', $D::UNIT_PERCENT,
+            'Share of recorded outcomes flagged as false positives.', 1,
+            function (int $t) {
+                $total = \App\Models\InvestigationOutcome::where('tenant_id', $t)->count();
+                $fp    = \App\Models\InvestigationOutcome::where('tenant_id', $t)->where('was_false_positive', true)->count();
+                return $total > 0 ? round($fp / $total * 100, 1) : 0.0;
+            });
     }
 }
