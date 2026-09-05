@@ -66,6 +66,7 @@ return [
             'app/Models/LocationNode.php',
             'app/Models/ProductNode.php',
             'app/Models/SupplierNode.php',
+            'app/Models/CalendarNode.php',
             'app/Models/Concerns/HasHierarchy.php',
             'app/Models/SalesTransaction.php',
             'app/Models/SalesDaily.php',
