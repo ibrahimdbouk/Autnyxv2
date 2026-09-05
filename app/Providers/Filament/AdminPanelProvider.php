@@ -38,6 +38,7 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+            ->spa()
             ->tenant(Tenant::class, slugAttribute: 'slug')
             ->colors([
                 'primary' => Color::Violet,

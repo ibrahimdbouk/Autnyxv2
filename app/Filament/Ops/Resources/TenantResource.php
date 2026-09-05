@@ -138,6 +138,67 @@ class TenantResource extends Resource
                     ->requiresConfirmation()
                     ->modalHeading('Enter tenant')
                     ->modalDescription(fn (Tenant $record) => 'Sign in as an admin of ' . $record->name . '? Your actions will be recorded in the audit log.'),
+
+                // Offboarding — data portability. Streams a ZIP of every record
+                // belonging to the tenant.
+                Action::make('export_data')
+                    ->label('Export')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('gray')
+                    ->requiresConfirmation()
+                    ->modalHeading('Export tenant data')
+                    ->modalDescription(fn (Tenant $record) => 'Download a ZIP of every record belonging to ' . $record->name . ' (one CSV per table, plus a manifest).')
+                    ->modalSubmitActionLabel('Download')
+                    ->action(function (Tenant $record) {
+                        try {
+                            $path = app(\App\Services\Ops\TenantOffboardingService::class)->export($record);
+                        } catch (\Throwable $e) {
+                            \Filament\Notifications\Notification::make()
+                                ->title('Export failed')->body($e->getMessage())->danger()->send();
+                            return null;
+                        }
+
+                        return response()
+                            ->download($path, 'tenant-' . $record->slug . '-export.zip')
+                            ->deleteFileAfterSend();
+                    }),
+
+                // Offboarding — permanent erasure. Super-admin only, name-typed
+                // confirmation, blocked for the protected root/owner tenant.
+                Action::make('erase')
+                    ->label('Erase')
+                    ->icon('heroicon-o-trash')
+                    ->color('danger')
+                    ->visible(fn (Tenant $record) => (bool) (auth()->user()?->is_super_admin)
+                        && ! app(\App\Services\Ops\TenantOffboardingService::class)->isProtected($record))
+                    ->form([
+                        TextInput::make('confirm_name')
+                            ->label('Confirm')
+                            ->required()
+                            ->autocomplete(false)
+                            ->helperText(fn (Tenant $record) => 'Type the tenant name exactly to confirm: ' . $record->name),
+                    ])
+                    ->modalHeading(fn (Tenant $record) => 'Permanently erase ' . $record->name . '?')
+                    ->modalDescription('This deletes the tenant and ALL of its data — anomalies, investigations, imports, stores, users, everything. This cannot be undone. Export first if you may need the data.')
+                    ->modalSubmitActionLabel('Erase permanently')
+                    ->action(function (Tenant $record, array $data) {
+                        if (trim((string) ($data['confirm_name'] ?? '')) !== $record->name) {
+                            \Filament\Notifications\Notification::make()
+                                ->title('Name did not match — nothing was deleted')->danger()->send();
+                            return;
+                        }
+
+                        try {
+                            app(\App\Services\Ops\TenantOffboardingService::class)->erase($record);
+                            \Filament\Notifications\Notification::make()
+                                ->title('Tenant erased')
+                                ->body($record->name . ' and all of its data have been permanently deleted.')
+                                ->success()->send();
+                        } catch (\Throwable $e) {
+                            \Filament\Notifications\Notification::make()
+                                ->title('Erase failed — nothing was deleted')->body($e->getMessage())->danger()->send();
+                        }
+                    }),
             ])
             ->defaultSort('created_at', 'desc');
     }

@@ -845,7 +845,16 @@ a.db-kpi:hover::after { opacity:1; }
      ════════════════════════════════════════════════════════════════════════ --}}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js" defer></script>
 <script>
-document.addEventListener('DOMContentLoaded', function () {
+function initDashboardCharts() {
+    if (typeof Chart === 'undefined') return;
+
+    /* SPA-safe: destroy any existing dashboard charts before re-creating them.
+       With ->spa() enabled, this runs on livewire:navigated (and on the initial
+       DOMContentLoaded), so guard against a canvas already being in use. */
+    document.querySelectorAll('canvas[id^="db-"]').forEach(function (cv) {
+        var existing = Chart.getChart(cv);
+        if (existing) existing.destroy();
+    });
 
     /* ── Check dark mode ─────────────────────────────────────────────── */
     const isDark = document.documentElement.classList.contains('dark');
@@ -980,8 +989,9 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
     }
-
-});
+}
+document.addEventListener('DOMContentLoaded', initDashboardCharts);
+document.addEventListener('livewire:navigated', initDashboardCharts);
 </script>
 
 </x-filament-panels::page>

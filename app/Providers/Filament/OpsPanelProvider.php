@@ -31,6 +31,7 @@ class OpsPanelProvider extends PanelProvider
             ->id('ops')
             ->path('ops')
             ->login()
+            ->spa()
             ->colors([
                 'primary' => Color::Amber,
             ])
@@ -45,6 +46,7 @@ class OpsPanelProvider extends PanelProvider
             ->discoverPages(in: app_path('Filament/Ops/Pages'), for: 'App\\Filament\\Ops\\Pages')
             ->pages([
                 TenantsOverview::class,
+                \App\Filament\Pages\Account::class,
             ])
             ->middleware([
                 EncryptCookies::class,
