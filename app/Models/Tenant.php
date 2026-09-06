@@ -124,4 +124,10 @@ class Tenant extends Model
     {
         return Money::format($amount, $this->currencyCode(), $decimals);
     }
+
+    /** P2.2 — the business objective this tenant is optimising toward. */
+    public function activeObjective(): string
+    {
+        return $this->settings['objective'] ?? 'general';
+    }
 }

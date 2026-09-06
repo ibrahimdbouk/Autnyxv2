@@ -70,6 +70,9 @@ class AppServiceProvider extends ServiceProvider
 
         // P1.4 — the governed metric registry (apps register their metrics into it).
         $this->app->singleton(\App\Platform\Metrics\MetricRegistry::class);
+
+        // P2.2 — the objective registry (apps register objectives + weights into it).
+        $this->app->singleton(\App\Platform\Objectives\ObjectiveRegistry::class);
     }
 
     /**
@@ -86,6 +89,9 @@ class AppServiceProvider extends ServiceProvider
         // P1.4 — register the Root-Cause app's governed metrics into the platform
         // metric registry. The platform owns the framework; the app owns its KPIs.
         $this->registerMetrics();
+
+        // P2.2 — register the objectives + the Root-Cause rule→objective weights.
+        $this->registerObjectives();
 
         // Ops observability — record scheduled-task runs + auth activity.
         \Illuminate\Support\Facades\Event::listen(
@@ -306,5 +312,55 @@ class AppServiceProvider extends ServiceProvider
                 $fp    = \App\Models\InvestigationOutcome::where('tenant_id', $t)->where('was_false_positive', true)->count();
                 return $total > 0 ? round($fp / $total * 100, 1) : 0.0;
             });
+    }
+
+    /**
+     * P2.2 — register the platform objectives and the Root-Cause rule→objective
+     * weight map. Objectives are platform concepts; which rules matter for each is
+     * the app's domain knowledge, so it lives here (not in the platform module).
+     */
+    private function registerObjectives(): void
+    {
+        $registry = $this->app->make(\App\Platform\Objectives\ObjectiveRegistry::class);
+        $O = \App\Platform\Objectives\Objective::class;
+
+        // General: uniform — no objective prioritised (default weight 1.0 everywhere).
+        $registry->register(new $O('general', 'General', 'Balanced — no single objective prioritised.', 1.0), []);
+
+        // Focused objectives use a low default (0.5) and boost the rules they care about.
+        $registry->register(new $O('availability', 'On-Shelf Availability', 'Prioritise lost sales, stockouts and supply gaps.', 0.5), [
+            'stockout_risk'         => 3.0,
+            'safety_stock_breach'   => 3.0,
+            'sales_drop'            => 2.0,
+            'demand_forecast_break' => 2.0,
+            'po_overdue'            => 2.0,
+            'po_late_receipt'       => 2.0,
+            'supplier_fill_rate'    => 2.0,
+            'multi_location_imbalance' => 1.5,
+        ]);
+
+        $registry->register(new $O('margin', 'Margin', 'Prioritise price, cost and discount leakage.', 0.5), [
+            'margin_erosion'             => 3.0,
+            'price_anomaly'              => 3.0,
+            'cost_spike'                 => 2.5,
+            'discount_signal'            => 2.0,
+            'revenue_concentration_risk' => 1.5,
+        ]);
+
+        $registry->register(new $O('waste', 'Waste & Shrink', 'Prioritise dead stock, shrink and returns.', 0.5), [
+            'dead_stock'          => 3.0,
+            'cumulative_shrink'   => 3.0,
+            'inventory_shrinkage' => 3.0,
+            'return_rate_spike'   => 2.5,
+            'phantom_inventory'   => 2.0,
+        ]);
+
+        $registry->register(new $O('working_capital', 'Working Capital', 'Prioritise overstock and capital tied up in inventory.', 0.5), [
+            'overstock'               => 3.0,
+            'slow_moving_capital'     => 3.0,
+            'dead_stock'              => 2.5,
+            'phantom_inventory'       => 2.0,
+            'reorder_point_staleness' => 1.5,
+        ]);
     }
 }

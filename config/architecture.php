@@ -93,6 +93,11 @@ return [
             'app/Models/FeatureValue.php',
         ],
 
+        // P2.2 — objective-driven intelligence (objectives + weighted scorer).
+        'Platform\\Objectives' => [
+            'app/Platform/Objectives/',
+        ],
+
         // P2.1 — outbound integration: canonical action-intent + connectors.
         'Platform\\Integration' => [
             'app/Platform/Integration/',
