@@ -105,6 +105,14 @@ return [
             'app/Models/OutboundDispatch.php',
         ],
 
+        // P2.4 — bidirectional sensing↔planning feed: ingest the planning
+        // baseline (forecasts/planned orders) and publish the outbound signal feed.
+        'Platform\\Planning' => [
+            'app/Platform/Planning/',
+            'app/Models/PlanForecast.php',
+            'app/Models/PlanningSignal.php',
+        ],
+
         // Getting operational data in and keeping it clean.
         'Platform\\Ingestion' => [
             'app/Services/Import/',
