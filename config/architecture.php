@@ -141,6 +141,19 @@ return [
             'app/Models/UsageMeter.php',
         ],
 
+        // P4.1 — policy / guardrail engine: tenant hard-constraints checked
+        // against an action-intent before dispatch (reuses the P3.2 evaluator).
+        'Platform\\Policy' => [
+            'app/Platform/Policy/',
+            'app/Models/PolicyRule.php',
+        ],
+
+        // P4.2 — data trust: propagate data-quality (open P3.4 contract breaches)
+        // into recommendation confidence, with reasons. Pure service, no table.
+        'Platform\\Trust' => [
+            'app/Platform/Trust/',
+        ],
+
         // Getting operational data in and keeping it clean.
         'Platform\\Ingestion' => [
             'app/Services/Import/',
