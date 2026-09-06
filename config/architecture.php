@@ -132,6 +132,15 @@ return [
             'app/Models/ComplianceEvent.php',
         ],
 
+        // P3.4 — governance: ingestion data contracts (+ recorded violations)
+        // and per-tenant/per-app usage metering (packaging + billing).
+        'Platform\\Governance' => [
+            'app/Platform/Governance/',
+            'app/Models/DataContract.php',
+            'app/Models/ContractViolation.php',
+            'app/Models/UsageMeter.php',
+        ],
+
         // Getting operational data in and keeping it clean.
         'Platform\\Ingestion' => [
             'app/Services/Import/',
