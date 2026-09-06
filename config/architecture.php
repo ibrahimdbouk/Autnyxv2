@@ -113,6 +113,16 @@ return [
             'app/Models/PlanningSignal.php',
         ],
 
+        // P3.2 — extensibility without migrations: tenant-defined KPIs, rules and
+        // custom dimensions (data rows + a safe AST evaluator), no schema change.
+        'Platform\\Extensibility' => [
+            'app/Platform/Extensibility/',
+            'app/Models/CustomMetricDefinition.php',
+            'app/Models/CustomRuleDefinition.php',
+            'app/Models/CustomAttributeDefinition.php',
+            'app/Models/EntityAttributeValue.php',
+        ],
+
         // Getting operational data in and keeping it clean.
         'Platform\\Ingestion' => [
             'app/Services/Import/',
