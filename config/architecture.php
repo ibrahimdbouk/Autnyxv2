@@ -93,6 +93,13 @@ return [
             'app/Models/FeatureValue.php',
         ],
 
+        // P2.1 — outbound integration: canonical action-intent + connectors.
+        'Platform\\Integration' => [
+            'app/Platform/Integration/',
+            'app/Models/OutboundTarget.php',
+            'app/Models/OutboundDispatch.php',
+        ],
+
         // Getting operational data in and keeping it clean.
         'Platform\\Ingestion' => [
             'app/Services/Import/',
