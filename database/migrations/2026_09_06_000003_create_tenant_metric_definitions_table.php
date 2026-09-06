@@ -15,7 +15,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('tenant_metric_definitions', function (Blueprint $table) {
+        Schema::create('custom_metric_definitions', function (Blueprint $table) {
             $table->id();
             $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
 
@@ -38,6 +38,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('tenant_metric_definitions');
+        Schema::dropIfExists('custom_metric_definitions');
     }
 };
