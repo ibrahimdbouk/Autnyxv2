@@ -139,6 +139,7 @@ return [
             'app/Services/Anomaly/ReplenishmentService.php',
             'app/Services/Anomaly/ThresholdRecommenderService.php',
             'app/Models/SkuReplenishment.php',
+            'app/Platform/Recommendation/',
         ],
 
         // Adopted recommendations -> work with an owner, status, outcome, ROI.
