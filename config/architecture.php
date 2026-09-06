@@ -123,6 +123,15 @@ return [
             'app/Models/EntityAttributeValue.php',
         ],
 
+        // P3.3 — vertical data model: lot/batch/expiry/cold-chain + compliance
+        // (traceability + expiry anomalies). Opens pharma / FMCG.
+        'Platform\\Traceability' => [
+            'app/Platform/Traceability/',
+            'app/Models/Batch.php',
+            'app/Models/BatchMovement.php',
+            'app/Models/ComplianceEvent.php',
+        ],
+
         // Getting operational data in and keeping it clean.
         'Platform\\Ingestion' => [
             'app/Services/Import/',
