@@ -178,6 +178,12 @@ return [
             'app/Models/ApprovalQueueItem.php',
         ],
 
+        // P4.5 — universal explainability: the one canonical {impact, confidence,
+        // evidence, risk, reasons, outcome} shape every intelligence output speaks.
+        'Platform\\Explainability' => [
+            'app/Platform/Explainability/',
+        ],
+
         // Getting operational data in and keeping it clean.
         'Platform\\Ingestion' => [
             'app/Services/Import/',
