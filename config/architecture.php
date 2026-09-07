@@ -94,8 +94,10 @@ return [
         ],
 
         // P2.2 — objective-driven intelligence (objectives + weighted scorer).
+        // P4.6 — multi-objective optimisation (weighted blend + Pareto) lives here too.
         'Platform\\Objectives' => [
             'app/Platform/Objectives/',
+            'app/Models/ObjectiveWeight.php',
         ],
 
         // P2.1 — outbound integration: canonical action-intent + connectors.
