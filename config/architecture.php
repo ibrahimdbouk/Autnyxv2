@@ -161,6 +161,13 @@ return [
             'app/Models/DecisionCase.php',
         ],
 
+        // P4.4 — intelligence evaluation: a quality scorecard (adoption / success /
+        // realization / calibration) computed from decision memory, snapshotted.
+        'Platform\\Evaluation' => [
+            'app/Platform/Evaluation/',
+            'app/Models/EvaluationSnapshot.php',
+        ],
+
         // Getting operational data in and keeping it clean.
         'Platform\\Ingestion' => [
             'app/Services/Import/',
