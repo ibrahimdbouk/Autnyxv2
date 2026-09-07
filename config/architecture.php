@@ -178,6 +178,12 @@ return [
             'app/Models/ApprovalQueueItem.php',
         ],
 
+        // P4.5 — universal explainability: one canonical Explanation shape every
+        // app emits, assembled from the platform's own pieces. Pure DTO, no table.
+        'Platform\\Explainability' => [
+            'app/Platform/Explainability/',
+        ],
+
         // P4.5 — universal explainability: the one canonical {impact, confidence,
         // evidence, risk, reasons, outcome} shape every intelligence output speaks.
         'Platform\\Explainability' => [

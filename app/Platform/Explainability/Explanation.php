@@ -3,23 +3,19 @@
 namespace App\Platform\Explainability;
 
 /**
- * P4.5 — the ONE canonical explanation shape every intelligence output speaks.
- * Whatever the app (Root-Cause, Assortment, …) or the producing layer, an
- * explanation carries the same fields: what it would do (headline / intent), what
- * it's worth (impact), how sure we are (confidence + label), the downside (risk),
- * the objective it serves, the evidence behind it, the reasons the confidence was
- * adjusted or the action routed, and the expected outcome. A consistent contract
- * is what lets a single "why" UI render every app's output — and what stops each
- * new app inventing its own format.
- *
- * Confidence-label thresholds match the P2.3 DecisionEngine so the whole platform
- * speaks one vocabulary.
+ * P4.5 — the ONE canonical explanation shape every intelligence output emits,
+ * whatever app produced it. It unifies the pieces the platform already generates
+ * separately — impact/confidence/risk (P2.3), data-quality reasons (P4.2),
+ * similar-case evidence (P4.3), calibration (P4.4), orchestration routing (P4.8) —
+ * into a single {headline, impact, confidence, confidence_label, risk, objective,
+ * evidence, reasons, expected_outcome} object. A surface (or the future copilot)
+ * renders "why" the same way across every app instead of one bespoke format each.
  */
 class Explanation
 {
     /**
-     * @param  array<int,string>  $evidence
-     * @param  array<int,string>  $reasons
+     * @param  array<int,string>  $evidence  the "why" facts (signals, similar past cases)
+     * @param  array<int,string>  $reasons   confidence adjustments / routing notes
      */
     public function __construct(
         public readonly string $headline,
@@ -35,7 +31,10 @@ class Explanation
     ) {
     }
 
-    /** The shared confidence vocabulary (matches P2.3). */
+    /**
+     * Canonical confidence label — identical thresholds to the P2.3 DecisionEngine,
+     * so a label means the same thing everywhere.
+     */
     public static function labelFor(float $confidence): string
     {
         return match (true) {
