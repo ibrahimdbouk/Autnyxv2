@@ -154,6 +154,13 @@ return [
             'app/Platform/Trust/',
         ],
 
+        // P4.3 — decision memory: the case base (Situation→…→Outcome) + similarity
+        // retrieval that turns the platform from reactive into learning.
+        'Platform\\Memory' => [
+            'app/Platform/Memory/',
+            'app/Models/DecisionCase.php',
+        ],
+
         // Getting operational data in and keeping it clean.
         'Platform\\Ingestion' => [
             'app/Services/Import/',
