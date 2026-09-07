@@ -168,6 +168,14 @@ return [
             'app/Models/EvaluationSnapshot.php',
         ],
 
+        // P4.8 — agent orchestration: run a decision through discount→memory→
+        // guardrail→autonomy-routing→execute→remember. App-neutral engine.
+        'Platform\\Orchestration' => [
+            'app/Platform/Orchestration/',
+            'app/Models/AutonomyPolicy.php',
+            'app/Models/ApprovalQueueItem.php',
+        ],
+
         // Getting operational data in and keeping it clean.
         'Platform\\Ingestion' => [
             'app/Services/Import/',
