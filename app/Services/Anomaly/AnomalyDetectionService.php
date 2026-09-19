@@ -253,6 +253,19 @@ class AnomalyDetectionService
      */
     private const DEFAULT_MIN_REVENUE = 500.0;
 
+    /**
+     * Materiality floor for portfolio-TREND rules (demand_erosion,
+     * demand_seasonality_breach). Trend signals are bulk by nature — a whole
+     * category can drift at once — so a SKU whose trend is worth less than this
+     * belongs in the campaign tail (reviewed in aggregate), not as its own
+     * investigation. Higher than DEFAULT_MIN_REVENUE on purpose: it's the lever
+     * that keeps the actionable list short. Tenant-overridable via min_revenue.
+     */
+    private const TREND_MIN_REVENUE = 2000.0;
+
+    /** Forward decision horizon (days) for valuing a continuing demand trend. */
+    private const TREND_HORIZON_DAYS = 30;
+
     /** Prime a sku => unit-price map once so impact estimates don't hit the DB per SKU. */
     private function primePriceMap(int $tenantId): void
     {
@@ -905,7 +918,7 @@ class AnomalyDetectionService
     private function detectDemandSeasonalityBreach(int $tenantId, array $thresholds): void
     {
         $pct        = (float)($thresholds['pct'] ?? 40);
-        $minRevenue = (float)($thresholds['min_revenue'] ?? 1000);
+        $minRevenue = (float)($thresholds['min_revenue'] ?? self::TREND_MIN_REVENUE);
 
         $currentEnd   = $this->analysisDate()->format('Y-m-d');
         $currentStart = $this->analysisDate()->subDays(30)->format('Y-m-d');
@@ -1275,7 +1288,7 @@ class AnomalyDetectionService
         $pct      = (float)($thresholds['pct'] ?? 40);
         $minUnits = (float)($thresholds['min_units'] ?? 20);
         $minR2    = (float)($thresholds['min_r2'] ?? 0.3);
-        $minValue = (float)($thresholds['min_revenue'] ?? self::DEFAULT_MIN_REVENUE);
+        $minValue = (float)($thresholds['min_revenue'] ?? self::TREND_MIN_REVENUE);
 
         $from = $this->analysisDate()->subDays($days)->format('Y-m-d');
 
@@ -1310,24 +1323,30 @@ class AnomalyDetectionService
             $declinePct = (($start - $end) / $start) * 100;
             if ($declinePct < $pct) continue;
 
-            $spanDays  = max(1, (int) round((float) $r->x1 - (float) $r->x0));
-            $lostUnits = max(0.0, ($start - $end) / 2) * $spanDays; // vs holding the start rate flat
-            $price     = $this->unitPrice($r->sku);
-            $impact    = $lostUnits * $price;
+            // Value = run-rate loss over a forward DECISION horizon if the decline
+            // continues — the current daily deficit (how far below the window's
+            // starting rate it now runs) projected over TREND_HORIZON_DAYS. This
+            // is realistic and actionable ("~AED X/month if unaddressed"), not the
+            // cumulative area over the whole window, which massively over-stated it.
+            $dailyDeficit = max(0.0, $start - $end);
+            $lostUnits    = $dailyDeficit * self::TREND_HORIZON_DAYS;
+            $price        = $this->unitPrice($r->sku);
+            $impact       = $lostUnits * $price;
             if ($price > 0 && $impact < $minValue) continue;
             $severity  = $price > 0 ? $this->severityFromImpact($impact) : Anomaly::SEVERITY_MEDIUM;
 
             $this->flag($tenantId, 'demand_erosion', $severity, $r->sku, (int) $r->store_id, null,
                 "SKU {$r->sku} is in a sustained demand decline — down ~" . round($declinePct)
                 . "% across the last {$days} days on a consistent downward trend (R²=" . round($r2, 2)
-                . "), a gradual slide rather than a sharp break.",
+                . "). If it continues, roughly " . $this->money($impact) . " of sales is at risk over the next month.",
                 [
-                    'decline_pct'    => round($declinePct, 1),
-                    'slope_per_day'  => round($slope, 4),
-                    'r2'             => round($r2, 2),
-                    'window_days'    => $days,
-                    'total_units'    => round((float) $r->total, 1),
-                    'revenue_impact' => round($impact, 2),
+                    'decline_pct'      => round($declinePct, 1),
+                    'slope_per_day'    => round($slope, 4),
+                    'r2'               => round($r2, 2),
+                    'window_days'      => $days,
+                    'total_units'      => round((float) $r->total, 1),
+                    'horizon_days'     => self::TREND_HORIZON_DAYS,
+                    'revenue_impact'   => round($impact, 2),
                 ]
             );
         }
