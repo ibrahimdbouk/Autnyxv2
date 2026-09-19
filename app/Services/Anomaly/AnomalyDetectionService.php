@@ -24,6 +24,36 @@ class AnomalyDetectionService
     ) {}
 
     /**
+     * The analysis "now" — a fresh Carbon copy of the per-run analysis clock
+     * ({@see $asOf}). Every data-analysis window anchors here instead of
+     * $this->analysisDate(), so detection is measured relative to the latest data we
+     * have, not the wall clock. Falls back to today when no clock was set.
+     */
+    private function analysisDate(): Carbon
+    {
+        return ($this->asOf ?? Carbon::now()->startOfDay())->copy();
+    }
+
+    /**
+     * Resolve the analysis clock for a tenant: the latest date we have data for
+     * (max of sales_daily.date and inventory as_of_date), capped at real today so
+     * we never analyse into the future. No data → today.
+     */
+    private function resolveAsOf(int $tenantId): void
+    {
+        $today    = Carbon::now()->startOfDay();
+        $maxSales = DB::table('sales_daily')->where('tenant_id', $tenantId)->max('date');
+        $maxInv   = DB::table('inventory_levels')->where('tenant_id', $tenantId)->max('as_of_date');
+
+        $latest = collect([$maxSales, $maxInv])
+            ->filter()
+            ->map(fn ($d) => Carbon::parse($d)->startOfDay())
+            ->max();
+
+        $this->asOf = ($latest && $latest->lt($today)) ? $latest : $today;
+    }
+
+    /**
      * Recovery lifecycle (R2/R2c) — rule families whose per-subject evaluability
      * the reconciler can confirm from a primed input set, so a cleared subject can
      * be advanced toward recovery only where the rule's input was actually present
@@ -129,6 +159,18 @@ class AnomalyDetectionService
 
     /** Window (days) the shared recentDemand map was aggregated over. */
     private int $demandWindowDays = 30;
+
+    /**
+     * Analysis clock — the date every data-analysis window is measured relative to.
+     * Set per run to the latest date we actually have data for (max of sales_daily
+     * and inventory snapshots), capped at real today so it never runs into the
+     * future. This decouples detection from wall-clock `today()`: a customer whose
+     * feed is a few days behind should not have every SKU read as "no recent sales"
+     * / "stale snapshot" simply because the calendar moved past their last import.
+     * When data IS current, this equals today, so behaviour is unchanged.
+     * Genuine real-world checks (import-feed freshness) keep using now().
+     */
+    private ?Carbon $asOf = null;
 
     /**
      * Best-fit rule gating (Phase 3). Segment per "store_id|sku" ("0|sku" =
@@ -288,7 +330,7 @@ class AnomalyDetectionService
         $this->recentDemand     = [];
         $this->demandWindowDays = max(1, $windowDays);
 
-        $from = Carbon::today()->subDays($this->demandWindowDays)->format('Y-m-d');
+        $from = $this->analysisDate()->subDays($this->demandWindowDays)->format('Y-m-d');
 
         DB::table('sales_daily')
             ->where('tenant_id', $tenantId)
@@ -583,6 +625,9 @@ class AnomalyDetectionService
         $this->currency = Money::normalize(
             DB::table('tenants')->where('id', $tenantId)->value('currency')
         );
+        // Set the analysis clock BEFORE any priming — every window below measures
+        // "recent" relative to the latest data date, not wall-clock today.
+        $this->resolveAsOf($tenantId);
         $this->primePriceMap($tenantId);
 
         $settings = AnomalySetting::where('tenant_id', $tenantId)
@@ -862,10 +907,10 @@ class AnomalyDetectionService
         $pct        = (float)($thresholds['pct'] ?? 40);
         $minRevenue = (float)($thresholds['min_revenue'] ?? 1000);
 
-        $currentEnd   = Carbon::today()->format('Y-m-d');
-        $currentStart = Carbon::today()->subDays(30)->format('Y-m-d');
-        $priorEnd     = Carbon::today()->subYear()->format('Y-m-d');
-        $priorStart   = Carbon::today()->subYear()->subDays(30)->format('Y-m-d');
+        $currentEnd   = $this->analysisDate()->format('Y-m-d');
+        $currentStart = $this->analysisDate()->subDays(30)->format('Y-m-d');
+        $priorEnd     = $this->analysisDate()->subYear()->format('Y-m-d');
+        $priorStart   = $this->analysisDate()->subYear()->subDays(30)->format('Y-m-d');
 
         $current = SalesTransaction::where('tenant_id', $tenantId)
             ->whereBetween('date', [$currentStart, $currentEnd])
@@ -913,14 +958,14 @@ class AnomalyDetectionService
 
         $recentDays   = 7;
         $baselineDays = 28;
-        $recentFrom   = Carbon::today()->subDays($recentDays)->format('Y-m-d');
-        $baseFrom     = Carbon::today()->subDays($recentDays + $baselineDays)->format('Y-m-d');
+        $recentFrom   = $this->analysisDate()->subDays($recentDays)->format('Y-m-d');
+        $baseFrom     = $this->analysisDate()->subDays($recentDays + $baselineDays)->format('Y-m-d');
         $baseTo       = $recentFrom;
 
         // Recent dates (for day-of-week projection).
         $recentDates = [];
         for ($i = 1; $i <= $recentDays; $i++) {
-            $recentDates[] = Carbon::today()->subDays($i)->format('Y-m-d');
+            $recentDates[] = $this->analysisDate()->subDays($i)->format('Y-m-d');
         }
 
         $recent = DB::table('sales_daily')->where('tenant_id', $tenantId)
@@ -975,8 +1020,8 @@ class AnomalyDetectionService
         $minConfidence = (float)($thresholds['min_confidence'] ?? 0.5);
         $minValue      = (float)($thresholds['min_revenue'] ?? self::DEFAULT_MIN_REVENUE);
 
-        $recentFrom   = Carbon::today()->subDays($days)->format('Y-m-d');
-        $baselineFrom = Carbon::today()->subDays($days * 2)->format('Y-m-d');
+        $recentFrom   = $this->analysisDate()->subDays($days)->format('Y-m-d');
+        $baselineFrom = $this->analysisDate()->subDays($days * 2)->format('Y-m-d');
 
         // SKU → [category, product_id]; only categorised products can have siblings.
         $catalog = [];
@@ -1117,7 +1162,7 @@ class AnomalyDetectionService
     {
         $pct   = (float)($thresholds['pct'] ?? 15);
         $days  = (int)($thresholds['days'] ?? 30);
-        $since = Carbon::today()->subDays($days)->format('Y-m-d');
+        $since = $this->analysisDate()->subDays($days)->format('Y-m-d');
 
         $txsBySku = SalesTransaction::where('tenant_id', $tenantId)
             ->where('date', '>=', $since)
@@ -1165,9 +1210,9 @@ class AnomalyDetectionService
         $days     = (int)($thresholds['days'] ?? 30);
         $minUnits = (float)($thresholds['min_units'] ?? 200);
 
-        $recentStart = Carbon::today()->subDays($days)->format('Y-m-d');
-        $priorStart  = Carbon::today()->subDays($days * 2)->format('Y-m-d');
-        $priorEnd    = Carbon::today()->subDays($days)->format('Y-m-d');
+        $recentStart = $this->analysisDate()->subDays($days)->format('Y-m-d');
+        $priorStart  = $this->analysisDate()->subDays($days * 2)->format('Y-m-d');
+        $priorEnd    = $this->analysisDate()->subDays($days)->format('Y-m-d');
 
         $recentByLoc = SalesTransaction::where('tenant_id', $tenantId)
             ->where('date', '>=', $recentStart)
@@ -1232,7 +1277,7 @@ class AnomalyDetectionService
         $minR2    = (float)($thresholds['min_r2'] ?? 0.3);
         $minValue = (float)($thresholds['min_revenue'] ?? self::DEFAULT_MIN_REVENUE);
 
-        $from = Carbon::today()->subDays($days)->format('Y-m-d');
+        $from = $this->analysisDate()->subDays($days)->format('Y-m-d');
 
         [$scopeSql, $scopeBind] = $this->scopeSql('sku');
 
@@ -1327,11 +1372,11 @@ class AnomalyDetectionService
         $seasonality = new SeasonalityService();
         $dow         = $seasonality->dayOfWeekFactors($tenantId, $windowDays);
 
-        $recentFrom  = Carbon::today()->subDays($recentDays)->format('Y-m-d');
-        $windowFrom  = Carbon::today()->subDays($windowDays)->format('Y-m-d');
+        $recentFrom  = $this->analysisDate()->subDays($recentDays)->format('Y-m-d');
+        $windowFrom  = $this->analysisDate()->subDays($windowDays)->format('Y-m-d');
         $recentDates = [];
         for ($i = 1; $i <= $recentDays; $i++) {
-            $recentDates[] = Carbon::today()->subDays($i)->format('Y-m-d');
+            $recentDates[] = $this->analysisDate()->subDays($i)->format('Y-m-d');
         }
 
         // Per-SKU streaming Croston: chain daily totals ordered by (sku, date).
@@ -1604,7 +1649,7 @@ class AnomalyDetectionService
     private function detectDeadStock(int $tenantId, array $thresholds): void
     {
         $days      = (int)($thresholds['days'] ?? 30);
-        $sinceDate = Carbon::today()->subDays($days)->format('Y-m-d');
+        $sinceDate = $this->analysisDate()->subDays($days)->format('Y-m-d');
 
         $inventoried = InventoryLevel::where('tenant_id', $tenantId)
             ->where('on_hand_qty', '>', 0)
@@ -1719,8 +1764,8 @@ class AnomalyDetectionService
     private function detectReorderPointStaleness(int $tenantId, array $thresholds): void
     {
         $days      = (int)($thresholds['days'] ?? 90);
-        $cutoff    = Carbon::today()->subDays($days)->format('Y-m-d');
-        $recentCut = Carbon::today()->subDays(30)->format('Y-m-d');
+        $cutoff    = $this->analysisDate()->subDays($days)->format('Y-m-d');
+        $recentCut = $this->analysisDate()->subDays(30)->format('Y-m-d');
 
         $staleRecords = InventoryLevel::where('tenant_id', $tenantId)
             ->whereNotNull('reorder_point')
@@ -1737,7 +1782,7 @@ class AnomalyDetectionService
         foreach ($staleRecords as $level) {
             if (!$activeSkus->contains($level->sku)) continue;
 
-            $daysStale = Carbon::parse($level->as_of_date)->diffInDays(Carbon::today());
+            $daysStale = Carbon::parse($level->as_of_date)->diffInDays($this->analysisDate());
             $this->flag($tenantId, 'reorder_point_staleness', 'low', $level->sku, $level->store_id, $level->product_id,
                 "SKU {$level->sku} has a reorder point of {$level->reorder_point} set {$daysStale} days ago — may not reflect current sales velocity.",
                 ['reorder_point' => $level->reorder_point, 'as_of_date' => $level->as_of_date?->format('Y-m-d'), 'days_stale' => $daysStale, 'location' => $level->location]
@@ -1908,7 +1953,7 @@ class AnomalyDetectionService
 
     private function detectPoOverdue(int $tenantId): void
     {
-        $today = Carbon::today()->format('Y-m-d');
+        $today = $this->analysisDate()->format('Y-m-d');
 
         $pos = PurchaseOrder::where('tenant_id', $tenantId)
             ->whereNotNull('expected_date')
@@ -1918,7 +1963,7 @@ class AnomalyDetectionService
             ->get();
 
         foreach ($pos as $po) {
-            $daysOverdue = Carbon::parse($po->expected_date)->diffInDays(Carbon::today());
+            $daysOverdue = Carbon::parse($po->expected_date)->diffInDays($this->analysisDate());
             $this->flag($tenantId, 'po_overdue', 'medium', $po->sku, null, $po->product_id,
                 "PO #{$po->po_number} from {$po->supplier} (SKU {$po->sku}) is {$daysOverdue} day(s) overdue "
                 . "(expected: {$po->expected_date}, received: {$po->qty_received}/{$po->qty_ordered}).",
@@ -2064,8 +2109,8 @@ class AnomalyDetectionService
     private function detectSupplierLeadTimeDrift(int $tenantId, array $thresholds): void
     {
         $pct       = (float)($thresholds['pct'] ?? 30);
-        $recentCut = Carbon::today()->subDays(90)->format('Y-m-d');
-        $histCut   = Carbon::today()->subDays(180)->format('Y-m-d');
+        $recentCut = $this->analysisDate()->subDays(90)->format('Y-m-d');
+        $histCut   = $this->analysisDate()->subDays(180)->format('Y-m-d');
 
         $recentPos = PurchaseOrder::where('tenant_id', $tenantId)
             ->whereNotNull('received_date')
@@ -2157,7 +2202,7 @@ class AnomalyDetectionService
     private function detectPriceAnomaly(int $tenantId, array $thresholds): void
     {
         $pct        = (float)($thresholds['pct'] ?? 25);
-        $recentDate = Carbon::today()->subDays(30)->format('Y-m-d');
+        $recentDate = $this->analysisDate()->subDays(30)->format('Y-m-d');
 
         $avgPrices = SalesTransaction::where('tenant_id', $tenantId)
             ->whereNotNull('unit_price')
@@ -2244,7 +2289,7 @@ class AnomalyDetectionService
 
     private function detectMarginErosion(int $tenantId): void
     {
-        $recentDate = Carbon::today()->subDays(30)->format('Y-m-d');
+        $recentDate = $this->analysisDate()->subDays(30)->format('Y-m-d');
 
         $products = Product::where('tenant_id', $tenantId)
             ->whereNotNull('unit_cost')
@@ -2316,7 +2361,7 @@ class AnomalyDetectionService
     {
         $pct   = (float)($thresholds['pct'] ?? 80);
         $days  = (int)($thresholds['days'] ?? 90);
-        $since = Carbon::today()->subDays($days)->format('Y-m-d');
+        $since = $this->analysisDate()->subDays($days)->format('Y-m-d');
 
         $revenue = SalesTransaction::where('tenant_id', $tenantId)
             ->where('date', '>=', $since)
@@ -2349,7 +2394,7 @@ class AnomalyDetectionService
     {
         $days     = (int)($thresholds['days'] ?? 60);
         $minValue = (float)($thresholds['min_value'] ?? 1000);
-        $since    = Carbon::today()->subDays($days)->format('Y-m-d');
+        $since    = $this->analysisDate()->subDays($days)->format('Y-m-d');
 
         $products = Product::where('tenant_id', $tenantId)
             ->whereNotNull('unit_cost')
@@ -2402,7 +2447,7 @@ class AnomalyDetectionService
         $pct      = (float)($thresholds['pct'] ?? 50);
         $days     = (int)($thresholds['days'] ?? 7);
         $minValue = (float)($thresholds['min_value'] ?? self::DEFAULT_MIN_REVENUE);
-        $since    = Carbon::today()->subDays($days)->format('Y-m-d');
+        $since    = $this->analysisDate()->subDays($days)->format('Y-m-d');
 
         // The SUM/GROUP BY already collapses to one row per (sku, location);
         // stream it and keep a compact per-SKU list so nothing large is held.
@@ -2541,7 +2586,7 @@ class AnomalyDetectionService
     private function detectLocationProliferation(int $tenantId, array $thresholds): void
     {
         $days  = (int)($thresholds['days'] ?? 7);
-        $since = Carbon::today()->subDays($days)->format('Y-m-d');
+        $since = $this->analysisDate()->subDays($days)->format('Y-m-d');
 
         $newStores = Store::where('tenant_id', $tenantId)
             ->where('created_at', '>=', $since)
@@ -2574,9 +2619,9 @@ class AnomalyDetectionService
      */
     private function salesComparisonByStore(int $tenantId, int $days): array
     {
-        $recentStart = Carbon::today()->subDays($days)->format('Y-m-d');
-        $histEnd     = Carbon::today()->subDays($days)->format('Y-m-d');
-        $histStart   = Carbon::today()->subDays($days + 28)->format('Y-m-d');
+        $recentStart = $this->analysisDate()->subDays($days)->format('Y-m-d');
+        $histEnd     = $this->analysisDate()->subDays($days)->format('Y-m-d');
+        $histStart   = $this->analysisDate()->subDays($days + 28)->format('Y-m-d');
 
         $agg = fn ($q) => $q->whereNotNull('store_id')
             ->when($this->scope, fn ($qq) => $this->scope->constrain($qq))
@@ -2648,9 +2693,9 @@ class AnomalyDetectionService
 
     private function salesComparison(int $tenantId, int $days): array
     {
-        $recentStart = Carbon::today()->subDays($days)->format('Y-m-d');
-        $histEnd     = Carbon::today()->subDays($days)->format('Y-m-d');
-        $histStart   = Carbon::today()->subDays($days + 28)->format('Y-m-d');
+        $recentStart = $this->analysisDate()->subDays($days)->format('Y-m-d');
+        $histEnd     = $this->analysisDate()->subDays($days)->format('Y-m-d');
+        $histStart   = $this->analysisDate()->subDays($days + 28)->format('Y-m-d');
 
         $recent = SalesTransaction::where('tenant_id', $tenantId)
             ->where('date', '>=', $recentStart)
