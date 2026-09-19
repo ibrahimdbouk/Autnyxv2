@@ -7,6 +7,7 @@ use App\Models\Investigation;
 use App\Support\Money;
 use Filament\Facades\Filament;
 use Filament\Pages\Page;
+use Livewire\Attributes\Url;
 
 /**
  * Action Queue — the exception firehose made workable.
@@ -35,9 +36,18 @@ class ActionQueue extends Page
 
     protected string $view = 'filament.pages.action-queue';
 
+    /** Drill-down: when set, the page shows that campaign's full ranked list. */
+    #[Url]
+    public ?string $campaign = null;
+
     public function getTitle(): string
     {
         return 'Action Queue';
+    }
+
+    private function investigateUrl(int $investigationId): string
+    {
+        return \App\Filament\Resources\InvestigationResource::getUrl('investigate', ['record' => $investigationId]);
     }
 
     /**
@@ -224,17 +234,47 @@ class ActionQueue extends Page
             ->count();
         $totalValue = array_sum(array_map(fn ($c) => $c['value'], $campaigns));
 
+        // Drill-down: the selected campaign's full list, ranked by value, each row
+        // linking to its investigation. Built from the same anomaly set.
+        $detail = null;
+        if ($this->campaign) {
+            $rows = [];
+            foreach ($anoms as $a) {
+                if (($ruleToCampaign[$a->rule_type] ?? 'Other signals') !== $this->campaign) continue;
+                $rows[] = [
+                    'sku'   => $nameFor($a->sku),
+                    'store' => $storeFor($a->store_id),
+                    'sev'   => $a->severity,
+                    'val'   => (float) ($a->context['revenue_impact'] ?? 0),
+                    'inv'   => $a->investigation_id,
+                ];
+            }
+            usort($rows, fn ($x, $y) => $y['val'] <=> $x['val']);
+            $detail = [
+                'name'  => $this->campaign,
+                'count' => count($rows),
+                'value' => Money::compact(array_sum(array_column($rows, 'val')), $currency),
+                'rows'  => array_map(fn ($r) => [
+                    'sku'     => $r['sku'],
+                    'store'   => $r['store'],
+                    'sev'     => $r['sev'],
+                    'val_fmt' => Money::compact($r['val'], $currency),
+                    'url'     => $r['inv'] ? $this->investigateUrl($r['inv']) : null,
+                ], array_slice($rows, 0, 200)),
+            ];
+        }
+
         return [
             'ready'          => true,
+            'selected'       => $this->campaign,
+            'detail'         => $detail,
             'total_open'     => $totalOpen,
             'campaign_count' => count($campaigns),
             'act_count'      => count($uniq),
             'total_value'    => Money::compact($totalValue, $currency),
             'act_now'        => $uniq,
             'campaigns'      => $campaigns,
-            'inv_url'        => class_exists(\App\Filament\Resources\InvestigationResource::class)
-                ? \App\Filament\Resources\InvestigationResource::getUrl()
-                : null,
+            'back_url'       => self::getUrl(),
         ];
     }
 

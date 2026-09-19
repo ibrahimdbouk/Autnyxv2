@@ -52,10 +52,34 @@
 .aq-card-f .val{font-weight:700; font-size:.85rem; color:var(--ax-ink);}
 .aq-card-f .go{font-size:.78rem; font-weight:700; color:var(--ax-accent-strong); text-decoration:none;}
 .aq-note{margin-top:1.4rem; font-size:.75rem; color:var(--ax-faint); max-width:80ch; line-height:1.55;}
+.aq-back{display:inline-block; font-size:.8rem; font-weight:700; color:var(--ax-accent-strong); text-decoration:none; margin-bottom:.3rem;}
+.aq-back:hover{text-decoration:underline;}
+a.aq-row{color:inherit; text-decoration:none;}
+a.aq-row:hover{border-color:var(--ax-accent-strong);}
+.aq-card-f .go{cursor:pointer;}
 </style>
 
 @if(! ($q['ready'] ?? false))
     <div class="aq-hero"><div class="aq-hero-p">Select a tenant to see its action queue.</div></div>
+@elseif(!empty($q['detail']))
+
+<a href="{{ $q['back_url'] }}" class="aq-back">&larr; All campaigns</a>
+<div class="aq-hero">
+    <div class="aq-hero-kick">Campaign</div>
+    <div class="aq-hero-h">{{ $q['detail']['name'] }}</div>
+    <div class="aq-hero-p">{{ $q['detail']['count'] }} items &middot; {{ $q['detail']['value'] }} value at risk &middot; ranked by value. Open a row for its full investigation.</div>
+</div>
+<div class="aq-queue" style="margin-top:1rem">
+    @foreach($q['detail']['rows'] as $r)
+    <a class="aq-row" @if($r['url']) href="{{ $r['url'] }}" @endif>
+        <span class="aq-pip {{ $r['sev'] }}"></span>
+        <div><div class="t">{{ $r['sku'] }}</div><div class="s">{{ $r['store'] }}</div></div>
+        <div class="v">{{ $r['val_fmt'] }}</div>
+        <span class="b">Open &rarr;</span>
+    </a>
+    @endforeach
+</div>
+
 @else
 
 <div class="aq-hero">
@@ -104,7 +128,7 @@
         <div class="aq-card-f">
             <span class="aq-chip">{{ $c['kind'] === 'trend' ? 'Bulk review' : ($c['high'] > 0 ? $c['high'].' high' : 'Review') }}</span>
             <span class="val">{{ $c['value_fmt'] }}</span>
-            @if($q['inv_url'])<a class="go" href="{{ $q['inv_url'] }}">Open &rarr;</a>@else<span class="go">&nbsp;</span>@endif
+            <a class="go" href="{{ \App\Filament\Pages\ActionQueue::getUrl(['campaign' => $c['name']]) }}">Open &rarr;</a>
         </div>
     </div>
     @endforeach
