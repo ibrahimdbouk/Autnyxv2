@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\GatesPageByScreen;
 use App\Models\AgentRun;
 use App\Models\PurchaseOrder;
 use App\Models\Supplier;
@@ -20,6 +21,10 @@ use Livewire\Attributes\Url;
  */
 class SupplierPrep extends Page
 {
+    use GatesPageByScreen;
+
+    const SCREEN_KEY = 'supplier_prep';
+
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-briefcase';
 
     protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';

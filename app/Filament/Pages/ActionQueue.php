@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\GatesPageByScreen;
 use App\Models\Anomaly;
 use App\Models\AgentRun;
 use App\Models\Investigation;
@@ -27,6 +28,10 @@ use Livewire\Attributes\Url;
  */
 class ActionQueue extends Page
 {
+    use GatesPageByScreen;
+
+    const SCREEN_KEY = 'action_queue';
+
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-bolt';
 
     protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';

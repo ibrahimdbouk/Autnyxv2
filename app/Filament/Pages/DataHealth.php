@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\GatesPageByScreen;
 use App\Models\AgentRun;
 use App\Services\Agents\DataQualityAgent;
 use Filament\Facades\Filament;
@@ -17,6 +18,10 @@ use Filament\Pages\Page;
  */
 class DataHealth extends Page
 {
+    use GatesPageByScreen;
+
+    const SCREEN_KEY = 'data_health';
+
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-shield-check';
 
     protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';

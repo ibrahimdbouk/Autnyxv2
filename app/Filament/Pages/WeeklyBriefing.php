@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\GatesPageByScreen;
 use App\Models\AgentRun;
 use App\Services\Agents\WeeklyBriefingAgent;
 use Filament\Facades\Filament;
@@ -17,6 +18,10 @@ use Filament\Pages\Page;
  */
 class WeeklyBriefing extends Page
 {
+    use GatesPageByScreen;
+
+    const SCREEN_KEY = 'weekly_briefing';
+
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-newspaper';
 
     protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';

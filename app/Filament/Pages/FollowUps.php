@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\GatesPageByScreen;
 use App\Models\AgentRun;
 use App\Services\Agents\ActionFollowUpAgent;
 use Filament\Facades\Filament;
@@ -17,6 +18,10 @@ use Filament\Pages\Page;
  */
 class FollowUps extends Page
 {
+    use GatesPageByScreen;
+
+    const SCREEN_KEY = 'follow_ups';
+
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-arrow-path-rounded-square';
 
     protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';
