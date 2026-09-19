@@ -84,15 +84,27 @@ class InvestigationNarratorService
                 return $investigation;
             }
 
+            $toList = fn ($v) => is_array($v)
+                ? array_values(array_filter(
+                    array_map(fn ($x) => trim((string) $x), $v),
+                    fn ($x) => $x !== '' && $x !== '—'
+                ))
+                : [];
+
             $investigation->update([
-                'ai_summary'            => $data['summary']            ?? null,
-                'ai_root_cause'         => $data['root_cause']         ?? null,
-                'ai_confidence'         => $data['confidence']         ?? Investigation::CONFIDENCE_UNKNOWN,
-                'ai_recommended_action' => $data['recommended_action'] ?? null,
-                'revenue_at_risk'       => isset($data['revenue_at_risk']) && is_numeric($data['revenue_at_risk'])
+                'ai_headline'             => $data['headline']             ?? ($data['summary'] ?? null),
+                'ai_summary'              => $data['headline']             ?? ($data['summary'] ?? null),
+                'ai_root_cause'           => $data['root_cause']           ?? null,
+                'ai_confidence'           => $data['confidence']           ?? Investigation::CONFIDENCE_UNKNOWN,
+                'ai_evidence'             => $toList($data['evidence']             ?? null),
+                'ai_contributing_factors' => $toList($data['contributing_factors'] ?? null),
+                'ai_business_impact'      => $data['business_impact']      ?? null,
+                'ai_recommended_action'   => $data['immediate_action']     ?? ($data['recommended_action'] ?? null),
+                'ai_long_term_fix'        => $data['long_term_fix']        ?? null,
+                'revenue_at_risk'         => isset($data['revenue_at_risk']) && is_numeric($data['revenue_at_risk'])
                     ? (float) $data['revenue_at_risk']
                     : $investigation->revenue_at_risk,
-                'ai_generated_at'       => now(),
+                'ai_generated_at'         => now(),
             ]);
 
             AuditLogger::aiGenerated($investigation);
@@ -160,85 +172,90 @@ class InvestigationNarratorService
 
     private function buildPrompt(Investigation $investigation): string
     {
-        $anomalies = $investigation->anomalies()->get();
+        $anomalies = $investigation->anomalies()->with(['product', 'store'])->get();
+        $currency  = $investigation->tenant?->currencyCode() ?? 'AED';
 
-        // Rule labels
+        // Human-readable names — never ship raw codes to the reader.
+        $product     = $anomalies->map(fn ($a) => $a->product)->filter()->first();
+        $productName = $product?->name ?? $investigation->primary_sku ?? 'this product';
+        $storeNames  = $anomalies->map(fn ($a) => $a->store?->name ?? ($a->store_id ? "store {$a->store_id}" : null))
+            ->filter()->unique()->take(10)->implode(', ') ?: 'multiple stores';
+
+        // Rule lines — store names, not codes.
         $ruleLines = $anomalies->map(function ($a) {
             $label = AnomalySetting::RULES[$a->rule_type]['label'] ?? $a->rule_type;
             $desc  = AnomalySetting::RULES[$a->rule_type]['description'] ?? '';
-            $loc   = $a->store_id ? " (store #{$a->store_id})" : '';
-            return "  - [{$a->severity}] {$label}{$loc}: {$desc}";
+            $store = $a->store?->name ?? ($a->store_id ? "store {$a->store_id}" : 'chain-wide');
+            return "  - [{$a->severity}] {$label} @ {$store}: {$desc}";
         })->implode("\n");
 
-        // Evidence package
-        $evidence = $investigation->evidence()->orderBy('evidence_type')->get();
-
-        $supporting   = $evidence->where('direction', InvestigationEvidence::DIRECTION_SUPPORTS);
+        // Evidence package — passed RAW; the model RESTATES it in plain language.
+        $evidence      = $investigation->evidence()->orderBy('evidence_type')->get();
+        $supporting    = $evidence->where('direction', InvestigationEvidence::DIRECTION_SUPPORTS);
         $contradicting = $evidence->where('direction', InvestigationEvidence::DIRECTION_CONTRADICTS);
         $neutral       = $evidence->where('direction', InvestigationEvidence::DIRECTION_NEUTRAL);
 
         $evidenceText = '';
-
         if ($supporting->isNotEmpty()) {
-            $evidenceText .= "\nSUPPORTING EVIDENCE (confirms the anomaly is real):\n";
-            foreach ($supporting as $e) {
-                $evidenceText .= "  [{$e->strength}] {$e->label}: {$e->getFormattedValue()}\n";
-            }
+            $evidenceText .= "\nSUPPORTING (confirms the problem is real):\n";
+            foreach ($supporting as $e) { $evidenceText .= "  {$e->label}: {$e->getFormattedValue()}\n"; }
         }
-
         if ($contradicting->isNotEmpty()) {
-            $evidenceText .= "\nCONTRADICTING EVIDENCE (suggests possible false positive):\n";
-            foreach ($contradicting as $e) {
-                $evidenceText .= "  [{$e->strength}] {$e->label}: {$e->getFormattedValue()}\n";
-            }
+            $evidenceText .= "\nCONTRADICTING (may indicate a false positive — weigh honestly):\n";
+            foreach ($contradicting as $e) { $evidenceText .= "  {$e->label}: {$e->getFormattedValue()}\n"; }
         }
-
         if ($neutral->isNotEmpty()) {
             $evidenceText .= "\nCONTEXT:\n";
-            foreach ($neutral as $e) {
-                $evidenceText .= "  {$e->label}: {$e->getFormattedValue()}\n";
-            }
+            foreach ($neutral as $e) { $evidenceText .= "  {$e->label}: {$e->getFormattedValue()}\n"; }
         }
 
-        $sku      = $investigation->primary_sku ?? 'N/A';
         $priority = strtoupper($investigation->priority);
-        $opened   = $investigation->opened_at?->format('Y-m-d H:i') ?? 'Unknown';
-        $team     = $investigation->assignedTeam?->name ?? 'Unassigned';
 
         return <<<PROMPT
-You are a retail operations analyst reviewing an investigation. Your job is to synthesize the evidence below into a concise, actionable narrative for the operations team.
+You are a retail operations analyst writing for a busy store or category manager who is NOT technical and is often reading on a phone. Turn the deterministic findings below into a clear, honest narrative they can understand in seconds.
 
 INVESTIGATION: {$investigation->title}
-Priority: {$priority} | SKU: {$sku} | Opened: {$opened} | Assigned to: {$team}
+PRODUCT: {$productName}
+STORES INVOLVED: {$storeNames}
+PRIORITY: {$priority}
+CURRENCY: {$currency}
 
-ANOMALIES DETECTED ({$anomalies->count()}):
+DETECTED ANOMALIES ({$anomalies->count()}):
 {$ruleLines}
 
-EVIDENCE PACKAGE:
+EVIDENCE:
 {$evidenceText}
 
-Respond with ONLY a valid JSON object in this exact format (no markdown, no code blocks):
+WRITING RULES — follow every one:
+1. Use PRODUCT and STORE NAMES, never codes (never "SKU00236" or "ST005").
+2. Whole units only — write "45 units", never "45.00 units".
+3. Money in {$currency}, sensibly rounded (e.g. "{$currency} 4,000"). Never a dollar sign unless the currency is USD.
+4. Never output a blank, a dash, or an em dash. If you do not have a value, leave that fact out.
+5. Keep EVIDENCE (what is true) separate from ACTION (what to do). No recommendations in the evidence or the contributing factors.
+6. Match the evidence — do NOT overstate. If the item is a slow mover badly spread across stores, call it a DISTRIBUTION IMBALANCE; do not inflate it into "demand outrunning supply / the supply chain cannot keep up".
+7. Be honest about size. If the money at stake is small, say so plainly.
+8. Group repetition — "7 other stores show the same pattern", not seven near-identical lines.
+9. Interpret; do not dump the raw evidence table back.
+
+Respond with ONLY this JSON object (no markdown, no code fences):
 {
-  "summary": "ONE sentence: what is happening and why it matters.",
-  "root_cause": "1-2 sentences naming the single most likely cause and the reasoning. Use 'Unknown' if evidence is insufficient.",
+  "headline": "ONE plain sentence: what is happening, to which product, and where. The 5-second version.",
+  "root_cause": "The most likely underlying cause in plain language, matching the evidence. Use 'Unknown' if evidence is insufficient.",
   "confidence": "one of: established | probable | suspected | unknown",
-  "recommended_action": "ONE concrete next step the team should take now — an imperative sentence.",
+  "evidence": ["3-5 short plain-language facts that support the conclusion, each a complete phrase"],
+  "contributing_factors": ["0-4 short plain bullets for what amplified it; group repeats; no recommendations"],
+  "business_impact": "One sentence: the money at stake in {$currency}, whether it is large or small, and what worsens if ignored.",
+  "immediate_action": "The single most important action right now — concrete, done by the user in their own ERP (Autnyx recommends, it never executes).",
+  "long_term_fix": "One sentence on the systemic fix, or null if none is clear.",
   "revenue_at_risk": null
 }
 
 Confidence guidance:
 - established: multiple strong corroborating evidence points leave little doubt
-- probable: evidence points in one direction but some gaps remain
+- probable: evidence points one way but some gaps remain
 - suspected: limited evidence; plausible but unconfirmed
 - unknown: contradicting signals or insufficient data
-
-For revenue_at_risk: estimate a number if you can (e.g. days_of_cover × daily_revenue), otherwise null.
-
-WRITING RULES — the UI already shows the raw evidence table, so:
-- INTERPRET the evidence; do NOT list, restate, or enumerate the raw numbers.
-- No preamble, no restating the question, no filler. Get straight to the point.
-- Keep every field tight: at most 2 sentences. Shorter is better.
-- Write for a busy ops manager who wants the answer, not the working.
+For revenue_at_risk: a number if you can estimate it (e.g. days_of_cover x daily_revenue), otherwise null. Keep every field tight.
 PROMPT;
     }
 

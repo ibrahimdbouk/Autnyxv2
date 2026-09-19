@@ -313,6 +313,19 @@ $ltFix = $record->root_cause_notes
     ?? $record->outcome?->confirmed_root_cause
     ?? 'No long-term remediation notes recorded. Once the root cause is confirmed, document the systemic fix here.';
 
+/* ── Narration quality: prefer AI-narrated fields over raw concatenation ──
+   The narrator now writes plain-language evidence/factors/impact/headline;
+   fall back to the deterministic text only when a field is empty. ───────── */
+$aiHeadline     = trim((string) ($record->ai_headline ?? '')) ?: null;
+$aiEvidenceList = is_array($record->ai_evidence)
+    ? array_values(array_filter(array_map(fn ($e) => trim((string) $e), $record->ai_evidence), fn ($e) => $e !== '' && $e !== '—'))
+    : [];
+$aiContribList  = is_array($record->ai_contributing_factors)
+    ? array_values(array_filter(array_map(fn ($f) => trim((string) $f), $record->ai_contributing_factors), fn ($f) => $f !== '' && $f !== '—'))
+    : [];
+if (trim((string) ($record->ai_business_impact ?? '')) !== '') { $impactText = $record->ai_business_impact; }
+if (trim((string) ($record->ai_long_term_fix ?? '')) !== '')   { $ltFix = $record->ai_long_term_fix; }
+
 /* ── Step 7: KPIs derived from the real rule types ────────────────────── */
 $ruleKpiMap = [
     'sales_drop'         => ['Daily Sales Velocity','7-Day Rolling Average','Week-on-Week Revenue'],
@@ -473,6 +486,13 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
             @endif
         </div>
 
+        {{-- Plain-language headline — the 5-second read, above the accordion --}}
+        @if($aiHeadline)
+        <div style="padding:.9rem 1rem;font-size:1.02rem;font-weight:600;line-height:1.45;border-bottom:1px solid rgba(0,0,0,.06)">
+            {{ $aiHeadline }}
+        </div>
+        @endif
+
         {{-- Steps accordion --}}
         <div class="inv2-steps">
 
@@ -495,7 +515,15 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                     <span class="inv2-step-q">What evidence exists to support this conclusion?</span>
                     <svg class="inv2-step-chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
                 </summary>
-                <div class="inv2-step-body">{{ $evidenceText }}</div>
+                <div class="inv2-step-body">
+                    @if(count($aiEvidenceList))
+                        <ul style="margin:0;padding-left:1.1rem">
+                            @foreach($aiEvidenceList as $e)<li style="margin:.15rem 0">{{ $e }}</li>@endforeach
+                        </ul>
+                    @else
+                        {{ $evidenceText }}
+                    @endif
+                </div>
             </details>
 
             {{-- Step 3: Contributing Factors --}}
@@ -505,7 +533,15 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                     <span class="inv2-step-q">What contributing factors may have amplified this?</span>
                     <svg class="inv2-step-chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
                 </summary>
-                <div class="inv2-step-body">{{ $contribText }}</div>
+                <div class="inv2-step-body">
+                    @if(count($aiContribList))
+                        <ul style="margin:0;padding-left:1.1rem">
+                            @foreach($aiContribList as $f)<li style="margin:.15rem 0">{{ $f }}</li>@endforeach
+                        </ul>
+                    @else
+                        {{ $contribText }}
+                    @endif
+                </div>
             </details>
 
             {{-- Step 4: Business Impact --}}

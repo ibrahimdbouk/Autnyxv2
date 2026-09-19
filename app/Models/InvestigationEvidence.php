@@ -74,10 +74,15 @@ class InvestigationEvidence extends Model
     public function getFormattedValue(): string
     {
         if ($this->value_numeric !== null) {
-            $v = number_format($this->value_numeric, 2);
+            $n = (float) $this->value_numeric;
+            // Whole numbers render without decimals ("45 units", not "45.00 units");
+            // fractional values keep up to 2 dp with trailing zeros trimmed.
+            $v = (floor($n) === $n)
+                ? number_format($n, 0)
+                : rtrim(rtrim(number_format($n, 2), '0'), '.');
             return $this->unit ? "{$v} {$this->unit}" : $v;
         }
-        if ($this->value_text !== null) {
+        if ($this->value_text !== null && $this->value_text !== '') {
             return $this->value_text;
         }
         return '—';
