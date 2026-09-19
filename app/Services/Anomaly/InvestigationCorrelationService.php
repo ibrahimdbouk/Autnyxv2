@@ -28,6 +28,9 @@ class InvestigationCorrelationService
     /** Days within which a same-SKU anomaly is absorbed into an open investigation */
     const CORRELATION_WINDOW_DAYS = 7;
 
+    /** Per-run cache of store id → name, so correlation doesn't Store::find per anomaly. */
+    private array $storeNames = [];
+
     // =========================================================================
     // PUBLIC API
     // =========================================================================
@@ -38,6 +41,10 @@ class InvestigationCorrelationService
      */
     public function correlateForTenant(int $tenantId): void
     {
+        // Cache store names once — correlation would otherwise Store::find per
+        // anomaly (title + entity recording), which dominates on large tenants.
+        $this->storeNames = \App\Models\Store::where('tenant_id', $tenantId)->pluck('name', 'id')->all();
+
         $unlinked = Anomaly::where('tenant_id', $tenantId)
             ->whereNull('investigation_id')
             ->active()
@@ -50,6 +57,7 @@ class InvestigationCorrelationService
 
         $correlated = 0;
         $suppressed = 0;
+        $touched    = []; // investigation_id => Investigation, finalised once after the loop
         foreach ($unlinked as $anomaly) {
             try {
                 $match = $suppressionService->matchFor($anomaly);
@@ -59,13 +67,29 @@ class InvestigationCorrelationService
                     continue;
                 }
 
-                $this->correlate($anomaly);
+                // Batch mode: link + record entities now, defer the expensive
+                // finalisation (count, revenue, evidence) to one pass per investigation.
+                $inv = $this->correlate($anomaly, false);
+                $touched[$inv->id] = $inv;
                 $correlated++;
             } catch (\Throwable $e) {
                 Log::error("[M16/correlate] anomaly {$anomaly->id}: {$e->getMessage()}");
             }
         }
 
+        // Finalise each touched investigation ONCE — was per-anomaly (O(anomalies)
+        // evidence collections + full-anomaly-set revenue sums); now O(investigations).
+        foreach ($touched as $investigation) {
+            try {
+                $investigation->syncAnomalyCount();
+                $this->syncRevenueAtRisk($investigation);
+                App::make(EvidenceCollectorService::class)->collectForInvestigation($investigation);
+            } catch (\Throwable $e) {
+                Log::error("[M16/finalise] investigation={$investigation->id}: {$e->getMessage()}");
+            }
+        }
+
+        $this->storeNames = [];
         Log::info("[M16] Correlated {$correlated} anomalies ({$suppressed} suppressed) for tenant {$tenantId}");
     }
 
@@ -73,7 +97,7 @@ class InvestigationCorrelationService
      * Correlate a single anomaly into an Investigation.
      * Idempotent: safe to call on anomalies that already have an investigation_id.
      */
-    public function correlate(Anomaly $anomaly): Investigation
+    public function correlate(Anomaly $anomaly, bool $finalize = true): Investigation
     {
         // Already linked — return the existing investigation
         if ($anomaly->investigation_id) {
@@ -86,22 +110,37 @@ class InvestigationCorrelationService
         // Link the anomaly
         $anomaly->update(['investigation_id' => $investigation->id]);
 
-        // Record entity facts
+        // Record entity facts + escalate priority (cheap, must run per anomaly)
         $this->recordEntities($investigation, $anomaly);
-
-        // Sync count and escalate priority if this anomaly is more severe
-        $investigation->syncAnomalyCount();
-        $this->syncRevenueAtRisk($investigation);
         $this->escalatePriorityIfNeeded($investigation, $anomaly);
 
-        // Collect evidence for this anomaly (M17)
-        try {
-            App::make(EvidenceCollectorService::class)->collectForInvestigation($investigation);
-        } catch (\Throwable $e) {
-            Log::error("[M16/evidence] investigation={$investigation->id}: {$e->getMessage()}");
+        // Finalisation (count, revenue, and the expensive evidence collection) is
+        // deferred by the batch path (correlateForTenant) to one pass per
+        // investigation. Standalone callers keep the immediate behaviour.
+        if ($finalize) {
+            $investigation->syncAnomalyCount();
+            $this->syncRevenueAtRisk($investigation);
+            try {
+                App::make(EvidenceCollectorService::class)->collectForInvestigation($investigation);
+            } catch (\Throwable $e) {
+                Log::error("[M16/evidence] investigation={$investigation->id}: {$e->getMessage()}");
+            }
         }
 
         return $investigation;
+    }
+
+    /** Resolve a store name from the per-run cache, falling back to a lookup. */
+    private function storeName(?int $storeId): ?string
+    {
+        if (! $storeId) {
+            return null;
+        }
+        if (array_key_exists($storeId, $this->storeNames)) {
+            return $this->storeNames[$storeId];
+        }
+
+        return \App\Models\Store::find($storeId)?->name;
     }
 
     // =========================================================================
@@ -185,13 +224,10 @@ class InvestigationCorrelationService
             $parts[] = "SKU {$anomaly->sku}";
         }
 
-        if ($anomaly->store_id && $anomaly->relationLoaded('store') && $anomaly->store) {
-            $parts[] = "@ {$anomaly->store->name}";
-        } elseif ($anomaly->store_id) {
-            // Lazy-load store name without eager loading the whole query
-            $store = \App\Models\Store::find($anomaly->store_id);
-            if ($store) {
-                $parts[] = "@ {$store->name}";
+        if ($anomaly->store_id) {
+            $name = $this->storeName($anomaly->store_id);
+            if ($name) {
+                $parts[] = "@ {$name}";
             }
         }
 
@@ -227,12 +263,11 @@ class InvestigationCorrelationService
 
         // Store entity
         if ($anomaly->store_id) {
-            $store = \App\Models\Store::find($anomaly->store_id);
             $toInsert[] = [
                 'investigation_id' => $investigation->id,
                 'anomaly_id'       => $anomaly->id,
                 'entity_type'      => InvestigationEntity::TYPE_STORE,
-                'entity_key'       => $store?->name ?? (string) $anomaly->store_id,
+                'entity_key'       => $this->storeName($anomaly->store_id) ?? (string) $anomaly->store_id,
                 'store_id'         => $anomaly->store_id,
             ];
         }

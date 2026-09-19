@@ -14,7 +14,8 @@ class DetectAnomaliesCommand extends Command
 {
     protected $signature = 'anomalies:detect
         {--tenant= : Specific tenant ID}
-        {--mode= : full|incremental|aggregate (default: config detection.mode)}';
+        {--mode= : full|incremental|aggregate (default: config detection.mode)}
+        {--queue : Dispatch a full detection run to the queue instead of running inline (needs a queue worker; avoids the 30-min sync command limit on large tenants)}';
 
     protected $description = 'Run all anomaly detection rules for every tenant (or a specific one), then correlate into Investigations';
 
@@ -24,6 +25,20 @@ class DetectAnomaliesCommand extends Command
     ): int {
         $mode     = $this->option('mode') ?: config('detection.mode', 'full');
         $tenantId = $this->option('tenant');
+        $useQueue = (bool) $this->option('queue');
+
+        // Async path: hand the heavy full run to a queue worker so it isn't bound
+        // by the synchronous command timeout. Full mode only (the job runs the
+        // full pipeline); a worker must be running for this to actually execute.
+        if ($useQueue) {
+            $tenants = $tenantId ? [Tenant::findOrFail((int) $tenantId)] : Tenant::all()->all();
+            foreach ($tenants as $tenant) {
+                \App\Jobs\RunTenantDetectionJob::dispatch($tenant->id);
+            }
+            $this->info('Queued detection for ' . count($tenants) . ' tenant(s). Requires a running queue worker.');
+
+            return Command::SUCCESS;
+        }
 
         if ($tenantId) {
             $this->info('Detecting anomalies for tenant ' . $tenantId . ' (' . $mode . ')…');
