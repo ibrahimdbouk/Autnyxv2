@@ -3,9 +3,12 @@
 namespace App\Filament\Pages;
 
 use App\Models\Anomaly;
+use App\Models\AgentRun;
 use App\Models\Investigation;
+use App\Services\Agents\CampaignActionPlanAgent;
 use App\Support\Money;
 use Filament\Facades\Filament;
+use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Livewire\Attributes\Url;
 
@@ -106,6 +109,34 @@ class ActionQueue extends Page
         'inventory_shrinkage' => 'Investigate', 'cumulative_shrink' => 'Investigate',
         'margin_erosion' => 'Review margin', 'price_anomaly' => 'Check price', 'cost_spike' => 'Check cost',
     ];
+
+    // ── Taxonomy accessors ──────────────────────────────────────────────────────
+    // One source of truth for the campaign taxonomy. The Campaign Action-Plan
+    // agent reads these so it never re-declares the rule→campaign mapping.
+
+    /** @return array<int,string> the rule_types that make up a campaign */
+    public static function rulesForCampaign(string $campaignName): array
+    {
+        return self::CAMPAIGNS[$campaignName]['rules'] ?? [];
+    }
+
+    /** @return array{kind:string,accent:string,action:string} */
+    public static function campaignMeta(string $campaignName): array
+    {
+        $c = self::CAMPAIGNS[$campaignName] ?? [];
+
+        return [
+            'kind'   => $c['kind']   ?? 'incident',
+            'accent' => $c['accent'] ?? 'teal',
+            'action' => $c['action'] ?? 'Review',
+        ];
+    }
+
+    /** @return array<string,array> the whole campaign map */
+    public static function campaignsMap(): array
+    {
+        return self::CAMPAIGNS;
+    }
 
     public static function getNavigationBadge(): ?string
     {
@@ -254,6 +285,7 @@ class ActionQueue extends Page
                 'name'  => $this->campaign,
                 'count' => count($rows),
                 'value' => Money::compact(array_sum(array_column($rows, 'val')), $currency),
+                'plan'  => $this->planViewModel($this->campaign),
                 'rows'  => array_map(fn ($r) => [
                     'sku'     => $r['sku'],
                     'store'   => $r['store'],
@@ -276,6 +308,157 @@ class ActionQueue extends Page
             'campaigns'      => $campaigns,
             'back_url'       => self::getUrl(),
         ];
+    }
+
+    // ── Campaign Action-Plan agent (Agent #1) ────────────────────────────────────
+    // The AI drafts a plan; a human accepts; execution is deterministic and stays
+    // inside Autnyx (Actions + status changes + PO-draft export). Never ERP.
+
+    /**
+     * The current plan for a campaign, shaped for the view. Returns null when
+     * there is no live plan (none yet, or the last one was dismissed) so the
+     * panel shows the "Draft plan" call to action.
+     */
+    private function planViewModel(string $campaign): ?array
+    {
+        $tenantId = Filament::getTenant()?->id;
+        if (! $tenantId) {
+            return null;
+        }
+
+        $run = AgentRun::where('tenant_id', $tenantId)
+            ->where('agent_key', AgentRun::KEY_CAMPAIGN_PLAN)
+            ->where('subject_type', 'campaign')
+            ->where('subject_id', $campaign)
+            ->latest('id')
+            ->first();
+
+        if (! $run || $run->status === AgentRun::STATUS_DISMISSED) {
+            return null;
+        }
+
+        return [
+            'state'            => $run->status,
+            'run_id'           => $run->id,
+            'objective'        => $run->out('objective'),
+            'summary'          => $run->out('summary'),
+            'steps'            => $run->out('steps', []),
+            'priority_focus'   => $run->out('priority_focus'),
+            'expected_outcome' => $run->out('expected_outcome'),
+            'watchouts'        => $run->out('watchouts', []),
+            'confidence'       => $run->confidence,
+            'model'            => $run->model,
+            'generated_at'     => optional($run->created_at)->diffForHumans(),
+            'execution'        => $run->out('execution'),
+            'po_available'     => ! empty($run->out('po_draft.lines')),
+            'acted_by'         => $run->actedBy?->name,
+            'executed_at'      => optional($run->executed_at)->diffForHumans(),
+            'error'            => $run->error,
+        ];
+    }
+
+    /** Scope an incoming run id to this tenant + this campaign — never trust the client. */
+    private function guardRun(int $runId): ?AgentRun
+    {
+        $tenantId = Filament::getTenant()?->id;
+        if (! $tenantId || ! $this->campaign) {
+            return null;
+        }
+
+        return AgentRun::where('id', $runId)
+            ->where('tenant_id', $tenantId)
+            ->where('agent_key', AgentRun::KEY_CAMPAIGN_PLAN)
+            ->where('subject_id', $this->campaign)
+            ->first();
+    }
+
+    /** Draft (or re-draft) the plan for the campaign currently in view. */
+    public function draftPlan(): void
+    {
+        $tenantId = Filament::getTenant()?->id;
+        if (! $tenantId || ! $this->campaign) {
+            return;
+        }
+
+        $run = app(CampaignActionPlanAgent::class)->propose($tenantId, $this->campaign, auth()->id());
+
+        if ($run->isFailed()) {
+            Notification::make()->title('Could not draft a plan')
+                ->body('The AI service did not respond. Please try again in a moment.')
+                ->danger()->send();
+
+            return;
+        }
+
+        Notification::make()->title('Action plan drafted')
+            ->body('Review it below, then accept to have Autnyx create the tasks.')
+            ->success()->send();
+    }
+
+    /** Human accepts a plan → Autnyx executes its own side. */
+    public function acceptPlan(int $runId): void
+    {
+        $run = $this->guardRun($runId);
+        if (! $run) {
+            return;
+        }
+
+        $run = app(CampaignActionPlanAgent::class)->execute($run, auth()->id());
+        $exec = $run->out('execution', []);
+
+        Notification::make()->title('Plan accepted')
+            ->body(sprintf(
+                '%d action(s) created, %d investigation(s) moved into progress.',
+                (int) ($exec['actions_created'] ?? 0),
+                (int) ($exec['investigations_advanced'] ?? 0),
+            ))
+            ->success()->send();
+    }
+
+    /** Human declines a plan. */
+    public function dismissPlan(int $runId): void
+    {
+        $run = $this->guardRun($runId);
+        if (! $run) {
+            return;
+        }
+
+        app(CampaignActionPlanAgent::class)->dismiss($run);
+        Notification::make()->title('Plan dismissed')->send();
+    }
+
+    /** Stream the executed plan's PO draft as a CSV. */
+    public function downloadPoDraft(int $runId)
+    {
+        $run = $this->guardRun($runId);
+        if (! $run) {
+            return null;
+        }
+
+        $lines    = $run->out('po_draft.lines', []);
+        $currency = $run->out('po_draft.currency', 'AED');
+        if (empty($lines)) {
+            Notification::make()->title('No PO draft to export')->warning()->send();
+
+            return null;
+        }
+
+        $filename = 'po-draft-' . \Illuminate\Support\Str::slug($this->campaign) . '-' . now()->format('Ymd') . '.csv';
+
+        return response()->streamDownload(function () use ($lines, $currency) {
+            $out = fopen('php://output', 'w');
+            fputcsv($out, ['SKU', 'Product', 'Store', 'Suggested Qty', "Value at risk ({$currency})"]);
+            foreach ($lines as $l) {
+                fputcsv($out, [
+                    $l['sku'] ?? '',
+                    $l['sku_name'] ?? '',
+                    $l['store'] ?? '',
+                    $l['suggested_qty'] ?? '',
+                    $l['value_at_risk'] ?? '',
+                ]);
+            }
+            fclose($out);
+        }, $filename, ['Content-Type' => 'text/csv']);
     }
 
     private function incidentTitle(array $r): string

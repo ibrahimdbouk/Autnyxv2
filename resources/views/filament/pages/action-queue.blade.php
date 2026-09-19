@@ -57,6 +57,28 @@
 a.aq-row{color:inherit; text-decoration:none;}
 a.aq-row:hover{border-color:var(--ax-accent-strong);}
 .aq-card-f .go{cursor:pointer;}
+
+/* AI action plan panel (Agent #1) */
+.aq-plan{background:var(--ax-bg); border:1px solid var(--ax-line); border-radius:.9rem; box-shadow:var(--ax-shadow); padding:1.15rem 1.3rem; margin:0 0 1.2rem;}
+.aq-plan-k{font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--ax-accent-strong); display:flex; align-items:center; gap:.5rem; flex-wrap:wrap;}
+.aq-plan-obj{font-size:1.05rem; font-weight:800; color:var(--ax-ink); margin:.4rem 0 .1rem; line-height:1.3;}
+.aq-plan-sum{font-size:.86rem; color:var(--ax-muted); line-height:1.55; margin:.3rem 0 0; max-width:72ch;}
+.aq-plan-h5{font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--ax-faint); margin:1rem 0 .4rem;}
+.aq-steps{margin:0; padding-left:1.2rem; display:flex; flex-direction:column; gap:.3rem;}
+.aq-steps li{font-size:.86rem; color:var(--ax-ink); line-height:1.45;}
+.aq-focus{font-size:.86rem; color:var(--ax-ink); background:var(--ax-panel); border-radius:.5rem; padding:.55rem .7rem; line-height:1.45;}
+.aq-watch{font-size:.8rem; color:var(--ax-muted); line-height:1.45; margin:0; padding-left:1.2rem; display:flex; flex-direction:column; gap:.25rem;}
+.aq-plan-cta{display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; margin-top:1.1rem; padding-top:.9rem; border-top:1px solid var(--ax-line-2);}
+.aq-btn{font-size:.82rem; font-weight:700; padding:.5rem .95rem; border-radius:.55rem; border:1px solid transparent; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center;}
+.aq-btn-primary{background:var(--ax-accent-strong); color:#fff;}
+.aq-btn-ghost{background:transparent; border-color:var(--ax-line); color:var(--ax-muted);}
+.aq-btn:disabled{opacity:.55; cursor:progress;}
+.aq-conf{font-size:.68rem; font-weight:700; padding:.2rem .55rem; border-radius:9999px; background:var(--ax-panel); color:var(--ax-muted); text-transform:capitalize; letter-spacing:0;}
+.aq-plan-meta{font-size:.72rem; color:var(--ax-faint); margin-left:auto; max-width:44ch; text-align:right;}
+.aq-exec{background:var(--ax-panel); border-radius:.6rem; padding:.7rem .85rem; font-size:.84rem; color:var(--ax-ink); display:flex; align-items:center; gap:.55rem; flex-wrap:wrap; line-height:1.45;}
+.aq-exec .ok{width:.6rem; height:.6rem; border-radius:50%; background:var(--ax-accent-strong); flex:0 0 auto;}
+.aq-plan-empty{display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; margin-top:.55rem;}
+.aq-plan-empty p{font-size:.85rem; color:var(--ax-muted); margin:0; max-width:58ch; line-height:1.5;}
 </style>
 
 @if(! ($q['ready'] ?? false))
@@ -69,6 +91,83 @@ a.aq-row:hover{border-color:var(--ax-accent-strong);}
     <div class="aq-hero-h">{{ $q['detail']['name'] }}</div>
     <div class="aq-hero-p">{{ $q['detail']['count'] }} items &middot; {{ $q['detail']['value'] }} value at risk &middot; ranked by value. Open a row for its full investigation.</div>
 </div>
+
+@php($plan = $q['detail']['plan'] ?? null)
+<div class="aq-plan">
+    @if(! $plan)
+        <div class="aq-plan-k">&#10022; AI action plan</div>
+        <div class="aq-plan-empty">
+            <p>Turn this campaign into a ready-to-work plan. Autnyx drafts the objective and the steps; you accept, and it creates the tasks and a PO draft for you.</p>
+            <button class="aq-btn aq-btn-primary" wire:click="draftPlan" wire:loading.attr="disabled" wire:target="draftPlan">
+                <span wire:loading.remove wire:target="draftPlan">Draft action plan</span>
+                <span wire:loading wire:target="draftPlan">Drafting&hellip;</span>
+            </button>
+        </div>
+    @elseif($plan['state'] === 'failed')
+        <div class="aq-plan-k">&#10022; AI action plan</div>
+        <p class="aq-plan-sum">The plan could not be generated just now. You can try again in a moment.</p>
+        <div class="aq-plan-cta">
+            <button class="aq-btn aq-btn-primary" wire:click="draftPlan" wire:loading.attr="disabled" wire:target="draftPlan">
+                <span wire:loading.remove wire:target="draftPlan">Try again</span>
+                <span wire:loading wire:target="draftPlan">Drafting&hellip;</span>
+            </button>
+        </div>
+    @else
+        <div class="aq-plan-k">&#10022; AI action plan
+            @if(!empty($plan['confidence']))<span class="aq-conf">{{ $plan['confidence'] }} confidence</span>@endif
+        </div>
+        @if(!empty($plan['objective']))<div class="aq-plan-obj">{{ $plan['objective'] }}</div>@endif
+        @if(!empty($plan['summary']))<div class="aq-plan-sum">{{ $plan['summary'] }}</div>@endif
+
+        @if(!empty($plan['steps']))
+            <div class="aq-plan-h5">Steps this week</div>
+            <ol class="aq-steps">
+                @foreach($plan['steps'] as $s)<li>{{ $s }}</li>@endforeach
+            </ol>
+        @endif
+
+        @if(!empty($plan['priority_focus']))
+            <div class="aq-plan-h5">Start here</div>
+            <div class="aq-focus">{{ $plan['priority_focus'] }}</div>
+        @endif
+
+        @if(!empty($plan['expected_outcome']))
+            <div class="aq-plan-h5">Expected outcome</div>
+            <div class="aq-plan-sum" style="margin:0">{{ $plan['expected_outcome'] }}</div>
+        @endif
+
+        @if(!empty($plan['watchouts']))
+            <div class="aq-plan-h5">Watch-outs</div>
+            <ul class="aq-watch">@foreach($plan['watchouts'] as $w)<li>{{ $w }}</li>@endforeach</ul>
+        @endif
+
+        @if($plan['state'] === 'executed')
+            <div class="aq-plan-h5">Executed</div>
+            <div class="aq-exec">
+                <span class="ok"></span>
+                <span>{{ $plan['execution']['actions_created'] ?? 0 }} action(s) created &middot; {{ $plan['execution']['investigations_advanced'] ?? 0 }} investigation(s) moved into progress@if(!empty($plan['acted_by'])) &middot; accepted by {{ $plan['acted_by'] }}@endif @if(!empty($plan['executed_at'])) &middot; {{ $plan['executed_at'] }}@endif</span>
+            </div>
+            <div class="aq-plan-cta">
+                @if($plan['po_available'])
+                <button class="aq-btn aq-btn-primary" wire:click="downloadPoDraft({{ $plan['run_id'] }})">Download PO draft (CSV)</button>
+                @endif
+                <a class="aq-btn aq-btn-ghost" href="{{ $q['back_url'] }}">Back to campaigns</a>
+                <span class="aq-plan-meta">Autnyx recommends; you accepted. Nothing was sent to any external system.</span>
+            </div>
+        @else
+            <div class="aq-plan-cta">
+                <button class="aq-btn aq-btn-primary" wire:click="acceptPlan({{ $plan['run_id'] }})" wire:loading.attr="disabled" wire:target="acceptPlan">
+                    <span wire:loading.remove wire:target="acceptPlan">Accept &amp; execute</span>
+                    <span wire:loading wire:target="acceptPlan">Working&hellip;</span>
+                </button>
+                <button class="aq-btn aq-btn-ghost" wire:click="dismissPlan({{ $plan['run_id'] }})">Dismiss</button>
+                <button class="aq-btn aq-btn-ghost" wire:click="draftPlan" wire:loading.attr="disabled" wire:target="draftPlan">Re-draft</button>
+                <span class="aq-plan-meta">On accept, Autnyx creates the tasks &amp; advances the investigations. It never writes to your ERP.</span>
+            </div>
+        @endif
+    @endif
+</div>
+
 <div class="aq-queue" style="margin-top:1rem">
     @foreach($q['detail']['rows'] as $r)
     <a class="aq-row" @if($r['url']) href="{{ $r['url'] }}" @endif>
