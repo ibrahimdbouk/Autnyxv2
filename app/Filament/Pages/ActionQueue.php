@@ -134,6 +134,12 @@ class ActionQueue extends Page
         $anoms = Anomaly::where('tenant_id', $tenantId)->active()
             ->get(['id', 'investigation_id', 'rule_type', 'sku', 'store_id', 'severity', 'context']);
 
+        // Resolve codes → human names (small per-tenant maps).
+        $skuNames   = \App\Models\Product::where('tenant_id', $tenantId)->pluck('name', 'sku');
+        $storeNames = \App\Models\Store::where('tenant_id', $tenantId)->pluck('name', 'id');
+        $nameFor    = fn (?string $sku) => $sku ? ($skuNames[$sku] ?? $sku) : '—';
+        $storeFor   = fn ($id) => $id ? ($storeNames[$id] ?? ('Store ' . $id)) : 'chain-wide';
+
         $camp = [];   // name => aggregate
         $actNow = [];
 
@@ -159,6 +165,7 @@ class ActionQueue extends Page
             if (($cfg['kind'] ?? '') === 'incident') {
                 $actNow[] = [
                     'rule' => $a->rule_type, 'sku' => $a->sku, 'store' => $a->store_id,
+                    'sku_name' => $nameFor($a->sku), 'store_name' => $a->store_id ? $storeFor($a->store_id) : null,
                     'val' => $val, 'sev' => $a->severity, 'campaign' => $name,
                     'verb' => self::ACTION_VERB[$a->rule_type] ?? 'Review',
                 ];
@@ -179,10 +186,10 @@ class ActionQueue extends Page
                 'high'      => $c['high'],
                 'value'     => $c['value'],
                 'value_fmt' => Money::compact($c['value'], $currency),
-                'examples'  => array_slice(array_map(function ($e) use ($currency) {
+                'examples'  => array_slice(array_map(function ($e) use ($currency, $nameFor, $storeFor) {
                     return [
-                        'sku'     => $e['sku'] ?: '—',
-                        'store'   => $e['store'] ? 'Store ' . $e['store'] : 'chain-wide',
+                        'sku'     => $nameFor($e['sku']),
+                        'store'   => $storeFor($e['store']),
                         'val_fmt' => Money::compact($e['val'], $currency),
                     ];
                 }, $c['examples']), 0, 3),
@@ -233,8 +240,8 @@ class ActionQueue extends Page
 
     private function incidentTitle(array $r): string
     {
-        $where = $r['store'] ? " at Store {$r['store']}" : '';
-        $sku   = $r['sku'] ? "{$r['sku']}" : 'item';
+        $where = ! empty($r['store_name']) ? " at {$r['store_name']}" : '';
+        $sku   = ! empty($r['sku_name']) ? $r['sku_name'] : ($r['sku'] ?: 'item');
 
         return match ($r['rule']) {
             'stockout_risk', 'safety_stock_breach' => "Stockout risk — {$sku}{$where}",

@@ -630,6 +630,19 @@ class AnomalyDetectionService
         $this->aggregateOnly = $aggregateOnly;
 
         AnomalySetting::seedForTenant($tenantId);
+
+        // Ordering guard — never flag from a half-loaded tenant. If any import is
+        // still uploading / in mapping review / importing, detection would read
+        // partial data and flood on false "no recent sales" signals (the Midan
+        // stale-run that produced ~2,000 phantom/dead investigations). Aggregation
+        // (aggregateOnly) is allowed through so sales_daily is ready for the next
+        // full run; only the flagging pass is deferred.
+        if (! $aggregateOnly && Import::where('tenant_id', $tenantId)
+                ->whereIn('status', [Import::STATUS_UPLOADED, Import::STATUS_MAPPING_REVIEW, Import::STATUS_IMPORTING])
+                ->exists()) {
+            Log::info("[detect] tenant {$tenantId}: imports in progress — deferring detection to avoid a stale run.");
+            return;
+        }
         // Headroom for large tenants; the detectors below are written to stream,
         // so this is a safety margin, not a crutch.
         @ini_set('memory_limit', '768M');
