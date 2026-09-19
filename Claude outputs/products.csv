@@ -1,0 +1,2001 @@
+sku,name,category,unit_cost,selling_price
+SKU00001,Midan Beverages Product 0001,Beverages,18.78,43.31
+SKU00002,Midan Dairy Product 0002,Dairy,30.55,60.73
+SKU00003,Midan Snacks Product 0003,Snacks,41.52,97.32
+SKU00004,Midan Grocery Product 0004,Grocery,43.58,99.24
+SKU00005,Midan Personal Care Product 0005,Personal Care,53.34,127.17
+SKU00006,Midan Frozen Product 0006,Frozen,70.22,163.43
+SKU00007,Midan Household Product 0007,Household,76.76,205.74
+SKU00008,Midan Baby Product 0008,Baby,96.73,190.53
+SKU00009,Midan Fresh Product 0009,Fresh,110.51,213.89
+SKU00010,Midan Pharmacy Product 0010,Pharmacy,131.05,246.9
+SKU00011,Midan Beverages Product 0011,Beverages,19.48,37.41
+SKU00012,Midan Dairy Product 0012,Dairy,30.24,65.7
+SKU00013,Midan Snacks Product 0013,Snacks,42.64,92.31
+SKU00014,Midan Grocery Product 0014,Grocery,52.37,88.04
+SKU00015,Midan Personal Care Product 0015,Personal Care,51.52,101.07
+SKU00016,Midan Frozen Product 0016,Frozen,57.7,129.13
+SKU00017,Midan Household Product 0017,Household,79.69,165.56
+SKU00018,Midan Baby Product 0018,Baby,82.04,204.85
+SKU00019,Midan Fresh Product 0019,Fresh,110.39,198.88
+SKU00020,Midan Pharmacy Product 0020,Pharmacy,104.93,235.8
+SKU00021,Midan Beverages Product 0021,Beverages,139.99,278.31
+SKU00022,Midan Dairy Product 0022,Dairy,23.57,46.49
+SKU00023,Midan Snacks Product 0023,Snacks,22.06,51.32
+SKU00024,Midan Grocery Product 0024,Grocery,34.33,87.68
+SKU00025,Midan Personal Care Product 0025,Personal Care,53.85,123.09
+SKU00026,Midan Frozen Product 0026,Frozen,71.4,126.76
+SKU00027,Midan Household Product 0027,Household,65.71,150.29
+SKU00028,Midan Baby Product 0028,Baby,85.73,189.4
+SKU00029,Midan Fresh Product 0029,Fresh,87.06,224.6
+SKU00030,Midan Pharmacy Product 0030,Pharmacy,93.74,196.61
+SKU00031,Midan Beverages Product 0031,Beverages,120.25,255.12
+SKU00032,Midan Dairy Product 0032,Dairy,9.28,21.72
+SKU00033,Midan Snacks Product 0033,Snacks,30.17,69.15
+SKU00034,Midan Grocery Product 0034,Grocery,32.73,85.67
+SKU00035,Midan Personal Care Product 0035,Personal Care,48.92,92.87
+SKU00036,Midan Frozen Product 0036,Frozen,51.13,119.1
+SKU00037,Midan Household Product 0037,Household,78.53,153.52
+SKU00038,Midan Baby Product 0038,Baby,76.67,143.64
+SKU00039,Midan Fresh Product 0039,Fresh,108.97,187.43
+SKU00040,Midan Pharmacy Product 0040,Pharmacy,108.19,193.87
+SKU00041,Midan Beverages Product 0041,Beverages,118.8,258.75
+SKU00042,Midan Dairy Product 0042,Dairy,103.76,245.18
+SKU00043,Midan Snacks Product 0043,Snacks,11.75,23.16
+SKU00044,Midan Grocery Product 0044,Grocery,30.19,58.43
+SKU00045,Midan Personal Care Product 0045,Personal Care,51.1,80.65
+SKU00046,Midan Frozen Product 0046,Frozen,42.85,110.66
+SKU00047,Midan Household Product 0047,Household,56.98,133.31
+SKU00048,Midan Baby Product 0048,Baby,67.82,166.81
+SKU00049,Midan Fresh Product 0049,Fresh,75.11,173.08
+SKU00050,Midan Pharmacy Product 0050,Pharmacy,88.6,192.49
+SKU00051,Midan Beverages Product 0051,Beverages,119.54,229.36
+SKU00052,Midan Dairy Product 0052,Dairy,103.06,225.28
+SKU00053,Midan Snacks Product 0053,Snacks,8.06,14.88
+SKU00054,Midan Grocery Product 0054,Grocery,14.95,37.32
+SKU00055,Midan Personal Care Product 0055,Personal Care,33.04,65.29
+SKU00056,Midan Frozen Product 0056,Frozen,34.72,81.97
+SKU00057,Midan Household Product 0057,Household,44.86,117.94
+SKU00058,Midan Baby Product 0058,Baby,66.81,149.12
+SKU00059,Midan Fresh Product 0059,Fresh,73.13,149.73
+SKU00060,Midan Pharmacy Product 0060,Pharmacy,85.86,179.41
+SKU00061,Midan Beverages Product 0061,Beverages,109.66,240.24
+SKU00062,Midan Dairy Product 0062,Dairy,102.8,208.85
+SKU00063,Midan Snacks Product 0063,Snacks,116.72,240.36
+SKU00064,Midan Grocery Product 0064,Grocery,13.57,26.91
+SKU00065,Midan Personal Care Product 0065,Personal Care,25.92,45.69
+SKU00066,Midan Frozen Product 0066,Frozen,42.78,75.79
+SKU00067,Midan Household Product 0067,Household,61.6,127.68
+SKU00068,Midan Baby Product 0068,Baby,73.42,122.33
+SKU00069,Midan Fresh Product 0069,Fresh,63.94,141.75
+SKU00070,Midan Pharmacy Product 0070,Pharmacy,73.38,177.89
+SKU00071,Midan Beverages Product 0071,Beverages,99.54,183.78
+SKU00072,Midan Dairy Product 0072,Dairy,120.5,242.25
+SKU00073,Midan Snacks Product 0073,Snacks,125.97,217.91
+SKU00074,Midan Grocery Product 0074,Grocery,145.23,262.03
+SKU00075,Midan Personal Care Product 0075,Personal Care,21.55,35.84
+SKU00076,Midan Frozen Product 0076,Frozen,31.74,71.31
+SKU00077,Midan Household Product 0077,Household,43.29,67.92
+SKU00078,Midan Baby Product 0078,Baby,50.64,105.41
+SKU00079,Midan Fresh Product 0079,Fresh,52.96,138.41
+SKU00080,Midan Pharmacy Product 0080,Pharmacy,74.8,153.49
+SKU00081,Midan Beverages Product 0081,Beverages,88.53,177.69
+SKU00082,Midan Dairy Product 0082,Dairy,93.54,226.42
+SKU00083,Midan Snacks Product 0083,Snacks,102.42,228.24
+SKU00084,Midan Grocery Product 0084,Grocery,110.84,259.56
+SKU00085,Midan Personal Care Product 0085,Personal Care,6.85,16.19
+SKU00086,Midan Frozen Product 0086,Frozen,26.03,57.81
+SKU00087,Midan Household Product 0087,Household,36.93,72.74
+SKU00088,Midan Baby Product 0088,Baby,49.27,96.08
+SKU00089,Midan Fresh Product 0089,Fresh,66.68,131.73
+SKU00090,Midan Pharmacy Product 0090,Pharmacy,79.67,134.54
+SKU00091,Midan Beverages Product 0091,Beverages,78.81,181.52
+SKU00092,Midan Dairy Product 0092,Dairy,85.26,179.47
+SKU00093,Midan Snacks Product 0093,Snacks,99.65,188.45
+SKU00094,Midan Grocery Product 0094,Grocery,124.49,218.55
+SKU00095,Midan Personal Care Product 0095,Personal Care,117.06,260.83
+SKU00096,Midan Frozen Product 0096,Frozen,25.4,41.41
+SKU00097,Midan Household Product 0097,Household,25.45,48.99
+SKU00098,Midan Baby Product 0098,Baby,45.57,83.54
+SKU00099,Midan Fresh Product 0099,Fresh,55.38,109.5
+SKU00100,Midan Pharmacy Product 0100,Pharmacy,47.76,126.85
+SKU00101,Midan Beverages Product 0101,Beverages,80.44,177.29
+SKU00102,Midan Dairy Product 0102,Dairy,75.72,159.1
+SKU00103,Midan Snacks Product 0103,Snacks,106.83,208.16
+SKU00104,Midan Grocery Product 0104,Grocery,128.05,212.82
+SKU00105,Midan Personal Care Product 0105,Personal Care,99.81,255.53
+SKU00106,Midan Frozen Product 0106,Frozen,15.24,33.38
+SKU00107,Midan Household Product 0107,Household,19.93,39.13
+SKU00108,Midan Baby Product 0108,Baby,43.84,89.64
+SKU00109,Midan Fresh Product 0109,Fresh,41.37,74.92
+SKU00110,Midan Pharmacy Product 0110,Pharmacy,68.03,138.9
+SKU00111,Midan Beverages Product 0111,Beverages,65.54,157.74
+SKU00112,Midan Dairy Product 0112,Dairy,82.69,164.98
+SKU00113,Midan Snacks Product 0113,Snacks,95.51,174.8
+SKU00114,Midan Grocery Product 0114,Grocery,108.55,187.23
+SKU00115,Midan Personal Care Product 0115,Personal Care,94.79,207.54
+SKU00116,Midan Frozen Product 0116,Frozen,149.29,248.04
+SKU00117,Midan Household Product 0117,Household,16.58,39.86
+SKU00118,Midan Baby Product 0118,Baby,31.19,49.79
+SKU00119,Midan Fresh Product 0119,Fresh,39.25,102.01
+SKU00120,Midan Pharmacy Product 0120,Pharmacy,39.85,92.93
+SKU00121,Midan Beverages Product 0121,Beverages,59.46,134.21
+SKU00122,Midan Dairy Product 0122,Dairy,69.12,150.8
+SKU00123,Midan Snacks Product 0123,Snacks,85.63,141.78
+SKU00124,Midan Grocery Product 0124,Grocery,101.42,217.67
+SKU00125,Midan Personal Care Product 0125,Personal Care,115.38,215.41
+SKU00126,Midan Frozen Product 0126,Frozen,117.64,217.98
+SKU00127,Midan Household Product 0127,Household,141.02,273.76
+SKU00128,Midan Baby Product 0128,Baby,16.16,34.62
+SKU00129,Midan Fresh Product 0129,Fresh,27.84,55.28
+SKU00130,Midan Pharmacy Product 0130,Pharmacy,47.82,89.28
+SKU00131,Midan Beverages Product 0131,Beverages,61.59,115.01
+SKU00132,Midan Dairy Product 0132,Dairy,54.44,127.28
+SKU00133,Midan Snacks Product 0133,Snacks,77.63,161.57
+SKU00134,Midan Grocery Product 0134,Grocery,85.57,165.32
+SKU00135,Midan Personal Care Product 0135,Personal Care,112.42,218.91
+SKU00136,Midan Frozen Product 0136,Frozen,90.77,218.48
+SKU00137,Midan Household Product 0137,Household,116.43,275.3
+SKU00138,Midan Baby Product 0138,Baby,17.63,31.6
+SKU00139,Midan Fresh Product 0139,Fresh,17.21,39.36
+SKU00140,Midan Pharmacy Product 0140,Pharmacy,39.88,64.57
+SKU00141,Midan Beverages Product 0141,Beverages,48.15,86.75
+SKU00142,Midan Dairy Product 0142,Dairy,61.01,116.78
+SKU00143,Midan Snacks Product 0143,Snacks,59.6,157.62
+SKU00144,Midan Grocery Product 0144,Grocery,73.19,170.37
+SKU00145,Midan Personal Care Product 0145,Personal Care,102.08,181.77
+SKU00146,Midan Frozen Product 0146,Frozen,89.28,219.6
+SKU00147,Midan Household Product 0147,Household,126.4,245.63
+SKU00148,Midan Baby Product 0148,Baby,137.23,305.94
+SKU00149,Midan Fresh Product 0149,Fresh,24.06,50.37
+SKU00150,Midan Pharmacy Product 0150,Pharmacy,32.68,60.98
+SKU00151,Midan Beverages Product 0151,Beverages,49.71,93.46
+SKU00152,Midan Dairy Product 0152,Dairy,44.41,103.62
+SKU00153,Midan Snacks Product 0153,Snacks,67.2,141.64
+SKU00154,Midan Grocery Product 0154,Grocery,61.04,138.2
+SKU00155,Midan Personal Care Product 0155,Personal Care,77.59,171.7
+SKU00156,Midan Frozen Product 0156,Frozen,83.7,199.38
+SKU00157,Midan Household Product 0157,Household,94.39,222.42
+SKU00158,Midan Baby Product 0158,Baby,116.76,227.24
+SKU00159,Midan Fresh Product 0159,Fresh,11.67,21.5
+SKU00160,Midan Pharmacy Product 0160,Pharmacy,28.32,55.47
+SKU00161,Midan Beverages Product 0161,Beverages,26.8,63.69
+SKU00162,Midan Dairy Product 0162,Dairy,54.53,112.0
+SKU00163,Midan Snacks Product 0163,Snacks,60.19,115.24
+SKU00164,Midan Grocery Product 0164,Grocery,62.52,131.25
+SKU00165,Midan Personal Care Product 0165,Personal Care,65.53,153.55
+SKU00166,Midan Frozen Product 0166,Frozen,89.75,173.23
+SKU00167,Midan Household Product 0167,Household,88.26,214.85
+SKU00168,Midan Baby Product 0168,Baby,102.85,222.96
+SKU00169,Midan Fresh Product 0169,Fresh,123.89,218.41
+SKU00170,Midan Pharmacy Product 0170,Pharmacy,13.05,30.67
+SKU00171,Midan Beverages Product 0171,Beverages,22.02,51.49
+SKU00172,Midan Dairy Product 0172,Dairy,40.18,82.69
+SKU00173,Midan Snacks Product 0173,Snacks,39.85,83.16
+SKU00174,Midan Grocery Product 0174,Grocery,72.37,121.51
+SKU00175,Midan Personal Care Product 0175,Personal Care,81.72,159.17
+SKU00176,Midan Frozen Product 0176,Frozen,100.72,164.34
+SKU00177,Midan Household Product 0177,Household,78.05,163.65
+SKU00178,Midan Baby Product 0178,Baby,111.06,205.98
+SKU00179,Midan Fresh Product 0179,Fresh,131.47,224.8
+SKU00180,Midan Pharmacy Product 0180,Pharmacy,11.65,19.73
+SKU00181,Midan Beverages Product 0181,Beverages,28.86,45.62
+SKU00182,Midan Dairy Product 0182,Dairy,23.94,55.09
+SKU00183,Midan Snacks Product 0183,Snacks,47.55,107.13
+SKU00184,Midan Grocery Product 0184,Grocery,52.11,103.82
+SKU00185,Midan Personal Care Product 0185,Personal Care,66.25,136.07
+SKU00186,Midan Frozen Product 0186,Frozen,68.19,182.21
+SKU00187,Midan Household Product 0187,Household,87.33,185.58
+SKU00188,Midan Baby Product 0188,Baby,98.23,192.56
+SKU00189,Midan Fresh Product 0189,Fresh,128.6,212.1
+SKU00190,Midan Pharmacy Product 0190,Pharmacy,134.52,287.25
+SKU00191,Midan Beverages Product 0191,Beverages,16.35,36.51
+SKU00192,Midan Dairy Product 0192,Dairy,28.96,69.97
+SKU00193,Midan Snacks Product 0193,Snacks,36.87,74.78
+SKU00194,Midan Grocery Product 0194,Grocery,46.87,114.56
+SKU00195,Midan Personal Care Product 0195,Personal Care,54.49,144.01
+SKU00196,Midan Frozen Product 0196,Frozen,66.27,141.82
+SKU00197,Midan Household Product 0197,Household,67.11,180.25
+SKU00198,Midan Baby Product 0198,Baby,80.02,197.15
+SKU00199,Midan Fresh Product 0199,Fresh,115.74,221.4
+SKU00200,Midan Pharmacy Product 0200,Pharmacy,93.64,259.51
+SKU00201,Midan Beverages Product 0201,Beverages,130.75,248.63
+SKU00202,Midan Dairy Product 0202,Dairy,23.51,47.05
+SKU00203,Midan Snacks Product 0203,Snacks,32.83,54.43
+SKU00204,Midan Grocery Product 0204,Grocery,40.02,72.98
+SKU00205,Midan Personal Care Product 0205,Personal Care,53.12,110.98
+SKU00206,Midan Frozen Product 0206,Frozen,68.2,123.09
+SKU00207,Midan Household Product 0207,Household,71.68,149.02
+SKU00208,Midan Baby Product 0208,Baby,72.75,149.86
+SKU00209,Midan Fresh Product 0209,Fresh,107.14,184.43
+SKU00210,Midan Pharmacy Product 0210,Pharmacy,104.71,229.28
+SKU00211,Midan Beverages Product 0211,Beverages,127.78,244.78
+SKU00212,Midan Dairy Product 0212,Dairy,5.95,12.65
+SKU00213,Midan Snacks Product 0213,Snacks,15.82,39.39
+SKU00214,Midan Grocery Product 0214,Grocery,36.76,65.76
+SKU00215,Midan Personal Care Product 0215,Personal Care,42.24,109.52
+SKU00216,Midan Frozen Product 0216,Frozen,64.43,119.5
+SKU00217,Midan Household Product 0217,Household,66.69,127.8
+SKU00218,Midan Baby Product 0218,Baby,85.1,150.64
+SKU00219,Midan Fresh Product 0219,Fresh,92.11,173.19
+SKU00220,Midan Pharmacy Product 0220,Pharmacy,88.06,193.42
+SKU00221,Midan Beverages Product 0221,Beverages,106.78,266.62
+SKU00222,Midan Dairy Product 0222,Dairy,130.92,253.3
+SKU00223,Midan Snacks Product 0223,Snacks,18.54,42.31
+SKU00224,Midan Grocery Product 0224,Grocery,26.73,61.44
+SKU00225,Midan Personal Care Product 0225,Personal Care,42.67,96.99
+SKU00226,Midan Frozen Product 0226,Frozen,56.31,119.68
+SKU00227,Midan Household Product 0227,Household,52.17,124.15
+SKU00228,Midan Baby Product 0228,Baby,60.85,124.57
+SKU00229,Midan Fresh Product 0229,Fresh,76.51,163.84
+SKU00230,Midan Pharmacy Product 0230,Pharmacy,84.35,201.58
+SKU00231,Midan Beverages Product 0231,Beverages,108.02,236.75
+SKU00232,Midan Dairy Product 0232,Dairy,136.35,263.17
+SKU00233,Midan Snacks Product 0233,Snacks,13.93,24.37
+SKU00234,Midan Grocery Product 0234,Grocery,22.99,49.86
+SKU00235,Midan Personal Care Product 0235,Personal Care,31.45,68.93
+SKU00236,Midan Frozen Product 0236,Frozen,44.89,86.43
+SKU00237,Midan Household Product 0237,Household,45.58,113.02
+SKU00238,Midan Baby Product 0238,Baby,79.74,141.96
+SKU00239,Midan Fresh Product 0239,Fresh,66.45,139.64
+SKU00240,Midan Pharmacy Product 0240,Pharmacy,82.79,168.8
+SKU00241,Midan Beverages Product 0241,Beverages,110.16,212.72
+SKU00242,Midan Dairy Product 0242,Dairy,130.29,262.7
+SKU00243,Midan Snacks Product 0243,Snacks,115.33,225.18
+SKU00244,Midan Grocery Product 0244,Grocery,17.86,38.55
+SKU00245,Midan Personal Care Product 0245,Personal Care,28.0,66.09
+SKU00246,Midan Frozen Product 0246,Frozen,38.92,71.25
+SKU00247,Midan Household Product 0247,Household,43.84,99.9
+SKU00248,Midan Baby Product 0248,Baby,60.8,139.57
+SKU00249,Midan Fresh Product 0249,Fresh,78.86,152.19
+SKU00250,Midan Pharmacy Product 0250,Pharmacy,81.83,162.05
+SKU00251,Midan Beverages Product 0251,Beverages,106.28,182.77
+SKU00252,Midan Dairy Product 0252,Dairy,123.03,225.3
+SKU00253,Midan Snacks Product 0253,Snacks,113.43,219.71
+SKU00254,Midan Grocery Product 0254,Grocery,137.01,267.09
+SKU00255,Midan Personal Care Product 0255,Personal Care,20.41,47.31
+SKU00256,Midan Frozen Product 0256,Frozen,35.5,78.46
+SKU00257,Midan Household Product 0257,Household,42.89,77.89
+SKU00258,Midan Baby Product 0258,Baby,43.86,103.5
+SKU00259,Midan Fresh Product 0259,Fresh,56.03,151.7
+SKU00260,Midan Pharmacy Product 0260,Pharmacy,80.22,149.58
+SKU00261,Midan Beverages Product 0261,Beverages,91.48,198.91
+SKU00262,Midan Dairy Product 0262,Dairy,90.82,220.62
+SKU00263,Midan Snacks Product 0263,Snacks,105.82,241.64
+SKU00264,Midan Grocery Product 0264,Grocery,136.91,245.8
+SKU00265,Midan Personal Care Product 0265,Personal Care,19.91,34.09
+SKU00266,Midan Frozen Product 0266,Frozen,26.98,63.77
+SKU00267,Midan Household Product 0267,Household,39.26,68.28
+SKU00268,Midan Baby Product 0268,Baby,45.19,102.23
+SKU00269,Midan Fresh Product 0269,Fresh,50.7,119.71
+SKU00270,Midan Pharmacy Product 0270,Pharmacy,68.3,139.35
+SKU00271,Midan Beverages Product 0271,Beverages,74.95,150.11
+SKU00272,Midan Dairy Product 0272,Dairy,96.74,179.77
+SKU00273,Midan Snacks Product 0273,Snacks,89.89,233.63
+SKU00274,Midan Grocery Product 0274,Grocery,129.72,232.95
+SKU00275,Midan Personal Care Product 0275,Personal Care,142.04,296.65
+SKU00276,Midan Frozen Product 0276,Frozen,14.47,35.39
+SKU00277,Midan Household Product 0277,Household,33.6,67.35
+SKU00278,Midan Baby Product 0278,Baby,39.46,79.34
+SKU00279,Midan Fresh Product 0279,Fresh,52.48,115.84
+SKU00280,Midan Pharmacy Product 0280,Pharmacy,57.3,134.0
+SKU00281,Midan Beverages Product 0281,Beverages,76.44,153.08
+SKU00282,Midan Dairy Product 0282,Dairy,100.75,202.28
+SKU00283,Midan Snacks Product 0283,Snacks,88.82,206.19
+SKU00284,Midan Grocery Product 0284,Grocery,125.5,199.5
+SKU00285,Midan Personal Care Product 0285,Personal Care,118.44,259.09
+SKU00286,Midan Frozen Product 0286,Frozen,18.73,34.79
+SKU00287,Midan Household Product 0287,Household,17.37,37.53
+SKU00288,Midan Baby Product 0288,Baby,34.68,74.0
+SKU00289,Midan Fresh Product 0289,Fresh,42.46,74.63
+SKU00290,Midan Pharmacy Product 0290,Pharmacy,47.55,112.19
+SKU00291,Midan Beverages Product 0291,Beverages,74.93,127.17
+SKU00292,Midan Dairy Product 0292,Dairy,82.22,154.43
+SKU00293,Midan Snacks Product 0293,Snacks,98.66,160.06
+SKU00294,Midan Grocery Product 0294,Grocery,92.0,192.73
+SKU00295,Midan Personal Care Product 0295,Personal Care,117.02,240.93
+SKU00296,Midan Frozen Product 0296,Frozen,111.14,254.65
+SKU00297,Midan Household Product 0297,Household,13.64,28.2
+SKU00298,Midan Baby Product 0298,Baby,23.38,57.46
+SKU00299,Midan Fresh Product 0299,Fresh,32.55,69.27
+SKU00300,Midan Pharmacy Product 0300,Pharmacy,46.85,95.73
+SKU00301,Midan Beverages Product 0301,Beverages,62.32,155.49
+SKU00302,Midan Dairy Product 0302,Dairy,68.16,154.45
+SKU00303,Midan Snacks Product 0303,Snacks,92.84,154.23
+SKU00304,Midan Grocery Product 0304,Grocery,95.74,218.29
+SKU00305,Midan Personal Care Product 0305,Personal Care,113.52,217.32
+SKU00306,Midan Frozen Product 0306,Frozen,120.52,243.95
+SKU00307,Midan Household Product 0307,Household,140.7,279.88
+SKU00308,Midan Baby Product 0308,Baby,25.54,55.68
+SKU00309,Midan Fresh Product 0309,Fresh,31.01,67.06
+SKU00310,Midan Pharmacy Product 0310,Pharmacy,47.12,79.58
+SKU00311,Midan Beverages Product 0311,Beverages,55.52,95.74
+SKU00312,Midan Dairy Product 0312,Dairy,61.1,139.54
+SKU00313,Midan Snacks Product 0313,Snacks,87.88,171.96
+SKU00314,Midan Grocery Product 0314,Grocery,94.04,172.69
+SKU00315,Midan Personal Care Product 0315,Personal Care,111.96,202.5
+SKU00316,Midan Frozen Product 0316,Frozen,122.12,195.04
+SKU00317,Midan Household Product 0317,Household,143.83,278.49
+SKU00318,Midan Baby Product 0318,Baby,22.87,43.74
+SKU00319,Midan Fresh Product 0319,Fresh,25.12,40.67
+SKU00320,Midan Pharmacy Product 0320,Pharmacy,35.83,78.21
+SKU00321,Midan Beverages Product 0321,Beverages,50.96,110.51
+SKU00322,Midan Dairy Product 0322,Dairy,55.66,122.61
+SKU00323,Midan Snacks Product 0323,Snacks,71.95,132.53
+SKU00324,Midan Grocery Product 0324,Grocery,78.31,156.81
+SKU00325,Midan Personal Care Product 0325,Personal Care,110.44,187.93
+SKU00326,Midan Frozen Product 0326,Frozen,89.75,235.9
+SKU00327,Midan Household Product 0327,Household,112.16,205.61
+SKU00328,Midan Baby Product 0328,Baby,114.93,266.54
+SKU00329,Midan Fresh Product 0329,Fresh,21.92,46.53
+SKU00330,Midan Pharmacy Product 0330,Pharmacy,30.54,52.43
+SKU00331,Midan Beverages Product 0331,Beverages,33.97,80.71
+SKU00332,Midan Dairy Product 0332,Dairy,58.56,90.79
+SKU00333,Midan Snacks Product 0333,Snacks,60.25,141.54
+SKU00334,Midan Grocery Product 0334,Grocery,68.23,170.77
+SKU00335,Midan Personal Care Product 0335,Personal Care,100.65,170.51
+SKU00336,Midan Frozen Product 0336,Frozen,85.46,176.38
+SKU00337,Midan Household Product 0337,Household,111.25,242.23
+SKU00338,Midan Baby Product 0338,Baby,125.67,217.18
+SKU00339,Midan Fresh Product 0339,Fresh,13.78,27.89
+SKU00340,Midan Pharmacy Product 0340,Pharmacy,19.97,51.63
+SKU00341,Midan Beverages Product 0341,Beverages,27.07,67.79
+SKU00342,Midan Dairy Product 0342,Dairy,37.7,97.71
+SKU00343,Midan Snacks Product 0343,Snacks,56.1,92.59
+SKU00344,Midan Grocery Product 0344,Grocery,57.48,117.74
+SKU00345,Midan Personal Care Product 0345,Personal Care,67.95,144.89
+SKU00346,Midan Frozen Product 0346,Frozen,85.75,184.31
+SKU00347,Midan Household Product 0347,Household,82.33,213.05
+SKU00348,Midan Baby Product 0348,Baby,123.03,231.26
+SKU00349,Midan Fresh Product 0349,Fresh,128.64,234.99
+SKU00350,Midan Pharmacy Product 0350,Pharmacy,18.48,28.8
+SKU00351,Midan Beverages Product 0351,Beverages,34.97,64.06
+SKU00352,Midan Dairy Product 0352,Dairy,44.11,68.74
+SKU00353,Midan Snacks Product 0353,Snacks,47.91,106.94
+SKU00354,Midan Grocery Product 0354,Grocery,69.71,110.83
+SKU00355,Midan Personal Care Product 0355,Personal Care,69.42,121.18
+SKU00356,Midan Frozen Product 0356,Frozen,84.52,168.02
+SKU00357,Midan Household Product 0357,Household,108.64,191.99
+SKU00358,Midan Baby Product 0358,Baby,109.64,193.54
+SKU00359,Midan Fresh Product 0359,Fresh,135.08,257.23
+SKU00360,Midan Pharmacy Product 0360,Pharmacy,13.87,24.41
+SKU00361,Midan Beverages Product 0361,Beverages,18.09,39.2
+SKU00362,Midan Dairy Product 0362,Dairy,30.39,57.2
+SKU00363,Midan Snacks Product 0363,Snacks,44.67,83.78
+SKU00364,Midan Grocery Product 0364,Grocery,57.21,90.42
+SKU00365,Midan Personal Care Product 0365,Personal Care,60.37,128.43
+SKU00366,Midan Frozen Product 0366,Frozen,88.98,167.38
+SKU00367,Midan Household Product 0367,Household,91.5,175.41
+SKU00368,Midan Baby Product 0368,Baby,89.93,203.14
+SKU00369,Midan Fresh Product 0369,Fresh,128.95,248.86
+SKU00370,Midan Pharmacy Product 0370,Pharmacy,133.06,253.34
+SKU00371,Midan Beverages Product 0371,Beverages,13.51,32.1
+SKU00372,Midan Dairy Product 0372,Dairy,18.67,48.49
+SKU00373,Midan Snacks Product 0373,Snacks,37.97,72.89
+SKU00374,Midan Grocery Product 0374,Grocery,58.17,120.38
+SKU00375,Midan Personal Care Product 0375,Personal Care,65.91,135.22
+SKU00376,Midan Frozen Product 0376,Frozen,73.72,143.53
+SKU00377,Midan Household Product 0377,Household,70.0,170.42
+SKU00378,Midan Baby Product 0378,Baby,85.54,161.0
+SKU00379,Midan Fresh Product 0379,Fresh,111.83,218.37
+SKU00380,Midan Pharmacy Product 0380,Pharmacy,116.06,198.76
+SKU00381,Midan Beverages Product 0381,Beverages,117.45,261.62
+SKU00382,Midan Dairy Product 0382,Dairy,15.76,35.91
+SKU00383,Midan Snacks Product 0383,Snacks,34.39,61.23
+SKU00384,Midan Grocery Product 0384,Grocery,31.1,74.73
+SKU00385,Midan Personal Care Product 0385,Personal Care,50.53,117.53
+SKU00386,Midan Frozen Product 0386,Frozen,62.37,122.61
+SKU00387,Midan Household Product 0387,Household,68.05,158.14
+SKU00388,Midan Baby Product 0388,Baby,88.72,170.9
+SKU00389,Midan Fresh Product 0389,Fresh,84.26,199.39
+SKU00390,Midan Pharmacy Product 0390,Pharmacy,91.59,214.38
+SKU00391,Midan Beverages Product 0391,Beverages,101.9,223.33
+SKU00392,Midan Dairy Product 0392,Dairy,8.03,21.21
+SKU00393,Midan Snacks Product 0393,Snacks,18.17,41.06
+SKU00394,Midan Grocery Product 0394,Grocery,38.57,76.89
+SKU00395,Midan Personal Care Product 0395,Personal Care,45.22,72.27
+SKU00396,Midan Frozen Product 0396,Frozen,58.18,114.48
+SKU00397,Midan Household Product 0397,Household,71.27,150.77
+SKU00398,Midan Baby Product 0398,Baby,68.23,140.57
+SKU00399,Midan Fresh Product 0399,Fresh,98.03,188.06
+SKU00400,Midan Pharmacy Product 0400,Pharmacy,122.33,194.79
+SKU00401,Midan Beverages Product 0401,Beverages,107.79,248.67
+SKU00402,Midan Dairy Product 0402,Dairy,120.82,244.04
+SKU00403,Midan Snacks Product 0403,Snacks,13.65,27.07
+SKU00404,Midan Grocery Product 0404,Grocery,24.32,57.77
+SKU00405,Midan Personal Care Product 0405,Personal Care,42.31,97.27
+SKU00406,Midan Frozen Product 0406,Frozen,60.75,104.41
+SKU00407,Midan Household Product 0407,Household,51.16,120.55
+SKU00408,Midan Baby Product 0408,Baby,80.73,143.49
+SKU00409,Midan Fresh Product 0409,Fresh,87.91,193.28
+SKU00410,Midan Pharmacy Product 0410,Pharmacy,97.46,227.07
+SKU00411,Midan Beverages Product 0411,Beverages,112.97,229.0
+SKU00412,Midan Dairy Product 0412,Dairy,128.63,228.98
+SKU00413,Midan Snacks Product 0413,Snacks,4.15,8.23
+SKU00414,Midan Grocery Product 0414,Grocery,15.47,37.6
+SKU00415,Midan Personal Care Product 0415,Personal Care,29.56,54.3
+SKU00416,Midan Frozen Product 0416,Frozen,41.23,108.93
+SKU00417,Midan Household Product 0417,Household,62.31,123.24
+SKU00418,Midan Baby Product 0418,Baby,67.24,146.19
+SKU00419,Midan Fresh Product 0419,Fresh,81.63,184.84
+SKU00420,Midan Pharmacy Product 0420,Pharmacy,85.51,185.82
+SKU00421,Midan Beverages Product 0421,Beverages,81.26,175.46
+SKU00422,Midan Dairy Product 0422,Dairy,110.69,254.17
+SKU00423,Midan Snacks Product 0423,Snacks,109.15,235.37
+SKU00424,Midan Grocery Product 0424,Grocery,13.52,28.51
+SKU00425,Midan Personal Care Product 0425,Personal Care,20.45,41.33
+SKU00426,Midan Frozen Product 0426,Frozen,34.02,75.92
+SKU00427,Midan Household Product 0427,Household,55.06,94.88
+SKU00428,Midan Baby Product 0428,Baby,57.82,105.24
+SKU00429,Midan Fresh Product 0429,Fresh,78.14,168.92
+SKU00430,Midan Pharmacy Product 0430,Pharmacy,82.39,183.48
+SKU00431,Midan Beverages Product 0431,Beverages,84.37,205.84
+SKU00432,Midan Dairy Product 0432,Dairy,103.69,226.78
+SKU00433,Midan Snacks Product 0433,Snacks,114.15,242.45
+SKU00434,Midan Grocery Product 0434,Grocery,145.81,282.49
+SKU00435,Midan Personal Care Product 0435,Personal Care,25.61,51.01
+SKU00436,Midan Frozen Product 0436,Frozen,32.51,62.19
+SKU00437,Midan Household Product 0437,Household,38.16,75.1
+SKU00438,Midan Baby Product 0438,Baby,57.04,101.01
+SKU00439,Midan Fresh Product 0439,Fresh,53.24,110.62
+SKU00440,Midan Pharmacy Product 0440,Pharmacy,69.3,177.13
+SKU00441,Midan Beverages Product 0441,Beverages,103.72,164.41
+SKU00442,Midan Dairy Product 0442,Dairy,105.12,177.81
+SKU00443,Midan Snacks Product 0443,Snacks,95.46,241.78
+SKU00444,Midan Grocery Product 0444,Grocery,137.96,232.63
+SKU00445,Midan Personal Care Product 0445,Personal Care,11.44,25.39
+SKU00446,Midan Frozen Product 0446,Frozen,20.05,39.53
+SKU00447,Midan Household Product 0447,Household,37.87,79.86
+SKU00448,Midan Baby Product 0448,Baby,48.71,89.59
+SKU00449,Midan Fresh Product 0449,Fresh,59.46,143.4
+SKU00450,Midan Pharmacy Product 0450,Pharmacy,74.6,146.01
+SKU00451,Midan Beverages Product 0451,Beverages,79.64,182.41
+SKU00452,Midan Dairy Product 0452,Dairy,105.99,177.71
+SKU00453,Midan Snacks Product 0453,Snacks,104.62,225.51
+SKU00454,Midan Grocery Product 0454,Grocery,99.28,258.42
+SKU00455,Midan Personal Care Product 0455,Personal Care,120.66,286.65
+SKU00456,Midan Frozen Product 0456,Frozen,16.27,26.49
+SKU00457,Midan Household Product 0457,Household,32.05,52.69
+SKU00458,Midan Baby Product 0458,Baby,37.21,70.23
+SKU00459,Midan Fresh Product 0459,Fresh,45.3,86.26
+SKU00460,Midan Pharmacy Product 0460,Pharmacy,66.1,123.67
+SKU00461,Midan Beverages Product 0461,Beverages,88.88,169.92
+SKU00462,Midan Dairy Product 0462,Dairy,77.84,172.12
+SKU00463,Midan Snacks Product 0463,Snacks,107.65,186.67
+SKU00464,Midan Grocery Product 0464,Grocery,108.5,196.33
+SKU00465,Midan Personal Care Product 0465,Personal Care,103.86,253.98
+SKU00466,Midan Frozen Product 0466,Frozen,12.18,23.35
+SKU00467,Midan Household Product 0467,Household,15.54,32.57
+SKU00468,Midan Baby Product 0468,Baby,26.48,60.35
+SKU00469,Midan Fresh Product 0469,Fresh,38.06,100.2
+SKU00470,Midan Pharmacy Product 0470,Pharmacy,47.59,117.78
+SKU00471,Midan Beverages Product 0471,Beverages,55.88,128.31
+SKU00472,Midan Dairy Product 0472,Dairy,72.82,160.5
+SKU00473,Midan Snacks Product 0473,Snacks,78.78,213.05
+SKU00474,Midan Grocery Product 0474,Grocery,96.19,196.06
+SKU00475,Midan Personal Care Product 0475,Personal Care,121.11,236.78
+SKU00476,Midan Frozen Product 0476,Frozen,129.08,286.07
+SKU00477,Midan Household Product 0477,Household,10.01,26.59
+SKU00478,Midan Baby Product 0478,Baby,26.52,52.12
+SKU00479,Midan Fresh Product 0479,Fresh,44.89,81.35
+SKU00480,Midan Pharmacy Product 0480,Pharmacy,43.84,96.1
+SKU00481,Midan Beverages Product 0481,Beverages,61.62,114.24
+SKU00482,Midan Dairy Product 0482,Dairy,77.81,165.66
+SKU00483,Midan Snacks Product 0483,Snacks,84.7,156.87
+SKU00484,Midan Grocery Product 0484,Grocery,77.22,172.86
+SKU00485,Midan Personal Care Product 0485,Personal Care,114.58,205.38
+SKU00486,Midan Frozen Product 0486,Frozen,125.38,236.63
+SKU00487,Midan Household Product 0487,Household,117.64,259.88
+SKU00488,Midan Baby Product 0488,Baby,26.68,46.41
+SKU00489,Midan Fresh Product 0489,Fresh,25.06,59.59
+SKU00490,Midan Pharmacy Product 0490,Pharmacy,52.05,91.12
+SKU00491,Midan Beverages Product 0491,Beverages,60.08,123.41
+SKU00492,Midan Dairy Product 0492,Dairy,71.29,157.22
+SKU00493,Midan Snacks Product 0493,Snacks,67.92,167.7
+SKU00494,Midan Grocery Product 0494,Grocery,93.52,179.83
+SKU00495,Midan Personal Care Product 0495,Personal Care,98.7,181.85
+SKU00496,Midan Frozen Product 0496,Frozen,108.9,241.19
+SKU00497,Midan Household Product 0497,Household,100.77,270.39
+SKU00498,Midan Baby Product 0498,Baby,13.29,21.85
+SKU00499,Midan Fresh Product 0499,Fresh,35.79,56.28
+SKU00500,Midan Pharmacy Product 0500,Pharmacy,35.95,83.79
+SKU00501,Midan Beverages Product 0501,Beverages,57.37,91.96
+SKU00502,Midan Dairy Product 0502,Dairy,65.78,107.54
+SKU00503,Midan Snacks Product 0503,Snacks,70.24,126.74
+SKU00504,Midan Grocery Product 0504,Grocery,81.42,167.99
+SKU00505,Midan Personal Care Product 0505,Personal Care,109.53,187.87
+SKU00506,Midan Frozen Product 0506,Frozen,109.98,221.88
+SKU00507,Midan Household Product 0507,Household,119.57,217.52
+SKU00508,Midan Baby Product 0508,Baby,131.09,248.73
+SKU00509,Midan Fresh Product 0509,Fresh,16.8,31.59
+SKU00510,Midan Pharmacy Product 0510,Pharmacy,25.59,60.72
+SKU00511,Midan Beverages Product 0511,Beverages,43.14,77.22
+SKU00512,Midan Dairy Product 0512,Dairy,52.57,94.91
+SKU00513,Midan Snacks Product 0513,Snacks,67.18,124.85
+SKU00514,Midan Grocery Product 0514,Grocery,86.09,150.13
+SKU00515,Midan Personal Care Product 0515,Personal Care,71.15,173.89
+SKU00516,Midan Frozen Product 0516,Frozen,114.73,222.03
+SKU00517,Midan Household Product 0517,Household,119.51,252.81
+SKU00518,Midan Baby Product 0518,Baby,104.13,226.01
+SKU00519,Midan Fresh Product 0519,Fresh,7.16,11.64
+SKU00520,Midan Pharmacy Product 0520,Pharmacy,22.27,51.83
+SKU00521,Midan Beverages Product 0521,Beverages,35.94,63.06
+SKU00522,Midan Dairy Product 0522,Dairy,50.06,92.82
+SKU00523,Midan Snacks Product 0523,Snacks,62.16,126.95
+SKU00524,Midan Grocery Product 0524,Grocery,72.32,132.52
+SKU00525,Midan Personal Care Product 0525,Personal Care,83.36,154.28
+SKU00526,Midan Frozen Product 0526,Frozen,104.72,203.38
+SKU00527,Midan Household Product 0527,Household,113.24,196.51
+SKU00528,Midan Baby Product 0528,Baby,100.29,218.47
+SKU00529,Midan Fresh Product 0529,Fresh,105.85,233.97
+SKU00530,Midan Pharmacy Product 0530,Pharmacy,17.75,43.08
+SKU00531,Midan Beverages Product 0531,Beverages,36.41,62.24
+SKU00532,Midan Dairy Product 0532,Dairy,41.08,74.44
+SKU00533,Midan Snacks Product 0533,Snacks,47.8,97.06
+SKU00534,Midan Grocery Product 0534,Grocery,65.44,105.61
+SKU00535,Midan Personal Care Product 0535,Personal Care,80.29,157.48
+SKU00536,Midan Frozen Product 0536,Frozen,90.29,197.33
+SKU00537,Midan Household Product 0537,Household,74.86,189.31
+SKU00538,Midan Baby Product 0538,Baby,113.04,236.46
+SKU00539,Midan Fresh Product 0539,Fresh,122.2,239.2
+SKU00540,Midan Pharmacy Product 0540,Pharmacy,10.2,25.37
+SKU00541,Midan Beverages Product 0541,Beverages,22.54,43.95
+SKU00542,Midan Dairy Product 0542,Dairy,24.91,52.84
+SKU00543,Midan Snacks Product 0543,Snacks,42.19,80.09
+SKU00544,Midan Grocery Product 0544,Grocery,52.32,121.63
+SKU00545,Midan Personal Care Product 0545,Personal Care,77.55,159.76
+SKU00546,Midan Frozen Product 0546,Frozen,69.0,150.74
+SKU00547,Midan Household Product 0547,Household,85.04,165.47
+SKU00548,Midan Baby Product 0548,Baby,82.96,186.62
+SKU00549,Midan Fresh Product 0549,Fresh,113.88,209.45
+SKU00550,Midan Pharmacy Product 0550,Pharmacy,112.25,248.92
+SKU00551,Midan Beverages Product 0551,Beverages,14.02,32.98
+SKU00552,Midan Dairy Product 0552,Dairy,25.38,51.81
+SKU00553,Midan Snacks Product 0553,Snacks,28.42,78.28
+SKU00554,Midan Grocery Product 0554,Grocery,55.69,90.83
+SKU00555,Midan Personal Care Product 0555,Personal Care,48.33,117.31
+SKU00556,Midan Frozen Product 0556,Frozen,79.61,153.9
+SKU00557,Midan Household Product 0557,Household,92.16,165.73
+SKU00558,Midan Baby Product 0558,Baby,105.91,215.96
+SKU00559,Midan Fresh Product 0559,Fresh,99.09,214.66
+SKU00560,Midan Pharmacy Product 0560,Pharmacy,113.7,202.68
+SKU00561,Midan Beverages Product 0561,Beverages,138.7,245.26
+SKU00562,Midan Dairy Product 0562,Dairy,26.69,46.24
+SKU00563,Midan Snacks Product 0563,Snacks,34.91,80.34
+SKU00564,Midan Grocery Product 0564,Grocery,45.02,85.78
+SKU00565,Midan Personal Care Product 0565,Personal Care,48.68,99.62
+SKU00566,Midan Frozen Product 0566,Frozen,50.54,113.26
+SKU00567,Midan Household Product 0567,Household,73.68,157.94
+SKU00568,Midan Baby Product 0568,Baby,81.5,183.32
+SKU00569,Midan Fresh Product 0569,Fresh,109.09,203.86
+SKU00570,Midan Pharmacy Product 0570,Pharmacy,100.37,237.81
+SKU00571,Midan Beverages Product 0571,Beverages,129.52,234.5
+SKU00572,Midan Dairy Product 0572,Dairy,15.43,34.75
+SKU00573,Midan Snacks Product 0573,Snacks,30.52,65.78
+SKU00574,Midan Grocery Product 0574,Grocery,40.02,67.24
+SKU00575,Midan Personal Care Product 0575,Personal Care,52.9,100.66
+SKU00576,Midan Frozen Product 0576,Frozen,62.49,132.42
+SKU00577,Midan Household Product 0577,Household,61.67,147.87
+SKU00578,Midan Baby Product 0578,Baby,90.99,151.11
+SKU00579,Midan Fresh Product 0579,Fresh,78.36,215.25
+SKU00580,Midan Pharmacy Product 0580,Pharmacy,81.05,189.48
+SKU00581,Midan Beverages Product 0581,Beverages,116.27,218.46
+SKU00582,Midan Dairy Product 0582,Dairy,147.39,290.82
+SKU00583,Midan Snacks Product 0583,Snacks,16.77,36.59
+SKU00584,Midan Grocery Product 0584,Grocery,22.59,51.51
+SKU00585,Midan Personal Care Product 0585,Personal Care,37.02,74.04
+SKU00586,Midan Frozen Product 0586,Frozen,52.96,110.45
+SKU00587,Midan Household Product 0587,Household,70.46,139.59
+SKU00588,Midan Baby Product 0588,Baby,78.61,142.47
+SKU00589,Midan Fresh Product 0589,Fresh,82.71,154.02
+SKU00590,Midan Pharmacy Product 0590,Pharmacy,94.91,197.49
+SKU00591,Midan Beverages Product 0591,Beverages,110.49,201.28
+SKU00592,Midan Dairy Product 0592,Dairy,133.82,257.97
+SKU00593,Midan Snacks Product 0593,Snacks,6.05,14.98
+SKU00594,Midan Grocery Product 0594,Grocery,22.95,43.88
+SKU00595,Midan Personal Care Product 0595,Personal Care,42.7,74.79
+SKU00596,Midan Frozen Product 0596,Frozen,44.11,80.78
+SKU00597,Midan Household Product 0597,Household,49.85,111.09
+SKU00598,Midan Baby Product 0598,Baby,63.37,143.43
+SKU00599,Midan Fresh Product 0599,Fresh,70.32,170.23
+SKU00600,Midan Pharmacy Product 0600,Pharmacy,82.23,193.81
+SKU00601,Midan Beverages Product 0601,Beverages,105.64,181.86
+SKU00602,Midan Dairy Product 0602,Dairy,118.88,202.38
+SKU00603,Midan Snacks Product 0603,Snacks,104.96,263.47
+SKU00604,Midan Grocery Product 0604,Grocery,19.68,46.66
+SKU00605,Midan Personal Care Product 0605,Personal Care,30.73,58.39
+SKU00606,Midan Frozen Product 0606,Frozen,40.73,92.63
+SKU00607,Midan Household Product 0607,Household,46.31,113.01
+SKU00608,Midan Baby Product 0608,Baby,64.97,138.46
+SKU00609,Midan Fresh Product 0609,Fresh,68.03,173.63
+SKU00610,Midan Pharmacy Product 0610,Pharmacy,89.49,182.03
+SKU00611,Midan Beverages Product 0611,Beverages,92.25,212.1
+SKU00612,Midan Dairy Product 0612,Dairy,127.6,251.6
+SKU00613,Midan Snacks Product 0613,Snacks,112.43,201.48
+SKU00614,Midan Grocery Product 0614,Grocery,124.11,311.76
+SKU00615,Midan Personal Care Product 0615,Personal Care,19.82,45.62
+SKU00616,Midan Frozen Product 0616,Frozen,34.87,66.35
+SKU00617,Midan Household Product 0617,Household,32.45,74.58
+SKU00618,Midan Baby Product 0618,Baby,44.55,109.16
+SKU00619,Midan Fresh Product 0619,Fresh,69.98,150.14
+SKU00620,Midan Pharmacy Product 0620,Pharmacy,80.3,162.54
+SKU00621,Midan Beverages Product 0621,Beverages,91.95,166.71
+SKU00622,Midan Dairy Product 0622,Dairy,89.7,186.52
+SKU00623,Midan Snacks Product 0623,Snacks,98.02,206.11
+SKU00624,Midan Grocery Product 0624,Grocery,127.83,270.9
+SKU00625,Midan Personal Care Product 0625,Personal Care,10.77,17.81
+SKU00626,Midan Frozen Product 0626,Frozen,27.71,47.0
+SKU00627,Midan Household Product 0627,Household,28.15,60.33
+SKU00628,Midan Baby Product 0628,Baby,52.95,100.89
+SKU00629,Midan Fresh Product 0629,Fresh,48.02,126.41
+SKU00630,Midan Pharmacy Product 0630,Pharmacy,69.07,125.98
+SKU00631,Midan Beverages Product 0631,Beverages,66.52,165.58
+SKU00632,Midan Dairy Product 0632,Dairy,90.46,193.8
+SKU00633,Midan Snacks Product 0633,Snacks,104.02,220.16
+SKU00634,Midan Grocery Product 0634,Grocery,100.97,242.78
+SKU00635,Midan Personal Care Product 0635,Personal Care,111.75,264.3
+SKU00636,Midan Frozen Product 0636,Frozen,17.08,41.77
+SKU00637,Midan Household Product 0637,Household,23.14,46.81
+SKU00638,Midan Baby Product 0638,Baby,35.92,79.97
+SKU00639,Midan Fresh Product 0639,Fresh,44.65,97.23
+SKU00640,Midan Pharmacy Product 0640,Pharmacy,54.61,130.94
+SKU00641,Midan Beverages Product 0641,Beverages,76.66,160.51
+SKU00642,Midan Dairy Product 0642,Dairy,71.62,171.78
+SKU00643,Midan Snacks Product 0643,Snacks,108.27,200.49
+SKU00644,Midan Grocery Product 0644,Grocery,121.46,234.65
+SKU00645,Midan Personal Care Product 0645,Personal Care,106.91,204.5
+SKU00646,Midan Frozen Product 0646,Frozen,19.8,31.2
+SKU00647,Midan Household Product 0647,Household,23.23,55.49
+SKU00648,Midan Baby Product 0648,Baby,40.21,85.4
+SKU00649,Midan Fresh Product 0649,Fresh,45.22,108.19
+SKU00650,Midan Pharmacy Product 0650,Pharmacy,61.24,123.74
+SKU00651,Midan Beverages Product 0651,Beverages,69.65,140.36
+SKU00652,Midan Dairy Product 0652,Dairy,83.19,155.46
+SKU00653,Midan Snacks Product 0653,Snacks,86.6,176.87
+SKU00654,Midan Grocery Product 0654,Grocery,94.13,184.94
+SKU00655,Midan Personal Care Product 0655,Personal Care,98.64,227.89
+SKU00656,Midan Frozen Product 0656,Frozen,125.65,277.46
+SKU00657,Midan Household Product 0657,Household,11.3,23.01
+SKU00658,Midan Baby Product 0658,Baby,34.94,59.56
+SKU00659,Midan Fresh Product 0659,Fresh,40.85,92.47
+SKU00660,Midan Pharmacy Product 0660,Pharmacy,45.22,102.61
+SKU00661,Midan Beverages Product 0661,Beverages,46.3,116.33
+SKU00662,Midan Dairy Product 0662,Dairy,62.89,162.95
+SKU00663,Midan Snacks Product 0663,Snacks,74.31,155.09
+SKU00664,Midan Grocery Product 0664,Grocery,84.04,203.97
+SKU00665,Midan Personal Care Product 0665,Personal Care,114.18,224.55
+SKU00666,Midan Frozen Product 0666,Frozen,118.51,246.3
+SKU00667,Midan Household Product 0667,Household,117.32,233.54
+SKU00668,Midan Baby Product 0668,Baby,19.95,42.87
+SKU00669,Midan Fresh Product 0669,Fresh,29.36,57.54
+SKU00670,Midan Pharmacy Product 0670,Pharmacy,50.13,96.65
+SKU00671,Midan Beverages Product 0671,Beverages,62.59,123.66
+SKU00672,Midan Dairy Product 0672,Dairy,74.12,131.65
+SKU00673,Midan Snacks Product 0673,Snacks,66.22,149.52
+SKU00674,Midan Grocery Product 0674,Grocery,90.33,204.85
+SKU00675,Midan Personal Care Product 0675,Personal Care,103.35,214.34
+SKU00676,Midan Frozen Product 0676,Frozen,118.4,268.07
+SKU00677,Midan Household Product 0677,Household,106.96,233.84
+SKU00678,Midan Baby Product 0678,Baby,9.83,21.4
+SKU00679,Midan Fresh Product 0679,Fresh,25.1,63.63
+SKU00680,Midan Pharmacy Product 0680,Pharmacy,29.25,68.33
+SKU00681,Midan Beverages Product 0681,Beverages,54.86,91.3
+SKU00682,Midan Dairy Product 0682,Dairy,66.81,129.29
+SKU00683,Midan Snacks Product 0683,Snacks,78.44,136.3
+SKU00684,Midan Grocery Product 0684,Grocery,72.59,200.22
+SKU00685,Midan Personal Care Product 0685,Personal Care,85.53,229.75
+SKU00686,Midan Frozen Product 0686,Frozen,94.25,218.38
+SKU00687,Midan Household Product 0687,Household,127.07,231.3
+SKU00688,Midan Baby Product 0688,Baby,124.65,269.31
+SKU00689,Midan Fresh Product 0689,Fresh,14.76,33.13
+SKU00690,Midan Pharmacy Product 0690,Pharmacy,25.17,67.82
+SKU00691,Midan Beverages Product 0691,Beverages,44.88,91.69
+SKU00692,Midan Dairy Product 0692,Dairy,48.65,104.68
+SKU00693,Midan Snacks Product 0693,Snacks,52.19,114.16
+SKU00694,Midan Grocery Product 0694,Grocery,82.46,161.07
+SKU00695,Midan Personal Care Product 0695,Personal Care,76.39,161.17
+SKU00696,Midan Frozen Product 0696,Frozen,101.5,217.13
+SKU00697,Midan Household Product 0697,Household,101.55,247.38
+SKU00698,Midan Baby Product 0698,Baby,132.07,257.78
+SKU00699,Midan Fresh Product 0699,Fresh,7.59,12.87
+SKU00700,Midan Pharmacy Product 0700,Pharmacy,25.44,58.35
+SKU00701,Midan Beverages Product 0701,Beverages,36.16,62.3
+SKU00702,Midan Dairy Product 0702,Dairy,43.7,89.76
+SKU00703,Midan Snacks Product 0703,Snacks,64.13,117.75
+SKU00704,Midan Grocery Product 0704,Grocery,65.66,156.92
+SKU00705,Midan Personal Care Product 0705,Personal Care,72.75,143.91
+SKU00706,Midan Frozen Product 0706,Frozen,97.32,194.83
+SKU00707,Midan Household Product 0707,Household,101.09,180.51
+SKU00708,Midan Baby Product 0708,Baby,94.53,235.32
+SKU00709,Midan Fresh Product 0709,Fresh,141.4,216.5
+SKU00710,Midan Pharmacy Product 0710,Pharmacy,21.33,44.73
+SKU00711,Midan Beverages Product 0711,Beverages,28.27,59.81
+SKU00712,Midan Dairy Product 0712,Dairy,30.29,70.09
+SKU00713,Midan Snacks Product 0713,Snacks,49.71,107.87
+SKU00714,Midan Grocery Product 0714,Grocery,57.56,124.26
+SKU00715,Midan Personal Care Product 0715,Personal Care,71.51,170.25
+SKU00716,Midan Frozen Product 0716,Frozen,93.12,199.11
+SKU00717,Midan Household Product 0717,Household,84.69,195.66
+SKU00718,Midan Baby Product 0718,Baby,90.66,190.6
+SKU00719,Midan Fresh Product 0719,Fresh,113.33,228.47
+SKU00720,Midan Pharmacy Product 0720,Pharmacy,13.39,29.48
+SKU00721,Midan Beverages Product 0721,Beverages,15.38,27.39
+SKU00722,Midan Dairy Product 0722,Dairy,31.66,63.7
+SKU00723,Midan Snacks Product 0723,Snacks,36.17,77.9
+SKU00724,Midan Grocery Product 0724,Grocery,68.5,125.67
+SKU00725,Midan Personal Care Product 0725,Personal Care,68.47,116.23
+SKU00726,Midan Frozen Product 0726,Frozen,85.78,182.63
+SKU00727,Midan Household Product 0727,Household,88.06,165.86
+SKU00728,Midan Baby Product 0728,Baby,86.71,213.27
+SKU00729,Midan Fresh Product 0729,Fresh,124.61,214.67
+SKU00730,Midan Pharmacy Product 0730,Pharmacy,110.1,292.31
+SKU00731,Midan Beverages Product 0731,Beverages,16.95,39.25
+SKU00732,Midan Dairy Product 0732,Dairy,18.91,43.32
+SKU00733,Midan Snacks Product 0733,Snacks,37.66,79.44
+SKU00734,Midan Grocery Product 0734,Grocery,50.9,83.28
+SKU00735,Midan Personal Care Product 0735,Personal Care,65.74,115.01
+SKU00736,Midan Frozen Product 0736,Frozen,79.04,138.16
+SKU00737,Midan Household Product 0737,Household,88.86,153.39
+SKU00738,Midan Baby Product 0738,Baby,104.44,205.56
+SKU00739,Midan Fresh Product 0739,Fresh,87.02,214.54
+SKU00740,Midan Pharmacy Product 0740,Pharmacy,127.23,229.18
+SKU00741,Midan Beverages Product 0741,Beverages,100.94,236.98
+SKU00742,Midan Dairy Product 0742,Dairy,15.42,30.97
+SKU00743,Midan Snacks Product 0743,Snacks,25.31,53.68
+SKU00744,Midan Grocery Product 0744,Grocery,33.45,78.87
+SKU00745,Midan Personal Care Product 0745,Personal Care,48.72,92.12
+SKU00746,Midan Frozen Product 0746,Frozen,57.82,124.01
+SKU00747,Midan Household Product 0747,Household,79.28,158.6
+SKU00748,Midan Baby Product 0748,Baby,95.12,173.44
+SKU00749,Midan Fresh Product 0749,Fresh,84.15,186.75
+SKU00750,Midan Pharmacy Product 0750,Pharmacy,92.51,219.71
+SKU00751,Midan Beverages Product 0751,Beverages,118.66,216.82
+SKU00752,Midan Dairy Product 0752,Dairy,7.91,18.39
+SKU00753,Midan Snacks Product 0753,Snacks,21.94,44.98
+SKU00754,Midan Grocery Product 0754,Grocery,36.94,62.66
+SKU00755,Midan Personal Care Product 0755,Personal Care,52.47,92.96
+SKU00756,Midan Frozen Product 0756,Frozen,60.99,123.87
+SKU00757,Midan Household Product 0757,Household,65.39,146.07
+SKU00758,Midan Baby Product 0758,Baby,76.88,167.15
+SKU00759,Midan Fresh Product 0759,Fresh,113.05,188.4
+SKU00760,Midan Pharmacy Product 0760,Pharmacy,104.68,219.97
+SKU00761,Midan Beverages Product 0761,Beverages,105.56,245.81
+SKU00762,Midan Dairy Product 0762,Dairy,107.09,258.09
+SKU00763,Midan Snacks Product 0763,Snacks,18.13,38.44
+SKU00764,Midan Grocery Product 0764,Grocery,33.08,58.08
+SKU00765,Midan Personal Care Product 0765,Personal Care,41.11,81.35
+SKU00766,Midan Frozen Product 0766,Frozen,58.97,117.75
+SKU00767,Midan Household Product 0767,Household,60.62,128.96
+SKU00768,Midan Baby Product 0768,Baby,73.54,151.46
+SKU00769,Midan Fresh Product 0769,Fresh,75.29,205.35
+SKU00770,Midan Pharmacy Product 0770,Pharmacy,92.2,196.34
+SKU00771,Midan Beverages Product 0771,Beverages,120.13,233.98
+SKU00772,Midan Dairy Product 0772,Dairy,116.3,277.8
+SKU00773,Midan Snacks Product 0773,Snacks,10.97,19.07
+SKU00774,Midan Grocery Product 0774,Grocery,26.21,49.02
+SKU00775,Midan Personal Care Product 0775,Personal Care,29.1,80.19
+SKU00776,Midan Frozen Product 0776,Frozen,44.64,101.44
+SKU00777,Midan Household Product 0777,Household,59.91,109.29
+SKU00778,Midan Baby Product 0778,Baby,63.52,130.57
+SKU00779,Midan Fresh Product 0779,Fresh,80.93,159.52
+SKU00780,Midan Pharmacy Product 0780,Pharmacy,95.92,184.26
+SKU00781,Midan Beverages Product 0781,Beverages,95.04,179.56
+SKU00782,Midan Dairy Product 0782,Dairy,103.37,245.87
+SKU00783,Midan Snacks Product 0783,Snacks,135.89,218.53
+SKU00784,Midan Grocery Product 0784,Grocery,11.94,22.92
+SKU00785,Midan Personal Care Product 0785,Personal Care,25.5,51.89
+SKU00786,Midan Frozen Product 0786,Frozen,37.36,77.39
+SKU00787,Midan Household Product 0787,Household,45.66,118.34
+SKU00788,Midan Baby Product 0788,Baby,65.61,115.35
+SKU00789,Midan Fresh Product 0789,Fresh,70.72,145.21
+SKU00790,Midan Pharmacy Product 0790,Pharmacy,79.55,179.86
+SKU00791,Midan Beverages Product 0791,Beverages,87.24,169.31
+SKU00792,Midan Dairy Product 0792,Dairy,104.43,191.49
+SKU00793,Midan Snacks Product 0793,Snacks,105.55,248.04
+SKU00794,Midan Grocery Product 0794,Grocery,135.14,238.39
+SKU00795,Midan Personal Care Product 0795,Personal Care,25.06,40.97
+SKU00796,Midan Frozen Product 0796,Frozen,28.55,47.52
+SKU00797,Midan Household Product 0797,Household,39.0,76.01
+SKU00798,Midan Baby Product 0798,Baby,58.58,123.59
+SKU00799,Midan Fresh Product 0799,Fresh,68.33,138.24
+SKU00800,Midan Pharmacy Product 0800,Pharmacy,82.61,156.28
+SKU00801,Midan Beverages Product 0801,Beverages,97.79,177.09
+SKU00802,Midan Dairy Product 0802,Dairy,85.59,184.79
+SKU00803,Midan Snacks Product 0803,Snacks,97.6,196.34
+SKU00804,Midan Grocery Product 0804,Grocery,124.07,248.09
+SKU00805,Midan Personal Care Product 0805,Personal Care,7.51,14.69
+SKU00806,Midan Frozen Product 0806,Frozen,27.46,54.92
+SKU00807,Midan Household Product 0807,Household,42.69,85.75
+SKU00808,Midan Baby Product 0808,Baby,39.09,84.6
+SKU00809,Midan Fresh Product 0809,Fresh,49.39,92.4
+SKU00810,Midan Pharmacy Product 0810,Pharmacy,71.34,148.64
+SKU00811,Midan Beverages Product 0811,Beverages,80.4,173.59
+SKU00812,Midan Dairy Product 0812,Dairy,101.3,185.49
+SKU00813,Midan Snacks Product 0813,Snacks,81.7,214.34
+SKU00814,Midan Grocery Product 0814,Grocery,102.92,231.44
+SKU00815,Midan Personal Care Product 0815,Personal Care,119.48,265.28
+SKU00816,Midan Frozen Product 0816,Frozen,21.19,38.27
+SKU00817,Midan Household Product 0817,Household,25.69,52.38
+SKU00818,Midan Baby Product 0818,Baby,42.39,68.54
+SKU00819,Midan Fresh Product 0819,Fresh,54.99,125.83
+SKU00820,Midan Pharmacy Product 0820,Pharmacy,63.76,125.46
+SKU00821,Midan Beverages Product 0821,Beverages,83.4,144.0
+SKU00822,Midan Dairy Product 0822,Dairy,92.21,167.77
+SKU00823,Midan Snacks Product 0823,Snacks,112.81,196.34
+SKU00824,Midan Grocery Product 0824,Grocery,115.26,220.31
+SKU00825,Midan Personal Care Product 0825,Personal Care,127.44,227.45
+SKU00826,Midan Frozen Product 0826,Frozen,5.25,11.03
+SKU00827,Midan Household Product 0827,Household,15.26,31.06
+SKU00828,Midan Baby Product 0828,Baby,31.71,73.15
+SKU00829,Midan Fresh Product 0829,Fresh,38.4,94.03
+SKU00830,Midan Pharmacy Product 0830,Pharmacy,66.18,113.88
+SKU00831,Midan Beverages Product 0831,Beverages,80.57,167.59
+SKU00832,Midan Dairy Product 0832,Dairy,95.81,156.87
+SKU00833,Midan Snacks Product 0833,Snacks,86.45,205.4
+SKU00834,Midan Grocery Product 0834,Grocery,114.99,226.79
+SKU00835,Midan Personal Care Product 0835,Personal Care,115.25,215.95
+SKU00836,Midan Frozen Product 0836,Frozen,120.51,260.65
+SKU00837,Midan Household Product 0837,Household,17.49,41.95
+SKU00838,Midan Baby Product 0838,Baby,27.22,46.82
+SKU00839,Midan Fresh Product 0839,Fresh,41.27,77.95
+SKU00840,Midan Pharmacy Product 0840,Pharmacy,57.11,115.28
+SKU00841,Midan Beverages Product 0841,Beverages,63.37,118.35
+SKU00842,Midan Dairy Product 0842,Dairy,66.8,125.14
+SKU00843,Midan Snacks Product 0843,Snacks,74.0,158.12
+SKU00844,Midan Grocery Product 0844,Grocery,93.25,207.08
+SKU00845,Midan Personal Care Product 0845,Personal Care,106.07,209.57
+SKU00846,Midan Frozen Product 0846,Frozen,100.81,218.61
+SKU00847,Midan Household Product 0847,Household,130.28,243.58
+SKU00848,Midan Baby Product 0848,Baby,24.2,43.85
+SKU00849,Midan Fresh Product 0849,Fresh,33.5,80.58
+SKU00850,Midan Pharmacy Product 0850,Pharmacy,39.62,70.17
+SKU00851,Midan Beverages Product 0851,Beverages,54.96,127.5
+SKU00852,Midan Dairy Product 0852,Dairy,59.11,140.85
+SKU00853,Midan Snacks Product 0853,Snacks,69.44,140.05
+SKU00854,Midan Grocery Product 0854,Grocery,82.12,193.45
+SKU00855,Midan Personal Care Product 0855,Personal Care,84.23,207.63
+SKU00856,Midan Frozen Product 0856,Frozen,95.51,227.12
+SKU00857,Midan Household Product 0857,Household,122.96,256.72
+SKU00858,Midan Baby Product 0858,Baby,19.26,36.57
+SKU00859,Midan Fresh Product 0859,Fresh,18.13,41.22
+SKU00860,Midan Pharmacy Product 0860,Pharmacy,28.65,69.35
+SKU00861,Midan Beverages Product 0861,Beverages,46.4,92.98
+SKU00862,Midan Dairy Product 0862,Dairy,62.78,99.44
+SKU00863,Midan Snacks Product 0863,Snacks,58.29,150.02
+SKU00864,Midan Grocery Product 0864,Grocery,86.51,170.62
+SKU00865,Midan Personal Care Product 0865,Personal Care,85.12,189.33
+SKU00866,Midan Frozen Product 0866,Frozen,93.01,198.64
+SKU00867,Midan Household Product 0867,Household,122.07,235.4
+SKU00868,Midan Baby Product 0868,Baby,124.01,245.44
+SKU00869,Midan Fresh Product 0869,Fresh,12.83,31.21
+SKU00870,Midan Pharmacy Product 0870,Pharmacy,31.73,67.54
+SKU00871,Midan Beverages Product 0871,Beverages,48.28,92.26
+SKU00872,Midan Dairy Product 0872,Dairy,49.53,101.31
+SKU00873,Midan Snacks Product 0873,Snacks,61.77,119.97
+SKU00874,Midan Grocery Product 0874,Grocery,92.32,163.52
+SKU00875,Midan Personal Care Product 0875,Personal Care,80.62,169.72
+SKU00876,Midan Frozen Product 0876,Frozen,113.57,226.47
+SKU00877,Midan Household Product 0877,Household,99.64,257.26
+SKU00878,Midan Baby Product 0878,Baby,115.0,259.85
+SKU00879,Midan Fresh Product 0879,Fresh,17.12,32.6
+SKU00880,Midan Pharmacy Product 0880,Pharmacy,13.76,31.07
+SKU00881,Midan Beverages Product 0881,Beverages,23.57,61.53
+SKU00882,Midan Dairy Product 0882,Dairy,47.32,93.02
+SKU00883,Midan Snacks Product 0883,Snacks,59.27,100.85
+SKU00884,Midan Grocery Product 0884,Grocery,71.06,131.77
+SKU00885,Midan Personal Care Product 0885,Personal Care,76.91,144.6
+SKU00886,Midan Frozen Product 0886,Frozen,95.73,188.3
+SKU00887,Midan Household Product 0887,Household,115.51,222.95
+SKU00888,Midan Baby Product 0888,Baby,114.65,233.93
+SKU00889,Midan Fresh Product 0889,Fresh,109.24,235.02
+SKU00890,Midan Pharmacy Product 0890,Pharmacy,14.85,31.89
+SKU00891,Midan Beverages Product 0891,Beverages,26.8,54.08
+SKU00892,Midan Dairy Product 0892,Dairy,35.92,72.54
+SKU00893,Midan Snacks Product 0893,Snacks,52.52,93.78
+SKU00894,Midan Grocery Product 0894,Grocery,69.9,121.27
+SKU00895,Midan Personal Care Product 0895,Personal Care,74.09,129.91
+SKU00896,Midan Frozen Product 0896,Frozen,97.28,159.25
+SKU00897,Midan Household Product 0897,Household,91.36,179.51
+SKU00898,Midan Baby Product 0898,Baby,112.12,198.5
+SKU00899,Midan Fresh Product 0899,Fresh,111.44,240.35
+SKU00900,Midan Pharmacy Product 0900,Pharmacy,9.73,19.55
+SKU00901,Midan Beverages Product 0901,Beverages,15.73,33.38
+SKU00902,Midan Dairy Product 0902,Dairy,28.4,50.93
+SKU00903,Midan Snacks Product 0903,Snacks,43.81,97.88
+SKU00904,Midan Grocery Product 0904,Grocery,46.56,121.44
+SKU00905,Midan Personal Care Product 0905,Personal Care,71.88,161.15
+SKU00906,Midan Frozen Product 0906,Frozen,78.1,156.94
+SKU00907,Midan Household Product 0907,Household,93.99,168.15
+SKU00908,Midan Baby Product 0908,Baby,90.0,193.34
+SKU00909,Midan Fresh Product 0909,Fresh,103.49,258.64
+SKU00910,Midan Pharmacy Product 0910,Pharmacy,148.99,233.42
+SKU00911,Midan Beverages Product 0911,Beverages,12.48,30.3
+SKU00912,Midan Dairy Product 0912,Dairy,23.4,40.87
+SKU00913,Midan Snacks Product 0913,Snacks,33.31,63.34
+SKU00914,Midan Grocery Product 0914,Grocery,48.89,104.15
+SKU00915,Midan Personal Care Product 0915,Personal Care,64.67,111.29
+SKU00916,Midan Frozen Product 0916,Frozen,82.65,144.87
+SKU00917,Midan Household Product 0917,Household,72.89,143.25
+SKU00918,Midan Baby Product 0918,Baby,101.75,206.02
+SKU00919,Midan Fresh Product 0919,Fresh,91.37,236.28
+SKU00920,Midan Pharmacy Product 0920,Pharmacy,129.81,220.52
+SKU00921,Midan Beverages Product 0921,Beverages,115.88,260.97
+SKU00922,Midan Dairy Product 0922,Dairy,14.96,27.71
+SKU00923,Midan Snacks Product 0923,Snacks,28.08,55.73
+SKU00924,Midan Grocery Product 0924,Grocery,44.38,82.23
+SKU00925,Midan Personal Care Product 0925,Personal Care,50.4,107.55
+SKU00926,Midan Frozen Product 0926,Frozen,65.49,107.09
+SKU00927,Midan Household Product 0927,Household,74.34,175.74
+SKU00928,Midan Baby Product 0928,Baby,76.09,161.73
+SKU00929,Midan Fresh Product 0929,Fresh,108.82,222.2
+SKU00930,Midan Pharmacy Product 0930,Pharmacy,98.23,193.66
+SKU00931,Midan Beverages Product 0931,Beverages,127.68,244.43
+SKU00932,Midan Dairy Product 0932,Dairy,6.53,15.03
+SKU00933,Midan Snacks Product 0933,Snacks,22.31,50.92
+SKU00934,Midan Grocery Product 0934,Grocery,28.66,58.98
+SKU00935,Midan Personal Care Product 0935,Personal Care,36.0,88.04
+SKU00936,Midan Frozen Product 0936,Frozen,65.72,110.57
+SKU00937,Midan Household Product 0937,Household,68.62,133.17
+SKU00938,Midan Baby Product 0938,Baby,72.63,157.49
+SKU00939,Midan Fresh Product 0939,Fresh,85.71,217.35
+SKU00940,Midan Pharmacy Product 0940,Pharmacy,92.99,194.85
+SKU00941,Midan Beverages Product 0941,Beverages,106.89,237.71
+SKU00942,Midan Dairy Product 0942,Dairy,112.98,229.87
+SKU00943,Midan Snacks Product 0943,Snacks,24.53,38.83
+SKU00944,Midan Grocery Product 0944,Grocery,30.81,68.5
+SKU00945,Midan Personal Care Product 0945,Personal Care,42.33,78.96
+SKU00946,Midan Frozen Product 0946,Frozen,45.65,99.02
+SKU00947,Midan Household Product 0947,Household,65.88,124.05
+SKU00948,Midan Baby Product 0948,Baby,87.48,153.85
+SKU00949,Midan Fresh Product 0949,Fresh,77.31,146.39
+SKU00950,Midan Pharmacy Product 0950,Pharmacy,107.51,192.93
+SKU00951,Midan Beverages Product 0951,Beverages,107.2,188.57
+SKU00952,Midan Dairy Product 0952,Dairy,102.18,221.14
+SKU00953,Midan Snacks Product 0953,Snacks,12.65,31.94
+SKU00954,Midan Grocery Product 0954,Grocery,16.63,35.87
+SKU00955,Midan Personal Care Product 0955,Personal Care,28.21,64.19
+SKU00956,Midan Frozen Product 0956,Frozen,35.0,88.54
+SKU00957,Midan Household Product 0957,Household,58.05,123.34
+SKU00958,Midan Baby Product 0958,Baby,82.34,155.6
+SKU00959,Midan Fresh Product 0959,Fresh,77.1,155.21
+SKU00960,Midan Pharmacy Product 0960,Pharmacy,94.67,188.3
+SKU00961,Midan Beverages Product 0961,Beverages,90.14,182.35
+SKU00962,Midan Dairy Product 0962,Dairy,128.26,211.4
+SKU00963,Midan Snacks Product 0963,Snacks,130.88,285.18
+SKU00964,Midan Grocery Product 0964,Grocery,24.76,38.93
+SKU00965,Midan Personal Care Product 0965,Personal Care,25.76,62.45
+SKU00966,Midan Frozen Product 0966,Frozen,36.22,99.66
+SKU00967,Midan Household Product 0967,Household,50.19,99.4
+SKU00968,Midan Baby Product 0968,Baby,64.72,130.02
+SKU00969,Midan Fresh Product 0969,Fresh,68.98,148.6
+SKU00970,Midan Pharmacy Product 0970,Pharmacy,97.27,152.32
+SKU00971,Midan Beverages Product 0971,Beverages,111.36,201.35
+SKU00972,Midan Dairy Product 0972,Dairy,94.49,246.15
+SKU00973,Midan Snacks Product 0973,Snacks,121.12,236.39
+SKU00974,Midan Grocery Product 0974,Grocery,109.48,242.85
+SKU00975,Midan Personal Care Product 0975,Personal Care,15.69,27.59
+SKU00976,Midan Frozen Product 0976,Frozen,32.42,66.77
+SKU00977,Midan Household Product 0977,Household,51.27,100.5
+SKU00978,Midan Baby Product 0978,Baby,42.44,106.83
+SKU00979,Midan Fresh Product 0979,Fresh,76.7,157.29
+SKU00980,Midan Pharmacy Product 0980,Pharmacy,93.44,159.78
+SKU00981,Midan Beverages Product 0981,Beverages,89.64,170.24
+SKU00982,Midan Dairy Product 0982,Dairy,83.74,178.36
+SKU00983,Midan Snacks Product 0983,Snacks,127.37,267.12
+SKU00984,Midan Grocery Product 0984,Grocery,109.15,284.58
+SKU00985,Midan Personal Care Product 0985,Personal Care,17.46,33.65
+SKU00986,Midan Frozen Product 0986,Frozen,20.88,37.92
+SKU00987,Midan Household Product 0987,Household,34.81,60.3
+SKU00988,Midan Baby Product 0988,Baby,57.29,114.18
+SKU00989,Midan Fresh Product 0989,Fresh,66.06,130.39
+SKU00990,Midan Pharmacy Product 0990,Pharmacy,65.17,143.94
+SKU00991,Midan Beverages Product 0991,Beverages,78.32,181.09
+SKU00992,Midan Dairy Product 0992,Dairy,85.45,213.61
+SKU00993,Midan Snacks Product 0993,Snacks,116.21,186.02
+SKU00994,Midan Grocery Product 0994,Grocery,102.51,259.2
+SKU00995,Midan Personal Care Product 0995,Personal Care,144.59,257.99
+SKU00996,Midan Frozen Product 0996,Frozen,12.94,25.67
+SKU00997,Midan Household Product 0997,Household,21.92,45.01
+SKU00998,Midan Baby Product 0998,Baby,41.47,88.81
+SKU00999,Midan Fresh Product 0999,Fresh,56.18,111.8
+SKU01000,Midan Pharmacy Product 1000,Pharmacy,54.42,128.85
+SKU01001,Midan Beverages Product 1001,Beverages,82.76,169.64
+SKU01002,Midan Dairy Product 1002,Dairy,68.74,181.02
+SKU01003,Midan Snacks Product 1003,Snacks,87.82,215.88
+SKU01004,Midan Grocery Product 1004,Grocery,90.42,202.43
+SKU01005,Midan Personal Care Product 1005,Personal Care,124.11,277.72
+SKU01006,Midan Frozen Product 1006,Frozen,5.4,11.06
+SKU01007,Midan Household Product 1007,Household,18.19,49.91
+SKU01008,Midan Baby Product 1008,Baby,32.68,53.61
+SKU01009,Midan Fresh Product 1009,Fresh,35.26,73.8
+SKU01010,Midan Pharmacy Product 1010,Pharmacy,62.97,127.52
+SKU01011,Midan Beverages Product 1011,Beverages,59.21,122.11
+SKU01012,Midan Dairy Product 1012,Dairy,74.28,162.48
+SKU01013,Midan Snacks Product 1013,Snacks,81.07,171.39
+SKU01014,Midan Grocery Product 1014,Grocery,103.86,207.35
+SKU01015,Midan Personal Care Product 1015,Personal Care,90.61,202.63
+SKU01016,Midan Frozen Product 1016,Frozen,103.44,271.34
+SKU01017,Midan Household Product 1017,Household,12.3,26.09
+SKU01018,Midan Baby Product 1018,Baby,24.68,59.7
+SKU01019,Midan Fresh Product 1019,Fresh,38.21,66.76
+SKU01020,Midan Pharmacy Product 1020,Pharmacy,44.52,98.59
+SKU01021,Midan Beverages Product 1021,Beverages,52.32,102.86
+SKU01022,Midan Dairy Product 1022,Dairy,79.53,136.97
+SKU01023,Midan Snacks Product 1023,Snacks,82.21,187.59
+SKU01024,Midan Grocery Product 1024,Grocery,97.39,214.4
+SKU01025,Midan Personal Care Product 1025,Personal Care,106.88,227.9
+SKU01026,Midan Frozen Product 1026,Frozen,120.86,276.15
+SKU01027,Midan Household Product 1027,Household,109.39,291.5
+SKU01028,Midan Baby Product 1028,Baby,22.82,51.89
+SKU01029,Midan Fresh Product 1029,Fresh,37.42,74.72
+SKU01030,Midan Pharmacy Product 1030,Pharmacy,40.85,70.17
+SKU01031,Midan Beverages Product 1031,Beverages,70.16,134.14
+SKU01032,Midan Dairy Product 1032,Dairy,58.6,139.91
+SKU01033,Midan Snacks Product 1033,Snacks,88.62,160.57
+SKU01034,Midan Grocery Product 1034,Grocery,84.5,210.38
+SKU01035,Midan Personal Care Product 1035,Personal Care,88.93,208.18
+SKU01036,Midan Frozen Product 1036,Frozen,102.47,210.22
+SKU01037,Midan Household Product 1037,Household,136.78,267.96
+SKU01038,Midan Baby Product 1038,Baby,15.05,29.99
+SKU01039,Midan Fresh Product 1039,Fresh,20.61,49.32
+SKU01040,Midan Pharmacy Product 1040,Pharmacy,45.33,90.07
+SKU01041,Midan Beverages Product 1041,Beverages,41.42,92.9
+SKU01042,Midan Dairy Product 1042,Dairy,55.81,118.16
+SKU01043,Midan Snacks Product 1043,Snacks,67.93,144.27
+SKU01044,Midan Grocery Product 1044,Grocery,69.15,139.05
+SKU01045,Midan Personal Care Product 1045,Personal Care,100.17,168.61
+SKU01046,Midan Frozen Product 1046,Frozen,102.57,207.67
+SKU01047,Midan Household Product 1047,Household,135.53,268.98
+SKU01048,Midan Baby Product 1048,Baby,133.13,233.1
+SKU01049,Midan Fresh Product 1049,Fresh,14.99,32.5
+SKU01050,Midan Pharmacy Product 1050,Pharmacy,26.96,44.22
+SKU01051,Midan Beverages Product 1051,Beverages,45.95,104.7
+SKU01052,Midan Dairy Product 1052,Dairy,47.4,104.13
+SKU01053,Midan Snacks Product 1053,Snacks,53.13,131.8
+SKU01054,Midan Grocery Product 1054,Grocery,84.66,175.33
+SKU01055,Midan Personal Care Product 1055,Personal Care,90.53,167.76
+SKU01056,Midan Frozen Product 1056,Frozen,94.8,174.96
+SKU01057,Midan Household Product 1057,Household,127.9,202.46
+SKU01058,Midan Baby Product 1058,Baby,128.93,259.0
+SKU01059,Midan Fresh Product 1059,Fresh,7.85,18.22
+SKU01060,Midan Pharmacy Product 1060,Pharmacy,23.35,56.55
+SKU01061,Midan Beverages Product 1061,Beverages,35.57,62.64
+SKU01062,Midan Dairy Product 1062,Dairy,37.26,82.04
+SKU01063,Midan Snacks Product 1063,Snacks,58.93,109.75
+SKU01064,Midan Grocery Product 1064,Grocery,58.17,149.59
+SKU01065,Midan Personal Care Product 1065,Personal Care,87.83,159.37
+SKU01066,Midan Frozen Product 1066,Frozen,78.56,186.12
+SKU01067,Midan Household Product 1067,Household,121.26,230.39
+SKU01068,Midan Baby Product 1068,Baby,106.19,231.08
+SKU01069,Midan Fresh Product 1069,Fresh,129.41,259.71
+SKU01070,Midan Pharmacy Product 1070,Pharmacy,10.77,20.13
+SKU01071,Midan Beverages Product 1071,Beverages,23.74,54.78
+SKU01072,Midan Dairy Product 1072,Dairy,39.76,98.57
+SKU01073,Midan Snacks Product 1073,Snacks,50.41,102.71
+SKU01074,Midan Grocery Product 1074,Grocery,54.09,120.35
+SKU01075,Midan Personal Care Product 1075,Personal Care,83.23,149.33
+SKU01076,Midan Frozen Product 1076,Frozen,78.82,168.23
+SKU01077,Midan Household Product 1077,Household,95.33,212.74
+SKU01078,Midan Baby Product 1078,Baby,100.33,197.86
+SKU01079,Midan Fresh Product 1079,Fresh,130.81,238.46
+SKU01080,Midan Pharmacy Product 1080,Pharmacy,12.95,30.64
+SKU01081,Midan Beverages Product 1081,Beverages,24.04,48.0
+SKU01082,Midan Dairy Product 1082,Dairy,40.35,78.79
+SKU01083,Midan Snacks Product 1083,Snacks,48.88,101.2
+SKU01084,Midan Grocery Product 1084,Grocery,61.29,121.79
+SKU01085,Midan Personal Care Product 1085,Personal Care,66.42,145.43
+SKU01086,Midan Frozen Product 1086,Frozen,63.5,164.05
+SKU01087,Midan Household Product 1087,Household,79.81,194.78
+SKU01088,Midan Baby Product 1088,Baby,97.21,212.4
+SKU01089,Midan Fresh Product 1089,Fresh,123.38,239.53
+SKU01090,Midan Pharmacy Product 1090,Pharmacy,141.91,287.19
+SKU01091,Midan Beverages Product 1091,Beverages,8.37,17.94
+SKU01092,Midan Dairy Product 1092,Dairy,24.41,48.5
+SKU01093,Midan Snacks Product 1093,Snacks,34.37,63.46
+SKU01094,Midan Grocery Product 1094,Grocery,40.3,92.84
+SKU01095,Midan Personal Care Product 1095,Personal Care,62.26,110.9
+SKU01096,Midan Frozen Product 1096,Frozen,62.51,151.3
+SKU01097,Midan Household Product 1097,Household,91.72,170.87
+SKU01098,Midan Baby Product 1098,Baby,84.33,224.69
+SKU01099,Midan Fresh Product 1099,Fresh,117.68,207.44
+SKU01100,Midan Pharmacy Product 1100,Pharmacy,95.6,254.29
+SKU01101,Midan Beverages Product 1101,Beverages,109.53,244.64
+SKU01102,Midan Dairy Product 1102,Dairy,22.29,39.66
+SKU01103,Midan Snacks Product 1103,Snacks,29.53,60.68
+SKU01104,Midan Grocery Product 1104,Grocery,42.92,76.9
+SKU01105,Midan Personal Care Product 1105,Personal Care,45.02,104.66
+SKU01106,Midan Frozen Product 1106,Frozen,59.6,148.07
+SKU01107,Midan Household Product 1107,Household,81.84,136.77
+SKU01108,Midan Baby Product 1108,Baby,92.03,175.85
+SKU01109,Midan Fresh Product 1109,Fresh,99.75,186.63
+SKU01110,Midan Pharmacy Product 1110,Pharmacy,100.45,187.25
+SKU01111,Midan Beverages Product 1111,Beverages,131.6,221.89
+SKU01112,Midan Dairy Product 1112,Dairy,14.94,27.39
+SKU01113,Midan Snacks Product 1113,Snacks,24.46,47.72
+SKU01114,Midan Grocery Product 1114,Grocery,34.04,61.68
+SKU01115,Midan Personal Care Product 1115,Personal Care,46.69,97.19
+SKU01116,Midan Frozen Product 1116,Frozen,62.23,118.18
+SKU01117,Midan Household Product 1117,Household,86.28,144.74
+SKU01118,Midan Baby Product 1118,Baby,81.0,160.0
+SKU01119,Midan Fresh Product 1119,Fresh,111.1,194.02
+SKU01120,Midan Pharmacy Product 1120,Pharmacy,106.56,182.53
+SKU01121,Midan Beverages Product 1121,Beverages,120.45,218.29
+SKU01122,Midan Dairy Product 1122,Dairy,129.66,221.25
+SKU01123,Midan Snacks Product 1123,Snacks,19.81,44.82
+SKU01124,Midan Grocery Product 1124,Grocery,25.68,46.98
+SKU01125,Midan Personal Care Product 1125,Personal Care,34.42,89.08
+SKU01126,Midan Frozen Product 1126,Frozen,47.39,102.77
+SKU01127,Midan Household Product 1127,Household,54.13,132.93
+SKU01128,Midan Baby Product 1128,Baby,69.73,160.45
+SKU01129,Midan Fresh Product 1129,Fresh,79.73,182.88
+SKU01130,Midan Pharmacy Product 1130,Pharmacy,101.33,166.66
+SKU01131,Midan Beverages Product 1131,Beverages,95.44,202.12
+SKU01132,Midan Dairy Product 1132,Dairy,101.34,213.33
+SKU01133,Midan Snacks Product 1133,Snacks,6.88,12.87
+SKU01134,Midan Grocery Product 1134,Grocery,22.29,43.09
+SKU01135,Midan Personal Care Product 1135,Personal Care,29.25,74.63
+SKU01136,Midan Frozen Product 1136,Frozen,34.47,89.44
+SKU01137,Midan Household Product 1137,Household,67.64,130.11
+SKU01138,Midan Baby Product 1138,Baby,53.07,127.32
+SKU01139,Midan Fresh Product 1139,Fresh,69.64,154.84
+SKU01140,Midan Pharmacy Product 1140,Pharmacy,99.99,165.86
+SKU01141,Midan Beverages Product 1141,Beverages,86.11,187.06
+SKU01142,Midan Dairy Product 1142,Dairy,97.95,234.47
+SKU01143,Midan Snacks Product 1143,Snacks,130.48,220.25
+SKU01144,Midan Grocery Product 1144,Grocery,15.22,40.61
+SKU01145,Midan Personal Care Product 1145,Personal Care,24.91,55.47
+SKU01146,Midan Frozen Product 1146,Frozen,37.94,82.4
+SKU01147,Midan Household Product 1147,Household,47.83,80.92
+SKU01148,Midan Baby Product 1148,Baby,67.89,112.72
+SKU01149,Midan Fresh Product 1149,Fresh,78.08,154.55
+SKU01150,Midan Pharmacy Product 1150,Pharmacy,93.11,155.15
+SKU01151,Midan Beverages Product 1151,Beverages,81.66,221.54
+SKU01152,Midan Dairy Product 1152,Dairy,97.62,211.45
+SKU01153,Midan Snacks Product 1153,Snacks,127.83,225.78
+SKU01154,Midan Grocery Product 1154,Grocery,119.92,225.75
+SKU01155,Midan Personal Care Product 1155,Personal Care,24.28,50.35
+SKU01156,Midan Frozen Product 1156,Frozen,29.41,47.17
+SKU01157,Midan Household Product 1157,Household,34.32,78.18
+SKU01158,Midan Baby Product 1158,Baby,54.32,109.14
+SKU01159,Midan Fresh Product 1159,Fresh,69.87,142.17
+SKU01160,Midan Pharmacy Product 1160,Pharmacy,86.99,161.27
+SKU01161,Midan Beverages Product 1161,Beverages,93.49,159.76
+SKU01162,Midan Dairy Product 1162,Dairy,91.82,197.8
+SKU01163,Midan Snacks Product 1163,Snacks,107.61,251.18
+SKU01164,Midan Grocery Product 1164,Grocery,142.36,219.84
+SKU01165,Midan Personal Care Product 1165,Personal Care,12.82,32.68
+SKU01166,Midan Frozen Product 1166,Frozen,32.28,51.98
+SKU01167,Midan Household Product 1167,Household,31.98,81.3
+SKU01168,Midan Baby Product 1168,Baby,36.68,86.51
+SKU01169,Midan Fresh Product 1169,Fresh,51.39,114.83
+SKU01170,Midan Pharmacy Product 1170,Pharmacy,71.86,164.71
+SKU01171,Midan Beverages Product 1171,Beverages,69.24,163.6
+SKU01172,Midan Dairy Product 1172,Dairy,80.92,187.98
+SKU01173,Midan Snacks Product 1173,Snacks,85.88,189.5
+SKU01174,Midan Grocery Product 1174,Grocery,120.53,225.03
+SKU01175,Midan Personal Care Product 1175,Personal Care,113.04,270.22
+SKU01176,Midan Frozen Product 1176,Frozen,22.18,42.01
+SKU01177,Midan Household Product 1177,Household,24.52,51.97
+SKU01178,Midan Baby Product 1178,Baby,41.11,88.8
+SKU01179,Midan Fresh Product 1179,Fresh,46.86,118.8
+SKU01180,Midan Pharmacy Product 1180,Pharmacy,55.58,131.5
+SKU01181,Midan Beverages Product 1181,Beverages,74.24,165.17
+SKU01182,Midan Dairy Product 1182,Dairy,74.01,163.83
+SKU01183,Midan Snacks Product 1183,Snacks,98.52,199.41
+SKU01184,Midan Grocery Product 1184,Grocery,106.43,192.58
+SKU01185,Midan Personal Care Product 1185,Personal Care,120.13,253.09
+SKU01186,Midan Frozen Product 1186,Frozen,15.46,26.39
+SKU01187,Midan Household Product 1187,Household,23.88,46.62
+SKU01188,Midan Baby Product 1188,Baby,37.67,69.73
+SKU01189,Midan Fresh Product 1189,Fresh,54.03,86.3
+SKU01190,Midan Pharmacy Product 1190,Pharmacy,56.43,100.61
+SKU01191,Midan Beverages Product 1191,Beverages,81.51,149.06
+SKU01192,Midan Dairy Product 1192,Dairy,90.03,147.19
+SKU01193,Midan Snacks Product 1193,Snacks,98.06,167.64
+SKU01194,Midan Grocery Product 1194,Grocery,103.05,225.61
+SKU01195,Midan Personal Care Product 1195,Personal Care,107.95,260.79
+SKU01196,Midan Frozen Product 1196,Frozen,140.95,248.97
+SKU01197,Midan Household Product 1197,Household,24.95,43.49
+SKU01198,Midan Baby Product 1198,Baby,21.07,47.01
+SKU01199,Midan Fresh Product 1199,Fresh,38.34,89.21
+SKU01200,Midan Pharmacy Product 1200,Pharmacy,57.96,123.94
+SKU01201,Midan Beverages Product 1201,Beverages,55.83,132.13
+SKU01202,Midan Dairy Product 1202,Dairy,65.34,148.32
+SKU01203,Midan Snacks Product 1203,Snacks,94.18,206.6
+SKU01204,Midan Grocery Product 1204,Grocery,100.83,184.6
+SKU01205,Midan Personal Care Product 1205,Personal Care,95.48,205.44
+SKU01206,Midan Frozen Product 1206,Frozen,124.8,236.75
+SKU01207,Midan Household Product 1207,Household,147.19,254.54
+SKU01208,Midan Baby Product 1208,Baby,27.19,50.75
+SKU01209,Midan Fresh Product 1209,Fresh,21.88,53.56
+SKU01210,Midan Pharmacy Product 1210,Pharmacy,41.91,71.89
+SKU01211,Midan Beverages Product 1211,Beverages,46.62,114.37
+SKU01212,Midan Dairy Product 1212,Dairy,62.91,148.52
+SKU01213,Midan Snacks Product 1213,Snacks,77.89,128.67
+SKU01214,Midan Grocery Product 1214,Grocery,100.35,209.04
+SKU01215,Midan Personal Care Product 1215,Personal Care,104.48,195.07
+SKU01216,Midan Frozen Product 1216,Frozen,125.97,220.87
+SKU01217,Midan Household Product 1217,Household,142.16,246.54
+SKU01218,Midan Baby Product 1218,Baby,22.56,37.74
+SKU01219,Midan Fresh Product 1219,Fresh,21.04,48.42
+SKU01220,Midan Pharmacy Product 1220,Pharmacy,41.16,84.72
+SKU01221,Midan Beverages Product 1221,Beverages,58.95,111.8
+SKU01222,Midan Dairy Product 1222,Dairy,65.82,125.72
+SKU01223,Midan Snacks Product 1223,Snacks,78.0,164.54
+SKU01224,Midan Grocery Product 1224,Grocery,69.64,168.87
+SKU01225,Midan Personal Care Product 1225,Personal Care,78.31,181.87
+SKU01226,Midan Frozen Product 1226,Frozen,99.58,212.8
+SKU01227,Midan Household Product 1227,Household,113.32,211.03
+SKU01228,Midan Baby Product 1228,Baby,133.1,230.89
+SKU01229,Midan Fresh Product 1229,Fresh,12.53,24.06
+SKU01230,Midan Pharmacy Product 1230,Pharmacy,36.41,75.02
+SKU01231,Midan Beverages Product 1231,Beverages,41.46,79.81
+SKU01232,Midan Dairy Product 1232,Dairy,52.14,105.55
+SKU01233,Midan Snacks Product 1233,Snacks,50.16,121.22
+SKU01234,Midan Grocery Product 1234,Grocery,74.3,133.93
+SKU01235,Midan Personal Care Product 1235,Personal Care,73.94,160.79
+SKU01236,Midan Frozen Product 1236,Frozen,85.97,208.88
+SKU01237,Midan Household Product 1237,Household,127.49,242.92
+SKU01238,Midan Baby Product 1238,Baby,104.67,270.68
+SKU01239,Midan Fresh Product 1239,Fresh,12.06,22.39
+SKU01240,Midan Pharmacy Product 1240,Pharmacy,28.06,52.17
+SKU01241,Midan Beverages Product 1241,Beverages,36.07,72.54
+SKU01242,Midan Dairy Product 1242,Dairy,44.31,84.43
+SKU01243,Midan Snacks Product 1243,Snacks,68.9,122.95
+SKU01244,Midan Grocery Product 1244,Grocery,70.51,129.26
+SKU01245,Midan Personal Care Product 1245,Personal Care,75.46,173.97
+SKU01246,Midan Frozen Product 1246,Frozen,85.31,222.34
+SKU01247,Midan Household Product 1247,Household,84.83,185.16
+SKU01248,Midan Baby Product 1248,Baby,126.23,260.12
+SKU01249,Midan Fresh Product 1249,Fresh,106.45,255.77
+SKU01250,Midan Pharmacy Product 1250,Pharmacy,21.73,41.14
+SKU01251,Midan Beverages Product 1251,Beverages,33.66,63.98
+SKU01252,Midan Dairy Product 1252,Dairy,33.49,66.54
+SKU01253,Midan Snacks Product 1253,Snacks,37.55,98.38
+SKU01254,Midan Grocery Product 1254,Grocery,63.56,117.78
+SKU01255,Midan Personal Care Product 1255,Personal Care,66.59,147.21
+SKU01256,Midan Frozen Product 1256,Frozen,69.05,178.15
+SKU01257,Midan Household Product 1257,Household,100.23,202.44
+SKU01258,Midan Baby Product 1258,Baby,113.06,237.66
+SKU01259,Midan Fresh Product 1259,Fresh,128.6,205.39
+SKU01260,Midan Pharmacy Product 1260,Pharmacy,12.23,23.93
+SKU01261,Midan Beverages Product 1261,Beverages,23.63,48.15
+SKU01262,Midan Dairy Product 1262,Dairy,33.75,70.54
+SKU01263,Midan Snacks Product 1263,Snacks,36.94,85.16
+SKU01264,Midan Grocery Product 1264,Grocery,63.91,102.25
+SKU01265,Midan Personal Care Product 1265,Personal Care,77.96,151.17
+SKU01266,Midan Frozen Product 1266,Frozen,76.67,184.66
+SKU01267,Midan Household Product 1267,Household,90.85,164.32
+SKU01268,Midan Baby Product 1268,Baby,96.28,193.16
+SKU01269,Midan Fresh Product 1269,Fresh,109.1,256.32
+SKU01270,Midan Pharmacy Product 1270,Pharmacy,120.83,255.97
+SKU01271,Midan Beverages Product 1271,Beverages,15.98,29.65
+SKU01272,Midan Dairy Product 1272,Dairy,24.06,40.59
+SKU01273,Midan Snacks Product 1273,Snacks,35.69,72.72
+SKU01274,Midan Grocery Product 1274,Grocery,60.41,122.33
+SKU01275,Midan Personal Care Product 1275,Personal Care,59.68,113.6
+SKU01276,Midan Frozen Product 1276,Frozen,55.74,141.01
+SKU01277,Midan Household Product 1277,Household,76.85,150.66
+SKU01278,Midan Baby Product 1278,Baby,82.0,201.67
+SKU01279,Midan Fresh Product 1279,Fresh,102.81,222.21
+SKU01280,Midan Pharmacy Product 1280,Pharmacy,109.38,246.18
+SKU01281,Midan Beverages Product 1281,Beverages,121.89,249.43
+SKU01282,Midan Dairy Product 1282,Dairy,14.64,33.77
+SKU01283,Midan Snacks Product 1283,Snacks,28.4,52.89
+SKU01284,Midan Grocery Product 1284,Grocery,39.97,99.84
+SKU01285,Midan Personal Care Product 1285,Personal Care,56.82,113.63
+SKU01286,Midan Frozen Product 1286,Frozen,62.35,114.68
+SKU01287,Midan Household Product 1287,Household,85.61,172.43
+SKU01288,Midan Baby Product 1288,Baby,82.75,156.86
+SKU01289,Midan Fresh Product 1289,Fresh,87.82,186.9
+SKU01290,Midan Pharmacy Product 1290,Pharmacy,102.91,183.94
+SKU01291,Midan Beverages Product 1291,Beverages,117.47,255.39
+SKU01292,Midan Dairy Product 1292,Dairy,17.69,36.09
+SKU01293,Midan Snacks Product 1293,Snacks,29.62,65.96
+SKU01294,Midan Grocery Product 1294,Grocery,29.66,72.29
+SKU01295,Midan Personal Care Product 1295,Personal Care,45.44,99.58
+SKU01296,Midan Frozen Product 1296,Frozen,55.28,117.75
+SKU01297,Midan Household Product 1297,Household,79.16,157.08
+SKU01298,Midan Baby Product 1298,Baby,71.92,167.55
+SKU01299,Midan Fresh Product 1299,Fresh,80.36,208.1
+SKU01300,Midan Pharmacy Product 1300,Pharmacy,121.44,228.29
+SKU01301,Midan Beverages Product 1301,Beverages,107.95,215.21
+SKU01302,Midan Dairy Product 1302,Dairy,105.98,247.21
+SKU01303,Midan Snacks Product 1303,Snacks,9.48,24.04
+SKU01304,Midan Grocery Product 1304,Grocery,25.81,52.89
+SKU01305,Midan Personal Care Product 1305,Personal Care,38.72,64.9
+SKU01306,Midan Frozen Product 1306,Frozen,53.64,119.06
+SKU01307,Midan Household Product 1307,Household,60.87,137.73
+SKU01308,Midan Baby Product 1308,Baby,72.47,136.09
+SKU01309,Midan Fresh Product 1309,Fresh,96.53,178.35
+SKU01310,Midan Pharmacy Product 1310,Pharmacy,107.37,194.05
+SKU01311,Midan Beverages Product 1311,Beverages,118.48,214.98
+SKU01312,Midan Dairy Product 1312,Dairy,122.39,242.6
+SKU01313,Midan Snacks Product 1313,Snacks,4.58,9.4
+SKU01314,Midan Grocery Product 1314,Grocery,20.87,43.56
+SKU01315,Midan Personal Care Product 1315,Personal Care,33.06,56.59
+SKU01316,Midan Frozen Product 1316,Frozen,44.64,87.67
+SKU01317,Midan Household Product 1317,Household,54.55,103.95
+SKU01318,Midan Baby Product 1318,Baby,69.14,110.77
+SKU01319,Midan Fresh Product 1319,Fresh,73.55,133.71
+SKU01320,Midan Pharmacy Product 1320,Pharmacy,76.36,190.1
+SKU01321,Midan Beverages Product 1321,Beverages,86.61,177.17
+SKU01322,Midan Dairy Product 1322,Dairy,121.86,245.99
+SKU01323,Midan Snacks Product 1323,Snacks,125.48,249.88
+SKU01324,Midan Grocery Product 1324,Grocery,10.07,23.79
+SKU01325,Midan Personal Care Product 1325,Personal Care,36.62,60.74
+SKU01326,Midan Frozen Product 1326,Frozen,43.09,92.29
+SKU01327,Midan Household Product 1327,Household,47.0,113.09
+SKU01328,Midan Baby Product 1328,Baby,61.12,111.46
+SKU01329,Midan Fresh Product 1329,Fresh,72.75,134.18
+SKU01330,Midan Pharmacy Product 1330,Pharmacy,69.98,152.73
+SKU01331,Midan Beverages Product 1331,Beverages,98.69,197.88
+SKU01332,Midan Dairy Product 1332,Dairy,86.39,204.75
+SKU01333,Midan Snacks Product 1333,Snacks,99.1,260.62
+SKU01334,Midan Grocery Product 1334,Grocery,110.83,260.91
+SKU01335,Midan Personal Care Product 1335,Personal Care,14.88,32.12
+SKU01336,Midan Frozen Product 1336,Frozen,39.28,76.61
+SKU01337,Midan Household Product 1337,Household,40.3,75.88
+SKU01338,Midan Baby Product 1338,Baby,48.58,119.03
+SKU01339,Midan Fresh Product 1339,Fresh,65.55,143.7
+SKU01340,Midan Pharmacy Product 1340,Pharmacy,86.17,170.85
+SKU01341,Midan Beverages Product 1341,Beverages,71.41,166.79
+SKU01342,Midan Dairy Product 1342,Dairy,106.64,183.28
+SKU01343,Midan Snacks Product 1343,Snacks,111.11,215.66
+SKU01344,Midan Grocery Product 1344,Grocery,136.2,259.51
+SKU01345,Midan Personal Care Product 1345,Personal Care,6.27,16.16
+SKU01346,Midan Frozen Product 1346,Frozen,24.76,52.25
+SKU01347,Midan Household Product 1347,Household,32.26,58.72
+SKU01348,Midan Baby Product 1348,Baby,49.92,101.41
+SKU01349,Midan Fresh Product 1349,Fresh,58.3,120.41
+SKU01350,Midan Pharmacy Product 1350,Pharmacy,74.68,138.92
+SKU01351,Midan Beverages Product 1351,Beverages,80.23,150.83
+SKU01352,Midan Dairy Product 1352,Dairy,84.39,193.29
+SKU01353,Midan Snacks Product 1353,Snacks,119.25,227.43
+SKU01354,Midan Grocery Product 1354,Grocery,115.5,254.6
+SKU01355,Midan Personal Care Product 1355,Personal Care,109.22,242.05
+SKU01356,Midan Frozen Product 1356,Frozen,15.41,32.74
+SKU01357,Midan Household Product 1357,Household,27.67,72.45
+SKU01358,Midan Baby Product 1358,Baby,28.61,61.82
+SKU01359,Midan Fresh Product 1359,Fresh,55.6,102.94
+SKU01360,Midan Pharmacy Product 1360,Pharmacy,50.27,105.59
+SKU01361,Midan Beverages Product 1361,Beverages,84.39,152.95
+SKU01362,Midan Dairy Product 1362,Dairy,91.65,179.92
+SKU01363,Midan Snacks Product 1363,Snacks,113.69,218.08
+SKU01364,Midan Grocery Product 1364,Grocery,95.89,228.8
+SKU01365,Midan Personal Care Product 1365,Personal Care,113.97,220.7
+SKU01366,Midan Frozen Product 1366,Frozen,12.03,22.77
+SKU01367,Midan Household Product 1367,Household,14.73,33.48
+SKU01368,Midan Baby Product 1368,Baby,23.45,61.97
+SKU01369,Midan Fresh Product 1369,Fresh,45.82,96.27
+SKU01370,Midan Pharmacy Product 1370,Pharmacy,57.35,124.52
+SKU01371,Midan Beverages Product 1371,Beverages,52.72,118.72
+SKU01372,Midan Dairy Product 1372,Dairy,94.75,163.08
+SKU01373,Midan Snacks Product 1373,Snacks,88.52,202.61
+SKU01374,Midan Grocery Product 1374,Grocery,111.44,203.18
+SKU01375,Midan Personal Care Product 1375,Personal Care,105.7,200.25
+SKU01376,Midan Frozen Product 1376,Frozen,109.61,271.57
+SKU01377,Midan Household Product 1377,Household,22.38,43.71
+SKU01378,Midan Baby Product 1378,Baby,31.56,66.47
+SKU01379,Midan Fresh Product 1379,Fresh,45.07,97.15
+SKU01380,Midan Pharmacy Product 1380,Pharmacy,61.03,106.83
+SKU01381,Midan Beverages Product 1381,Beverages,61.79,107.36
+SKU01382,Midan Dairy Product 1382,Dairy,56.74,141.91
+SKU01383,Midan Snacks Product 1383,Snacks,95.18,170.63
+SKU01384,Midan Grocery Product 1384,Grocery,106.46,189.64
+SKU01385,Midan Personal Care Product 1385,Personal Care,110.61,189.75
+SKU01386,Midan Frozen Product 1386,Frozen,118.33,249.07
+SKU01387,Midan Household Product 1387,Household,141.01,250.27
+SKU01388,Midan Baby Product 1388,Baby,20.46,34.64
+SKU01389,Midan Fresh Product 1389,Fresh,39.56,84.84
+SKU01390,Midan Pharmacy Product 1390,Pharmacy,38.13,92.91
+SKU01391,Midan Beverages Product 1391,Beverages,52.85,111.01
+SKU01392,Midan Dairy Product 1392,Dairy,64.37,115.1
+SKU01393,Midan Snacks Product 1393,Snacks,81.59,153.2
+SKU01394,Midan Grocery Product 1394,Grocery,93.5,197.87
+SKU01395,Midan Personal Care Product 1395,Personal Care,83.86,203.54
+SKU01396,Midan Frozen Product 1396,Frozen,111.7,260.12
+SKU01397,Midan Household Product 1397,Household,143.17,259.98
+SKU01398,Midan Baby Product 1398,Baby,22.58,38.11
+SKU01399,Midan Fresh Product 1399,Fresh,21.46,37.73
+SKU01400,Midan Pharmacy Product 1400,Pharmacy,39.59,82.79
+SKU01401,Midan Beverages Product 1401,Beverages,45.51,101.88
+SKU01402,Midan Dairy Product 1402,Dairy,63.13,117.23
+SKU01403,Midan Snacks Product 1403,Snacks,73.83,123.41
+SKU01404,Midan Grocery Product 1404,Grocery,79.45,151.13
+SKU01405,Midan Personal Care Product 1405,Personal Care,86.13,195.36
+SKU01406,Midan Frozen Product 1406,Frozen,99.25,212.07
+SKU01407,Midan Household Product 1407,Household,113.21,214.25
+SKU01408,Midan Baby Product 1408,Baby,123.32,290.26
+SKU01409,Midan Fresh Product 1409,Fresh,13.36,27.75
+SKU01410,Midan Pharmacy Product 1410,Pharmacy,27.43,55.4
+SKU01411,Midan Beverages Product 1411,Beverages,34.08,75.57
+SKU01412,Midan Dairy Product 1412,Dairy,44.13,116.07
+SKU01413,Midan Snacks Product 1413,Snacks,64.7,109.58
+SKU01414,Midan Grocery Product 1414,Grocery,87.24,167.34
+SKU01415,Midan Personal Care Product 1415,Personal Care,92.57,190.2
+SKU01416,Midan Frozen Product 1416,Frozen,96.46,197.39
+SKU01417,Midan Household Product 1417,Household,114.1,193.52
+SKU01418,Midan Baby Product 1418,Baby,122.87,263.22
+SKU01419,Midan Fresh Product 1419,Fresh,10.03,21.02
+SKU01420,Midan Pharmacy Product 1420,Pharmacy,26.91,44.91
+SKU01421,Midan Beverages Product 1421,Beverages,23.92,62.14
+SKU01422,Midan Dairy Product 1422,Dairy,46.03,107.63
+SKU01423,Midan Snacks Product 1423,Snacks,51.92,129.22
+SKU01424,Midan Grocery Product 1424,Grocery,69.85,134.81
+SKU01425,Midan Personal Care Product 1425,Personal Care,93.37,163.45
+SKU01426,Midan Frozen Product 1426,Frozen,91.59,162.5
+SKU01427,Midan Household Product 1427,Household,107.68,190.96
+SKU01428,Midan Baby Product 1428,Baby,117.64,257.93
+SKU01429,Midan Fresh Product 1429,Fresh,104.78,225.61
+SKU01430,Midan Pharmacy Product 1430,Pharmacy,12.55,26.01
+SKU01431,Midan Beverages Product 1431,Beverages,26.88,59.02
+SKU01432,Midan Dairy Product 1432,Dairy,41.34,91.18
+SKU01433,Midan Snacks Product 1433,Snacks,54.4,105.22
+SKU01434,Midan Grocery Product 1434,Grocery,59.16,117.5
+SKU01435,Midan Personal Care Product 1435,Personal Care,83.78,142.51
+SKU01436,Midan Frozen Product 1436,Frozen,68.46,143.64
+SKU01437,Midan Household Product 1437,Household,101.81,179.14
+SKU01438,Midan Baby Product 1438,Baby,114.66,191.23
+SKU01439,Midan Fresh Product 1439,Fresh,100.89,244.99
+SKU01440,Midan Pharmacy Product 1440,Pharmacy,13.49,27.61
+SKU01441,Midan Beverages Product 1441,Beverages,18.52,32.78
+SKU01442,Midan Dairy Product 1442,Dairy,30.48,78.08
+SKU01443,Midan Snacks Product 1443,Snacks,45.12,97.93
+SKU01444,Midan Grocery Product 1444,Grocery,61.7,117.19
+SKU01445,Midan Personal Care Product 1445,Personal Care,75.68,140.79
+SKU01446,Midan Frozen Product 1446,Frozen,75.3,154.83
+SKU01447,Midan Household Product 1447,Household,92.25,186.44
+SKU01448,Midan Baby Product 1448,Baby,94.92,199.92
+SKU01449,Midan Fresh Product 1449,Fresh,123.34,225.42
+SKU01450,Midan Pharmacy Product 1450,Pharmacy,110.56,234.32
+SKU01451,Midan Beverages Product 1451,Beverages,8.11,16.43
+SKU01452,Midan Dairy Product 1452,Dairy,22.95,41.27
+SKU01453,Midan Snacks Product 1453,Snacks,48.71,86.06
+SKU01454,Midan Grocery Product 1454,Grocery,40.35,80.11
+SKU01455,Midan Personal Care Product 1455,Personal Care,46.13,110.23
+SKU01456,Midan Frozen Product 1456,Frozen,70.76,138.22
+SKU01457,Midan Household Product 1457,Household,83.66,153.96
+SKU01458,Midan Baby Product 1458,Baby,83.98,183.82
+SKU01459,Midan Fresh Product 1459,Fresh,110.18,230.22
+SKU01460,Midan Pharmacy Product 1460,Pharmacy,127.45,231.55
+SKU01461,Midan Beverages Product 1461,Beverages,144.16,261.04
+SKU01462,Midan Dairy Product 1462,Dairy,20.76,45.14
+SKU01463,Midan Snacks Product 1463,Snacks,33.04,61.14
+SKU01464,Midan Grocery Product 1464,Grocery,38.24,76.53
+SKU01465,Midan Personal Care Product 1465,Personal Care,47.11,87.4
+SKU01466,Midan Frozen Product 1466,Frozen,53.88,127.2
+SKU01467,Midan Household Product 1467,Household,70.94,145.25
+SKU01468,Midan Baby Product 1468,Baby,81.64,168.22
+SKU01469,Midan Fresh Product 1469,Fresh,119.26,206.78
+SKU01470,Midan Pharmacy Product 1470,Pharmacy,106.31,253.41
+SKU01471,Midan Beverages Product 1471,Beverages,106.97,278.77
+SKU01472,Midan Dairy Product 1472,Dairy,6.21,11.8
+SKU01473,Midan Snacks Product 1473,Snacks,30.87,62.18
+SKU01474,Midan Grocery Product 1474,Grocery,32.29,56.53
+SKU01475,Midan Personal Care Product 1475,Personal Care,48.51,108.13
+SKU01476,Midan Frozen Product 1476,Frozen,50.29,112.34
+SKU01477,Midan Household Product 1477,Household,80.24,140.13
+SKU01478,Midan Baby Product 1478,Baby,76.87,160.66
+SKU01479,Midan Fresh Product 1479,Fresh,78.12,213.12
+SKU01480,Midan Pharmacy Product 1480,Pharmacy,93.93,218.7
+SKU01481,Midan Beverages Product 1481,Beverages,124.41,247.38
+SKU01482,Midan Dairy Product 1482,Dairy,105.03,257.89
+SKU01483,Midan Snacks Product 1483,Snacks,12.65,27.55
+SKU01484,Midan Grocery Product 1484,Grocery,25.16,40.69
+SKU01485,Midan Personal Care Product 1485,Personal Care,36.39,67.58
+SKU01486,Midan Frozen Product 1486,Frozen,49.51,94.53
+SKU01487,Midan Household Product 1487,Household,49.19,121.38
+SKU01488,Midan Baby Product 1488,Baby,92.44,167.41
+SKU01489,Midan Fresh Product 1489,Fresh,82.53,170.15
+SKU01490,Midan Pharmacy Product 1490,Pharmacy,86.74,189.7
+SKU01491,Midan Beverages Product 1491,Beverages,124.79,249.12
+SKU01492,Midan Dairy Product 1492,Dairy,119.84,230.39
+SKU01493,Midan Snacks Product 1493,Snacks,11.88,23.1
+SKU01494,Midan Grocery Product 1494,Grocery,26.44,53.63
+SKU01495,Midan Personal Care Product 1495,Personal Care,31.89,56.12
+SKU01496,Midan Frozen Product 1496,Frozen,37.63,86.67
+SKU01497,Midan Household Product 1497,Household,58.19,119.21
+SKU01498,Midan Baby Product 1498,Baby,57.2,125.08
+SKU01499,Midan Fresh Product 1499,Fresh,68.94,148.57
+SKU01500,Midan Pharmacy Product 1500,Pharmacy,86.4,163.72
+SKU01501,Midan Beverages Product 1501,Beverages,80.21,216.63
+SKU01502,Midan Dairy Product 1502,Dairy,104.97,251.04
+SKU01503,Midan Snacks Product 1503,Snacks,126.82,249.02
+SKU01504,Midan Grocery Product 1504,Grocery,14.94,31.11
+SKU01505,Midan Personal Care Product 1505,Personal Care,25.75,58.47
+SKU01506,Midan Frozen Product 1506,Frozen,32.32,58.08
+SKU01507,Midan Household Product 1507,Household,46.21,119.8
+SKU01508,Midan Baby Product 1508,Baby,55.6,102.24
+SKU01509,Midan Fresh Product 1509,Fresh,80.49,154.33
+SKU01510,Midan Pharmacy Product 1510,Pharmacy,88.57,158.73
+SKU01511,Midan Beverages Product 1511,Beverages,95.36,166.86
+SKU01512,Midan Dairy Product 1512,Dairy,99.63,226.88
+SKU01513,Midan Snacks Product 1513,Snacks,103.9,269.88
+SKU01514,Midan Grocery Product 1514,Grocery,124.28,279.79
+SKU01515,Midan Personal Care Product 1515,Personal Care,17.35,39.4
+SKU01516,Midan Frozen Product 1516,Frozen,32.07,62.7
+SKU01517,Midan Household Product 1517,Household,33.73,83.22
+SKU01518,Midan Baby Product 1518,Baby,51.06,129.2
+SKU01519,Midan Fresh Product 1519,Fresh,57.95,134.21
+SKU01520,Midan Pharmacy Product 1520,Pharmacy,75.61,135.81
+SKU01521,Midan Beverages Product 1521,Beverages,87.77,165.77
+SKU01522,Midan Dairy Product 1522,Dairy,95.34,203.5
+SKU01523,Midan Snacks Product 1523,Snacks,126.74,208.98
+SKU01524,Midan Grocery Product 1524,Grocery,112.8,229.15
+SKU01525,Midan Personal Care Product 1525,Personal Care,9.48,16.34
+SKU01526,Midan Frozen Product 1526,Frozen,20.57,51.12
+SKU01527,Midan Household Product 1527,Household,31.45,72.39
+SKU01528,Midan Baby Product 1528,Baby,49.19,96.4
+SKU01529,Midan Fresh Product 1529,Fresh,52.89,129.15
+SKU01530,Midan Pharmacy Product 1530,Pharmacy,68.46,172.81
+SKU01531,Midan Beverages Product 1531,Beverages,76.93,173.78
+SKU01532,Midan Dairy Product 1532,Dairy,101.45,202.52
+SKU01533,Midan Snacks Product 1533,Snacks,102.12,212.87
+SKU01534,Midan Grocery Product 1534,Grocery,124.3,197.74
+SKU01535,Midan Personal Care Product 1535,Personal Care,138.5,250.57
+SKU01536,Midan Frozen Product 1536,Frozen,18.35,41.22
+SKU01537,Midan Household Product 1537,Household,20.16,47.34
+SKU01538,Midan Baby Product 1538,Baby,33.48,73.64
+SKU01539,Midan Fresh Product 1539,Fresh,52.78,87.0
+SKU01540,Midan Pharmacy Product 1540,Pharmacy,70.02,133.55
+SKU01541,Midan Beverages Product 1541,Beverages,84.57,143.64
+SKU01542,Midan Dairy Product 1542,Dairy,95.31,187.4
+SKU01543,Midan Snacks Product 1543,Snacks,105.2,197.74
+SKU01544,Midan Grocery Product 1544,Grocery,113.73,201.45
+SKU01545,Midan Personal Care Product 1545,Personal Care,123.73,222.64
+SKU01546,Midan Frozen Product 1546,Frozen,14.43,33.53
+SKU01547,Midan Household Product 1547,Household,24.33,57.43
+SKU01548,Midan Baby Product 1548,Baby,28.76,76.39
+SKU01549,Midan Fresh Product 1549,Fresh,40.09,77.27
+SKU01550,Midan Pharmacy Product 1550,Pharmacy,49.56,115.83
+SKU01551,Midan Beverages Product 1551,Beverages,53.59,138.42
+SKU01552,Midan Dairy Product 1552,Dairy,75.6,162.23
+SKU01553,Midan Snacks Product 1553,Snacks,81.2,173.89
+SKU01554,Midan Grocery Product 1554,Grocery,87.0,181.45
+SKU01555,Midan Personal Care Product 1555,Personal Care,95.67,226.28
+SKU01556,Midan Frozen Product 1556,Frozen,118.25,260.56
+SKU01557,Midan Household Product 1557,Household,9.07,21.65
+SKU01558,Midan Baby Product 1558,Baby,27.83,49.8
+SKU01559,Midan Fresh Product 1559,Fresh,42.66,75.4
+SKU01560,Midan Pharmacy Product 1560,Pharmacy,47.68,85.04
+SKU01561,Midan Beverages Product 1561,Beverages,56.76,142.11
+SKU01562,Midan Dairy Product 1562,Dairy,67.09,138.27
+SKU01563,Midan Snacks Product 1563,Snacks,70.49,164.03
+SKU01564,Midan Grocery Product 1564,Grocery,104.97,234.66
+SKU01565,Midan Personal Care Product 1565,Personal Care,92.11,188.87
+SKU01566,Midan Frozen Product 1566,Frozen,108.67,240.41
+SKU01567,Midan Household Product 1567,Household,147.85,242.06
+SKU01568,Midan Baby Product 1568,Baby,16.2,32.12
+SKU01569,Midan Fresh Product 1569,Fresh,40.17,64.44
+SKU01570,Midan Pharmacy Product 1570,Pharmacy,39.07,91.4
+SKU01571,Midan Beverages Product 1571,Beverages,42.73,98.53
+SKU01572,Midan Dairy Product 1572,Dairy,61.73,117.47
+SKU01573,Midan Snacks Product 1573,Snacks,82.31,141.3
+SKU01574,Midan Grocery Product 1574,Grocery,75.36,189.79
+SKU01575,Midan Personal Care Product 1575,Personal Care,85.27,189.27
+SKU01576,Midan Frozen Product 1576,Frozen,118.27,227.75
+SKU01577,Midan Household Product 1577,Household,121.95,205.93
+SKU01578,Midan Baby Product 1578,Baby,10.88,26.57
+SKU01579,Midan Fresh Product 1579,Fresh,30.1,47.72
+SKU01580,Midan Pharmacy Product 1580,Pharmacy,42.91,77.64
+SKU01581,Midan Beverages Product 1581,Beverages,53.15,83.49
+SKU01582,Midan Dairy Product 1582,Dairy,63.18,116.07
+SKU01583,Midan Snacks Product 1583,Snacks,65.67,133.23
+SKU01584,Midan Grocery Product 1584,Grocery,72.44,165.97
+SKU01585,Midan Personal Care Product 1585,Personal Care,87.48,185.03
+SKU01586,Midan Frozen Product 1586,Frozen,93.92,195.4
+SKU01587,Midan Household Product 1587,Household,106.06,270.61
+SKU01588,Midan Baby Product 1588,Baby,140.0,268.24
+SKU01589,Midan Fresh Product 1589,Fresh,26.09,51.22
+SKU01590,Midan Pharmacy Product 1590,Pharmacy,23.44,44.4
+SKU01591,Midan Beverages Product 1591,Beverages,40.87,76.89
+SKU01592,Midan Dairy Product 1592,Dairy,44.5,107.11
+SKU01593,Midan Snacks Product 1593,Snacks,67.48,122.94
+SKU01594,Midan Grocery Product 1594,Grocery,62.5,164.39
+SKU01595,Midan Personal Care Product 1595,Personal Care,85.84,189.41
+SKU01596,Midan Frozen Product 1596,Frozen,81.54,193.44
+SKU01597,Midan Household Product 1597,Household,126.48,218.74
+SKU01598,Midan Baby Product 1598,Baby,123.43,226.45
+SKU01599,Midan Fresh Product 1599,Fresh,20.84,33.2
+SKU01600,Midan Pharmacy Product 1600,Pharmacy,32.46,55.35
+SKU01601,Midan Beverages Product 1601,Beverages,40.06,63.82
+SKU01602,Midan Dairy Product 1602,Dairy,48.41,93.24
+SKU01603,Midan Snacks Product 1603,Snacks,67.95,120.4
+SKU01604,Midan Grocery Product 1604,Grocery,65.34,152.9
+SKU01605,Midan Personal Care Product 1605,Personal Care,97.02,162.57
+SKU01606,Midan Frozen Product 1606,Frozen,81.35,176.74
+SKU01607,Midan Household Product 1607,Household,109.31,202.36
+SKU01608,Midan Baby Product 1608,Baby,103.34,216.9
+SKU01609,Midan Fresh Product 1609,Fresh,120.67,273.65
+SKU01610,Midan Pharmacy Product 1610,Pharmacy,15.66,33.03
+SKU01611,Midan Beverages Product 1611,Beverages,28.77,67.65
+SKU01612,Midan Dairy Product 1612,Dairy,33.64,72.37
+SKU01613,Midan Snacks Product 1613,Snacks,47.64,77.82
+SKU01614,Midan Grocery Product 1614,Grocery,56.37,127.14
+SKU01615,Midan Personal Care Product 1615,Personal Care,86.02,143.04
+SKU01616,Midan Frozen Product 1616,Frozen,104.5,201.92
+SKU01617,Midan Household Product 1617,Household,89.21,192.68
+SKU01618,Midan Baby Product 1618,Baby,99.64,185.23
+SKU01619,Midan Fresh Product 1619,Fresh,115.84,235.45
+SKU01620,Midan Pharmacy Product 1620,Pharmacy,11.7,22.72
+SKU01621,Midan Beverages Product 1621,Beverages,23.67,46.34
+SKU01622,Midan Dairy Product 1622,Dairy,31.65,71.94
+SKU01623,Midan Snacks Product 1623,Snacks,43.51,76.62
+SKU01624,Midan Grocery Product 1624,Grocery,57.46,110.78
+SKU01625,Midan Personal Care Product 1625,Personal Care,69.03,119.01
+SKU01626,Midan Frozen Product 1626,Frozen,71.74,144.55
+SKU01627,Midan Household Product 1627,Household,91.56,186.48
+SKU01628,Midan Baby Product 1628,Baby,85.65,208.79
+SKU01629,Midan Fresh Product 1629,Fresh,118.42,215.32
+SKU01630,Midan Pharmacy Product 1630,Pharmacy,108.55,276.67
+SKU01631,Midan Beverages Product 1631,Beverages,21.13,36.61
+SKU01632,Midan Dairy Product 1632,Dairy,23.71,45.2
+SKU01633,Midan Snacks Product 1633,Snacks,40.56,71.28
+SKU01634,Midan Grocery Product 1634,Grocery,43.19,102.08
+SKU01635,Midan Personal Care Product 1635,Personal Care,71.22,140.44
+SKU01636,Midan Frozen Product 1636,Frozen,56.74,132.57
+SKU01637,Midan Household Product 1637,Household,80.63,159.0
+SKU01638,Midan Baby Product 1638,Baby,97.36,223.31
+SKU01639,Midan Fresh Product 1639,Fresh,98.54,226.33
+SKU01640,Midan Pharmacy Product 1640,Pharmacy,123.94,259.53
+SKU01641,Midan Beverages Product 1641,Beverages,137.97,229.3
+SKU01642,Midan Dairy Product 1642,Dairy,20.84,41.74
+SKU01643,Midan Snacks Product 1643,Snacks,32.87,71.11
+SKU01644,Midan Grocery Product 1644,Grocery,31.54,68.21
+SKU01645,Midan Personal Care Product 1645,Personal Care,49.54,109.93
+SKU01646,Midan Frozen Product 1646,Frozen,69.6,121.89
+SKU01647,Midan Household Product 1647,Household,72.96,168.65
+SKU01648,Midan Baby Product 1648,Baby,83.45,156.63
+SKU01649,Midan Fresh Product 1649,Fresh,90.34,205.99
+SKU01650,Midan Pharmacy Product 1650,Pharmacy,112.86,247.16
+SKU01651,Midan Beverages Product 1651,Beverages,100.45,244.51
+SKU01652,Midan Dairy Product 1652,Dairy,6.52,12.46
+SKU01653,Midan Snacks Product 1653,Snacks,25.83,63.5
+SKU01654,Midan Grocery Product 1654,Grocery,27.76,53.55
+SKU01655,Midan Personal Care Product 1655,Personal Care,50.02,104.01
+SKU01656,Midan Frozen Product 1656,Frozen,64.26,109.49
+SKU01657,Midan Household Product 1657,Household,69.76,155.68
+SKU01658,Midan Baby Product 1658,Baby,69.22,147.25
+SKU01659,Midan Fresh Product 1659,Fresh,76.11,180.08
+SKU01660,Midan Pharmacy Product 1660,Pharmacy,95.7,190.63
+SKU01661,Midan Beverages Product 1661,Beverages,107.23,240.48
+SKU01662,Midan Dairy Product 1662,Dairy,133.84,265.1
+SKU01663,Midan Snacks Product 1663,Snacks,12.34,24.28
+SKU01664,Midan Grocery Product 1664,Grocery,34.21,74.24
+SKU01665,Midan Personal Care Product 1665,Personal Care,52.58,87.05
+SKU01666,Midan Frozen Product 1666,Frozen,48.69,107.45
+SKU01667,Midan Household Product 1667,Household,64.97,126.36
+SKU01668,Midan Baby Product 1668,Baby,74.49,157.28
+SKU01669,Midan Fresh Product 1669,Fresh,75.02,178.29
+SKU01670,Midan Pharmacy Product 1670,Pharmacy,114.87,174.93
+SKU01671,Midan Beverages Product 1671,Beverages,105.11,185.36
+SKU01672,Midan Dairy Product 1672,Dairy,135.74,286.62
+SKU01673,Midan Snacks Product 1673,Snacks,8.32,18.42
+SKU01674,Midan Grocery Product 1674,Grocery,19.2,43.59
+SKU01675,Midan Personal Care Product 1675,Personal Care,32.66,57.75
+SKU01676,Midan Frozen Product 1676,Frozen,41.3,78.18
+SKU01677,Midan Household Product 1677,Household,54.5,125.57
+SKU01678,Midan Baby Product 1678,Baby,56.96,127.39
+SKU01679,Midan Fresh Product 1679,Fresh,71.32,162.33
+SKU01680,Midan Pharmacy Product 1680,Pharmacy,104.37,201.94
+SKU01681,Midan Beverages Product 1681,Beverages,104.58,227.46
+SKU01682,Midan Dairy Product 1682,Dairy,105.81,248.06
+SKU01683,Midan Snacks Product 1683,Snacks,132.11,272.9
+SKU01684,Midan Grocery Product 1684,Grocery,12.89,23.33
+SKU01685,Midan Personal Care Product 1685,Personal Care,23.75,56.94
+SKU01686,Midan Frozen Product 1686,Frozen,46.76,81.26
+SKU01687,Midan Household Product 1687,Household,50.63,98.17
+SKU01688,Midan Baby Product 1688,Baby,69.18,148.68
+SKU01689,Midan Fresh Product 1689,Fresh,69.35,151.81
+SKU01690,Midan Pharmacy Product 1690,Pharmacy,94.9,189.18
+SKU01691,Midan Beverages Product 1691,Beverages,76.51,183.03
+SKU01692,Midan Dairy Product 1692,Dairy,95.5,212.78
+SKU01693,Midan Snacks Product 1693,Snacks,110.35,237.71
+SKU01694,Midan Grocery Product 1694,Grocery,134.59,270.42
+SKU01695,Midan Personal Care Product 1695,Personal Care,24.3,44.32
+SKU01696,Midan Frozen Product 1696,Frozen,30.36,57.08
+SKU01697,Midan Household Product 1697,Household,51.35,98.18
+SKU01698,Midan Baby Product 1698,Baby,49.85,128.48
+SKU01699,Midan Fresh Product 1699,Fresh,79.21,147.96
+SKU01700,Midan Pharmacy Product 1700,Pharmacy,76.43,143.97
+SKU01701,Midan Beverages Product 1701,Beverages,90.65,159.82
+SKU01702,Midan Dairy Product 1702,Dairy,110.91,219.29
+SKU01703,Midan Snacks Product 1703,Snacks,103.04,187.63
+SKU01704,Midan Grocery Product 1704,Grocery,127.97,236.33
+SKU01705,Midan Personal Care Product 1705,Personal Care,12.78,31.03
+SKU01706,Midan Frozen Product 1706,Frozen,19.27,41.57
+SKU01707,Midan Household Product 1707,Household,32.17,60.42
+SKU01708,Midan Baby Product 1708,Baby,38.61,74.68
+SKU01709,Midan Fresh Product 1709,Fresh,59.78,112.4
+SKU01710,Midan Pharmacy Product 1710,Pharmacy,62.95,124.48
+SKU01711,Midan Beverages Product 1711,Beverages,76.95,158.94
+SKU01712,Midan Dairy Product 1712,Dairy,89.44,168.94
+SKU01713,Midan Snacks Product 1713,Snacks,89.23,208.37
+SKU01714,Midan Grocery Product 1714,Grocery,100.81,210.6
+SKU01715,Midan Personal Care Product 1715,Personal Care,110.86,262.65
+SKU01716,Midan Frozen Product 1716,Frozen,20.68,40.08
+SKU01717,Midan Household Product 1717,Household,28.19,67.2
+SKU01718,Midan Baby Product 1718,Baby,45.26,88.51
+SKU01719,Midan Fresh Product 1719,Fresh,62.59,116.93
+SKU01720,Midan Pharmacy Product 1720,Pharmacy,63.85,131.72
+SKU01721,Midan Beverages Product 1721,Beverages,72.27,158.19
+SKU01722,Midan Dairy Product 1722,Dairy,86.86,167.33
+SKU01723,Midan Snacks Product 1723,Snacks,104.34,196.43
+SKU01724,Midan Grocery Product 1724,Grocery,109.0,244.98
+SKU01725,Midan Personal Care Product 1725,Personal Care,133.34,274.63
+SKU01726,Midan Frozen Product 1726,Frozen,8.39,20.43
+SKU01727,Midan Household Product 1727,Household,19.7,37.33
+SKU01728,Midan Baby Product 1728,Baby,38.14,67.93
+SKU01729,Midan Fresh Product 1729,Fresh,43.59,87.1
+SKU01730,Midan Pharmacy Product 1730,Pharmacy,56.31,118.62
+SKU01731,Midan Beverages Product 1731,Beverages,65.28,135.5
+SKU01732,Midan Dairy Product 1732,Dairy,81.41,185.49
+SKU01733,Midan Snacks Product 1733,Snacks,83.37,196.52
+SKU01734,Midan Grocery Product 1734,Grocery,112.35,206.29
+SKU01735,Midan Personal Care Product 1735,Personal Care,118.0,221.47
+SKU01736,Midan Frozen Product 1736,Frozen,107.48,288.5
+SKU01737,Midan Household Product 1737,Household,16.2,34.25
+SKU01738,Midan Baby Product 1738,Baby,26.61,58.27
+SKU01739,Midan Fresh Product 1739,Fresh,38.89,60.91
+SKU01740,Midan Pharmacy Product 1740,Pharmacy,48.78,96.97
+SKU01741,Midan Beverages Product 1741,Beverages,58.79,126.16
+SKU01742,Midan Dairy Product 1742,Dairy,73.65,150.54
+SKU01743,Midan Snacks Product 1743,Snacks,92.66,157.03
+SKU01744,Midan Grocery Product 1744,Grocery,78.84,185.74
+SKU01745,Midan Personal Care Product 1745,Personal Care,107.08,196.38
+SKU01746,Midan Frozen Product 1746,Frozen,111.88,249.87
+SKU01747,Midan Household Product 1747,Household,124.79,307.73
+SKU01748,Midan Baby Product 1748,Baby,22.26,37.51
+SKU01749,Midan Fresh Product 1749,Fresh,21.41,59.93
+SKU01750,Midan Pharmacy Product 1750,Pharmacy,35.97,80.01
+SKU01751,Midan Beverages Product 1751,Beverages,53.0,94.03
+SKU01752,Midan Dairy Product 1752,Dairy,75.41,134.01
+SKU01753,Midan Snacks Product 1753,Snacks,91.56,154.86
+SKU01754,Midan Grocery Product 1754,Grocery,87.16,176.54
+SKU01755,Midan Personal Care Product 1755,Personal Care,93.53,202.64
+SKU01756,Midan Frozen Product 1756,Frozen,111.57,211.5
+SKU01757,Midan Household Product 1757,Household,137.8,269.37
+SKU01758,Midan Baby Product 1758,Baby,10.2,18.69
+SKU01759,Midan Fresh Product 1759,Fresh,16.82,35.21
+SKU01760,Midan Pharmacy Product 1760,Pharmacy,38.68,78.39
+SKU01761,Midan Beverages Product 1761,Beverages,46.01,114.54
+SKU01762,Midan Dairy Product 1762,Dairy,56.53,127.05
+SKU01763,Midan Snacks Product 1763,Snacks,69.38,133.49
+SKU01764,Midan Grocery Product 1764,Grocery,82.72,164.53
+SKU01765,Midan Personal Care Product 1765,Personal Care,80.68,191.06
+SKU01766,Midan Frozen Product 1766,Frozen,117.35,199.72
+SKU01767,Midan Household Product 1767,Household,111.52,239.14
+SKU01768,Midan Baby Product 1768,Baby,145.19,260.44
+SKU01769,Midan Fresh Product 1769,Fresh,17.91,42.24
+SKU01770,Midan Pharmacy Product 1770,Pharmacy,27.86,69.35
+SKU01771,Midan Beverages Product 1771,Beverages,54.86,103.76
+SKU01772,Midan Dairy Product 1772,Dairy,43.91,116.67
+SKU01773,Midan Snacks Product 1773,Snacks,57.15,126.2
+SKU01774,Midan Grocery Product 1774,Grocery,68.84,171.45
+SKU01775,Midan Personal Care Product 1775,Personal Care,83.93,161.89
+SKU01776,Midan Frozen Product 1776,Frozen,104.16,193.37
+SKU01777,Midan Household Product 1777,Household,107.41,236.96
+SKU01778,Midan Baby Product 1778,Baby,137.55,263.23
+SKU01779,Midan Fresh Product 1779,Fresh,7.13,19.44
+SKU01780,Midan Pharmacy Product 1780,Pharmacy,27.96,54.14
+SKU01781,Midan Beverages Product 1781,Beverages,27.82,52.47
+SKU01782,Midan Dairy Product 1782,Dairy,45.91,87.32
+SKU01783,Midan Snacks Product 1783,Snacks,53.89,105.91
+SKU01784,Midan Grocery Product 1784,Grocery,76.16,130.99
+SKU01785,Midan Personal Care Product 1785,Personal Care,68.62,167.19
+SKU01786,Midan Frozen Product 1786,Frozen,72.69,157.17
+SKU01787,Midan Household Product 1787,Household,90.54,208.3
+SKU01788,Midan Baby Product 1788,Baby,107.47,253.54
+SKU01789,Midan Fresh Product 1789,Fresh,137.01,279.85
+SKU01790,Midan Pharmacy Product 1790,Pharmacy,11.88,25.73
+SKU01791,Midan Beverages Product 1791,Beverages,29.09,67.74
+SKU01792,Midan Dairy Product 1792,Dairy,49.35,86.06
+SKU01793,Midan Snacks Product 1793,Snacks,51.41,92.84
+SKU01794,Midan Grocery Product 1794,Grocery,60.85,137.07
+SKU01795,Midan Personal Care Product 1795,Personal Care,65.8,141.73
+SKU01796,Midan Frozen Product 1796,Frozen,76.78,180.51
+SKU01797,Midan Household Product 1797,Household,99.56,195.5
+SKU01798,Midan Baby Product 1798,Baby,108.17,202.46
+SKU01799,Midan Fresh Product 1799,Fresh,101.93,280.87
+SKU01800,Midan Pharmacy Product 1800,Pharmacy,9.16,19.94
+SKU01801,Midan Beverages Product 1801,Beverages,19.39,52.67
+SKU01802,Midan Dairy Product 1802,Dairy,39.07,67.99
+SKU01803,Midan Snacks Product 1803,Snacks,54.83,95.66
+SKU01804,Midan Grocery Product 1804,Grocery,44.29,109.99
+SKU01805,Midan Personal Care Product 1805,Personal Care,70.47,141.08
+SKU01806,Midan Frozen Product 1806,Frozen,82.72,151.12
+SKU01807,Midan Household Product 1807,Household,91.96,161.74
+SKU01808,Midan Baby Product 1808,Baby,106.38,224.57
+SKU01809,Midan Fresh Product 1809,Fresh,90.02,191.59
+SKU01810,Midan Pharmacy Product 1810,Pharmacy,109.84,235.02
+SKU01811,Midan Beverages Product 1811,Beverages,8.25,18.04
+SKU01812,Midan Dairy Product 1812,Dairy,32.79,69.65
+SKU01813,Midan Snacks Product 1813,Snacks,44.6,92.3
+SKU01814,Midan Grocery Product 1814,Grocery,48.11,79.09
+SKU01815,Midan Personal Care Product 1815,Personal Care,69.74,128.01
+SKU01816,Midan Frozen Product 1816,Frozen,87.21,165.79
+SKU01817,Midan Household Product 1817,Household,77.62,180.22
+SKU01818,Midan Baby Product 1818,Baby,108.83,183.08
+SKU01819,Midan Fresh Product 1819,Fresh,117.87,227.84
+SKU01820,Midan Pharmacy Product 1820,Pharmacy,100.11,205.82
+SKU01821,Midan Beverages Product 1821,Beverages,125.4,256.11
+SKU01822,Midan Dairy Product 1822,Dairy,14.78,24.54
+SKU01823,Midan Snacks Product 1823,Snacks,29.05,66.75
+SKU01824,Midan Grocery Product 1824,Grocery,37.95,87.46
+SKU01825,Midan Personal Care Product 1825,Personal Care,52.24,90.63
+SKU01826,Midan Frozen Product 1826,Frozen,75.13,142.84
+SKU01827,Midan Household Product 1827,Household,59.55,146.19
+SKU01828,Midan Baby Product 1828,Baby,81.58,188.98
+SKU01829,Midan Fresh Product 1829,Fresh,97.6,213.49
+SKU01830,Midan Pharmacy Product 1830,Pharmacy,102.26,240.73
+SKU01831,Midan Beverages Product 1831,Beverages,128.99,259.18
+SKU01832,Midan Dairy Product 1832,Dairy,17.76,35.95
+SKU01833,Midan Snacks Product 1833,Snacks,30.56,61.59
+SKU01834,Midan Grocery Product 1834,Grocery,29.08,80.94
+SKU01835,Midan Personal Care Product 1835,Personal Care,49.8,104.74
+SKU01836,Midan Frozen Product 1836,Frozen,59.9,135.64
+SKU01837,Midan Household Product 1837,Household,70.24,155.03
+SKU01838,Midan Baby Product 1838,Baby,75.24,171.69
+SKU01839,Midan Fresh Product 1839,Fresh,84.33,188.23
+SKU01840,Midan Pharmacy Product 1840,Pharmacy,92.7,187.5
+SKU01841,Midan Beverages Product 1841,Beverages,100.18,242.47
+SKU01842,Midan Dairy Product 1842,Dairy,136.18,257.24
+SKU01843,Midan Snacks Product 1843,Snacks,11.62,24.25
+SKU01844,Midan Grocery Product 1844,Grocery,20.69,50.33
+SKU01845,Midan Personal Care Product 1845,Personal Care,40.32,73.23
+SKU01846,Midan Frozen Product 1846,Frozen,47.68,105.81
+SKU01847,Midan Household Product 1847,Household,65.13,154.37
+SKU01848,Midan Baby Product 1848,Baby,56.71,148.24
+SKU01849,Midan Fresh Product 1849,Fresh,68.03,174.27
+SKU01850,Midan Pharmacy Product 1850,Pharmacy,96.58,210.84
+SKU01851,Midan Beverages Product 1851,Beverages,98.44,234.94
+SKU01852,Midan Dairy Product 1852,Dairy,104.16,229.84
+SKU01853,Midan Snacks Product 1853,Snacks,11.9,27.48
+SKU01854,Midan Grocery Product 1854,Grocery,16.3,28.15
+SKU01855,Midan Personal Care Product 1855,Personal Care,23.83,54.91
+SKU01856,Midan Frozen Product 1856,Frozen,47.07,89.35
+SKU01857,Midan Household Product 1857,Household,62.61,103.42
+SKU01858,Midan Baby Product 1858,Baby,73.34,126.09
+SKU01859,Midan Fresh Product 1859,Fresh,79.77,182.21
+SKU01860,Midan Pharmacy Product 1860,Pharmacy,101.41,186.73
+SKU01861,Midan Beverages Product 1861,Beverages,109.55,197.57
+SKU01862,Midan Dairy Product 1862,Dairy,127.97,255.59
+SKU01863,Midan Snacks Product 1863,Snacks,117.19,228.84
+SKU01864,Midan Grocery Product 1864,Grocery,9.57,21.31
+SKU01865,Midan Personal Care Product 1865,Personal Care,26.08,61.01
+SKU01866,Midan Frozen Product 1866,Frozen,26.82,69.91
+SKU01867,Midan Household Product 1867,Household,54.85,89.23
+SKU01868,Midan Baby Product 1868,Baby,49.49,111.85
+SKU01869,Midan Fresh Product 1869,Fresh,69.14,148.98
+SKU01870,Midan Pharmacy Product 1870,Pharmacy,89.99,179.3
+SKU01871,Midan Beverages Product 1871,Beverages,86.54,205.21
+SKU01872,Midan Dairy Product 1872,Dairy,102.17,241.98
+SKU01873,Midan Snacks Product 1873,Snacks,99.0,220.91
+SKU01874,Midan Grocery Product 1874,Grocery,147.57,271.12
+SKU01875,Midan Personal Care Product 1875,Personal Care,21.83,40.95
+SKU01876,Midan Frozen Product 1876,Frozen,23.49,56.02
+SKU01877,Midan Household Product 1877,Household,34.77,80.26
+SKU01878,Midan Baby Product 1878,Baby,48.51,118.36
+SKU01879,Midan Fresh Product 1879,Fresh,61.47,125.41
+SKU01880,Midan Pharmacy Product 1880,Pharmacy,84.86,184.5
+SKU01881,Midan Beverages Product 1881,Beverages,77.06,186.33
+SKU01882,Midan Dairy Product 1882,Dairy,96.97,178.5
+SKU01883,Midan Snacks Product 1883,Snacks,102.62,241.92
+SKU01884,Midan Grocery Product 1884,Grocery,104.81,272.14
+SKU01885,Midan Personal Care Product 1885,Personal Care,16.24,40.44
+SKU01886,Midan Frozen Product 1886,Frozen,20.59,53.95
+SKU01887,Midan Household Product 1887,Household,39.42,74.69
+SKU01888,Midan Baby Product 1888,Baby,45.15,83.21
+SKU01889,Midan Fresh Product 1889,Fresh,57.86,112.6
+SKU01890,Midan Pharmacy Product 1890,Pharmacy,81.57,143.44
+SKU01891,Midan Beverages Product 1891,Beverages,75.98,156.87
+SKU01892,Midan Dairy Product 1892,Dairy,85.06,222.12
+SKU01893,Midan Snacks Product 1893,Snacks,98.48,189.62
+SKU01894,Midan Grocery Product 1894,Grocery,122.66,271.82
+SKU01895,Midan Personal Care Product 1895,Personal Care,106.03,262.87
+SKU01896,Midan Frozen Product 1896,Frozen,9.99,25.7
+SKU01897,Midan Household Product 1897,Household,24.85,55.12
+SKU01898,Midan Baby Product 1898,Baby,46.65,99.71
+SKU01899,Midan Fresh Product 1899,Fresh,55.09,99.13
+SKU01900,Midan Pharmacy Product 1900,Pharmacy,77.2,125.32
+SKU01901,Midan Beverages Product 1901,Beverages,78.27,182.93
+SKU01902,Midan Dairy Product 1902,Dairy,96.4,166.61
+SKU01903,Midan Snacks Product 1903,Snacks,107.61,190.18
+SKU01904,Midan Grocery Product 1904,Grocery,108.33,239.41
+SKU01905,Midan Personal Care Product 1905,Personal Care,105.66,251.78
+SKU01906,Midan Frozen Product 1906,Frozen,4.73,7.29
+SKU01907,Midan Household Product 1907,Household,23.55,38.65
+SKU01908,Midan Baby Product 1908,Baby,33.42,74.68
+SKU01909,Midan Fresh Product 1909,Fresh,48.03,93.18
+SKU01910,Midan Pharmacy Product 1910,Pharmacy,47.09,123.56
+SKU01911,Midan Beverages Product 1911,Beverages,63.86,141.84
+SKU01912,Midan Dairy Product 1912,Dairy,69.05,164.19
+SKU01913,Midan Snacks Product 1913,Snacks,93.31,196.31
+SKU01914,Midan Grocery Product 1914,Grocery,87.2,211.61
+SKU01915,Midan Personal Care Product 1915,Personal Care,131.02,232.0
+SKU01916,Midan Frozen Product 1916,Frozen,121.83,259.27
+SKU01917,Midan Household Product 1917,Household,19.2,30.96
+SKU01918,Midan Baby Product 1918,Baby,29.99,57.07
+SKU01919,Midan Fresh Product 1919,Fresh,33.98,84.95
+SKU01920,Midan Pharmacy Product 1920,Pharmacy,54.84,110.14
+SKU01921,Midan Beverages Product 1921,Beverages,62.18,119.98
+SKU01922,Midan Dairy Product 1922,Dairy,76.05,141.68
+SKU01923,Midan Snacks Product 1923,Snacks,76.41,174.62
+SKU01924,Midan Grocery Product 1924,Grocery,91.55,179.73
+SKU01925,Midan Personal Care Product 1925,Personal Care,90.57,231.05
+SKU01926,Midan Frozen Product 1926,Frozen,131.94,215.72
+SKU01927,Midan Household Product 1927,Household,122.29,283.0
+SKU01928,Midan Baby Product 1928,Baby,24.35,39.74
+SKU01929,Midan Fresh Product 1929,Fresh,31.24,68.02
+SKU01930,Midan Pharmacy Product 1930,Pharmacy,41.93,76.12
+SKU01931,Midan Beverages Product 1931,Beverages,45.49,98.28
+SKU01932,Midan Dairy Product 1932,Dairy,56.97,142.14
+SKU01933,Midan Snacks Product 1933,Snacks,79.75,152.73
+SKU01934,Midan Grocery Product 1934,Grocery,98.66,205.63
+SKU01935,Midan Personal Care Product 1935,Personal Care,118.93,186.88
+SKU01936,Midan Frozen Product 1936,Frozen,113.92,210.29
+SKU01937,Midan Household Product 1937,Household,117.69,292.92
+SKU01938,Midan Baby Product 1938,Baby,7.48,17.53
+SKU01939,Midan Fresh Product 1939,Fresh,27.74,50.69
+SKU01940,Midan Pharmacy Product 1940,Pharmacy,34.92,87.02
+SKU01941,Midan Beverages Product 1941,Beverages,41.69,93.97
+SKU01942,Midan Dairy Product 1942,Dairy,60.67,111.89
+SKU01943,Midan Snacks Product 1943,Snacks,72.24,121.86
+SKU01944,Midan Grocery Product 1944,Grocery,91.44,174.47
+SKU01945,Midan Personal Care Product 1945,Personal Care,94.91,176.72
+SKU01946,Midan Frozen Product 1946,Frozen,112.13,235.46
+SKU01947,Midan Household Product 1947,Household,106.57,211.25
+SKU01948,Midan Baby Product 1948,Baby,115.42,249.87
+SKU01949,Midan Fresh Product 1949,Fresh,20.63,39.08
+SKU01950,Midan Pharmacy Product 1950,Pharmacy,22.06,47.14
+SKU01951,Midan Beverages Product 1951,Beverages,41.43,78.42
+SKU01952,Midan Dairy Product 1952,Dairy,57.03,109.85
+SKU01953,Midan Snacks Product 1953,Snacks,69.52,122.27
+SKU01954,Midan Grocery Product 1954,Grocery,59.73,138.48
+SKU01955,Midan Personal Care Product 1955,Personal Care,74.12,151.7
+SKU01956,Midan Frozen Product 1956,Frozen,82.16,191.02
+SKU01957,Midan Household Product 1957,Household,101.65,220.59
+SKU01958,Midan Baby Product 1958,Baby,107.3,263.44
+SKU01959,Midan Fresh Product 1959,Fresh,10.03,18.62
+SKU01960,Midan Pharmacy Product 1960,Pharmacy,20.68,39.18
+SKU01961,Midan Beverages Product 1961,Beverages,43.19,72.64
+SKU01962,Midan Dairy Product 1962,Dairy,47.52,92.82
+SKU01963,Midan Snacks Product 1963,Snacks,72.81,130.71
+SKU01964,Midan Grocery Product 1964,Grocery,64.56,143.89
+SKU01965,Midan Personal Care Product 1965,Personal Care,83.49,170.95
+SKU01966,Midan Frozen Product 1966,Frozen,83.82,199.28
+SKU01967,Midan Household Product 1967,Household,95.82,222.42
+SKU01968,Midan Baby Product 1968,Baby,96.5,202.77
+SKU01969,Midan Fresh Product 1969,Fresh,129.88,239.6
+SKU01970,Midan Pharmacy Product 1970,Pharmacy,20.08,38.87
+SKU01971,Midan Beverages Product 1971,Beverages,27.25,59.67
+SKU01972,Midan Dairy Product 1972,Dairy,33.22,62.28
+SKU01973,Midan Snacks Product 1973,Snacks,49.18,109.11
+SKU01974,Midan Grocery Product 1974,Grocery,63.41,123.68
+SKU01975,Midan Personal Care Product 1975,Personal Care,73.71,152.99
+SKU01976,Midan Frozen Product 1976,Frozen,76.76,187.61
+SKU01977,Midan Household Product 1977,Household,85.8,218.11
+SKU01978,Midan Baby Product 1978,Baby,123.66,234.72
+SKU01979,Midan Fresh Product 1979,Fresh,127.04,265.9
+SKU01980,Midan Pharmacy Product 1980,Pharmacy,9.44,15.37
+SKU01981,Midan Beverages Product 1981,Beverages,18.66,41.15
+SKU01982,Midan Dairy Product 1982,Dairy,35.6,73.37
+SKU01983,Midan Snacks Product 1983,Snacks,43.41,82.21
+SKU01984,Midan Grocery Product 1984,Grocery,47.52,112.01
+SKU01985,Midan Personal Care Product 1985,Personal Care,65.95,140.37
+SKU01986,Midan Frozen Product 1986,Frozen,70.42,151.23
+SKU01987,Midan Household Product 1987,Household,88.49,156.2
+SKU01988,Midan Baby Product 1988,Baby,116.13,202.29
+SKU01989,Midan Fresh Product 1989,Fresh,110.43,200.13
+SKU01990,Midan Pharmacy Product 1990,Pharmacy,106.24,266.95
+SKU01991,Midan Beverages Product 1991,Beverages,18.23,39.36
+SKU01992,Midan Dairy Product 1992,Dairy,29.62,62.45
+SKU01993,Midan Snacks Product 1993,Snacks,35.63,71.93
+SKU01994,Midan Grocery Product 1994,Grocery,52.59,81.36
+SKU01995,Midan Personal Care Product 1995,Personal Care,64.2,130.47
+SKU01996,Midan Frozen Product 1996,Frozen,78.73,153.75
+SKU01997,Midan Household Product 1997,Household,73.27,173.78
+SKU01998,Midan Baby Product 1998,Baby,105.34,175.51
+SKU01999,Midan Fresh Product 1999,Fresh,92.39,222.99
+SKU02000,Midan Pharmacy Product 2000,Pharmacy,97.95,213.54
