@@ -1763,29 +1763,37 @@ class AnomalyDetectionService
 
     private function detectReorderPointStaleness(int $tenantId, array $thresholds): void
     {
-        $days      = (int)($thresholds['days'] ?? 90);
-        $cutoff    = $this->analysisDate()->subDays($days)->format('Y-m-d');
-        $recentCut = $this->analysisDate()->subDays(30)->format('Y-m-d');
+        $days        = (int)($thresholds['days'] ?? 90);
+        $recentCut   = $this->analysisDate()->subDays(30)->format('Y-m-d');
+        $staleBefore = $this->analysisDate()->subDays($days)->format('Y-m-d');
 
-        $staleRecords = InventoryLevel::where('tenant_id', $tenantId)
-            ->whereNotNull('reorder_point')
-            ->where('reorder_point', '>', 0)
-            ->whereNotNull('as_of_date')
-            ->where('as_of_date', '<', $cutoff)
-            ->get();
-
+        // SKUs that actually sold in the last 30 days — only their reorder points
+        // are worth questioning.
         $activeSkus = SalesTransaction::where('tenant_id', $tenantId)
             ->where('date', '>=', $recentCut)
+            ->distinct()
             ->pluck('sku')
-            ->unique();
+            ->flip();
 
-        foreach ($staleRecords as $level) {
-            if (!$activeSkus->contains($level->sku)) continue;
+        // Judge the LATEST snapshot per (store, sku) from the primed map. The
+        // reorder point is stale only if the MOST RECENT snapshot carrying it
+        // predates the staleness window — so a year of older history no longer
+        // makes every SKU look stale (the previous query flagged any SKU that had
+        // *any* snapshot older than the window, i.e. all of them). Uses the primed
+        // snapshot instead of loading the whole inventory history into memory.
+        foreach (($this->latestOnHand ?? []) as $k => $oh) {
+            $rp   = $oh['reorder'] ?? null;
+            $date = $oh['d'] ?? null;
+            if (!$rp || $rp <= 0 || !$date || $date === '0000-00-00') continue;
+            if ($date >= $staleBefore) continue; // latest snapshot is recent → reorder point is current
 
-            $daysStale = Carbon::parse($level->as_of_date)->diffInDays($this->analysisDate());
-            $this->flag($tenantId, 'reorder_point_staleness', 'low', $level->sku, $level->store_id, $level->product_id,
-                "SKU {$level->sku} has a reorder point of {$level->reorder_point} set {$daysStale} days ago — may not reflect current sales velocity.",
-                ['reorder_point' => $level->reorder_point, 'as_of_date' => $level->as_of_date?->format('Y-m-d'), 'days_stale' => $daysStale, 'location' => $level->location]
+            [$storeId, $sku] = explode('|', $k, 2);
+            if (!isset($activeSkus[$sku])) continue;
+
+            $daysStale = Carbon::parse($date)->diffInDays($this->analysisDate());
+            $this->flag($tenantId, 'reorder_point_staleness', 'low', $sku, (int) $storeId, $oh['product_id'],
+                "SKU {$sku} has a reorder point of " . round($rp) . " that hasn't refreshed in {$daysStale} days — may not reflect current sales velocity.",
+                ['reorder_point' => $rp, 'as_of_date' => $date, 'days_stale' => $daysStale, 'location' => $oh['location']]
             );
         }
     }
