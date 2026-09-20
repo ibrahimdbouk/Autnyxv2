@@ -90,6 +90,17 @@ a.aq-row:hover{border-color:var(--ax-accent-strong);}
 .aq-bulk-note{font-size:.72rem; color:var(--ax-faint); margin-left:auto; max-width:40ch; text-align:right;}
 .aq-linkbtn{background:none; border:none; padding:0; font:inherit; color:var(--ax-accent-strong); font-weight:700; cursor:pointer;}
 .aq-linkbtn:hover{text-decoration:underline;}
+
+/* Tabs (Campaigns | Today) */
+.aq-tabs{display:flex; gap:.35rem; margin-bottom:1.1rem; border-bottom:1px solid var(--ax-line);}
+.aq-tab{font-size:.85rem; font-weight:700; color:var(--ax-muted); text-decoration:none; padding:.55rem .9rem; border-bottom:2px solid transparent; margin-bottom:-1px; display:inline-flex; align-items:center; gap:.4rem;}
+.aq-tab.on{color:var(--ax-ink); border-bottom-color:var(--ax-accent-strong);}
+.aq-tab-b{font-size:.68rem; font-weight:800; background:var(--ax-accent-strong); color:#fff; border-radius:9999px; padding:.05rem .4rem;}
+/* SLA cadence on campaign cards */
+.aq-sla{font-size:.72rem; color:var(--ax-faint); margin-top:.35rem;}
+.aq-sla.due{color:#B67608; font-weight:700;}
+.aq-due{display:inline-flex; align-items:center; font-size:.62rem; font-weight:800; text-transform:uppercase; letter-spacing:.04em; background:#B67608; color:#fff; border-radius:9999px; padding:.12rem .45rem; margin-left:.4rem;}
+.aq-pip.critical{background:#C23B2E;}
 </style>
 
 @if(! ($q['ready'] ?? false))
@@ -216,6 +227,35 @@ a.aq-row:hover{border-color:var(--ax-accent-strong);}
 
 @else
 
+<div class="aq-tabs">
+    <a href="{{ $q['campaigns_url'] }}" class="aq-tab {{ $q['tab'] === 'today' ? '' : 'on' }}">Campaigns</a>
+    <a href="{{ $q['today_url'] }}" class="aq-tab {{ $q['tab'] === 'today' ? 'on' : '' }}">Today @if(($q['today_count'] ?? 0) > 0)<span class="aq-tab-b">{{ $q['today_count'] }}</span>@endif</a>
+</div>
+
+@if(($q['tab'] ?? 'campaigns') === 'today')
+
+<div class="aq-hero">
+    <div class="aq-hero-kick">Today &middot; what changed</div>
+    <div class="aq-hero-h">{{ $q['today_count'] }} investigation(s) opened or escalated in the last 24 hours.</div>
+    <div class="aq-hero-p">This is the daily delta — what is genuinely new since yesterday, ranked by value. The standing backlog lives under Campaigns.</div>
+</div>
+@if(empty($q['today']))
+<div class="aq-hero"><div class="aq-hero-p">Nothing new in the last 24 hours. The standing backlog is under Campaigns.</div></div>
+@else
+<div class="aq-queue">
+    @foreach($q['today'] as $r)
+    <a class="aq-row" @if($r['url']) href="{{ $r['url'] }}" @endif>
+        <span class="aq-pip {{ $r['priority'] }}"></span>
+        <div><div class="t">{{ $r['title'] }}</div>@if($r['sub'])<div class="s">{{ $r['sub'] }}</div>@endif</div>
+        <div class="v">{{ $r['val_fmt'] }}</div>
+        <span class="b">{{ $r['tag'] === 'new' ? 'New' : 'Escalated' }}</span>
+    </a>
+    @endforeach
+</div>
+@endif
+
+@else
+
 <div class="aq-hero">
     <div class="aq-hero-kick">The exception queue, made workable</div>
     <div class="aq-hero-h">{{ $q['total_open'] }} open investigations, grouped into {{ $q['campaign_count'] }} campaigns.</div>
@@ -251,8 +291,9 @@ a.aq-row:hover{border-color:var(--ax-accent-strong);}
     <div class="aq-card aq-a-{{ $c['accent'] }}">
         <div class="aq-card-h">
             <div>
-                <h4>{{ $c['name'] }}</h4>
+                <h4>{{ $c['name'] }}@if($c['due'])<span class="aq-due">Due</span>@endif</h4>
                 <div class="act">{{ $c['action'] }}</div>
+                <div class="aq-sla {{ $c['due'] ? 'due' : '' }}">{{ $c['sla_label'] }}</div>
             </div>
             <div class="cnt">{{ $c['skus'] }}<small>{{ $c['kind'] === 'trend' ? 'SKUs' : 'items' }}</small></div>
         </div>
@@ -269,8 +310,10 @@ a.aq-row:hover{border-color:var(--ax-accent-strong);}
 </div>
 
 <div class="aq-note">
-    All counts and values are deterministic aggregates over this tenant&rsquo;s active anomalies — nothing is generated on this page. Trend campaigns (demand erosion, seasonal shift) are gated at a materiality floor, so low-value tail SKUs are summarised in the campaign rather than raised as individual cases. &ldquo;Open&rdquo; links through to the full investigation list.
+    All counts and values are deterministic aggregates over this tenant&rsquo;s active anomalies — nothing is generated on this page. Trend campaigns (demand erosion, seasonal shift) are gated at a materiality floor, so low-value tail SKUs are summarised in the campaign rather than raised as individual cases. &ldquo;Open&rdquo; links through to the full investigation list. Campaigns are ordered by review cadence — the ones marked <strong>Due</strong> first.
 </div>
+
+@endif
 
 @endif
 

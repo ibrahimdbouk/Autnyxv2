@@ -51,8 +51,33 @@ class ActionQueue extends Page
     #[Url]
     public ?string $campaign = null;
 
+    /** Main-view tab: null|'campaigns' (default) or 'today' (what changed in 24h). */
+    #[Url]
+    public ?string $tab = null;
+
     /** Bulk-review: investigation ids selected in the campaign drill-down. */
     public array $selected = [];
+
+    /**
+     * Per-campaign review cadence in days — the SLA/tempo. A campaign is "due"
+     * when it has never been reviewed or was last reviewed more than this ago.
+     * Urgent, incident-shaped campaigns get a tight cadence; bulk trend reviews
+     * a loose one.
+     */
+    private const CAMPAIGN_CADENCE_DAYS = [
+        'Availability risk'       => 1,
+        'Supply issues'           => 2,
+        'Demand shifts'           => 3,
+        'Margin & pricing'        => 7,
+        'Idle & non-moving stock' => 7,
+        'Inventory integrity'     => 7,
+        'Data quality'            => 7,
+        'Demand erosion'          => 7,
+        'Seasonal shift'          => 14,
+    ];
+
+    /** Window for the "Today / what changed" view. */
+    private const TODAY_WINDOW_HOURS = 24;
 
     /** Campaign → the remediation Action type a manual bulk "start" creates. */
     private const BULK_ACTION_TYPE = [
@@ -237,20 +262,26 @@ class ActionQueue extends Page
             }
         }
 
-        // finalise campaigns: sort examples by value, keep top 3; order cards trend-first then by value
+        // SLA/cadence: when was each campaign last reviewed for this tenant?
+        $reviews = \App\Models\CampaignReview::where('tenant_id', $tenantId)->pluck('last_reviewed_at', 'campaign');
+
+        // finalise campaigns: sort examples by value, keep top 3; attach SLA state.
         $campaigns = [];
         foreach ($camp as $c) {
             usort($c['examples'], fn ($x, $y) => $y['val'] <=> $x['val']);
+            $sla = $this->campaignSla($c['name'], $reviews[$c['name']] ?? null);
             $campaigns[] = [
-                'name'      => $c['name'],
-                'kind'      => $c['kind'],
-                'accent'    => $c['accent'],
-                'action'    => $c['action'],
-                'skus'      => count($c['skus']),
-                'cases'     => count($c['invs']),
-                'high'      => $c['high'],
-                'value'     => $c['value'],
-                'value_fmt' => Money::compact($c['value'], $currency),
+                'name'         => $c['name'],
+                'kind'         => $c['kind'],
+                'accent'       => $c['accent'],
+                'action'       => $c['action'],
+                'skus'         => count($c['skus']),
+                'cases'        => count($c['invs']),
+                'high'         => $c['high'],
+                'value'        => $c['value'],
+                'value_fmt'    => Money::compact($c['value'], $currency),
+                'due'          => $sla['due'],
+                'sla_label'    => $sla['label'],
                 'examples'  => array_slice(array_map(function ($e) use ($currency, $nameFor, $storeFor) {
                     return [
                         'sku'     => $nameFor($e['sku']),
@@ -260,10 +291,9 @@ class ActionQueue extends Page
                 }, $c['examples']), 0, 3),
             ];
         }
+        // Order: due-first (the SLA tempo), then by value at risk.
         usort($campaigns, function ($a, $b) {
-            $ta = $a['kind'] === 'trend' ? 0 : 1;
-            $tb = $b['kind'] === 'trend' ? 0 : 1;
-            return $ta <=> $tb ?: $b['value'] <=> $a['value'];
+            return ($b['due'] <=> $a['due']) ?: ($b['value'] <=> $a['value']);
         });
 
         // act-now: dedupe by rule|sku|store, rank by value, top 8
@@ -293,6 +323,12 @@ class ActionQueue extends Page
         // linking to its investigation. Built from the same anomaly set.
         $detail = null;
         if ($this->campaign) {
+            // Opening a campaign counts as reviewing it — advances its SLA clock.
+            \App\Models\CampaignReview::updateOrCreate(
+                ['tenant_id' => $tenantId, 'campaign' => $this->campaign],
+                ['last_reviewed_at' => now()]
+            );
+
             $rows = [];
             foreach ($anoms as $a) {
                 if (($ruleToCampaign[$a->rule_type] ?? 'Other signals') !== $this->campaign) continue;
@@ -321,18 +357,95 @@ class ActionQueue extends Page
             ];
         }
 
+        // "Today / what changed" view — only built when that tab is active.
+        $today = $this->tab === 'today'
+            ? $this->todayRows($tenantId, $currency, $skuNames, $storeNames)
+            : [];
+
         return [
             'ready'          => true,
             'selected'       => $this->campaign,
             'detail'         => $detail,
+            'tab'            => $this->tab === 'today' ? 'today' : 'campaigns',
             'total_open'     => $totalOpen,
             'campaign_count' => count($campaigns),
+            'due_count'      => count(array_filter($campaigns, fn ($c) => $c['due'])),
             'act_count'      => count($uniq),
             'total_value'    => Money::compact($totalValue, $currency),
             'act_now'        => $uniq,
             'campaigns'      => $campaigns,
+            'today'          => $today,
+            'today_count'    => count($today),
+            'campaigns_url'  => self::getUrl(),
+            'today_url'      => self::getUrl(['tab' => 'today']),
             'back_url'       => self::getUrl(),
         ];
+    }
+
+    /**
+     * SLA state for a campaign given its last-reviewed timestamp.
+     *
+     * @return array{due:bool,label:string}
+     */
+    private function campaignSla(string $campaign, $lastReviewed): array
+    {
+        $cadence = self::CAMPAIGN_CADENCE_DAYS[$campaign] ?? 7;
+
+        if (! $lastReviewed) {
+            return ['due' => true, 'label' => 'Not yet reviewed'];
+        }
+
+        $last = $lastReviewed instanceof \Carbon\Carbon
+            ? $lastReviewed
+            : \Carbon\Carbon::parse($lastReviewed);
+
+        $due = $last->copy()->addDays($cadence)->isPast();
+
+        return [
+            'due'   => $due,
+            'label' => $due
+                ? 'Due · last reviewed ' . $last->diffForHumans()
+                : 'Reviewed ' . $last->diffForHumans(),
+        ];
+    }
+
+    /**
+     * The "Today" delta: open investigations that were opened OR escalated inside
+     * the window (default 24h), ranked by value. This is the true daily number —
+     * small in steady state — versus the standing backlog the campaigns show.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    private function todayRows(int $tenantId, ?string $currency, $skuNames, $storeNames): array
+    {
+        $since = now()->subHours(self::TODAY_WINDOW_HOURS);
+
+        $invs = Investigation::where('tenant_id', $tenantId)
+            ->whereIn('status', [Investigation::STATUS_OPEN, Investigation::STATUS_IN_PROGRESS])
+            ->where(fn ($q) => $q->whereNull('snoozed_until')->orWhere('snoozed_until', '<=', now()))
+            ->where(function ($q) use ($since) {
+                $q->where('opened_at', '>=', $since)
+                    ->orWhereHas('escalationEvents', fn ($e) => $e->where('created_at', '>=', $since));
+            })
+            ->orderByDesc('revenue_at_risk')
+            ->limit(60)
+            ->get(['id', 'title', 'primary_sku', 'primary_store_id', 'revenue_at_risk', 'priority', 'opened_at']);
+
+        $rows = [];
+        foreach ($invs as $inv) {
+            $isNew = $inv->opened_at && $inv->opened_at->gte($since);
+            $rows[] = [
+                'title'    => $inv->title
+                    ?: ($inv->primary_sku ? ($skuNames[$inv->primary_sku] ?? $inv->primary_sku) : ('Investigation #' . $inv->id)),
+                'sub'      => $inv->primary_store_id ? ($storeNames[$inv->primary_store_id] ?? ('Store ' . $inv->primary_store_id)) : null,
+                'val_fmt'  => Money::compact((float) $inv->revenue_at_risk, $currency),
+                'priority' => $inv->priority,
+                'tag'      => $isNew ? 'new' : 'escalated',
+                'url'      => $this->investigateUrl($inv->id),
+            ];
+        }
+
+        return $rows;
     }
 
     // ── Campaign Action-Plan agent (Agent #1) ────────────────────────────────────

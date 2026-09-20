@@ -213,6 +213,19 @@ class SmokeTest extends TestCase
             ->assertOk();
     }
 
+    /** The Action Queue "Today / what changed" tab must render (delta view). */
+    public function test_action_queue_today_tab_does_not_500(): void
+    {
+        \App\Models\Investigation::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'opened_at' => now(),
+        ]);
+
+        \Livewire\Livewire::test(\App\Filament\Pages\ActionQueue::class)
+            ->set('tab', 'today')
+            ->assertOk();
+    }
+
     /* ---------- data providers ---------------------------------------- */
 
     public static function resourceProvider(): array
