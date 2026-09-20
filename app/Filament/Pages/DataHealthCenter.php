@@ -90,11 +90,20 @@ class DataHealthCenter extends Page
             return null;
         }
 
-        $run = AgentRun::where('tenant_id', $tenantId)
-            ->where('agent_key', AgentRun::KEY_DATA_QUALITY)
-            ->where('status', AgentRun::STATUS_COMPLETE)
-            ->latest('id')
-            ->first();
+        // Best-effort: the AI panel is optional — never let its lookup 500 the
+        // whole Data Health page (e.g. if agent_runs is absent in a given
+        // environment/test harness). Fail closed to "no review".
+        try {
+            $run = AgentRun::where('tenant_id', $tenantId)
+                ->where('agent_key', AgentRun::KEY_DATA_QUALITY)
+                ->where('status', AgentRun::STATUS_COMPLETE)
+                ->latest('id')
+                ->first();
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('[DataHealthCenter] getAiReview failed: ' . $e->getMessage());
+
+            return null;
+        }
 
         if (! $run) {
             return null;
@@ -104,7 +113,7 @@ class DataHealthCenter extends Page
             'headline'   => $run->out('headline'),
             'summary'    => $run->out('summary'),
             'readiness'  => $run->out('data_readiness', 'fair'),
-            'issues'     => $run->out('issues', []),
+            'issues'     => is_array($run->out('issues')) ? $run->out('issues') : [],
             'generated'  => optional($run->created_at)->diffForHumans(),
         ];
     }
