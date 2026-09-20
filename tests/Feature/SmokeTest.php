@@ -270,6 +270,7 @@ class SmokeTest extends TestCase
                 'WeeklyBriefing',
                 'FollowUps',
                 'SupplierPrep',
+                'DataHealth',
                 'QualityCenter',
                 'FinancialBreakdown',
                 'Reports',
