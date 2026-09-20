@@ -48,7 +48,7 @@
         <a href="{{ $urlOpen }}" class="wstat" style="flex:1; min-width:130px; border-radius:0.75rem; border:1px solid #e5e7eb; background:#ffffff; padding:1rem; text-align:center;">
             <p style="font-size:0.7rem; font-weight:600; color:#6b7280; text-transform:uppercase; letter-spacing:0.05em; margin:0;">Avg Age</p>
             <p style="font-size:1.75rem; font-weight:700; color:#374151; margin:0.25rem 0;">
-                @if($data['avgOpenHours'] !== null){{ $data['avgOpenHours'] }}h@else—@endif
+                {{ $data['avgOpenHours'] !== null ? $data['avgOpenHours'].'h' : '—' }}
             </p>
             <p style="font-size:0.7rem; color:#9ca3af; margin:0;">Open investigations</p>
         </a>
