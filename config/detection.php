@@ -28,4 +28,26 @@ return [
 
     'max_union_skus' => (int) env('DETECTION_MAX_UNION_SKUS', 20000),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Import-triggered (async) detection mode
+    |--------------------------------------------------------------------------
+    |
+    | When an import completes it dispatches RunTenantDetectionJob to the queue
+    | (off the web request) so new data surfaces anomalies within minutes instead
+    | of waiting for the nightly 02:00 scan. This is the mode that run uses.
+    |
+    | 'incremental' (default) — scan only the SKUs this import touched (the dirty
+    |                 keys it just recorded) plus still-open subjects: fast (seconds)
+    |                 and cheap. The nightly FULL scan is the correctness backstop,
+    |                 so anything incremental scoping might miss is caught same day.
+    | 'full'        — full tenant scan on every import (heavier; use only if you
+    |                 have not enabled the nightly full backstop).
+    |
+    | Requires a queue worker to be running — see claude/async-detection.md.
+    |
+    */
+
+    'import_trigger_mode' => env('DETECTION_IMPORT_MODE', 'incremental'),
+
 ];

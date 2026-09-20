@@ -2,11 +2,9 @@
 
 namespace App\Console\Commands;
 
-use App\Models\DetectionDirtyKey;
+use App\Jobs\RunTenantDetectionJob;
 use App\Models\Tenant;
-use App\Services\Anomaly\AnomalyDetectionService;
-use App\Services\Anomaly\InvestigationCorrelationService;
-use App\Services\Detection\RunScope;
+use App\Services\Detection\TenantDetectionRunner;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -15,25 +13,24 @@ class DetectAnomaliesCommand extends Command
     protected $signature = 'anomalies:detect
         {--tenant= : Specific tenant ID}
         {--mode= : full|incremental|aggregate (default: config detection.mode)}
-        {--queue : Dispatch a full detection run to the queue instead of running inline (needs a queue worker; avoids the 30-min sync command limit on large tenants)}';
+        {--queue : Dispatch the run to the queue instead of running inline (needs a queue worker; avoids the sync command time limit on large tenants)}';
 
     protected $description = 'Run all anomaly detection rules for every tenant (or a specific one), then correlate into Investigations';
 
-    public function handle(
-        AnomalyDetectionService $detector,
-        InvestigationCorrelationService $correlator
-    ): int {
+    public function handle(TenantDetectionRunner $runner): int
+    {
         $mode     = $this->option('mode') ?: config('detection.mode', 'full');
         $tenantId = $this->option('tenant');
         $useQueue = (bool) $this->option('queue');
 
-        // Async path: hand the heavy full run to a queue worker so it isn't bound
-        // by the synchronous command timeout. Full mode only (the job runs the
-        // full pipeline); a worker must be running for this to actually execute.
+        // Async path: hand the run to a queue worker so it isn't bound by the
+        // synchronous command time limit. The job resolves the mode itself
+        // (null → config), so pass the raw option through. A worker must be
+        // running for this to actually execute — see claude/async-detection.md.
         if ($useQueue) {
             $tenants = $tenantId ? [Tenant::findOrFail((int) $tenantId)] : Tenant::all()->all();
             foreach ($tenants as $tenant) {
-                \App\Jobs\RunTenantDetectionJob::dispatch($tenant->id);
+                RunTenantDetectionJob::dispatch($tenant->id, $this->option('mode') ?: null);
             }
             $this->info('Queued detection for ' . count($tenants) . ' tenant(s). Requires a running queue worker.');
 
@@ -44,7 +41,7 @@ class DetectAnomaliesCommand extends Command
             $this->info('Detecting anomalies for tenant ' . $tenantId . ' (' . $mode . ')…');
             try {
                 $tenant = Tenant::findOrFail((int) $tenantId);
-                $this->runTenant($detector, $correlator, $tenant, $mode);
+                $runner->run($tenant->id, $mode);
                 $this->info('Done.');
             } catch (\Throwable $e) {
                 $this->error("Failed: {$e->getMessage()}");
@@ -71,7 +68,7 @@ class DetectAnomaliesCommand extends Command
         $errors = 0;
         foreach ($tenants as $tenant) {
             try {
-                $this->runTenant($detector, $correlator, $tenant, $mode);
+                $runner->run($tenant->id, $mode);
             } catch (\Throwable $e) {
                 $errors++;
                 Log::error("[anomalies:detect] Tenant {$tenant->id}: {$e->getMessage()}");
@@ -91,75 +88,5 @@ class DetectAnomaliesCommand extends Command
         $this->info('All tenants processed successfully.');
 
         return Command::SUCCESS;
-    }
-
-    /**
-     * Run detection for one tenant in the chosen mode, then correlate.
-     *
-     *  full        — scan everything (unchanged); then clear the dirty queue so
-     *                it can't grow unbounded while running in full mode.
-     *  aggregate   — run only the rules the per-key incremental run skips, full
-     *                scan; does not touch the queue (the incremental run owns it).
-     *  incremental — scan only the changed + still-open SKUs; on success, consume
-     *                the queue up to the id folded into the scope and advance the
-     *                watermark. A too-broad change set falls back to a full scan.
-     */
-    private function runTenant(
-        AnomalyDetectionService $detector,
-        InvestigationCorrelationService $correlator,
-        Tenant $tenant,
-        string $mode
-    ): void {
-        if ($mode === 'aggregate') {
-            $detector->runForTenant($tenant->id, null, true);
-            $correlator->correlateForTenant($tenant->id);
-
-            return;
-        }
-
-        if ($mode !== 'incremental') {
-            // Full scan.
-            $detector->runForTenant($tenant->id);
-            $correlator->correlateForTenant($tenant->id);
-            DetectionDirtyKey::where('tenant_id', $tenant->id)->delete();
-            $this->stampWatermark($tenant->id);
-
-            return;
-        }
-
-        $scope = RunScope::forTenant($tenant->id, (int) config('detection.max_union_skus', 20000));
-
-        if ($scope === null) {
-            // Change set too broad — a full scan is cheaper. Clear the whole queue.
-            $detector->runForTenant($tenant->id);
-            $correlator->correlateForTenant($tenant->id);
-            DetectionDirtyKey::where('tenant_id', $tenant->id)->delete();
-            $this->stampWatermark($tenant->id);
-
-            return;
-        }
-
-        if ($scope->isEmpty()) {
-            // Nothing changed and nothing open — skip the scan, just advance the watermark.
-            $this->stampWatermark($tenant->id);
-
-            return;
-        }
-
-        $detector->runForTenant($tenant->id, $scope);
-        $correlator->correlateForTenant($tenant->id);
-
-        // Consume only the keys folded into this run (concurrent inserts during
-        // the run keep a higher id and survive for the next run).
-        DetectionDirtyKey::where('tenant_id', $tenant->id)
-            ->where('id', '<=', $scope->maxDirtyId())
-            ->delete();
-        $this->stampWatermark($tenant->id);
-    }
-
-    /** Query-builder update bypasses model events (mirrors the auth-listener pattern). */
-    private function stampWatermark(int $tenantId): void
-    {
-        Tenant::whereKey($tenantId)->update(['last_detection_at' => now()]);
     }
 }

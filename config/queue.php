@@ -15,7 +15,11 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            // retry_after MUST exceed the longest job's timeout, or a run that
+            // outlasts it is made visible again and re-reserved mid-flight →
+            // MaxAttemptsExceededException. RunTenantDetectionJob has timeout=1800,
+            // so this defaults to 1810 (a full detection scan can take minutes).
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 1810),
             'after_commit' => false,
         ],
 

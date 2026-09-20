@@ -2,25 +2,42 @@
 
 namespace App\Jobs;
 
-use App\Services\Anomaly\AnomalyDetectionService;
-use App\Services\Anomaly\InvestigationCorrelationService;
+use App\Services\Detection\TenantDetectionRunner;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
- * Runs the full detection pipeline (detect → correlate) for one tenant off the
- * web request, so a large, multi-minute scan never blocks a page. Requires a
- * queue worker to be running on the environment.
+ * Runs the detection pipeline for one tenant OFF the web request, so a scan that
+ * can take minutes never blocks a page (this is what makes detection async).
+ * Requires a queue worker running on the environment — see claude/async-detection.md.
+ *
+ * Mode:
+ *  - null      → the configured detection.mode (what the nightly schedule uses).
+ *  - explicit  → e.g. imports dispatch 'incremental' so only the SKUs that just
+ *                changed are scanned (fast, seconds); the nightly full scan is
+ *                the correctness backstop.
+ *
+ * Delegates to TenantDetectionRunner so the queued path and the `anomalies:detect`
+ * CLI share identical behaviour — including consuming the dirty-key queue and
+ * stamping the detection watermark, which the old inline version skipped.
  *
  * - Tenant-isolated: only ever touches the given tenant.
- * - Idempotent: detection upserts anomalies and prunes stale ones; correlation
- *   is idempotent; so a re-run converges rather than duplicating.
- * - ShouldBeUnique: prevents piling up duplicate detection runs for a tenant
- *   while one is queued/running.
+ * - Idempotent: detection upserts anomalies and prunes stale ones; correlation is
+ *   idempotent; so a re-run converges rather than duplicating.
+ * - ShouldBeUnique: at most one detection run per tenant queued/running at a time,
+ *   regardless of mode — a burst of imports coalesces into one run; SKUs from a
+ *   dropped duplicate stay in the dirty queue and are picked up by the next run.
+ *
+ * IMPORTANT — the database queue's retry_after (config/queue.php) MUST exceed
+ * $timeout. If a run outlasts retry_after the queue makes it visible again and a
+ * second worker attempt trips tries=1 → MaxAttemptsExceededException. retry_after
+ * is set to 1810 (> the 1800 timeout) precisely to prevent that.
  */
 class RunTenantDetectionJob implements ShouldQueue, ShouldBeUnique
 {
@@ -38,18 +55,27 @@ class RunTenantDetectionJob implements ShouldQueue, ShouldBeUnique
     /** A queued+running unique lock is released after at most this many seconds. */
     public int $uniqueFor = 1800;
 
-    public function __construct(public int $tenantId)
+    public function __construct(public int $tenantId, public ?string $mode = null)
     {
     }
 
+    /** One detection run per tenant at a time, whatever the mode. */
     public function uniqueId(): string
     {
         return 'detect-tenant-' . $this->tenantId;
     }
 
-    public function handle(AnomalyDetectionService $detector, InvestigationCorrelationService $correlator): void
+    public function handle(TenantDetectionRunner $runner): void
     {
-        $detector->runForTenant($this->tenantId);
-        $correlator->correlateForTenant($this->tenantId);
+        $runner->run($this->tenantId, $this->mode);
+    }
+
+    public function failed(Throwable $e): void
+    {
+        Log::error('[RunTenantDetectionJob] detection run failed', [
+            'tenant_id' => $this->tenantId,
+            'mode'      => $this->mode ?? config('detection.mode', 'full'),
+            'error'     => $e->getMessage(),
+        ]);
     }
 }
