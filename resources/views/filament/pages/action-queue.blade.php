@@ -79,6 +79,17 @@ a.aq-row:hover{border-color:var(--ax-accent-strong);}
 .aq-exec .ok{width:.6rem; height:.6rem; border-radius:50%; background:var(--ax-accent-strong); flex:0 0 auto;}
 .aq-plan-empty{display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; margin-top:.55rem;}
 .aq-plan-empty p{font-size:.85rem; color:var(--ax-muted); margin:0; max-width:58ch; line-height:1.5;}
+
+/* Bulk review (select + batch operate on a campaign) */
+.aq-selrow{grid-template-columns:auto auto 1fr auto auto;}
+.aq-check{width:1.05rem; height:1.05rem; cursor:pointer; accent-color:var(--ax-accent-strong); flex:0 0 auto;}
+.aq-selrow .grow{min-width:0;}
+.aq-selrow a.b{text-decoration:none;}
+.aq-bulkbar{display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; background:var(--ax-panel); border:1px solid var(--ax-line); border-radius:.6rem; padding:.6rem .85rem; margin:.2rem 0;}
+.aq-bulkbar .cnt{font-weight:700; font-size:.85rem; color:var(--ax-ink);}
+.aq-bulk-note{font-size:.72rem; color:var(--ax-faint); margin-left:auto; max-width:40ch; text-align:right;}
+.aq-linkbtn{background:none; border:none; padding:0; font:inherit; color:var(--ax-accent-strong); font-weight:700; cursor:pointer;}
+.aq-linkbtn:hover{text-decoration:underline;}
 </style>
 
 @if(! ($q['ready'] ?? false))
@@ -168,14 +179,38 @@ a.aq-row:hover{border-color:var(--ax-accent-strong);}
     @endif
 </div>
 
-<div class="aq-queue" style="margin-top:1rem">
+<div class="aq-sec" style="margin-top:1.2rem">
+    <h3>Investigations</h3>
+    <span class="m">
+        <button type="button" class="aq-linkbtn" wire:click="selectAllVisible">Select all</button>
+        @if(count($selected) > 0)&nbsp;&middot;&nbsp;<button type="button" class="aq-linkbtn" wire:click="clearSelection">Clear</button>@endif
+    </span>
+</div>
+
+@if(count($selected) > 0)
+<div class="aq-bulkbar">
+    <span class="cnt">{{ count($selected) }} selected</span>
+    <button class="aq-btn aq-btn-primary" wire:click="bulkStart" wire:loading.attr="disabled" wire:target="bulkStart">
+        <span wire:loading.remove wire:target="bulkStart">Create actions &amp; start</span>
+        <span wire:loading wire:target="bulkStart">Working&hellip;</span>
+    </button>
+    <button class="aq-btn aq-btn-ghost" wire:click="bulkSnooze" wire:loading.attr="disabled" wire:target="bulkSnooze">
+        <span wire:loading.remove wire:target="bulkSnooze">Snooze 30 days</span>
+        <span wire:loading wire:target="bulkSnooze">Snoozing&hellip;</span>
+    </button>
+    <span class="aq-bulk-note">Acts on all selected at once &middot; internal only, never your ERP.</span>
+</div>
+@endif
+
+<div class="aq-queue" style="margin-top:.6rem">
     @foreach($q['detail']['rows'] as $r)
-    <a class="aq-row" @if($r['url']) href="{{ $r['url'] }}" @endif>
+    <div class="aq-row aq-selrow">
+        <input type="checkbox" class="aq-check" wire:model.live="selected" value="{{ $r['id'] }}" @if(! $r['id']) disabled @endif>
         <span class="aq-pip {{ $r['sev'] }}"></span>
-        <div><div class="t">{{ $r['sku'] }}</div><div class="s">{{ $r['store'] }}</div></div>
+        <div class="grow"><div class="t">{{ $r['sku'] }}</div><div class="s">{{ $r['store'] }}</div></div>
         <div class="v">{{ $r['val_fmt'] }}</div>
-        <span class="b">Open &rarr;</span>
-    </a>
+        @if($r['url'])<a class="b" href="{{ $r['url'] }}">Open &rarr;</a>@else<span class="b" style="opacity:.4">&mdash;</span>@endif
+    </div>
     @endforeach
 </div>
 

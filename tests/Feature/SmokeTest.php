@@ -190,6 +190,29 @@ class SmokeTest extends TestCase
         }
     }
 
+    /**
+     * The Action Queue campaign drill-down (?campaign=) must render — the branch
+     * the index smoke test never exercises, and where the AI plan panel + the
+     * bulk-review controls live. Seeds one anomaly in a campaign so rows render.
+     */
+    public function test_action_queue_campaign_drilldown_does_not_500(): void
+    {
+        $investigation = \App\Models\Investigation::factory()->create([
+            'tenant_id'   => $this->tenant->id,
+            'primary_sku' => 'SKU-AQ',
+        ]);
+        \App\Models\Anomaly::factory()->create([
+            'tenant_id'        => $this->tenant->id,
+            'investigation_id' => $investigation->id,
+            'sku'              => 'SKU-AQ',
+            'rule_type'        => 'demand_erosion',
+        ]);
+
+        \Livewire\Livewire::test(\App\Filament\Pages\ActionQueue::class)
+            ->set('campaign', 'Demand erosion')
+            ->assertOk();
+    }
+
     /* ---------- data providers ---------------------------------------- */
 
     public static function resourceProvider(): array

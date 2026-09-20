@@ -3,14 +3,17 @@
 namespace App\Filament\Pages;
 
 use App\Filament\Concerns\GatesPageByScreen;
+use App\Models\Action;
 use App\Models\Anomaly;
 use App\Models\AgentRun;
 use App\Models\Investigation;
 use App\Services\Agents\CampaignActionPlanAgent;
+use App\Services\AuditLogger;
 use App\Support\Money;
 use Filament\Facades\Filament;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Illuminate\Support\Collection;
 use Livewire\Attributes\Url;
 
 /**
@@ -47,6 +50,22 @@ class ActionQueue extends Page
     /** Drill-down: when set, the page shows that campaign's full ranked list. */
     #[Url]
     public ?string $campaign = null;
+
+    /** Bulk-review: investigation ids selected in the campaign drill-down. */
+    public array $selected = [];
+
+    /** Campaign → the remediation Action type a manual bulk "start" creates. */
+    private const BULK_ACTION_TYPE = [
+        'Demand erosion'          => Action::TYPE_PRICE_ADJUSTMENT,
+        'Seasonal shift'          => Action::TYPE_REORDER,
+        'Idle & non-moving stock' => Action::TYPE_TRANSFER,
+        'Availability risk'       => Action::TYPE_REORDER,
+        'Supply issues'           => Action::TYPE_SUPPLIER_CONTACT,
+        'Demand shifts'           => Action::TYPE_INVESTIGATE_FURTHER,
+        'Margin & pricing'        => Action::TYPE_PRICE_ADJUSTMENT,
+        'Inventory integrity'     => Action::TYPE_INVESTIGATE_FURTHER,
+        'Data quality'            => Action::TYPE_OTHER,
+    ];
 
     public function getTitle(): string
     {
@@ -292,6 +311,7 @@ class ActionQueue extends Page
                 'value' => Money::compact(array_sum(array_column($rows, 'val')), $currency),
                 'plan'  => $this->planViewModel($this->campaign),
                 'rows'  => array_map(fn ($r) => [
+                    'id'      => $r['inv'],
                     'sku'     => $r['sku'],
                     'store'   => $r['store'],
                     'sev'     => $r['sev'],
@@ -464,6 +484,124 @@ class ActionQueue extends Page
             }
             fclose($out);
         }, $filename, ['Content-Type' => 'text/csv']);
+    }
+
+    // ── Bulk review (work a campaign as a batch, not one-by-one) ─────────────────
+
+    /**
+     * The selected investigations, hard-scoped to this tenant AND this campaign
+     * (never trust the client's id list — only ids that genuinely belong to the
+     * campaign in view are acted on).
+     *
+     * @return Collection<int,Investigation>
+     */
+    private function selectedInvestigations(): Collection
+    {
+        $tenantId = Filament::getTenant()?->id;
+        if (! $tenantId || ! $this->campaign || empty($this->selected)) {
+            return collect();
+        }
+
+        $rules = self::rulesForCampaign($this->campaign);
+        $ids   = array_values(array_filter(array_map('intval', $this->selected)));
+        if (empty($ids) || empty($rules)) {
+            return collect();
+        }
+
+        return Investigation::where('tenant_id', $tenantId)
+            ->whereIn('id', $ids)
+            ->whereHas('anomalies', fn ($q) => $q->whereIn('rule_type', $rules))
+            ->get();
+    }
+
+    public function clearSelection(): void
+    {
+        $this->selected = [];
+    }
+
+    /** Select every investigation currently listed in this campaign's drill-down. */
+    public function selectAllVisible(): void
+    {
+        $q = $this->getQueue();
+        $rows = $q['detail']['rows'] ?? [];
+        $this->selected = array_values(array_filter(array_map(
+            fn ($r) => $r['id'] ?? null,
+            $rows
+        )));
+    }
+
+    /** Bulk-snooze the selected investigations for 30 days (defer the tail together). */
+    public function bulkSnooze(): void
+    {
+        $userId = auth()->id();
+        $count  = 0;
+        foreach ($this->selectedInvestigations() as $inv) {
+            if (! in_array($inv->status, [Investigation::STATUS_OPEN, Investigation::STATUS_IN_PROGRESS], true)) {
+                continue;
+            }
+            $inv->update([
+                'snoozed_until' => now()->addDays(30),
+                'snooze_reason' => 'bulk_snooze',
+                'snooze_notes'  => 'Bulk-snoozed from the ' . $this->campaign . ' campaign.',
+                'snoozed_by'    => $userId,
+                'snoozed_at'    => now(),
+            ]);
+            $count++;
+        }
+
+        $this->clearSelection();
+        Notification::make()
+            ->title($count . ' investigation(s) snoozed for 30 days')
+            ->success()->send();
+    }
+
+    /**
+     * Bulk "start work": create one remediation Action per selected investigation
+     * (campaign-typed) and advance each open one into progress — the manual
+     * counterpart to the AI plan's accept→execute. Internal only; never the ERP.
+     */
+    public function bulkStart(): void
+    {
+        $userId = auth()->id();
+        $type   = self::BULK_ACTION_TYPE[$this->campaign] ?? Action::TYPE_INVESTIGATE_FURTHER;
+        $created = 0;
+        $advanced = 0;
+
+        foreach ($this->selectedInvestigations() as $inv) {
+            $exists = Action::where('investigation_id', $inv->id)
+                ->where('action_type', $type)
+                ->whereIn('status', [Action::STATUS_UNASSIGNED, Action::STATUS_ASSIGNED, Action::STATUS_ACKNOWLEDGED, Action::STATUS_IN_PROGRESS])
+                ->exists();
+
+            if (! $exists) {
+                $action = Action::create([
+                    'investigation_id' => $inv->id,
+                    'action_type'      => $type,
+                    'title'            => $this->campaign . ' — ' . ($inv->primary_sku ?: 'item'),
+                    'description'      => 'Created via bulk review on the ' . $this->campaign . ' campaign.',
+                    'status'           => $inv->assigned_team_id ? Action::STATUS_ASSIGNED : Action::STATUS_UNASSIGNED,
+                    'priority'         => $inv->priority ?? Action::PRIORITY_MEDIUM,
+                    'assigned_team_id' => $inv->assigned_team_id,
+                    'created_by'       => $userId,
+                    'due_at'           => now()->addDays(7),
+                ]);
+                $created++;
+                AuditLogger::actionCreated($inv, $action->id, $action->title, $userId);
+            }
+
+            if ($inv->status === Investigation::STATUS_OPEN) {
+                $old = $inv->status;
+                $inv->update(['status' => Investigation::STATUS_IN_PROGRESS]);
+                AuditLogger::statusChanged($inv, $old, Investigation::STATUS_IN_PROGRESS, $userId);
+                $advanced++;
+            }
+        }
+
+        $this->clearSelection();
+        Notification::make()
+            ->title('Work started on the batch')
+            ->body($created . ' action(s) created, ' . $advanced . ' moved into progress.')
+            ->success()->send();
     }
 
     private function incidentTitle(array $r): string
