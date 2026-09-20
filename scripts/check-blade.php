@@ -193,6 +193,29 @@ foreach ($filamentScan as $file) {
     }
 }
 
+/* ---------- 6: Blade directive glued to a preceding word char (\B@) ---- */
+// Blade compiles directives with \B@, so a directive glued to a word char
+// (e.g. `contracted lead@endif`, `progress@if(...)`) is NOT recognised and is
+// emitted as literal text — silently breaking @if/@foreach nesting → a 500 at
+// render. Caused the Action Queue + Supplier Prep 500s (2026-09-20).
+$gluedDirectives = 'if|elseif|else|endif|unless|endunless|isset|endisset|empty|'
+    . 'endempty|foreach|endforeach|forelse|endforelse|for|endfor|while|endwhile|'
+    . 'php|endphp|switch|endswitch|section|endsection|once|endonce';
+foreach (rglob($root . '/resources/views', '.blade.php') as $file) {
+    $src = file_get_contents($file);
+    $r = rel($file, $root);
+    if (preg_match_all('/\w@(?:' . $gluedDirectives . ')\b/', $src, $mm, PREG_OFFSET_CAPTURE)) {
+        foreach ($mm[0] as $hit) {
+            [$text, $offset] = $hit;
+            $lineNo = lineOf($src, $offset);
+            $problems[] = "[BLADE-GLUE] $r (line $lineNo): directive glued to a word "
+                . "char (`" . trim($text) . "`). Blade uses \\B@, so `word@endif` is not "
+                . "compiled and silently breaks @if/@foreach nesting → a 500. Put a space "
+                . "before the @directive.";
+        }
+    }
+}
+
 /* ---------- report ---------------------------------------------------- */
 
 if (empty($problems)) {

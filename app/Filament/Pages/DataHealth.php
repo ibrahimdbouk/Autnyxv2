@@ -10,11 +10,12 @@ use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 
 /**
- * Data Health (Agent #3) — data-quality / onboarding readiness.
- *
- * Shows the latest AI data-quality check for the current tenant and lets a user
- * run it on demand. It narrates deterministic completeness/freshness checks; it
- * never edits the underlying data.
+ * DEPRECATED — superseded by DataHealthCenter (Feature 4), which now hosts the AI
+ * data-quality review (Agent #3) via its "AI review" action + panel. This page
+ * duplicated the Center's nav label / slug / screen key and caused a duplicate
+ * "Data Health" entry, so it is hidden from navigation and given a non-colliding
+ * slug. Kept only because the file can't be deleted from here while device_bash
+ * is unavailable — remove the file (and data-health.blade.php) in a later pass.
  */
 class DataHealth extends Page
 {
@@ -26,13 +27,20 @@ class DataHealth extends Page
 
     protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';
 
-    protected static ?string $navigationLabel = 'Data Health';
+    protected static ?string $navigationLabel = 'Data Health (legacy)';
 
     protected static ?int $navigationSort = 4;
 
-    protected static ?string $slug = 'data-health';
+    // Non-colliding slug so it no longer clashes with DataHealthCenter's 'data-health'.
+    protected static ?string $slug = 'data-health-ai-legacy';
 
     protected string $view = 'filament.pages.data-health';
+
+    /** Hidden — the Data Health Center is the single Data Health surface now. */
+    public static function shouldRegisterNavigation(): bool
+    {
+        return false;
+    }
 
     public function getTitle(): string
     {

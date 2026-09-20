@@ -145,7 +145,7 @@ a.aq-row:hover{border-color:var(--ax-accent-strong);}
             <div class="aq-plan-h5">Executed</div>
             <div class="aq-exec">
                 <span class="ok"></span>
-                <span>{{ $plan['execution']['actions_created'] ?? 0 }} action(s) created &middot; {{ $plan['execution']['investigations_advanced'] ?? 0 }} investigation(s) moved into progress@if(!empty($plan['acted_by'])) &middot; accepted by {{ $plan['acted_by'] }}@endif @if(!empty($plan['executed_at'])) &middot; {{ $plan['executed_at'] }}@endif</span>
+                <span>{{ $plan['execution']['actions_created'] ?? 0 }} action(s) created &middot; {{ $plan['execution']['investigations_advanced'] ?? 0 }} investigation(s) moved into progress @if(!empty($plan['acted_by']))&middot; accepted by {{ $plan['acted_by'] }} @endif @if(!empty($plan['executed_at']))&middot; {{ $plan['executed_at'] }} @endif</span>
             </div>
             <div class="aq-plan-cta">
                 @if($plan['po_available'])

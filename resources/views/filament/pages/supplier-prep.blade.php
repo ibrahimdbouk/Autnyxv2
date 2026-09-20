@@ -52,7 +52,7 @@
         <a class="sp-row" href="{{ $s['url'] }}">
             <div>
                 <div class="t">{{ $s['name'] }}</div>
-                <div class="s">{{ $s['specialization'] ?: 'General' }}@if(!empty($s['lead'])) &middot; {{ $s['lead'] }}d contracted lead@endif</div>
+                <div class="s">{{ $s['specialization'] ?: 'General' }}@if(!empty($s['lead'])) &middot; {{ $s['lead'] }}d contracted lead @endif</div>
             </div>
             <div class="c">{{ $s['pos'] }} POs</div>
             <div class="go">Prepare &rarr;</div>
