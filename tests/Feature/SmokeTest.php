@@ -249,6 +249,7 @@ class SmokeTest extends TestCase
                 'SupplierResource',
                 'SuppressionResource',
                 'TeamResource',
+                'TeamsConnectionResource',
                 'TenantResource',
                 'UserResource',
             ]

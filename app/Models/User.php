@@ -24,6 +24,7 @@ class User extends Authenticatable implements FilamentUser, HasTenants
         'is_super_admin',
         'is_tenant_admin',
         'visible_screens',
+        'teams_aad_user_id',
     ];
 
     protected $hidden = [

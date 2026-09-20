@@ -1,0 +1,42 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.16/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.16",
+  "version": "1.0.0",
+  "id": "REPLACE_WITH_TEAMS_APP_GUID",
+  "packageName": "com.autnyx.notifications",
+  "developer": {
+    "name": "Autnyx",
+    "websiteUrl": "https://autnyx.com",
+    "privacyUrl": "https://autnyx.com/privacy",
+    "termsOfUseUrl": "https://autnyx.com/terms"
+  },
+  "name": {
+    "short": "Autnyx",
+    "full": "Autnyx Retail Investigator"
+  },
+  "description": {
+    "short": "Revenue-loss anomaly alerts from Autnyx, in Teams.",
+    "full": "Autnyx detects and investigates grocery-retail revenue-loss anomalies and delivers alerts and investigation updates to your team — as channel cards and per-user activity-feed notifications with a deep link back into Autnyx."
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "accentColor": "#1E2761",
+  "activities": {
+    "activityTypes": [
+      {
+        "type": "autnyxAlert",
+        "description": "Autnyx alert",
+        "templateText": "{alert}"
+      }
+    ]
+  },
+  "webApplicationInfo": {
+    "id": "REPLACE_WITH_ENTRA_APP_CLIENT_ID",
+    "resource": "https://RscBasedStoreApp"
+  },
+  "validDomains": [
+    "app.autnyx.com"
+  ]
+}

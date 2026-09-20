@@ -79,6 +79,35 @@ class NotificationDispatcher
         if ($alsoEmail && $users !== null && config('mail.default') !== 'log') {
             self::emailUsers($users, $title, $body, $url);
         }
+
+        // Teams counterpart — dormant until a tenant configures a connection
+        // (TEAMS_ENABLED + an active teams_connections row). Best-effort.
+        if ($alsoEmail && $users !== null && config('services.teams.enabled')) {
+            self::teamsUsers($users, $title, $body, $url);
+        }
+    }
+
+    /**
+     * Send the Teams counterpart. Users are grouped by tenant so each tenant's
+     * own connection (channel + per-user activity feed) handles its recipients.
+     * The dormant guard + all delivery errors are handled inside TeamsNotifier.
+     *
+     * @param  \Illuminate\Support\Collection<int,User>  $users
+     */
+    private static function teamsUsers($users, string $title, ?string $body, ?string $url): void
+    {
+        try {
+            $notifier = app(\App\Services\Teams\TeamsNotifier::class);
+
+            foreach ($users->groupBy('tenant_id') as $tenantId => $group) {
+                if (! $tenantId) {
+                    continue;
+                }
+                $notifier->notify((int) $tenantId, $group, $title, $body, $url);
+            }
+        } catch (\Throwable $e) {
+            Log::error('[NotificationDispatcher] teams: ' . $e->getMessage());
+        }
     }
 
     /**

@@ -23,6 +23,17 @@ return [
         ],
     ],
 
+    // Microsoft Teams notification channel. ONE multi-tenant Autnyx Entra app;
+    // each customer admin-consents. Per-tenant target ids live in teams_connections.
+    // Ships dark: TEAMS_ENABLED defaults false, so nothing sends until configured.
+    // See claude/teams-notifications.md.
+    'teams' => [
+        'enabled'       => (bool) env('TEAMS_ENABLED', false),
+        'client_id'     => env('TEAMS_CLIENT_ID'),
+        'client_secret' => env('TEAMS_CLIENT_SECRET'),
+        'app_id'        => env('TEAMS_APP_ID'), // Autnyx Teams app catalog id (activity feed)
+    ],
+
     'anthropic' => [
         'key' => env('ANTHROPIC_API_KEY'),
         // Model selection for the AI layer. Fast = bulk narration/flagging
