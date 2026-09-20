@@ -3,9 +3,7 @@
 namespace App\Filament\Pages;
 use App\Filament\Concerns\GatesPageByScreen;
 
-use App\Models\AgentRun;
 use App\Models\DataHealthSnapshot;
-use App\Services\Agents\DataQualityAgent;
 use App\Services\DataHealth\DataHealthService;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
@@ -55,66 +53,6 @@ class DataHealthCenter extends Page
                         Notification::make()->title('Data health recomputed')->success()->send();
                     }
                 }),
-            Action::make('aiReview')
-                ->label('AI review')
-                ->icon('heroicon-o-sparkles')
-                ->action(function () {
-                    $tenantId = Filament::getTenant()?->id;
-                    if (! $tenantId) {
-                        return;
-                    }
-                    $run = app(DataQualityAgent::class)->checkTenant($tenantId, auth()->id());
-                    if ($run->isFailed()) {
-                        Notification::make()->title('AI review could not run')
-                            ->body('The AI service did not respond. Please try again in a moment.')
-                            ->danger()->send();
-
-                        return;
-                    }
-                    Notification::make()->title('AI review updated')->success()->send();
-                }),
-        ];
-    }
-
-    /**
-     * Latest AI data-quality narration for this tenant (Agent #3), shaped for the
-     * view. Null when none has been run. The AI narrates the deterministic checks;
-     * it never alters the data.
-     *
-     * @return array<string,mixed>|null
-     */
-    public function getAiReview(): ?array
-    {
-        $tenantId = Filament::getTenant()?->id;
-        if (! $tenantId) {
-            return null;
-        }
-
-        // Best-effort: the AI panel is optional — never let its lookup 500 the
-        // whole Data Health page (e.g. if agent_runs is absent in a given
-        // environment/test harness). Fail closed to "no review".
-        try {
-            $run = AgentRun::where('tenant_id', $tenantId)
-                ->where('agent_key', AgentRun::KEY_DATA_QUALITY)
-                ->where('status', AgentRun::STATUS_COMPLETE)
-                ->latest('id')
-                ->first();
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('[DataHealthCenter] getAiReview failed: ' . $e->getMessage());
-
-            return null;
-        }
-
-        if (! $run) {
-            return null;
-        }
-
-        return [
-            'headline'   => $run->out('headline'),
-            'summary'    => $run->out('summary'),
-            'readiness'  => $run->out('data_readiness', 'fair'),
-            'issues'     => is_array($run->out('issues')) ? $run->out('issues') : [],
-            'generated'  => optional($run->created_at)->diffForHumans(),
         ];
     }
 

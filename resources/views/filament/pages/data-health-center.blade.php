@@ -60,28 +60,6 @@
             </div>
         </div>
 
-        @php($ai = $this->getAiReview())
-        @if($ai)
-            <div class="dh-card" style="border-left:3px solid var(--ax-accent-strong);">
-                <div class="dh-card-head">
-                    <span class="dh-card-title">&#10022; AI review
-                        @if(!empty($ai['readiness']))<span class="dh-pill" style="background:var(--ax-neutral-soft); color:var(--ax-muted); margin-left:.4rem;">{{ $ai['readiness'] }}</span>@endif
-                    </span>
-                    @if(!empty($ai['generated']))<span class="dh-muted">{{ $ai['generated'] }}</span>@endif
-                </div>
-                <div class="dh-card-body">
-                    @if(!empty($ai['headline']))<div style="font-weight:700; color:var(--ax-ink);">{{ $ai['headline'] }}</div>@endif
-                    @if(!empty($ai['summary']))<div class="dh-muted" style="line-height:1.5;">{{ $ai['summary'] }}</div>@endif
-                    @foreach($ai['issues'] as $iss)
-                        <div class="dh-row" style="align-items:flex-start; gap:.6rem;">
-                            <span class="v" style="min-width:5.5rem;">{{ ucfirst($iss['severity'] ?? 'low') }} &middot; {{ $iss['area'] ?? '' }}</span>
-                            <span class="k" style="flex:1;">{{ $iss['finding'] ?? '' }} @if(!empty($iss['fix']))<em>Fix: {{ $iss['fix'] }}</em>@endif</span>
-                        </div>
-                    @endforeach
-                </div>
-            </div>
-        @endif
-
         @if($snapshots->isEmpty())
             <div class="dh-card"><div class="dh-card-body dh-muted">No datasets have been scored yet. Use “Recompute” above once data has been ingested.</div></div>
         @else
