@@ -89,7 +89,9 @@ class GenericRestConnector implements Connector
                 return;
             }
             if ($strategy === 'next_link') {
-                $absolute = data_get($json, '@odata.nextLink');
+                // '@odata.nextLink' is a literal key with a dot in it — read it
+                // directly (data_get would treat the dot as nesting).
+                $absolute = is_array($json) ? ($json['@odata.nextLink'] ?? null) : null;
                 if (! is_string($absolute) || $absolute === '') {
                     return;
                 }
@@ -104,7 +106,9 @@ class GenericRestConnector implements Connector
             }
             // OData v2/v4 server-driven paging: follow __next / @odata.nextLink if present.
             if ($strategy === 'odata_skiptop') {
-                $next = data_get($json, 'd.__next') ?? data_get($json, '__next') ?? data_get($json, '@odata.nextLink');
+                $next = data_get($json, 'd.__next')
+                    ?? data_get($json, '__next')
+                    ?? (is_array($json) ? ($json['@odata.nextLink'] ?? null) : null);
                 if (is_string($next) && $next !== '') {
                     $absolute = $next;
                     continue;
