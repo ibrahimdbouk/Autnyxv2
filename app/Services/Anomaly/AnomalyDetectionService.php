@@ -224,6 +224,8 @@ class AnomalyDetectionService
         'demand_forecast_break',
         // Actual-vs-ingested-plan: raw-SQL, scoped by sku via scopeSql('pf.sku').
         'plan_variance',
+        // Planned-order vs receipts: raw-SQL, scoped by sku on both sources.
+        'order_plan_variance',
     ];
 
     /**
@@ -706,6 +708,7 @@ class AnomalyDetectionService
             'cumulative_shrink'          => fn () => $this->detectCumulativeShrink($tenantId, $t('cumulative_shrink')),
 
             // Purchase Orders
+            'order_plan_variance'        => fn () => $this->detectOrderPlanVariance($tenantId, $t('order_plan_variance')),
             'po_overdue'                 => fn () => $this->detectPoOverdue($tenantId),
             'receiving_discrepancy'      => fn () => $this->detectReceivingDiscrepancy($tenantId, $t('receiving_discrepancy')),
             'po_late_receipt'            => fn () => $this->detectPoLateReceipt($tenantId, $t('po_late_receipt')),
@@ -1641,6 +1644,115 @@ class AnomalyDetectionService
         }
         foreach ($chainRows as $r) {
             $emit(trim((string) $r->sku), null, (float) $r->f, (float) $r->a, $r->source, (int) $r->matched_days);
+        }
+    }
+
+    /**
+     * Planned-order vs actual-receipts variance. The sibling of `plan_variance` on
+     * the SUPPLY side: where plan_variance asks "did we SELL what the plan expected",
+     * this asks "did we ORDER/RECEIVE what the plan called for". It pairs the plan's
+     * `planned_order_qty` (plan_forecasts, ingested from RELEX / Blue Yonder /
+     * Slimstock / ERP planning) against actual goods receipts (`purchase_orders.
+     * qty_received`) over a window.
+     *
+     * Aggregated at CHAIN level per SKU on purpose: order/replenishment flows and
+     * goods receipts are managed at DC/chain level and `purchase_orders.store_id`
+     * is frequently null, so attributing receipts to a store would false-flag
+     * "under-received". Summed planned orders vs summed receipts over the window;
+     * flags a material, priced gap. "Planned to order, received nothing" is the
+     * highest-value case (a missed replenishment → coming stockout). Only fires for
+     * tenants who ingest planned orders (planned_order_qty present). No plan → no work.
+     */
+    private function detectOrderPlanVariance(int $tenantId, array $thresholds): void
+    {
+        $tol        = (float) ($thresholds['pct'] ?? 25) / 100;
+        $days       = (int) ($thresholds['days'] ?? 30);   // order cycles are lumpier than daily demand
+        $minUnits   = (float) ($thresholds['min_units'] ?? 1);
+        $minValue   = (float) ($thresholds['min_value'] ?? self::DEFAULT_MIN_REVENUE);
+
+        $to   = $this->analysisDate()->format('Y-m-d');
+        $from = $this->analysisDate()->copy()->subDays($days - 1)->format('Y-m-d');
+
+        [$scopePlan, $planBind] = $this->scopeSql('sku');
+        [$scopePo,   $poBind]   = $this->scopeSql('sku');
+
+        // Planned orders per SKU over the window (freshest source per sku/store/day,
+        // then summed across stores + days). Only plan points that carry an order plan.
+        $plannedRows = DB::select(
+            "SELECT sku, SUM(planned) AS planned
+             FROM (
+                 SELECT DISTINCT ON (sku, store_id, target_date) sku, planned_order_qty AS planned
+                 FROM plan_forecasts
+                 WHERE tenant_id = ? AND planned_order_qty IS NOT NULL
+                   AND target_date BETWEEN ? AND ?{$scopePlan}
+                 ORDER BY sku, store_id, target_date, updated_at DESC
+             ) p
+             GROUP BY sku",
+            array_merge([$tenantId, $from, $to], $planBind),
+        );
+
+        if (empty($plannedRows)) {
+            return; // no ingested order plan for the window — nothing to measure
+        }
+
+        // Actual goods receipts per SKU over the same window.
+        $recvRows = DB::select(
+            "SELECT sku, SUM(qty_received) AS recv
+             FROM purchase_orders
+             WHERE tenant_id = ? AND received_date IS NOT NULL AND qty_received IS NOT NULL
+               AND received_date BETWEEN ? AND ?{$scopePo}
+             GROUP BY sku",
+            array_merge([$tenantId, $from, $to], $poBind),
+        );
+
+        $received = [];
+        foreach ($recvRows as $r) {
+            $received[trim((string) $r->sku)] = (float) $r->recv;
+        }
+
+        foreach ($plannedRows as $r) {
+            $sku     = trim((string) $r->sku);
+            $planned = (float) $r->planned;
+            if ($planned < $minUnits || $planned <= 0) {
+                continue;
+            }
+
+            $recv = $received[$sku] ?? 0.0;
+            $dir  = null;
+            if ($recv < $planned * (1 - $tol)) {
+                $dir = 'under';   // received less than planned → replenishment shortfall
+            } elseif ($recv > $planned * (1 + $tol)) {
+                $dir = 'over';    // received more than planned → over-ordering / cash tied up
+            }
+            if ($dir === null) {
+                continue;
+            }
+
+            $cost   = $this->unitCost($sku);
+            $delta  = abs($recv - $planned);
+            $value  = $delta * $cost;
+            if ($cost > 0 && $value < $minValue) {
+                continue;
+            }
+
+            $sev    = $cost > 0 ? $this->severityFromImpact($value) : Anomaly::SEVERITY_MEDIUM;
+            $devPct = (int) round($delta / $planned * 100);
+            $verb   = $dir === 'under' ? 'below' : 'above';
+
+            $this->flag($tenantId, 'order_plan_variance', $sev, $sku, null, null,
+                "SKU {$sku} received " . round($recv) . " units over the last {$days} days vs a planned "
+                . round($planned) . " to order — {$devPct}% {$verb} the plan"
+                . ($cost > 0 ? ' (' . $this->money($value) . ' ' . ($dir === 'under' ? 'under-supplied' : 'over-supplied') . ')' : '') . '.',
+                [
+                    'model'          => 'ingested_plan',
+                    'planned_units'  => round($planned, 1),
+                    'received_units' => round($recv, 1),
+                    'deviation_pct'  => $devPct,
+                    'direction'      => $dir,
+                    'value_impact'   => round($value, 2),
+                    'window_days'    => $days,
+                ]
+            );
         }
     }
 

@@ -67,6 +67,13 @@ class AnomalySetting extends Model
             'tier'               => 'core',   // Requires: plan_forecasts (ingested plan) + sales_daily
             'default_thresholds' => ['pct' => 30, 'days' => 14, 'min_units' => 1, 'min_revenue' => 500],
         ],
+        'order_plan_variance' => [
+            'label'              => 'Orders vs Plan Variance',
+            'description'        => 'Actual goods receipts (purchase_orders.qty_received) depart from the tenant\'s ingested planned orders (plan_forecasts.planned_order_qty) beyond a tolerance band — "did we order/receive what the plan called for". Chain-level, cost-weighted; "planned to order, received nothing" is a coming stockout. Only active once a planned-order feed is ingested.',
+            'severity'           => 'medium',
+            'tier'               => 'core',   // Requires: plan_forecasts.planned_order_qty + purchase_orders receipts
+            'default_thresholds' => ['pct' => 25, 'days' => 30, 'min_units' => 1, 'min_value' => 500],
+        ],
         'demand_erosion' => [
             'label'              => 'Slow Demand Erosion',
             'description'        => 'A SKU\'s demand is on a sustained downward trend (a gradual slide, not a sharp break) — the kind of erosion that recent-vs-window rules miss because both windows fall together.',

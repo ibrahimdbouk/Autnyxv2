@@ -65,7 +65,7 @@ class SkuProfile extends Model
         'channel_mix_shift',
         // Actual-vs-ingested-plan is measured against the TENANT'S own forecast, so
         // it is never segment-gated — it applies to any SKU the tenant plans.
-        'plan_variance',
+        'plan_variance', 'order_plan_variance',
     ];
 
     /** Whether a rule is relevant for a given segment (used by detection gating). */
