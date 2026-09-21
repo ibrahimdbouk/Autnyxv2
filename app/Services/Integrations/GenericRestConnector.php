@@ -62,11 +62,23 @@ class GenericRestConnector implements Connector
                 case 'link_header':
                     $query[$sizeParam] = $size;
                     break;
+                case 'hasmore':
+                    $query[$offsetParam] = $offset;
+                    $query[$sizeParam]   = $size;
+                    break;
             }
 
-            $url  = $absolute ?: $requestUrl;
+            $url = $absolute ?: $requestUrl;
             // A continuation URL already carries its own query string.
-            $resp = $this->client($connection)->get($url, $absolute ? [] : $this->prepareQuery($connection, $feed, $query));
+            $sendQuery = $absolute ? [] : $this->prepareQuery($connection, $feed, $query);
+
+            $request = $this->client($connection);
+            $signed  = $this->signedHeaders($connection, 'GET', $url, $sendQuery);
+            if ($signed !== []) {
+                $request = $request->withHeaders($signed);
+            }
+
+            $resp = $request->get($url, $sendQuery);
 
             if (! $resp->successful()) {
                 throw new RuntimeException('Fetch failed: ' . $this->extractError($resp));
@@ -113,6 +125,20 @@ class GenericRestConnector implements Connector
                     $absolute = $next;
                     continue;
                 }
+            }
+            // Oracle Fusion / EBS-ORDS / NetSuite: a rel="next" link if present,
+            // else the `hasMore` flag + offset (more reliable than a short page).
+            if ($strategy === 'hasmore') {
+                $next = $this->linksNext($json);
+                if ($next !== null) {
+                    $absolute = $next;
+                    continue;
+                }
+                if (data_get($json, 'hasMore') === true && $count > 0) {
+                    $offset += $size;
+                    continue;
+                }
+                return;
             }
             // page / offset / odata_skiptop — stop on a short/empty page.
             if ($count < $size) {
@@ -234,6 +260,37 @@ class GenericRestConnector implements Connector
      */
     protected function oauthScope(ApiConnection $connection): ?string
     {
+        return null;
+    }
+
+    /**
+     * Extra per-request headers computed from the final URL + query (needed for
+     * signature auth). Base: none. NetSuite returns the OAuth 1.0a header.
+     *
+     * @param  array<string,mixed>  $query
+     * @return array<string,string>
+     */
+    protected function signedHeaders(ApiConnection $connection, string $method, string $url, array $query): array
+    {
+        return [];
+    }
+
+    /** A rel="next" href from a JSON `links` array (Oracle/NetSuite style). */
+    private function linksNext($json): ?string
+    {
+        $links = data_get($json, 'links');
+        if (! is_array($links)) {
+            return null;
+        }
+        foreach ($links as $link) {
+            if (data_get($link, 'rel') === 'next') {
+                $href = data_get($link, 'href');
+                if (is_string($href) && $href !== '') {
+                    return $href;
+                }
+            }
+        }
+
         return null;
     }
 

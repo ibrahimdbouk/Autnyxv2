@@ -39,7 +39,9 @@ final class Profiles
             'sap_s4hana'   => 'SAP S/4HANA (OData)',
             'dynamics_bc'  => 'MS Dynamics 365 Business Central',
             'dynamics_fno' => 'MS Dynamics 365 Finance & Operations',
-            'oracle'       => 'Oracle (REST)',
+            'oracle_fusion' => 'Oracle Fusion Cloud (ERP)',
+            'oracle_ebs'    => 'Oracle E-Business Suite',
+            'netsuite'      => 'Oracle NetSuite',
             'shopify'      => 'Shopify (Admin REST)',
             'blue_yonder'  => 'Blue Yonder',
             'relex'        => 'RELEX',
@@ -78,9 +80,26 @@ final class Profiles
             'page_strategy' => 'next_link',
             'records_path'  => 'value',
         ],
-        'oracle' => [
-            'auth_type'     => ApiConnection::AUTH_BEARER,
-            'page_strategy' => 'offset',
+        // Oracle Fusion Cloud (ERP) — REST, basic or OAuth2; items + hasMore + offset.
+        'oracle_fusion' => [
+            'auth_type'     => ApiConnection::AUTH_BASIC,
+            'page_strategy' => 'hasmore',
+            'records_path'  => 'items',
+            'size_param'    => 'limit',
+            'offset_param'  => 'offset',
+        ],
+        // Oracle E-Business Suite — via ORDS/REST; same items + hasMore + offset shape.
+        'oracle_ebs' => [
+            'auth_type'     => ApiConnection::AUTH_BASIC,
+            'page_strategy' => 'hasmore',
+            'records_path'  => 'items',
+            'size_param'    => 'limit',
+            'offset_param'  => 'offset',
+        ],
+        // Oracle NetSuite — SuiteTalk REST; OAuth 1.0a TBA (signed by NetSuiteConnector).
+        'netsuite' => [
+            'auth_type'     => ApiConnection::AUTH_NONE,
+            'page_strategy' => 'hasmore',
             'records_path'  => 'items',
             'size_param'    => 'limit',
             'offset_param'  => 'offset',

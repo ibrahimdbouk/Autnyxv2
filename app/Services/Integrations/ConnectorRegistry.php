@@ -21,6 +21,7 @@ class ConnectorRegistry
             'sap_s4hana'   => new SapS4HanaConnector($profile),
             'dynamics_bc'  => new DynamicsConnector($profile),
             'dynamics_fno' => new DynamicsFnoConnector($profile),
+            'netsuite'     => new NetSuiteConnector($profile),
             default        => new GenericRestConnector($profile),
         };
     }
