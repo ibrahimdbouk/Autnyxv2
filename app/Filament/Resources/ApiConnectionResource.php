@@ -157,6 +157,7 @@ class ApiConnectionResource extends Resource
                         ->options(Import::dataTypeLabels() + [
                             \App\Models\ApiFeed::DATA_TYPE_DEMAND_FORECAST      => 'Demand Forecast (F&R plan → baseline)',
                             \App\Models\ApiFeed::DATA_TYPE_REPLENISHMENT_PARAMS => 'Replenishment Params (F&R → policy)',
+                            \App\Models\ApiFeed::DATA_TYPE_PLANNING_EXCEPTION   => 'Planning Exceptions (F&R alerts → hybrid)',
                         ])
                         ->required()
                         ->searchable(),

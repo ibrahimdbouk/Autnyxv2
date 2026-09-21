@@ -74,6 +74,13 @@ class AnomalySetting extends Model
             'tier'               => 'core',   // Requires: plan_forecasts.planned_order_qty + purchase_orders receipts
             'default_thresholds' => ['pct' => 25, 'days' => 30, 'min_units' => 1, 'min_value' => 500],
         ],
+        'planning_exception' => [
+            'label'              => 'Upstream Planning Exception',
+            'description'        => 'An exception the tenant\'s F&R system (RELEX / Blue Yonder / Slimstock) raised itself that Autnyx cannot derive from ERP+POS data — an upstream supply / allocation / service-level / capacity / phase-in / promo risk. Ingested first-class via PlanningExceptionIngestor (types Autnyx DOES detect are attached as corroboration instead). Managed outside the detection scan.',
+            'severity'           => 'medium',
+            'tier'               => 'core',   // Requires: an ingested planning_exception feed
+            'default_thresholds' => [],
+        ],
         'demand_erosion' => [
             'label'              => 'Slow Demand Erosion',
             'description'        => 'A SKU\'s demand is on a sustained downward trend (a gradual slide, not a sharp break) — the kind of erosion that recent-vs-window rules miss because both windows fall together.',

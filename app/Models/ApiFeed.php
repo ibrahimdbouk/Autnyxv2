@@ -18,6 +18,7 @@ class ApiFeed extends Model
      */
     public const DATA_TYPE_DEMAND_FORECAST     = 'demand_forecast';
     public const DATA_TYPE_REPLENISHMENT_PARAMS = 'replenishment_params';
+    public const DATA_TYPE_PLANNING_EXCEPTION   = 'planning_exception';
 
     protected $fillable = [
         'api_connection_id',

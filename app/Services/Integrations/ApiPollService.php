@@ -22,6 +22,7 @@ class ApiPollService
         private PipelineIngestor $ingestor,
         private ForecastFeedIngestor $forecast,
         private ReplenishmentParamsIngestor $replenParams,
+        private PlanningExceptionIngestor $planningExceptions,
     ) {
     }
 
@@ -73,6 +74,9 @@ class ApiPollService
         }
         if ($feed->data_type === ApiFeed::DATA_TYPE_REPLENISHMENT_PARAMS) {
             return $this->replenParams->ingest($connection, $feed, $connector->fetch($connection, $feed)) > 0;
+        }
+        if ($feed->data_type === ApiFeed::DATA_TYPE_PLANNING_EXCEPTION) {
+            return $this->planningExceptions->ingest($connection, $feed, $connector->fetch($connection, $feed)) > 0;
         }
 
         $import = $this->ingestor->ingestRows(
