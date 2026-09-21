@@ -1583,10 +1583,12 @@ class AnomalyDetectionService
         }
 
         // Store labels only if we have store-level plans (small table, one query).
+        // Build the label in PHP — a DB::raw() column can't be used as a pluck value.
         $storeLabels = [];
         if (! empty($storeRows)) {
-            $storeLabels = DB::table('stores')->where('tenant_id', $tenantId)
-                ->pluck(DB::raw('COALESCE(code, name)'), 'id')->all();
+            foreach (DB::table('stores')->where('tenant_id', $tenantId)->get(['id', 'code', 'name']) as $s) {
+                $storeLabels[$s->id] = $s->code ?: ($s->name ?: "store {$s->id}");
+            }
         }
 
         $emit = function (string $sku, ?int $storeId, float $f, float $a, ?string $source, int $matchedDays)
