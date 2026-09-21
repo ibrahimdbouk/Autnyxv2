@@ -154,7 +154,9 @@ class ApiConnectionResource extends Resource
                 ->schema([
                     Select::make('data_type')
                         ->label('Import type')
-                        ->options(Import::dataTypeLabels())
+                        ->options(Import::dataTypeLabels() + [
+                            \App\Models\ApiFeed::DATA_TYPE_DEMAND_FORECAST => 'Demand Forecast (F&R plan → baseline)',
+                        ])
                         ->required()
                         ->searchable(),
 

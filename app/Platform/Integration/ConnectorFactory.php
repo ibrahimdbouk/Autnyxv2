@@ -3,7 +3,10 @@
 namespace App\Platform\Integration;
 
 use App\Models\OutboundTarget;
+use App\Platform\Integration\Connectors\BlueYonderConnector;
 use App\Platform\Integration\Connectors\LogConnector;
+use App\Platform\Integration\Connectors\RelexConnector;
+use App\Platform\Integration\Connectors\SlimstockConnector;
 use App\Platform\Integration\Connectors\WebhookConnector;
 use App\Platform\Integration\Contracts\OutboundConnector;
 
@@ -18,7 +21,10 @@ class ConnectorFactory
     public function for(string $kind): OutboundConnector
     {
         return match ($kind) {
-            OutboundTarget::KIND_WEBHOOK => new WebhookConnector(),
+            OutboundTarget::KIND_WEBHOOK     => new WebhookConnector(),
+            OutboundTarget::KIND_RELEX       => new RelexConnector(),
+            OutboundTarget::KIND_BLUE_YONDER => new BlueYonderConnector(),
+            OutboundTarget::KIND_SLIMSTOCK   => new SlimstockConnector(),
             // 'log' and every not-yet-built flagship kind → safe log connector.
             default => new LogConnector(),
         };

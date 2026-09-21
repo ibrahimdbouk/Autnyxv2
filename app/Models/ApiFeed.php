@@ -11,6 +11,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class ApiFeed extends Model
 {
+    /**
+     * A planning-layer data type that does NOT go through the transactional import
+     * pipeline — it lands in the planning baseline (plan_forecasts) via
+     * ForecastFeedIngestor. Distinct from Import::TYPE_* (sales/inventory/…).
+     */
+    public const DATA_TYPE_DEMAND_FORECAST = 'demand_forecast';
+
     protected $fillable = [
         'api_connection_id',
         'tenant_id',

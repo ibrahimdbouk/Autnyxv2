@@ -20,6 +20,7 @@ class ApiPollService
     public function __construct(
         private ConnectorRegistry $registry,
         private PipelineIngestor $ingestor,
+        private ForecastFeedIngestor $forecast,
     ) {
     }
 
@@ -62,9 +63,14 @@ class ApiPollService
         return $ingested;
     }
 
-    /** Fetch a feed's records and run the standard import. Returns true if any rows landed. */
+    /** Fetch a feed's records and route it: planning baseline, or the import pipeline. */
     private function ingestFeed(ApiConnection $connection, ApiFeed $feed, $connector): bool
     {
+        // Planning-layer feed (F&R forecast) → the baseline, not the import pipeline.
+        if ($feed->data_type === ApiFeed::DATA_TYPE_DEMAND_FORECAST) {
+            return $this->forecast->ingest($connection, $feed, $connector->fetch($connection, $feed)) > 0;
+        }
+
         $import = $this->ingestor->ingestRows(
             $connection->tenant_id,
             $feed->data_type,

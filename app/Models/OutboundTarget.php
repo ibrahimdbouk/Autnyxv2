@@ -12,8 +12,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class OutboundTarget extends Model
 {
-    public const KIND_WEBHOOK = 'webhook';
-    public const KIND_LOG     = 'log';
+    public const KIND_WEBHOOK     = 'webhook';
+    public const KIND_LOG         = 'log';
+    public const KIND_RELEX       = 'relex';
+    public const KIND_BLUE_YONDER = 'blue_yonder';
+    public const KIND_SLIMSTOCK   = 'slimstock';
 
     protected $fillable = [
         'tenant_id',
