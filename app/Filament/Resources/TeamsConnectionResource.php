@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\TeamsConnectionResource\Pages;
 use App\Models\TeamsConnection;
 use App\Services\Teams\TeamsNotifier;
+use App\Services\Teams\TeamsUserResolver;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
@@ -196,6 +197,30 @@ class TeamsConnectionResource extends Resource
                         } catch (\Throwable $e) {
                             Notification::make()
                                 ->title('Test failed')
+                                ->body($e->getMessage())
+                                ->danger()
+                                ->persistent()
+                                ->send();
+                        }
+                    }),
+
+                Action::make('resyncUsers')
+                    ->label('Resync users')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('gray')
+                    ->requiresConfirmation()
+                    ->modalDescription('Look up each user\'s Microsoft Teams id from their email via Graph, so per-user pings can reach them. Requires the User.Read.All permission to be consented.')
+                    ->action(function (TeamsConnection $record) {
+                        try {
+                            $r = app(TeamsUserResolver::class)->resyncTenant($record->tenant_id);
+                            Notification::make()
+                                ->title("Mapped {$r['updated']} user(s)")
+                                ->body("{$r['skipped']} skipped, {$r['failed']} failed.")
+                                ->success()
+                                ->send();
+                        } catch (\Throwable $e) {
+                            Notification::make()
+                                ->title('Resync failed')
                                 ->body($e->getMessage())
                                 ->danger()
                                 ->persistent()

@@ -129,4 +129,38 @@ class GraphClient
             throw new RuntimeException('Teams activity notification failed: HTTP ' . $resp->status() . ' ' . $resp->body());
         }
     }
+
+    /**
+     * Resolve an Azure AD user object id from an email address, so users don't
+     * have to be mapped to Teams by hand. Matches either mail or userPrincipalName
+     * (they often differ). Requires the User.Read.All application permission
+     * (admin-consented). Returns null when no user matches.
+     */
+    public function resolveUserIdByEmail(TeamsConnection $conn, string $email): ?string
+    {
+        $email = trim($email);
+        if ($email === '') {
+            return null;
+        }
+
+        // Escape single quotes for the OData string literal (' → '').
+        $literal = str_replace("'", "''", $email);
+        $filter  = "mail eq '{$literal}' or userPrincipalName eq '{$literal}'";
+
+        $resp = Http::withToken($this->token($conn->aad_tenant_id))
+            ->timeout(20)
+            ->get(self::GRAPH . '/users', [
+                '$filter' => $filter,
+                '$select' => 'id',
+                '$top'    => 1,
+            ]);
+
+        if (! $resp->successful()) {
+            throw new RuntimeException('Teams user lookup failed: HTTP ' . $resp->status() . ' ' . $resp->body());
+        }
+
+        $id = $resp->json('value.0.id');
+
+        return is_string($id) && $id !== '' ? $id : null;
+    }
 }
