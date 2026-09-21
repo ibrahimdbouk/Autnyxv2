@@ -13,11 +13,15 @@ class SkuReplenishment extends Model
 {
     protected $table = 'sku_replenishment';
 
+    /** Nightly derived vs tenant-supplied (ingested from an F&R params feed). */
+    public const SOURCE_COMPUTED = 'computed';
+    public const SOURCE_INGESTED = 'ingested';
+
     protected $fillable = [
         'tenant_id', 'sku', 'store_id', 'supplier', 'segment',
         'daily_rate', 'lead_time_days', 'safety_stock', 'reorder_point', 'order_up_to',
         'on_hand', 'suggested_order_qty', 'unit_cost', 'order_value', 'service_level',
-        'computed_at',
+        'source', 'computed_at',
     ];
 
     protected $casts = [

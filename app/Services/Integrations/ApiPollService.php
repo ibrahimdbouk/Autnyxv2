@@ -21,6 +21,7 @@ class ApiPollService
         private ConnectorRegistry $registry,
         private PipelineIngestor $ingestor,
         private ForecastFeedIngestor $forecast,
+        private ReplenishmentParamsIngestor $replenParams,
     ) {
     }
 
@@ -66,9 +67,12 @@ class ApiPollService
     /** Fetch a feed's records and route it: planning baseline, or the import pipeline. */
     private function ingestFeed(ApiConnection $connection, ApiFeed $feed, $connector): bool
     {
-        // Planning-layer feed (F&R forecast) → the baseline, not the import pipeline.
+        // Planning-layer feeds → the baseline / params, not the import pipeline.
         if ($feed->data_type === ApiFeed::DATA_TYPE_DEMAND_FORECAST) {
             return $this->forecast->ingest($connection, $feed, $connector->fetch($connection, $feed)) > 0;
+        }
+        if ($feed->data_type === ApiFeed::DATA_TYPE_REPLENISHMENT_PARAMS) {
+            return $this->replenParams->ingest($connection, $feed, $connector->fetch($connection, $feed)) > 0;
         }
 
         $import = $this->ingestor->ingestRows(

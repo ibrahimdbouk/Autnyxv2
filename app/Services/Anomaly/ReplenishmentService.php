@@ -3,6 +3,7 @@
 namespace App\Services\Anomaly;
 
 use App\Models\SkuProfile;
+use App\Models\SkuReplenishment;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -47,6 +48,10 @@ class ReplenishmentService
         $onHand   = $this->onHandSnapshot($tenantId);
         $costBySku = $this->costs($tenantId);
 
+        // Rows the tenant supplied from an F&R params feed are authoritative — the
+        // compute never touches them (skipped on write, excluded from the sweep).
+        $ingested = $this->ingestedKeys($tenantId);
+
         $now      = Carbon::now();
         $rows     = [];
         $written  = 0;
@@ -61,11 +66,12 @@ class ReplenishmentService
             ->cursor()
             ->each(function ($p) use (
                 &$rows, &$written, $tenantId, $now,
-                $leadBySku, $supplierBySku, $tenantAvgLead, $onHand, $costBySku
+                $leadBySku, $supplierBySku, $tenantAvgLead, $onHand, $costBySku, $ingested
             ) {
                 if (in_array($p->segment, self::SKIP_SEGMENTS, true)) return;
 
                 $sku  = trim((string) $p->sku);
+                if (isset($ingested[$p->store_id . '|' . $sku])) return; // tenant-supplied wins
                 $mean = (float) $p->mean_nonzero;
                 $adi  = (float) $p->adi;
                 $cv2  = (float) $p->cv2;
@@ -105,6 +111,7 @@ class ReplenishmentService
                     'unit_cost'           => $cost !== null ? round($cost, 4) : null,
                     'order_value'         => round($suggest * (float) ($cost ?? 0), 2),
                     'service_level'       => self::SERVICE_LEVEL_PCT,
+                    'source'              => SkuReplenishment::SOURCE_COMPUTED,
                     'computed_at'         => $now,
                     'created_at'          => $now,
                     'updated_at'          => $now,
@@ -120,13 +127,31 @@ class ReplenishmentService
             $written += $this->flush($rows);
         }
 
-        // Drop rows for (store, SKU) that no longer qualify this run.
+        // Drop COMPUTED rows for (store, SKU) that no longer qualify this run.
+        // Ingested (tenant-supplied) rows are never swept.
         DB::table('sku_replenishment')
             ->where('tenant_id', $tenantId)
+            ->where('source', SkuReplenishment::SOURCE_COMPUTED)
             ->where('computed_at', '<', $now)
             ->delete();
 
         return $written;
+    }
+
+    /** (store|sku) keys whose row is tenant-supplied (ingested); the compute skips these. */
+    private function ingestedKeys(int $tenantId): array
+    {
+        $keys = [];
+        DB::table('sku_replenishment')
+            ->where('tenant_id', $tenantId)
+            ->where('source', SkuReplenishment::SOURCE_INGESTED)
+            ->select(['sku', 'store_id'])
+            ->cursor()
+            ->each(function ($r) use (&$keys) {
+                $keys[$r->store_id . '|' . trim((string) $r->sku)] = true;
+            });
+
+        return $keys;
     }
 
     private function flush(array $rows): int
@@ -136,7 +161,7 @@ class ReplenishmentService
             ['tenant_id', 'sku', 'store_id'],
             ['supplier', 'segment', 'daily_rate', 'lead_time_days', 'safety_stock',
              'reorder_point', 'order_up_to', 'on_hand', 'suggested_order_qty',
-             'unit_cost', 'order_value', 'service_level', 'computed_at', 'updated_at']
+             'unit_cost', 'order_value', 'service_level', 'source', 'computed_at', 'updated_at']
         );
 
         return count($rows);

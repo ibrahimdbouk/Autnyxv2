@@ -16,7 +16,8 @@ class ApiFeed extends Model
      * pipeline — it lands in the planning baseline (plan_forecasts) via
      * ForecastFeedIngestor. Distinct from Import::TYPE_* (sales/inventory/…).
      */
-    public const DATA_TYPE_DEMAND_FORECAST = 'demand_forecast';
+    public const DATA_TYPE_DEMAND_FORECAST     = 'demand_forecast';
+    public const DATA_TYPE_REPLENISHMENT_PARAMS = 'replenishment_params';
 
     protected $fillable = [
         'api_connection_id',
