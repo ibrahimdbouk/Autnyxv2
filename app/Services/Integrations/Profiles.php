@@ -55,11 +55,13 @@ final class Profiles
             'size_param'    => 'per_page',
             'offset_param'  => 'offset',
         ],
-        // OData v2 returns d.results; v4 returns value. Default to v4 + $skip/$top.
+        // Most S/4HANA OData services (and the API Business Hub sandbox) are v2:
+        // collections under d.results, $skip/$top paging, APIKey header on the
+        // sandbox. A v4 service overrides records_path to 'value' on the feed.
         'sap_s4hana' => [
-            'auth_type'     => ApiConnection::AUTH_BASIC,
+            'auth_type'     => ApiConnection::AUTH_API_KEY,
             'page_strategy' => 'odata_skiptop',
-            'records_path'  => 'value',
+            'records_path'  => 'd.results',
             'size_param'    => '$top',
             'offset_param'  => '$skip',
         ],

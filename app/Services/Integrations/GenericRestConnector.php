@@ -66,10 +66,10 @@ class GenericRestConnector implements Connector
 
             $url  = $absolute ?: $requestUrl;
             // A continuation URL already carries its own query string.
-            $resp = $this->client($connection)->get($url, $absolute ? [] : $query);
+            $resp = $this->client($connection)->get($url, $absolute ? [] : $this->prepareQuery($connection, $feed, $query));
 
             if (! $resp->successful()) {
-                throw new RuntimeException("Fetch failed: HTTP {$resp->status()} {$resp->body()}");
+                throw new RuntimeException('Fetch failed: ' . $this->extractError($resp));
             }
 
             $json    = $resp->json();
@@ -101,6 +101,14 @@ class GenericRestConnector implements Connector
                     return;
                 }
                 continue;
+            }
+            // OData v2/v4 server-driven paging: follow __next / @odata.nextLink if present.
+            if ($strategy === 'odata_skiptop') {
+                $next = data_get($json, 'd.__next') ?? data_get($json, '__next') ?? data_get($json, '@odata.nextLink');
+                if (is_string($next) && $next !== '') {
+                    $absolute = $next;
+                    continue;
+                }
             }
             // page / offset / odata_skiptop — stop on a short/empty page.
             if ($count < $size) {
@@ -176,19 +184,44 @@ class GenericRestConnector implements Connector
      * @param  array<string,string> $fieldMap  header => dot-path into the record
      * @return array<string,mixed>
      */
-    private function mapRecord(array $record, array $fieldMap): array
+    protected function mapRecord(array $record, array $fieldMap): array
     {
         if ($fieldMap === []) {
-            return $record;
+            return array_map(fn ($v) => $this->coerce($v), $record);
         }
 
         $row = [];
         foreach ($fieldMap as $header => $path) {
-            $value = data_get($record, $path);
-            $row[$header] = is_scalar($value) || $value === null ? $value : json_encode($value);
+            $row[$header] = $this->coerce(data_get($record, $path));
         }
 
         return $row;
+    }
+
+    /* ---------- extension hooks (overridden by provider subclasses) ---------- */
+
+    /**
+     * Adjust the query for one page before it is sent (not called for absolute
+     * continuation URLs). Base: unchanged. SAP adds $format/$select/sap-client.
+     *
+     * @param  array<string,mixed>  $query
+     * @return array<string,mixed>
+     */
+    protected function prepareQuery(ApiConnection $connection, ApiFeed $feed, array $query): array
+    {
+        return $query;
+    }
+
+    /** Coerce a mapped value to something CSV-writable. SAP decodes /Date(ms)/. */
+    protected function coerce($value)
+    {
+        return is_scalar($value) || $value === null ? $value : json_encode($value);
+    }
+
+    /** Human error message from a failed response. SAP parses the OData envelope. */
+    protected function extractError($response): string
+    {
+        return 'HTTP ' . $response->status() . ' ' . $response->body();
     }
 
     private function joinUrl(string $base, string $endpoint): string

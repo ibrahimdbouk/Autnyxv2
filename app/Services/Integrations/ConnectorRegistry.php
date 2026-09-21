@@ -15,6 +15,11 @@ class ConnectorRegistry
 {
     public function for(ApiConnection $connection): Connector
     {
-        return new GenericRestConnector(Profiles::for($connection->provider));
+        $profile = Profiles::for($connection->provider);
+
+        return match ($connection->provider) {
+            'sap_s4hana' => new SapS4HanaConnector($profile),
+            default      => new GenericRestConnector($profile),
+        };
     }
 }
