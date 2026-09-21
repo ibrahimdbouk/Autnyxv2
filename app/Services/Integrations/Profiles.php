@@ -37,7 +37,8 @@ final class Profiles
         return [
             'generic_rest' => 'Generic REST / JSON',
             'sap_s4hana'   => 'SAP S/4HANA (OData)',
-            'dynamics365'  => 'Microsoft Dynamics 365 (OData)',
+            'dynamics_bc'  => 'MS Dynamics 365 Business Central',
+            'dynamics_fno' => 'MS Dynamics 365 Finance & Operations',
             'oracle'       => 'Oracle (REST)',
             'shopify'      => 'Shopify (Admin REST)',
             'blue_yonder'  => 'Blue Yonder',
@@ -65,9 +66,16 @@ final class Profiles
             'size_param'    => '$top',
             'offset_param'  => '$skip',
         ],
-        'dynamics365' => [
+        // Dynamics 365 Business Central — OData v4, Entra OAuth2, @odata.nextLink.
+        'dynamics_bc' => [
             'auth_type'     => ApiConnection::AUTH_OAUTH2_CC,
-            'page_strategy' => 'next_link', // @odata.nextLink
+            'page_strategy' => 'next_link',
+            'records_path'  => 'value',
+        ],
+        // Dynamics 365 Finance & Operations — OData v4 at /data, Entra OAuth2.
+        'dynamics_fno' => [
+            'auth_type'     => ApiConnection::AUTH_OAUTH2_CC,
+            'page_strategy' => 'next_link',
             'records_path'  => 'value',
         ],
         'oracle' => [

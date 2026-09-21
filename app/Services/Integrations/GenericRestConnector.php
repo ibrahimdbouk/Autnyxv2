@@ -161,7 +161,7 @@ class GenericRestConnector implements Connector
             'grant_type'    => 'client_credentials',
             'client_id'     => $connection->authValue('client_id'),
             'client_secret' => $connection->authValue('client_secret'),
-            'scope'         => $connection->authValue('scope'),
+            'scope'         => $connection->authValue('scope') ?: $this->oauthScope($connection),
         ], fn ($v) => $v !== null && $v !== '');
 
         $resp = Http::asForm()->timeout(20)->post((string) $connection->authValue('token_url'), $payload);
@@ -222,6 +222,15 @@ class GenericRestConnector implements Connector
     protected function extractError($response): string
     {
         return 'HTTP ' . $response->status() . ' ' . $response->body();
+    }
+
+    /**
+     * Default OAuth2 scope when the connection doesn't set one. Base: none.
+     * Azure-AD sources (Dynamics) derive `<resource>/.default` from the base URL.
+     */
+    protected function oauthScope(ApiConnection $connection): ?string
+    {
+        return null;
     }
 
     private function joinUrl(string $base, string $endpoint): string

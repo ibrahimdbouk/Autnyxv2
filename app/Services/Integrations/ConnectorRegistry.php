@@ -18,8 +18,10 @@ class ConnectorRegistry
         $profile = Profiles::for($connection->provider);
 
         return match ($connection->provider) {
-            'sap_s4hana' => new SapS4HanaConnector($profile),
-            default      => new GenericRestConnector($profile),
+            'sap_s4hana'   => new SapS4HanaConnector($profile),
+            'dynamics_bc'  => new DynamicsConnector($profile),
+            'dynamics_fno' => new DynamicsFnoConnector($profile),
+            default        => new GenericRestConnector($profile),
         };
     }
 }
