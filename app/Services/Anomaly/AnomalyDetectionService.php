@@ -98,6 +98,7 @@ class AnomalyDetectionService
     private const DEMAND_COVERAGE = [
         'sales_spike', 'sales_drop', 'demand_seasonality_breach', 'demand_erosion',
         'demand_forecast_break', 'return_rate_spike', 'cannibalization_signal', 'channel_mix_shift',
+        'plan_variance',
     ];
 
     /** R2c — financial per-SKU rules that read the recent priced-sales stream. */
@@ -221,6 +222,8 @@ class AnomalyDetectionService
         'cumulative_shrink',
         'demand_erosion',
         'demand_forecast_break',
+        // Actual-vs-ingested-plan: raw-SQL, scoped by sku via scopeSql('pf.sku').
+        'plan_variance',
     ];
 
     /**
@@ -688,6 +691,7 @@ class AnomalyDetectionService
             'channel_mix_shift'          => fn () => $this->detectChannelMixShift($tenantId, $t('channel_mix_shift')),
             'demand_erosion'             => fn () => $this->detectDemandErosion($tenantId, $t('demand_erosion')),
             'demand_forecast_break'      => fn () => $this->detectDemandForecastBreak($tenantId, $t('demand_forecast_break')),
+            'plan_variance'              => fn () => $this->detectPlanVariance($tenantId, $t('plan_variance')),
 
             // Inventory & Supply
             'stockout_risk'              => fn () => $this->detectStockoutRisk($tenantId, $t('stockout_risk')),
@@ -1496,6 +1500,146 @@ class AnomalyDetectionService
             }
         }
         $flush();
+    }
+
+    /**
+     * Actual-vs-PLAN variance. Where `detectDemandForecastBreak` measures reality
+     * against Autnyx's OWN best-fit baseline, this measures it against the tenant's
+     * INGESTED plan (`plan_forecasts`, populated by ForecastFeedIngestor from RELEX /
+     * Blue Yonder / Slimstock / S4 MRP / D365 / Oracle Fusion). It turns detection
+     * from "deviation vs our baseline" into "deviation vs YOUR plan" — the whole
+     * point of ingesting the forecast.
+     *
+     * Method: for each plan point in the recent (already-elapsed) window, pair its
+     * forecast_qty with that day's actual units, then aggregate the paired days per
+     * (sku, store). Chain-level plan points (store_id NULL) compare against sales
+     * summed across all stores; store-level points against that store. A day planned
+     * but with no sale counts as actual 0 (a real miss). Only the freshest source
+     * wins per (sku, store, day). Flags when the window variance breaches the
+     * tolerance band AND the revenue impact clears the floor. No plan → no work.
+     */
+    private function detectPlanVariance(int $tenantId, array $thresholds): void
+    {
+        $tol        = (float) ($thresholds['pct'] ?? 30) / 100;   // tighter than best-fit: it's their own number
+        $days       = (int) ($thresholds['days'] ?? 14);
+        $minUnits   = (float) ($thresholds['min_units'] ?? 1);    // window-sum forecast floor (avoid div-by-noise)
+        $minRevenue = (float) ($thresholds['min_revenue'] ?? self::DEFAULT_MIN_REVENUE);
+
+        $to   = $this->analysisDate()->format('Y-m-d');
+        $from = $this->analysisDate()->copy()->subDays($days - 1)->format('Y-m-d');
+
+        [$scopeSql, $scopeBind] = $this->scopeSql('pf.sku');
+
+        // ── Store-level plans: actual = that store's units for the matched day. ──
+        $storeRows = DB::select(
+            "SELECT sku, store_id,
+                    SUM(forecast_qty) AS f, SUM(actual) AS a,
+                    MAX(source) AS source, COUNT(*) AS matched_days
+             FROM (
+                 SELECT DISTINCT ON (pf.sku, pf.store_id, pf.target_date)
+                        pf.sku, pf.store_id, pf.forecast_qty, pf.source,
+                        COALESCE(sd.u, 0) AS actual
+                 FROM plan_forecasts pf
+                 LEFT JOIN (
+                     SELECT sku, store_id, date, SUM(units_sold) AS u
+                     FROM sales_daily
+                     WHERE tenant_id = ? AND date BETWEEN ? AND ?
+                     GROUP BY sku, store_id, date
+                 ) sd ON sd.sku = pf.sku AND sd.store_id = pf.store_id AND sd.date = pf.target_date
+                 WHERE pf.tenant_id = ? AND pf.store_id IS NOT NULL
+                   AND pf.target_date BETWEEN ? AND ?{$scopeSql}
+                 ORDER BY pf.sku, pf.store_id, pf.target_date, pf.updated_at DESC
+             ) x
+             GROUP BY sku, store_id",
+            array_merge([$tenantId, $from, $to, $tenantId, $from, $to], $scopeBind),
+        );
+
+        // ── Chain-level plans (store_id NULL): actual = units across ALL stores. ──
+        $chainRows = DB::select(
+            "SELECT sku,
+                    SUM(forecast_qty) AS f, SUM(actual) AS a,
+                    MAX(source) AS source, COUNT(*) AS matched_days
+             FROM (
+                 SELECT DISTINCT ON (pf.sku, pf.target_date)
+                        pf.sku, pf.forecast_qty, pf.source,
+                        COALESCE(sd.u, 0) AS actual
+                 FROM plan_forecasts pf
+                 LEFT JOIN (
+                     SELECT sku, date, SUM(units_sold) AS u
+                     FROM sales_daily
+                     WHERE tenant_id = ? AND date BETWEEN ? AND ?
+                     GROUP BY sku, date
+                 ) sd ON sd.sku = pf.sku AND sd.date = pf.target_date
+                 WHERE pf.tenant_id = ? AND pf.store_id IS NULL
+                   AND pf.target_date BETWEEN ? AND ?{$scopeSql}
+                 ORDER BY pf.sku, pf.target_date, pf.updated_at DESC
+             ) x
+             GROUP BY sku",
+            array_merge([$tenantId, $from, $to, $tenantId, $from, $to], $scopeBind),
+        );
+
+        if (empty($storeRows) && empty($chainRows)) {
+            return; // tenant has no ingested plan for the window — nothing to measure
+        }
+
+        // Store labels only if we have store-level plans (small table, one query).
+        $storeLabels = [];
+        if (! empty($storeRows)) {
+            $storeLabels = DB::table('stores')->where('tenant_id', $tenantId)
+                ->pluck(DB::raw('COALESCE(code, name)'), 'id')->all();
+        }
+
+        $emit = function (string $sku, ?int $storeId, float $f, float $a, ?string $source, int $matchedDays)
+            use ($tenantId, $tol, $minUnits, $minRevenue, $storeLabels, $days): void {
+            if ($f < $minUnits || $f <= 0) {
+                return; // no meaningful plan to measure against
+            }
+
+            $dev = $a - $f;
+            $dir = null;
+            if ($a > $f * (1 + $tol)) {
+                $dir = 'above';
+            } elseif ($a < $f * (1 - $tol)) {
+                $dir = 'below';
+            }
+            if ($dir === null) {
+                return; // actuals are tracking the plan within tolerance
+            }
+
+            $price  = $this->unitPrice($sku);
+            $impact = abs($dev) * $price;
+            if ($price > 0 && $impact < $minRevenue) {
+                return; // immaterial
+            }
+
+            $sev    = $price > 0 ? $this->severityFromImpact($impact) : Anomaly::SEVERITY_MEDIUM;
+            $devPct = (int) round(abs($dev) / $f * 100);
+            $where  = $storeId !== null ? (' at ' . ($storeLabels[$storeId] ?? "store {$storeId}")) : ' chain-wide';
+            $src    = $source ?: 'plan';
+
+            $this->flag($tenantId, 'plan_variance', $sev, $sku, $storeId, null,
+                "SKU {$sku}{$where} sold " . round($a) . " units over the last {$days} days vs a planned "
+                . round($f) . " — {$devPct}% {$dir} the {$src} forecast.",
+                [
+                    'model'          => 'ingested_plan',
+                    'plan_source'    => $src,
+                    'forecast_units' => round($f, 1),
+                    'actual_units'   => round($a, 1),
+                    'deviation_pct'  => $devPct,
+                    'direction'      => $dir,
+                    'revenue_impact' => round($impact, 2),
+                    'window_days'    => $days,
+                    'matched_days'   => $matchedDays,
+                ]
+            );
+        };
+
+        foreach ($storeRows as $r) {
+            $emit(trim((string) $r->sku), (int) $r->store_id, (float) $r->f, (float) $r->a, $r->source, (int) $r->matched_days);
+        }
+        foreach ($chainRows as $r) {
+            $emit(trim((string) $r->sku), null, (float) $r->f, (float) $r->a, $r->source, (int) $r->matched_days);
+        }
     }
 
     // =========================================================================

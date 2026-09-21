@@ -60,6 +60,13 @@ class AnomalySetting extends Model
             'tier'               => 'core',   // Requires: sales_daily + sku_profiles
             'default_thresholds' => ['pct' => 100, 'days' => 7, 'window' => 90, 'alpha' => 0.2, 'min_occasions' => 3, 'min_revenue' => 500],
         ],
+        'plan_variance' => [
+            'label'              => 'Actual vs Plan Variance',
+            'description'        => 'Actual sales depart from the tenant\'s OWN ingested forecast (plan_forecasts, from RELEX / Blue Yonder / Slimstock / ERP planning) beyond a tolerance band — "deviation vs your plan", not vs Autnyx\'s best-fit baseline. Only active once a demand-forecast feed is ingested; silent otherwise.',
+            'severity'           => 'medium',
+            'tier'               => 'core',   // Requires: plan_forecasts (ingested plan) + sales_daily
+            'default_thresholds' => ['pct' => 30, 'days' => 14, 'min_units' => 1, 'min_revenue' => 500],
+        ],
         'demand_erosion' => [
             'label'              => 'Slow Demand Erosion',
             'description'        => 'A SKU\'s demand is on a sustained downward trend (a gradual slide, not a sharp break) — the kind of erosion that recent-vs-window rules miss because both windows fall together.',

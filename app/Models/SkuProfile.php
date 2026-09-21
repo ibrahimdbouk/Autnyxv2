@@ -63,6 +63,9 @@ class SkuProfile extends Model
         'price_anomaly', 'return_rate_spike', 'duplicate_transaction_ids', 'sku_master_drift',
         'import_frequency_gap', 'location_proliferation', 'revenue_concentration_risk',
         'channel_mix_shift',
+        // Actual-vs-ingested-plan is measured against the TENANT'S own forecast, so
+        // it is never segment-gated — it applies to any SKU the tenant plans.
+        'plan_variance',
     ];
 
     /** Whether a rule is relevant for a given segment (used by detection gating). */
