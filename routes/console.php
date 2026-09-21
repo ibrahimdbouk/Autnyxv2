@@ -33,3 +33,10 @@ Schedule::command('agents:action-followup')
 Schedule::command('queue:tidy-tail')
     ->dailyAt('05:45')
     ->withoutOverlapping();
+
+// Pull data from configured source-system APIs (SAP, Dynamics, Shopify, …) into
+// the import pipeline — the API sibling of sftp:poll (which is scheduled hourly in
+// AppServiceProvider). Only tenants with an active api_connection do any work.
+Schedule::command('api:poll')
+    ->hourly()
+    ->withoutOverlapping();

@@ -236,6 +236,7 @@ class SmokeTest extends TestCase
             [
                 'AnomalyResource',
                 'AnomalySettingResource',
+                'ApiConnectionResource',
                 'AuditLogResource',
                 'ImportResource',
                 'InventoryLevelResource',
