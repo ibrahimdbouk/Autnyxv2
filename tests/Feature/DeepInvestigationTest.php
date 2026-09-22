@@ -197,6 +197,15 @@ class DeepInvestigationTest extends TestCase
             'value_numeric' => 2, 'unit' => 'days', 'direction' => InvestigationEvidence::DIRECTION_SUPPORTS,
             'strength' => InvestigationEvidence::STRENGTH_STRONG, 'observed_at' => now(),
         ]);
+        // A lead time is required for the "act now" path to close the gap; without
+        // it the simulator (correctly) does not assume any protection.
+        InvestigationEvidence::create([
+            'investigation_id' => $inv->id, 'anomaly_id' => $a->id,
+            'evidence_type' => InvestigationEvidence::TYPE_STAT,
+            'source' => 'purchase_orders', 'label' => 'Average supplier lead time (recent POs)',
+            'value_numeric' => 5, 'unit' => 'days', 'direction' => InvestigationEvidence::DIRECTION_NEUTRAL,
+            'strength' => InvestigationEvidence::STRENGTH_MODERATE, 'observed_at' => now(),
+        ]);
 
         $wi = app(DeepInvestigationService::class)->build($inv->fresh())['what_if'];
 
