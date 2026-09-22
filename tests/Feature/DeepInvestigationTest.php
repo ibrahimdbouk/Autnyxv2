@@ -271,6 +271,31 @@ class DeepInvestigationTest extends TestCase
         $this->assertStringContainsStringIgnoringCase('recommends only', $tr['assumption']);
     }
 
+    public function test_what_if_populates_from_replenishment_data_when_evidence_lacks_a_rate(): void
+    {
+        $tenant = $this->createTenant();
+        $inv = Investigation::factory()->create(['tenant_id' => $tenant->id]);
+        $this->anomaly($inv, 'stockout_risk', 'SKU-1', 1200); // no what-if evidence at all
+
+        // The governed replenishment row is the ONLY input source here — this is the
+        // real-prod case where a stockout signal carries no explicit on-hand/rate
+        // evidence but the nightly replenishment model has the figures.
+        \App\Models\SkuReplenishment::create([
+            'tenant_id' => $tenant->id, 'sku' => 'SKU-1', 'store_id' => 7,
+            'on_hand' => 6, 'daily_rate' => 3, 'order_up_to' => 40,
+            'lead_time_days' => 5, 'unit_cost' => 2.5, 'source' => 'computed',
+        ]);
+
+        $wi = app(DeepInvestigationService::class)->build($inv->fresh())['what_if'];
+
+        $this->assertTrue($wi['available'], 'the simulator must populate from governed replenishment data when evidence has no rate');
+        $this->assertTrue($wi['has_revenue'], 'unit_cost from the replenishment row enables the revenue view');
+        $this->assertSame(3.0, $wi['inputs']['avg_daily'], 'sales rate falls back to the model daily_rate');
+        $this->assertSame(5, $wi['inputs']['lead_time']);
+        // on_hand 6 / rate 3 = 2 days cover; over 14 days → 12 stockout days × 3 = 36.
+        $this->assertSame(36, $wi['scenarios'][14]['no_action']['lost_units']);
+    }
+
     public function test_similar_incidents_match_resolved_siblings(): void
     {
         $tenant = $this->createTenant();

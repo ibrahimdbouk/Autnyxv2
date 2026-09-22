@@ -51,15 +51,27 @@ class ProjectionService
 
         $evidence = $investigation->evidence->where('anomaly_id', $anomaly->id);
 
-        $onHand      = $this->numByLabel($evidence, 'Current on-hand quantity');
+        // Governed replenishment parameters for this (store, SKU) — the same
+        // nightly-derived row the reorder logic uses (on-hand, daily rate, lead
+        // time, unit cost). Investigation evidence is the PRIMARY source; where it
+        // is silent, these fill the gap so the simulator works on a real signal
+        // instead of sitting empty. Nothing here is invented — every value is a
+        // stored governed figure.
+        $rep = $this->repFor($investigation, $anomaly);
+
+        $onHand      = $this->numByLabel($evidence, 'Current on-hand quantity')
+            ?? (($rep && $rep->on_hand !== null) ? (float) $rep->on_hand : null);
         $daysOfCover = $this->numByLabel($evidence, 'Days of cover');
         $avgBaseline = $this->numByLabel($evidence, 'Baseline mean daily sales');
-        $leadTime    = $this->leadTime($investigation, $anomaly, $evidence);
-        $unitPrice   = $this->unitPrice($evidence);
+        $leadTime    = $this->leadTime($investigation, $anomaly, $evidence, $rep);
+        $unitPrice   = $this->unitPrice($evidence)
+            ?? (($rep && (float) $rep->unit_cost > 0) ? round((float) $rep->unit_cost, 4) : null);
 
-        // Average daily sales: prefer on-hand ÷ days-of-cover (they are produced
-        // together), else the 90-day baseline mean.
+        // Average daily sales: prefer on-hand ÷ days-of-cover (produced together),
+        // then the 90-day baseline mean, then the replenishment model's derived
+        // daily rate (the same rate that drives this store-SKU's reorder point).
         $avgDaily = null;
+        $rateFromModel = false;
         if ($onHand !== null && $daysOfCover !== null && $daysOfCover > 0) {
             $avgDaily = round($onHand / $daysOfCover, 2);
         } elseif ($avgBaseline !== null && $avgBaseline > 0) {
@@ -67,10 +79,16 @@ class ProjectionService
             if ($onHand !== null) {
                 $daysOfCover = round($onHand / $avgBaseline, 1);
             }
+        } elseif ($rep && (float) $rep->daily_rate > 0) {
+            $avgDaily = round((float) $rep->daily_rate, 2);
+            $rateFromModel = true;
+            if ($onHand !== null && $daysOfCover === null) {
+                $daysOfCover = round($onHand / $avgDaily, 1);
+            }
         }
 
         if ($onHand === null || $avgDaily === null || $avgDaily <= 0 || $daysOfCover === null) {
-            return $this->gate('Not enough governed inputs to simulate yet — a current on-hand level and a sales rate are required. They are collected when the investigation is opened or narrated.');
+            return $this->gate('Not enough governed inputs to simulate yet — a current on-hand level and a sales rate are required. They come from the investigation evidence or the replenishment model for this store-SKU.');
         }
 
         $scenarios = [];
@@ -95,7 +113,7 @@ class ProjectionService
             'horizons'        => self::HORIZONS,
             'default_horizon' => self::DEFAULT_HORIZON,
             'scenarios'       => $scenarios,
-            'assumptions'     => $this->assumptions($onHand, $avgDaily, $daysOfCover, $leadTime, $unitPrice),
+            'assumptions'     => $this->assumptions($onHand, $avgDaily, $daysOfCover, $leadTime, $unitPrice, $rateFromModel),
             // Optional intra-network transfer alternative — present only when a
             // sibling store genuinely holds releasable surplus of this SKU and a
             // transfer would beat the supplier PO. Null otherwise (nothing shown).
@@ -177,13 +195,18 @@ class ProjectionService
 
         // Releasable surplus = on-hand a donor store holds above its OWN target,
         // so releasing it keeps that store at target (it is not robbed to cover us).
+        // The target must be a real, computed value (> 0): order_up_to / reorder_point
+        // both DEFAULT to 0 in the schema, and a 0 target would falsely count the
+        // whole on-hand as surplus.
         $donors = [];
         foreach ($siblings as $s) {
-            $target = $s->order_up_to ?? $s->reorder_point;
+            $target = ((float) $s->order_up_to > 0)
+                ? (float) $s->order_up_to
+                : (((float) $s->reorder_point > 0) ? (float) $s->reorder_point : null);
             if ($target === null || $s->store_id === null) {
                 continue;
             }
-            $surplus = (float) $s->on_hand - (float) $target;
+            $surplus = (float) $s->on_hand - $target;
             if ($surplus >= 1.0) {
                 $donors[] = ['store_id' => $s->store_id, 'surplus' => (int) floor($surplus)];
             }
@@ -226,11 +249,14 @@ class ProjectionService
     }
 
     /** @return list<string> */
-    private function assumptions(float $onHand, float $avgDaily, float $daysOfCover, ?int $leadTime, ?float $unitPrice): array
+    private function assumptions(float $onHand, float $avgDaily, float $daysOfCover, ?int $leadTime, ?float $unitPrice, bool $rateFromModel = false): array
     {
+        $rateNote = $rateFromModel
+            ? 'Sales rate is the replenishment model\'s derived daily rate for this store-SKU (the rate behind its reorder point), used because the investigation carried no explicit rate.'
+            : 'Sales continue at the recent daily rate; no substitution or backorder capture.';
         $a = [
             'On-hand ' . $this->n($onHand) . ' units at ' . $this->n($avgDaily) . ' units/day ⇒ ~' . $this->n($daysOfCover) . ' days of cover.',
-            'Sales continue at the recent daily rate; no substitution or backorder capture.',
+            $rateNote,
         ];
         $a[] = $leadTime !== null
             ? 'Acting now places the order today; stock arrives in ~' . $leadTime . ' days (the derived lead time).'
@@ -255,21 +281,31 @@ class ProjectionService
         return null;
     }
 
-    private function leadTime(Investigation $investigation, $anomaly, $evidence): ?int
+    /**
+     * The governed replenishment row for this signal's (store, SKU) — one query,
+     * reused across on-hand / daily-rate / lead-time / unit-cost fallbacks.
+     */
+    private function repFor(Investigation $investigation, $anomaly): ?\App\Models\SkuReplenishment
     {
         try {
-            $rep = \App\Models\SkuReplenishment::where('tenant_id', $investigation->tenant_id)
+            return \App\Models\SkuReplenishment::where('tenant_id', $investigation->tenant_id)
                 ->where('sku', $anomaly->sku)
                 ->when($anomaly->store_id, fn ($q) => $q->where('store_id', $anomaly->store_id))
                 ->first();
-            // lead_time_days DEFAULTS to 0 in the schema, so 0 means "not derived",
-            // not a real zero-day lead — treat only a positive value as known and
-            // fall back to the evidence otherwise (never assume an instant PO).
-            if ($rep && $rep->lead_time_days !== null && (float) $rep->lead_time_days > 0) {
-                return (int) round((float) $rep->lead_time_days);
-            }
         } catch (\Throwable) {
-            // fall through to evidence
+            return null;
+        }
+    }
+
+    private function leadTime(Investigation $investigation, $anomaly, $evidence, ?\App\Models\SkuReplenishment $rep = null): ?int
+    {
+        $rep = $rep ?? $this->repFor($investigation, $anomaly);
+
+        // lead_time_days DEFAULTS to 0 in the schema, so 0 means "not derived",
+        // not a real zero-day lead — treat only a positive value as known and
+        // fall back to the evidence otherwise (never assume an instant PO).
+        if ($rep && $rep->lead_time_days !== null && (float) $rep->lead_time_days > 0) {
+            return (int) round((float) $rep->lead_time_days);
         }
 
         $fromEvidence = $this->numByLabel($evidence, 'Average supplier lead time');
