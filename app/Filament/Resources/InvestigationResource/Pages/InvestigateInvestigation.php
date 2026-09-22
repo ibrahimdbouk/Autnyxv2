@@ -532,6 +532,13 @@ class InvestigateInvestigation extends Page
                     Notification::make()->title('Comment added')->success()->send();
                 }),
 
+            // Export the full investigation dossier as a PDF (tenant-scoped, audited).
+            Action::make('export_pdf')
+                ->label('Export PDF')
+                ->icon('heroicon-o-document-arrow-down')
+                ->color('gray')
+                ->url(fn (): string => route('investigation.report.pdf', $this->record->id), shouldOpenInNewTab: true),
+
             // Back to list
             Action::make('back')
                 ->label('All Investigations')
