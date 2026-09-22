@@ -871,11 +871,35 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
     .dinv-pill.s-warning { background:var(--ax-warning-soft,#fef3c7); color:var(--ax-warning-fg,#b45309); }
     .dinv-pill.s-danger  { background:var(--ax-danger-soft,#fee2e2); color:var(--ax-danger-fg,#b91c1c); }
     .dinv-pill.s-gray    { background:var(--ax-neutral-soft,#f3f4f6); color:var(--ax-neutral-fg,#4b5563); }
-    /* Cause map */
-    .dinv-map { height:360px; width:100%; border:1px solid var(--ax-line,#e5e7eb); border-radius:.6rem; background:var(--ax-panel,#fafafa); }
-    .dinv-map-note { font-size:.75rem; color:var(--ax-faint,#6b7280); margin-top:.55rem; line-height:1.5; }
-    .dinv-fallback { margin-top:.6rem; font-size:.8rem; }
-    .dinv-fallback .row { padding:.35rem 0; border-bottom:1px solid var(--ax-line-2,#f1f5f9); color:var(--ax-text,#374151); }
+    /* Cause map — fishbone */
+    .dinv-fishwrap { width:100%; overflow-x:auto; border:1px solid var(--ax-line,#e5e7eb); border-radius:.6rem; background:var(--ax-panel,#fafafa); padding:.5rem; }
+    .dinv-fish { width:100%; min-width:640px; height:auto; display:block; }
+    .dinv-map-note { font-size:.75rem; color:var(--ax-faint,#6b7280); margin-top:.6rem; line-height:1.5; }
+    .dinv-fish-cat { font-size:13px; font-weight:800; fill:var(--ax-muted,#475569); text-transform:uppercase; letter-spacing:.04em; }
+    .dinv-fish-sig { font-size:12px; fill:var(--ax-text,#334155); }
+    .dinv-fish-head-k { font-size:10px; font-weight:800; fill:var(--ax-accent-strong,#7c3aed); letter-spacing:.08em; }
+    .dinv-fish-head { font-size:14px; font-weight:800; fill:var(--ax-ink,#111827); }
+    .dinv-fish-head-sku { font-size:11px; fill:var(--ax-faint,#6b7280); }
+    .dinv-fish-node { cursor:pointer; }
+    .dinv-fish-node circle { stroke:#fff; stroke-width:1.5; transition:r .12s ease; }
+    .dinv-fish-node:hover circle { r:8; }
+    .dinv-fish-node:hover .dinv-fish-sig { fill:var(--ax-accent-strong,#7c3aed); font-weight:700; }
+    .dinv-fish-node.sel circle { stroke:var(--ax-accent-strong,#7c3aed); stroke-width:3; }
+    .dinv-fish-node.sel .dinv-fish-sig { fill:var(--ax-accent-strong,#7c3aed); font-weight:800; }
+    .dinv-fish-node.is-root circle { stroke:var(--ax-accent-strong,#7c3aed); stroke-width:2.5; }
+    .dinv-sev-high { fill:#ef4444; }
+    .dinv-sev-medium { fill:#f97316; }
+    .dinv-sev-low { fill:#94a3b8; }
+    .dinv-fish-node.is-root .dinv-sev-high, .dinv-fish-node.is-root .dinv-sev-medium, .dinv-fish-node.is-root .dinv-sev-low { fill:var(--ax-accent-strong,#7c3aed); }
+    /* Cause-map click drawer */
+    .dinv-drawer { margin-top:.75rem; border:1px solid var(--ax-accent-soft-border,#e9d5ff); background:var(--ax-accent-soft,#faf5ff); border-radius:.6rem; padding:.75rem .9rem; }
+    .dinv-drawer-head { display:flex; align-items:center; justify-content:space-between; font-size:.85rem; font-weight:700; color:var(--ax-ink,#111827); margin-bottom:.5rem; gap:.5rem; }
+    .dinv-drawer-x { border:none; background:transparent; cursor:pointer; color:var(--ax-faint,#6b7280); font-size:.9rem; line-height:1; padding:.1rem .3rem; }
+    .dinv-drawer-kv { display:flex; justify-content:space-between; font-size:.8rem; padding:.15rem 0; color:var(--ax-text,#374151); }
+    .dinv-drawer-evh { font-size:.68rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--ax-faint,#6b7280); margin:.5rem 0 .25rem; }
+    .dinv-drawer-ev { font-size:.8rem; color:var(--ax-text,#374151); padding:.2rem 0; display:flex; align-items:center; gap:.4rem; }
+    .dinv-drawer-ev .dot { width:.5rem; height:.5rem; border-radius:9999px; flex:0 0 auto; }
+    .dinv-drawer-ev.muted { color:var(--ax-faint,#9ca3af); }
     /* Trail */
     .dinv-trail { position:relative; padding-left:1.1rem; }
     .dinv-trail::before { content:''; position:absolute; left:.28rem; top:.3rem; bottom:.3rem; width:2px; background:var(--ax-line,#e5e7eb); }
@@ -957,22 +981,45 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                 @if(!($cm['available'] ?? false))
                     <div class="dinv-empty">{{ $cm['empty_reason'] ?? 'Evidence unavailable.' }}</div>
                 @else
-                    <div wire:ignore>
-                        <div id="dinv-causemap" class="dinv-map"></div>
-                        <script type="application/json" id="dinv-causemap-data">@json(['nodes' => $cm['nodes'], 'edges' => $cm['edges']])</script>
+                    @php($fb = $cm['fishbone'])
+                    @php($detailMap = collect($cm['nodes'])->keyBy('id')->map(fn ($n) => $n['detail'])->all())
+                    <div class="dinv-fishwrap" wire:ignore>
+                        <svg class="dinv-fish" viewBox="{{ $fb['viewbox'] }}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Fishbone cause-and-effect diagram">
+                            <defs>
+                                <marker id="dinv-arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+                                    <path d="M0,0 L7,3 L0,6 Z" fill="var(--ax-accent-strong,#7c3aed)"></path>
+                                </marker>
+                            </defs>
+                            <line x1="{{ $fb['spine']['x1'] }}" y1="{{ $fb['spine']['y'] }}" x2="{{ $fb['spine']['x2'] }}" y2="{{ $fb['spine']['y'] }}" stroke="var(--ax-accent-strong,#7c3aed)" stroke-width="3" marker-end="url(#dinv-arrow)"></line>
+                            @foreach($fb['bones'] as $b)
+                                <line x1="{{ $b['x0'] }}" y1="{{ $b['y0'] }}" x2="{{ $b['x1'] }}" y2="{{ $b['y1'] }}" stroke="var(--ax-line,#cbd5e1)" stroke-width="2"></line>
+                                <text x="{{ $b['label_x'] }}" y="{{ $b['label_y'] }}" text-anchor="end" class="dinv-fish-cat">{{ $b['label'] }}</text>
+                            @endforeach
+                            <g>
+                                <rect x="{{ $fb['head_x'] + 8 }}" y="{{ $fb['cy'] - 36 }}" width="200" height="72" rx="11" fill="var(--ax-accent-soft,#f5f3ff)" stroke="var(--ax-accent-strong,#7c3aed)" stroke-width="2"></rect>
+                                <text x="{{ $fb['head_x'] + 108 }}" y="{{ $fb['cy'] - 12 }}" text-anchor="middle" class="dinv-fish-head-k">EFFECT</text>
+                                <text x="{{ $fb['head_x'] + 108 }}" y="{{ $fb['cy'] + 6 }}" text-anchor="middle" class="dinv-fish-head">{{ \Illuminate\Support\Str::limit($fb['head']['label'], 24) }}</text>
+                                @if($fb['head']['sku'])<text x="{{ $fb['head_x'] + 108 }}" y="{{ $fb['cy'] + 24 }}" text-anchor="middle" class="dinv-fish-head-sku">{{ $fb['head']['sku'] }}</text>@endif
+                            </g>
+                            @foreach($fb['signals'] as $s)
+                                <g class="dinv-fish-node {{ $s['is_root'] ? 'is-root' : '' }}" data-id="{{ $s['id'] }}" onclick="dinvNode({{ $s['id'] }})" tabindex="0" role="button" aria-label="{{ $s['label'] }}">
+                                    <circle cx="{{ $s['cx'] }}" cy="{{ $s['cy'] }}" r="{{ $s['is_root'] ? 8 : 5 }}" class="dinv-sev-{{ $s['severity'] }}"></circle>
+                                    <text x="{{ $s['label_x'] }}" y="{{ $s['label_y'] }}" text-anchor="end" class="dinv-fish-sig">{{ $s['label'] }}</text>
+                                </g>
+                            @endforeach
+                        </svg>
                     </div>
-                    {{-- Text fallback (also the accessible view if JS/canvas is unavailable) --}}
-                    <div class="dinv-fallback">
-                        @forelse($cm['edges'] as $e)
-                            <div class="row">{{ $e['cause_label'] }} <span style="color:var(--ax-accent-strong,#7c3aed)">→</span> {{ $e['effect_label'] }} <span class="dinv-ev-src">· {{ $e['scope_label'] }}</span></div>
-                        @empty
-                            <div class="row">{{ count($cm['nodes']) >= 2 ? 'These signals co-occur but form no known cause→effect chain — treat as correlated, not causally linked.' : 'A single signal — no causal chain to draw yet.' }}</div>
-                        @endforelse
+
+                    <div id="dinv-fish-drawer" class="dinv-drawer" hidden>
+                        <div class="dinv-drawer-head"><span id="dinv-drawer-title"></span><button type="button" class="dinv-drawer-x" onclick="dinvNodeClose()" aria-label="Close">✕</button></div>
+                        <div id="dinv-drawer-body"></div>
                     </div>
+                    <script type="application/json" id="dinv-fish-detail">@json($detailMap)</script>
+
                     @if(!empty($cm['inference']))
                         <div class="dinv-explain">{{ $cm['inference']['explanation'] }}</div>
                     @endif
-                    <div class="dinv-map-note">The root cause (highlighted) and the chain are inferred deterministically from the retail causal graph — the AI does not choose them. Drag to explore; scroll to zoom.</div>
+                    <div class="dinv-map-note">Head = the downstream effect; each bone is a cause category, and the nodes on it are the contributing signals. The highlighted node is the deterministic root cause (from the retail causal graph — the AI does not choose it). <strong>Click any node</strong> for its evidence and confidence.</div>
                 @endif
             </div>
         </details>
@@ -1152,50 +1199,45 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
         </details>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.9/dist/vis-network.min.js" defer></script>
     <script>
     (function () {
-        function initDeepCauseMap() {
-            var el = document.getElementById('dinv-causemap');
-            if (!el || el.dataset.rendered) return;
-            if (typeof vis === 'undefined') return; // text fallback stays visible
-            var dataEl = document.getElementById('dinv-causemap-data');
-            if (!dataEl) return;
-            try {
-                var payload = JSON.parse(dataEl.textContent);
-                var nodes = new vis.DataSet((payload.nodes || []).map(function (n) {
-                    var color = n.is_root
-                        ? { background: '#7c3aed', border: '#6d28d9' }
-                        : (n.severity === 'high' ? { background: '#fee2e2', border: '#ef4444' }
-                            : n.severity === 'medium' ? { background: '#ffedd5', border: '#f97316' }
-                                : { background: '#f1f5f9', border: '#94a3b8' });
-                    return {
-                        id: n.id,
-                        label: n.label + (n.sku ? '\n(' + n.sku + ')' : ''),
-                        shape: 'box',
-                        color: color,
-                        font: { color: n.is_root ? '#ffffff' : '#111827', size: 13 },
-                        borderWidth: n.is_root ? 3 : 1
-                    };
-                }));
-                var edges = new vis.DataSet((payload.edges || []).map(function (e) {
-                    return {
-                        from: e.from, to: e.to, arrows: 'to', label: e.scope_label,
-                        font: { size: 10, color: '#6b7280', align: 'middle', background: '#ffffff' },
-                        color: { color: '#c084fc', highlight: '#7c3aed' },
-                        smooth: { type: 'cubicBezier' }
-                    };
-                }));
-                var hasEdges = (payload.edges || []).length > 0;
-                new vis.Network(el, { nodes: nodes, edges: edges }, {
-                    layout: { hierarchical: { enabled: hasEdges, direction: 'LR', sortMethod: 'directed', levelSeparation: 190, nodeSpacing: 130 } },
-                    physics: { enabled: !hasEdges },
-                    interaction: { hover: true, zoomView: true, dragView: true, dragNodes: true },
-                    nodes: { margin: 10, widthConstraint: { maximum: 170 } }
-                });
-                el.dataset.rendered = '1';
-            } catch (err) { /* leave the text fallback in place */ }
-        }
+        function esc(s){ var d = document.createElement('div'); d.textContent = (s == null ? '' : String(s)); return d.innerHTML; }
+        function detailMap(){ try { return JSON.parse(document.getElementById('dinv-fish-detail').textContent) || {}; } catch (e) { return {}; } }
+        var dirColor = { supports: '#b91c1c', contradicts: '#15803d', neutral: '#6b7280' };
+        function kv(k, v){ return '<div class="dinv-drawer-kv"><span>' + k + '</span><b>' + v + '</b></div>'; }
+
+        window.dinvNode = function (id) {
+            var d = detailMap()[id];
+            if (!d) return;
+            document.querySelectorAll('.dinv-fish-node').forEach(function (g) { g.classList.remove('sel'); });
+            var g = document.querySelector('.dinv-fish-node[data-id="' + id + '"]');
+            if (g) g.classList.add('sel');
+
+            document.getElementById('dinv-drawer-title').innerHTML =
+                (d.sku ? '<b>' + esc(d.sku) + '</b> · ' : '') + esc(d.description || 'Signal');
+
+            var rows = [];
+            if (d.confidence_label) rows.push(kv('Confidence', esc(d.confidence_label)));
+            if (d.gate_label) rows.push(kv('Recommended', esc(d.gate_label)));
+            if (d.impact != null) rows.push(kv('Value at risk (est.)', esc(d.impact)));
+            if (d.store_id != null) rows.push(kv('Store', '#' + esc(d.store_id)));
+            if (d.lifecycle) rows.push(kv('Status', esc(d.lifecycle)));
+
+            var ev = d.evidence || [];
+            var evHtml = ev.length ? ev.map(function (e) {
+                return '<div class="dinv-drawer-ev"><span class="dot" style="background:' + (dirColor[e.direction] || '#6b7280') + '"></span>' + esc(e.label) + ' <b>' + esc(e.value) + '</b></div>';
+            }).join('') : '<div class="dinv-drawer-ev muted">No evidence rows collected for this signal yet.</div>';
+
+            document.getElementById('dinv-drawer-body').innerHTML = rows.join('') + '<div class="dinv-drawer-evh">Evidence</div>' + evHtml;
+            document.getElementById('dinv-fish-drawer').hidden = false;
+        };
+
+        window.dinvNodeClose = function () {
+            var dr = document.getElementById('dinv-fish-drawer');
+            if (dr) dr.hidden = true;
+            document.querySelectorAll('.dinv-fish-node').forEach(function (g) { g.classList.remove('sel'); });
+        };
+
         window.dinvFilter = function (kind, val, btn) {
             var group = btn.parentNode;
             group.querySelectorAll('.dinv-chip').forEach(function (b) { b.classList.remove('dinv-chip-on'); });
@@ -1204,15 +1246,15 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                 r.style.display = (val === 'all' || r.getAttribute('data-' + kind) === val) ? '' : 'none';
             });
         };
-        document.addEventListener('DOMContentLoaded', function () { setTimeout(initDeepCauseMap, 250); });
-        window.addEventListener('load', initDeepCauseMap);
-        document.addEventListener('livewire:navigated', function () { setTimeout(initDeepCauseMap, 250); });
-        // Re-init when the Cause Map panel is first expanded (canvas needs a visible container).
-        document.addEventListener('toggle', function (ev) {
-            if (ev.target && ev.target.querySelector && ev.target.querySelector('#dinv-causemap')) {
-                setTimeout(initDeepCauseMap, 50);
+
+        // Keyboard access: Enter/Space on a focused fishbone node opens its detail.
+        document.addEventListener('keydown', function (e) {
+            var t = e.target;
+            if ((e.key === 'Enter' || e.key === ' ') && t && t.classList && t.classList.contains('dinv-fish-node')) {
+                e.preventDefault();
+                window.dinvNode(t.getAttribute('data-id'));
             }
-        }, true);
+        });
     })();
     </script>
     @endif

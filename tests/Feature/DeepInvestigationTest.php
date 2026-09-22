@@ -51,6 +51,19 @@ class DeepInvestigationTest extends TestCase
         // Confidence vocabulary is reused verbatim — never a fabricated term.
         $this->assertContains($cm['structure'], ['likely', 'verified', 'correlated', 'single']);
         $this->assertTrue(collect($cm['nodes'])->contains('is_root', true), 'a deterministic root must be marked');
+
+        // Fishbone geometry is produced server-side and never empty when signals exist.
+        $this->assertArrayHasKey('fishbone', $cm);
+        $this->assertNotEmpty($cm['fishbone']['bones']);
+        $this->assertNotEmpty($cm['fishbone']['signals']);
+        $this->assertNotEmpty($cm['fishbone']['viewbox']);
+        $this->assertNotEmpty($cm['head']['label'], 'the fish head names the downstream effect');
+
+        // Every node carries a click-through detail sourced from governed rows only.
+        $node = collect($cm['nodes'])->firstWhere('is_root', true);
+        $this->assertArrayHasKey('detail', $node);
+        $this->assertContains($node['category'], ['supply', 'demand', 'inventory', 'price', 'data', 'other']);
+        $this->assertArrayHasKey('evidence', $node['detail']);
     }
 
     public function test_unrelated_signals_are_shown_as_correlated_not_causal(): void

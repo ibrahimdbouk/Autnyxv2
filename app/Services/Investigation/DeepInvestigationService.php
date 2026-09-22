@@ -81,18 +81,25 @@ class DeepInvestigationService
             return $this->unavailable('No signals are attached to this investigation, so there is nothing to map.');
         }
 
+        // Evidence grouped per signal — powers the click-through detail drawer,
+        // reusing the governed InvestigationEvidence rows (no new queries).
+        $evidenceByAnomaly = $investigation->evidence->groupBy('anomaly_id');
+        $currency = $this->currencySymbol($investigation);
+
         $nodes = [];
         foreach ($anomalies as $a) {
-            $nodes[] = [
+            $nodes[$a->id] = [
                 'id'        => $a->id,
                 'rule'      => $a->rule_type,
                 'label'     => $this->ruleLabel($a->rule_type),
                 'sku'       => $a->sku,
                 'store_id'  => $a->store_id,
-                'severity'  => $a->severity,
+                'severity'  => $a->severity ?: 'low',
                 'impact'    => $a->estimatedImpact(),
                 'lifecycle' => $a->lifecycle_state,
+                'category'  => $this->categoryOf($a->rule_type),
                 'is_root'   => false,
+                'detail'    => $this->nodeDetail($a, $evidenceByAnomaly->get($a->id), $currency),
             ];
         }
 
@@ -129,13 +136,9 @@ class DeepInvestigationService
             $analysis = null;
         }
 
-        if ($analysis !== null) {
-            foreach ($nodes as &$n) {
-                if ($n['id'] === $analysis['root_anomaly_id']) {
-                    $n['is_root'] = true;
-                }
-            }
-            unset($n);
+        $rootId = $analysis['root_anomaly_id'] ?? null;
+        if ($rootId !== null && isset($nodes[$rootId])) {
+            $nodes[$rootId]['is_root'] = true;
         }
 
         // Narrative honesty: signals present but no causal chain → correlated only.
@@ -145,13 +148,20 @@ class DeepInvestigationService
             default                               => 'single',
         };
 
+        $head = $this->causeHead($analysis, $nodes, $structure);
+        $categories = $this->fishboneCategories($nodes);
+
         return [
-            'available'   => true,
-            'empty_reason'=> null,
-            'nodes'       => $nodes,
-            'edges'       => $edges,
-            'structure'   => $structure,
-            'inference'   => $analysis === null ? null : [
+            'available'    => true,
+            'empty_reason' => null,
+            'head'         => $head,
+            'root_id'      => $rootId,
+            'structure'    => $structure,
+            'categories'   => $categories,
+            'fishbone'     => $this->fishboneLayout($categories, $head),
+            'nodes'        => array_values($nodes),
+            'edges'        => $edges,
+            'inference'    => $analysis === null ? null : [
                 'tier'         => $analysis['tier'],
                 'confidence'   => $analysis['confidence'],
                 'links'        => $analysis['links'],
@@ -160,6 +170,176 @@ class DeepInvestigationService
                 'explanation'  => $analysis['explanation'],
             ],
         ];
+    }
+
+    /**
+     * Retail cause categories — the "bones" of the fishbone. Rule → category is a
+     * fixed, auditable mapping (no AI). A rule not listed falls into "other".
+     */
+    private const CATEGORIES = [
+        'supply'    => ['label' => 'Supply',        'rules' => ['supplier_fill_rate', 'po_late_receipt', 'po_overdue', 'supplier_lead_time_drift', 'receiving_discrepancy']],
+        'demand'    => ['label' => 'Demand',        'rules' => ['sales_drop', 'sales_spike', 'demand_forecast_break', 'demand_seasonality_breach', 'demand_erosion', 'return_rate_spike']],
+        'inventory' => ['label' => 'Inventory',     'rules' => ['stockout_risk', 'safety_stock_breach', 'dead_stock', 'phantom_inventory', 'negative_inventory', 'overstock', 'inventory_shrinkage', 'cumulative_shrink', 'multi_location_imbalance', 'reorder_point_staleness']],
+        'price'     => ['label' => 'Price & Margin', 'rules' => ['price_anomaly', 'margin_erosion', 'discount_signal', 'cost_spike', 'revenue_concentration_risk', 'slow_moving_capital']],
+        'data'      => ['label' => 'Data & Store',  'rules' => ['sku_master_drift', 'duplicate_transaction_ids', 'import_frequency_gap', 'location_proliferation', 'channel_mix_shift', 'store_outlier']],
+        'other'     => ['label' => 'Other',         'rules' => []],
+    ];
+
+    private function categoryOf(string $rule): string
+    {
+        foreach (self::CATEGORIES as $key => $def) {
+            if (in_array($rule, $def['rules'], true)) {
+                return $key;
+            }
+        }
+
+        return 'other';
+    }
+
+    /** Per-signal detail for the click-through drawer — all from governed rows. */
+    private function nodeDetail(\App\Models\Anomaly $a, $evidence, string $currency): array
+    {
+        $evList = [];
+        foreach (($evidence ?? collect())->take(6) as $e) {
+            $evList[] = [
+                'label'     => $e->label,
+                'value'     => $e->getFormattedValue(),
+                'direction' => $e->direction,
+            ];
+        }
+
+        $impact = $a->estimatedImpact();
+
+        return [
+            'confidence'       => $a->ai_confidence ?: 'unknown',
+            'confidence_label' => $a->getConfidenceLabel(),
+            'gate_label'       => $a->ai_recommendation_gate ? $a->getGateLabel() : null,
+            'impact'           => $impact !== null ? $currency . number_format($impact, 0) : null,
+            'lifecycle'        => $a->lifecycle_state,
+            'severity'         => $a->severity ?: 'low',
+            'sku'              => $a->sku,
+            'store_id'         => $a->store_id,
+            'description'      => $a->description,
+            'evidence'         => $evList,
+        ];
+    }
+
+    /** The effect at the fish head — the downstream symptom the causes lead to. */
+    private function causeHead(?array $analysis, array $nodes, string $structure): array
+    {
+        if ($analysis !== null && ! empty($analysis['chain']) && count($analysis['chain']) >= 2) {
+            $last = end($analysis['chain']); // effect end of the causal chain
+            return ['label' => $last['label'], 'sku' => $last['sku'] ?? null, 'kind' => 'effect'];
+        }
+        if ($structure === 'single' && count($nodes) === 1) {
+            $only = reset($nodes);
+            return ['label' => $only['label'], 'sku' => $only['sku'], 'kind' => 'single'];
+        }
+
+        return ['label' => 'Co-occurring signals', 'sku' => null, 'kind' => 'correlated'];
+    }
+
+    /**
+     * Ishikawa (fishbone) geometry in a fixed 1000×420 coordinate space; the SVG
+     * scales to the container. Spine runs left→head; each category is a diagonal
+     * bone (alternating above/below), with its signals as clickable nodes spaced
+     * along the bone. Pure layout math — deterministic, no data invented.
+     */
+    private function fishboneLayout(array $categories, array $head): array
+    {
+        $w = 1000;
+        $headW = 216;
+        $headX = $w - $headW;   // spine meets the head here
+        $cy = 210;
+        $h = 420;
+        $ribDX = 190;           // bone horizontal run (toward the tail)
+        $ribH = 150;            // bone vertical rise
+        $spineLeft = 36;
+        $x0min = 210;
+        $x0max = $headX - 60;
+        $c = count($categories);
+
+        $bones = [];
+        $signals = [];
+        foreach (array_values($categories) as $j => $cat) {
+            $x0 = $c <= 1 ? ($x0min + $x0max) / 2 : $x0min + $j * (($x0max - $x0min) / ($c - 1));
+            $top = $cat['side'] === 'top';
+            $tipX = $x0 - $ribDX;
+            $tipY = $top ? $cy - $ribH : $cy + $ribH;
+
+            $bones[] = [
+                'x0'      => round($x0), 'y0' => $cy,
+                'x1'      => round($tipX), 'y1' => $tipY,
+                'label'   => $cat['label'],
+                'label_x' => round($tipX - 2),
+                'label_y' => $top ? $tipY - 9 : $tipY + 18,
+                'side'    => $cat['side'],
+            ];
+
+            $signalsList = array_values($cat['signals']);
+            $n = count($signalsList);
+            foreach ($signalsList as $k => $s) {
+                $t = ($k + 1) / ($n + 1);
+                $px = $x0 + $t * ($tipX - $x0);
+                $py = $cy + $t * ($tipY - $cy);
+                $signals[] = [
+                    'id'       => $s['id'],
+                    'cx'       => round($px), 'cy' => round($py),
+                    'label'    => $this->truncate($s['label'], 22),
+                    'label_x'  => round($px - 12),
+                    'label_y'  => round($py + 3),
+                    'is_root'  => $s['is_root'],
+                    'severity' => $s['severity'],
+                ];
+            }
+        }
+
+        return [
+            'w' => $w, 'h' => $h, 'cy' => $cy, 'head_x' => $headX,
+            // Left/top/bottom gutters so bone-tip and signal labels never clip.
+            'viewbox' => '-150 -14 ' . ($w + 190) . ' ' . ($h + 44),
+            'head'   => $head,
+            'spine'  => ['x1' => $spineLeft, 'x2' => $headX, 'y' => $cy],
+            'bones'  => $bones,
+            'signals' => $signals,
+        ];
+    }
+
+    private function truncate(string $s, int $n): string
+    {
+        return mb_strlen($s) <= $n ? $s : rtrim(mb_substr($s, 0, $n - 1)) . '…';
+    }
+
+    /** Group signals into fishbone ribs, alternating above/below the spine. */
+    private function fishboneCategories(array $nodesById): array
+    {
+        $buckets = [];
+        foreach ($nodesById as $n) {
+            $buckets[$n['category']][] = [
+                'id'       => $n['id'],
+                'label'    => $n['label'],
+                'sku'      => $n['sku'],
+                'severity' => $n['severity'],
+                'is_root'  => $n['is_root'],
+            ];
+        }
+
+        $out = [];
+        $i = 0;
+        foreach (array_keys(self::CATEGORIES) as $key) {
+            if (empty($buckets[$key])) {
+                continue;
+            }
+            $out[] = [
+                'key'     => $key,
+                'label'   => self::CATEGORIES[$key]['label'],
+                'side'    => $i % 2 === 0 ? 'top' : 'bottom',
+                'signals' => $buckets[$key],
+            ];
+            $i++;
+        }
+
+        return $out;
     }
 
     // =========================================================================
