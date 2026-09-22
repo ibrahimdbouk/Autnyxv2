@@ -484,6 +484,12 @@ a.db-kpi:hover::after { opacity:1; }
 </style>
 
 {{-- ════════════════════════════════════════════════════════════════════════
+     BRIEFINGS (daily left · weekly right) + DATA-FEED HEALTH — top of dashboard
+     ════════════════════════════════════════════════════════════════════════ --}}
+@include('filament.partials.dashboard-briefings')
+@include('filament.partials.dashboard-feed-health')
+
+{{-- ════════════════════════════════════════════════════════════════════════
      KPI CARDS
      ════════════════════════════════════════════════════════════════════════ --}}
 <div class="db-kpi-grid">
