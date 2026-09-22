@@ -571,7 +571,7 @@ class DeepInvestigationService
                     $derivation = [
                         'target'         => $rep->order_up_to !== null ? (int) round((float) $rep->order_up_to) : null,
                         'reorder_point'  => $rep->reorder_point !== null ? (int) round((float) $rep->reorder_point) : null,
-                        'lead_time_days' => $rep->lead_time_days !== null ? (int) round((float) $rep->lead_time_days) : null,
+                        'lead_time_days' => ($rep->lead_time_days !== null && (float) $rep->lead_time_days > 0) ? (int) round((float) $rep->lead_time_days) : null,
                         'supplier'       => $rep->supplier,
                     ];
                 }

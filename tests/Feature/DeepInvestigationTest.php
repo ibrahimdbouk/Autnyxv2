@@ -215,6 +215,60 @@ class DeepInvestigationTest extends TestCase
         // avg daily = on_hand(6)/cover(2) = 3; over 14 days, 12 stockout days → 36 units at risk.
         $this->assertSame(36, $wi['scenarios'][14]['no_action']['lost_units']);
         $this->assertGreaterThan(0, $wi['scenarios'][30]['protected_units'], 'a longer horizon protects more by acting');
+        // No sibling surplus on file → the transfer alternative is silent, not invented.
+        $this->assertNull($wi['transfer'], 'with no releasable surplus anywhere, no transfer alternative is shown');
+    }
+
+    public function test_what_if_surfaces_a_transfer_alternative_from_a_surplus_sibling(): void
+    {
+        $tenant = $this->createTenant();
+        $inv = Investigation::factory()->create(['tenant_id' => $tenant->id]);
+        $a = $this->anomaly($inv, 'stockout_risk', 'SKU-1', 1200);
+
+        // Governed inputs: on-hand 6, 2 days of cover (⇒ 3 units/day), 5-day PO lead.
+        InvestigationEvidence::create([
+            'investigation_id' => $inv->id, 'anomaly_id' => $a->id,
+            'evidence_type' => InvestigationEvidence::TYPE_SNAPSHOT,
+            'source' => 'inventory_levels', 'label' => 'Current on-hand quantity',
+            'value_numeric' => 6, 'unit' => 'units', 'direction' => InvestigationEvidence::DIRECTION_SUPPORTS,
+            'strength' => InvestigationEvidence::STRENGTH_STRONG, 'observed_at' => now(),
+        ]);
+        InvestigationEvidence::create([
+            'investigation_id' => $inv->id, 'anomaly_id' => $a->id,
+            'evidence_type' => InvestigationEvidence::TYPE_CALCULATION,
+            'source' => 'inventory_levels + sales_transactions', 'label' => 'Days of cover at current sales rate',
+            'value_numeric' => 2, 'unit' => 'days', 'direction' => InvestigationEvidence::DIRECTION_SUPPORTS,
+            'strength' => InvestigationEvidence::STRENGTH_STRONG, 'observed_at' => now(),
+        ]);
+        InvestigationEvidence::create([
+            'investigation_id' => $inv->id, 'anomaly_id' => $a->id,
+            'evidence_type' => InvestigationEvidence::TYPE_STAT,
+            'source' => 'purchase_orders', 'label' => 'Average supplier lead time (recent POs)',
+            'value_numeric' => 5, 'unit' => 'days', 'direction' => InvestigationEvidence::DIRECTION_NEUTRAL,
+            'strength' => InvestigationEvidence::STRENGTH_MODERATE, 'observed_at' => now(),
+        ]);
+
+        // A sibling store holds this SKU well above its OWN target — releasable
+        // surplus of 20 units (on-hand 30 vs order-up-to 10). No lead_time_days set,
+        // so the PO lead still resolves from the evidence above.
+        \App\Models\SkuReplenishment::create([
+            'tenant_id' => $tenant->id, 'sku' => 'SKU-1', 'store_id' => 42,
+            'on_hand' => 30, 'order_up_to' => 10, 'source' => 'computed',
+        ]);
+
+        $wi = app(DeepInvestigationService::class)->build($inv->fresh())['what_if'];
+
+        $this->assertTrue($wi['available']);
+        $tr = $wi['transfer'];
+        $this->assertNotNull($tr, 'a genuine surplus sibling must surface a transfer alternative');
+        $this->assertTrue($tr['available']);
+        $this->assertEquals(42, $tr['best_store']);
+        $this->assertSame(20, $tr['best_surplus'], 'releasable surplus = on-hand 30 − target 10');
+        // Pre-PO gap = (lead 5 − cover 2) × 3/day = 9 units; surplus (20) covers it fully.
+        $this->assertSame(9, $tr['protected_units']);
+        $this->assertTrue($tr['fully_covered']);
+        // It recommends only — it never claims to move stock itself.
+        $this->assertStringContainsStringIgnoringCase('recommends only', $tr['assumption']);
     }
 
     public function test_similar_incidents_match_resolved_siblings(): void

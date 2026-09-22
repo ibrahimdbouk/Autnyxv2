@@ -39,13 +39,20 @@ function rglob(string $dir, string $ext): array
     if (!is_dir($dir)) {
         return [];
     }
+    // NB: a plain scandir walk, NOT RecursiveDirectoryIterator. The latter yields
+    // ZERO entries on some overlay/fuse filesystems (e.g. the Cowork sandbox),
+    // which silently turned every view/app rule below into a no-op and reported a
+    // false "clean". scandir works on those filesystems and on CI's ext4 alike.
     $out = [];
-    $it = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS)
-    );
-    foreach ($it as $file) {
-        if ($file->isFile() && str_ends_with($file->getFilename(), $ext)) {
-            $out[] = $file->getPathname();
+    foreach (scandir($dir) ?: [] as $entry) {
+        if ($entry === '.' || $entry === '..') {
+            continue;
+        }
+        $path = $dir . '/' . $entry;
+        if (is_dir($path)) {
+            $out = array_merge($out, rglob($path, $ext));
+        } elseif (str_ends_with($entry, $ext)) {
+            $out[] = $path;
         }
     }
     sort($out);
@@ -216,9 +223,9 @@ foreach (rglob($root . '/resources/views', '.blade.php') as $file) {
     }
 }
 
-/* ---------- INC-006: inline @php(...) pitfalls ------------------------- */
+/* ---------- INC-013: inline @php(...) pitfalls ------------------------- */
 // Two real Blade compile-breakers — both 500s the directive-balance checks
-// above CANNOT see (InvestigateInvestigation page 500, 2026-09-22, INC-011):
+// above CANNOT see (InvestigateInvestigation page 500, 2026-09-22, INC-013):
 //   (a) storePhpBlocks pairs the FIRST `@php` (even an inline `@php(`) with the
 //       NEXT `@endphp` anywhere in the file — INCLUDING one written inside a
 //       `{{-- comment --}}`, because that pass runs before comments are stripped.
@@ -240,7 +247,7 @@ foreach (rglob($root . '/resources/views', '.blade.php') as $file) {
             $lineNo = lineOf($src, $mm[0][$i][1]);
             if (preg_match('/^\s*\(/', $code)
                 || preg_match('/@(if|elseif|else|endif|foreach|endforeach|forelse|empty|endforelse|for|endfor|while|endwhile|json|switch)\b/', $code)) {
-                $problems[] = "[INC-006a] $r (~line $lineNo): a @php…@endphp block swallowed an "
+                $problems[] = "[INC-013a] $r (~line $lineNo): a @php…@endphp block swallowed an "
                     . "inline @php( or a control directive. An inline @php( before an @endphp — "
                     . "often an @endphp written inside a {{-- comment --}} — mis-pairs and breaks "
                     . "compilation. Use inline @php(...) only in that region, and never write the "
@@ -257,7 +264,7 @@ foreach (rglob($root . '/resources/views', '.blade.php') as $file) {
             $stripped = preg_replace('/([\'"]).*?\1/s', '', $inner); // ignore ';' in strings
             if (strpos($stripped, ';') !== false) {
                 $lineNo = lineOf($src, $off);
-                $problems[] = "[INC-006b] $r (line $lineNo): multi-statement inline @php() "
+                $problems[] = "[INC-013b] $r (line $lineNo): multi-statement inline @php() "
                     . "directive (a ';' between the parens). Blade wraps the expression in "
                     . "parentheses, so multiple statements become a parse error. "
                     . "Split into one @php() directive per statement.";

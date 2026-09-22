@@ -988,6 +988,12 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
     .dinv-sim-inc .m { font-size:.72rem; color:var(--ax-accent-strong,#7c3aed); font-weight:600; margin-top:.1rem; }
     .dinv-sim-inc .r { display:flex; flex-wrap:wrap; gap:.35rem .9rem; margin-top:.45rem; font-size:.76rem; color:var(--ax-muted,#4b5563); }
     .dinv-sim-inc .r b { color:var(--ax-ink,#111827); }
+    /* What-If transfer alternative */
+    .dinv-tr { margin-top:.9rem; border:1px solid #bfe6cf; background:#f2fbf6; border-radius:.6rem; padding:.8rem 1rem; }
+    .dinv-tr-head { display:flex; align-items:center; gap:.5rem; font-size:.82rem; font-weight:800; color:#15803d; }
+    .dinv-tr-lead { margin:.5rem 0 0; font-size:.84rem; line-height:1.55; color:var(--ax-ink,#111827); }
+    .dinv-tr-lead b { color:var(--ax-ink,#111827); }
+    .dinv-tr-body .dinv-sim-assum { margin-top:.55rem; }
     </style>
 
     {{-- NB: use inline php(...) directives only in this section — never a
@@ -1168,6 +1174,20 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                     <div class="dinv-sim-assum">
                         @foreach($wi['assumptions'] as $as)<div>{{ $as }}</div>@endforeach
                     </div>
+                    @php($txf = $wi['transfer'] ?? null)
+                    @if($txf && ($txf['available'] ?? false))
+                        <div class="dinv-tr">
+                            <div class="dinv-tr-head">🔁 Transfer alternative <span class="dinv-pill s-warning">Simulated</span></div>
+                            <div class="dinv-tr-body">
+                                <p class="dinv-tr-lead">Store <b>{{ $txf['best_store'] }}</b> holds <b>{{ number_format($txf['best_surplus']) }}</b> releasable units of this SKU — stock it carries above its own replenishment target.
+                                    @if($txf['donor_count'] > 1)<span><b>{{ number_format($txf['total_surplus']) }}</b> units are releasable across {{ $txf['donor_count'] }} stores. </span>@endif
+                                    A transfer arriving in ~{{ $txf['transfer_lead'] }} days — ahead of the {{ $txf['po_lead'] }}-day supplier lead — could protect <b>{{ $wi['has_revenue'] && $txf['protected_revenue'] !== null ? $money($txf['protected_revenue']) : number_format($txf['protected_units']) . ' units' }}</b> that the PO's lead-time gap would otherwise lose.
+                                    @if(!$txf['fully_covered'])<span> The surplus does not fully close the gap — it reduces it.</span>@endif
+                                </p>
+                                <div class="dinv-sim-assum"><div>{{ $txf['assumption'] }}</div></div>
+                            </div>
+                        </div>
+                    @endif
                     <script type="application/json" id="dinv-sim-data">@json(['scenarios' => $wi['scenarios'], 'has_revenue' => $wi['has_revenue'], 'currency' => $wi['currency'] ?? ''])</script>
                 @endif
             </div>
