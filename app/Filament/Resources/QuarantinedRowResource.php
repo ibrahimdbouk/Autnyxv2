@@ -3,12 +3,17 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\QuarantinedRowResource\Pages;
+use App\Models\EntityAlias;
 use App\Models\QuarantinedRow;
 use App\Services\DataQuality\Reasons;
+use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
@@ -85,6 +90,44 @@ class QuarantinedRowResource extends Resource
                 TextColumn::make('created_at')->label('When')->since()->sortable(),
             ])
             ->defaultSort('created_at', 'desc')
+            ->actions([
+                // Learn-from-resolution: turn a human fix into a reusable tenant alias, so
+                // every future batch resolves this value automatically.
+                Action::make('resolveAlias')
+                    ->label('Resolve → alias')
+                    ->icon('heroicon-o-link')
+                    ->color('success')
+                    ->visible(fn (QuarantinedRow $r) => $r->status === QuarantinedRow::STATUS_OPEN)
+                    ->fillForm(fn (QuarantinedRow $r) => [
+                        'entity_type' => EntityAlias::TYPE_SKU,
+                        'alias'       => (string) (($r->cleansed_data['sku'] ?? $r->raw_data['sku'] ?? '') ?: ''),
+                    ])
+                    ->form([
+                        Select::make('entity_type')->label('Entity')->options([
+                            EntityAlias::TYPE_SKU      => 'SKU',
+                            EntityAlias::TYPE_STORE    => 'Store / Location',
+                            EntityAlias::TYPE_SUPPLIER => 'Supplier',
+                        ])->required(),
+                        TextInput::make('alias')->label('Inbound value')->required()
+                            ->helperText('The messy value in this row.'),
+                        TextInput::make('canonical')->label('Canonical value')->required()
+                            ->helperText('What it should resolve to. Applied to all future batches.'),
+                    ])
+                    ->action(function (QuarantinedRow $record, array $data): void {
+                        EntityAlias::updateOrCreate(
+                            [
+                                'tenant_id'   => $record->tenant_id,
+                                'entity_type' => $data['entity_type'],
+                                'alias'       => mb_strtolower(trim((string) $data['alias'])),
+                            ],
+                            ['canonical' => trim((string) $data['canonical'])],
+                        );
+                        $record->update(['status' => QuarantinedRow::STATUS_RESOLVED]);
+                        Notification::make()
+                            ->title('Alias saved — future rows will resolve automatically')
+                            ->success()->send();
+                    }),
+            ])
             ->filters([
                 SelectFilter::make('reason_code')
                     ->label('Reason')

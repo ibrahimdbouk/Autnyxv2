@@ -262,6 +262,19 @@ class ImportProcessorService
 
             $this->firewall()?->begin($import);
 
+            // Idempotency: identical file already ingested → skip (no duplicate rows).
+            if (($fw = $this->firewall()) && $fw->isDuplicateBatch()) {
+                $fw->recordChunk($import);
+                $import->update([
+                    'status'        => Import::STATUS_ROLLED_BACK,
+                    'total_rows'    => $total,
+                    'error_message' => 'Duplicate upload — identical file already ingested; skipped.',
+                ]);
+                $this->recordIngestionRun($import, $total, 0, 0, $startedAt);
+
+                return;
+            }
+
             foreach ($allRows as $rowNumber => $rawRow) {
                 try {
                     DB::beginTransaction();
@@ -390,6 +403,19 @@ class ImportProcessorService
         $batch    = [];
 
         $this->firewall()?->begin($import);
+
+        // Idempotency: identical file already ingested → skip the whole batch (no
+        // re-promotion, so no duplicate canonical rows). Recorded as a RED batch.
+        if (($fw = $this->firewall()) && $fw->isDuplicateBatch()) {
+            $fw->recordChunk($import);
+            $import->update([
+                'status'         => Import::STATUS_ROLLED_BACK,
+                'process_cursor' => (int) $import->total_rows,
+                'error_message'  => 'Duplicate upload — identical file already ingested; skipped.',
+            ]);
+
+            return ['done' => true, 'processed' => (int) $import->total_rows, 'total' => (int) $import->total_rows];
+        }
 
         foreach ($chunk['rows'] as $rawRow) {
             $data = $this->applyMap($columnMap, $rawRow);

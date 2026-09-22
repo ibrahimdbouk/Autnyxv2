@@ -740,9 +740,22 @@ class AnomalyDetectionService
         [$invPairs, $invSkus, $demPairs, $demSkus, $costSkus] = $this->buildCoverageSets();
         $confirmRunsFor = $this->confirmRunsResolver();
 
+        // Data-quality readiness contract: skip rules whose dataset's latest batch is
+        // RED (blocked by the firewall) — granular per dataset, so a bad inventory feed
+        // never silences healthy sales rules. Off by default (behaviour-safe); flip
+        // data_quality.readiness_enforcement to enable. Detection logic is untouched.
+        $blockedRules = config('data_quality.readiness_enforcement', false)
+            ? app(\App\Services\DataQuality\DataReadinessService::class)->blockedRules($tenantId)
+            : [];
+
         foreach ($rules as $ruleType => $detector) {
             $setting = $settings->get($ruleType);
             if (!$setting || !$setting->enabled) {
+                continue;
+            }
+
+            // Readiness gate — its input dataset is blocked this run.
+            if (isset($blockedRules[$ruleType])) {
                 continue;
             }
 

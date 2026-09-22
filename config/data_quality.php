@@ -37,4 +37,32 @@ return [
 
     // How many rows of the first chunk to profile for the column-health view.
     'profile_sample' => (int) env('DATA_QUALITY_PROFILE_SAMPLE', 2000),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Phase 2 — batch decision, readiness, idempotency
+    |--------------------------------------------------------------------------
+    */
+
+    // Per-batch GREEN/AMBER/RED thresholds on the clean-promote rate (%). At or above
+    // green_min → GREEN (detection ready); at or above amber_min → AMBER (auto-promote
+    // clean, quarantine exceptions); below amber_min → RED (batch blocked). Override
+    // per data type in `per_type`.
+    'thresholds' => [
+        'green_min' => (float) env('DATA_QUALITY_GREEN_MIN', 98),
+        'amber_min' => (float) env('DATA_QUALITY_AMBER_MIN', 90),
+        'per_type'  => [
+            // 'inventory_levels' => ['green_min' => 99, 'amber_min' => 92],
+        ],
+    ],
+
+    // Detection-readiness enforcement. When ON, the detection runner skips rules whose
+    // dataset's latest batch is RED (blocked) — granular per dataset, not global. Default
+    // OFF (behaviour-safe): readiness is computed and shown, but never suppresses a rule
+    // until you flip this. See claude/data-quality-firewall.md.
+    'readiness_enforcement' => (bool) env('DATA_QUALITY_READINESS_ENFORCEMENT', false),
+
+    // Idempotent uploads: an identical file (same content fingerprint) already ingested
+    // is skipped rather than re-promoted, so a re-upload can't duplicate canonical rows.
+    'idempotent_uploads' => (bool) env('DATA_QUALITY_IDEMPOTENT_UPLOADS', true),
 ];

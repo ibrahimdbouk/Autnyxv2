@@ -13,16 +13,22 @@ class ImportQuality extends Model
 {
     protected $table = 'import_quality';
 
+    public const STATE_GREEN = 'green'; // detection ready
+    public const STATE_AMBER = 'amber'; // auto-promoted, exceptions to review
+    public const STATE_RED   = 'red';   // blocked
+
     protected $fillable = [
-        'tenant_id', 'import_id', 'data_type',
+        'tenant_id', 'import_id', 'data_type', 'source',
         'rows_seen', 'rows_promoted', 'rows_quarantined', 'rows_cleansed',
         'reason_counts', 'column_profile', 'file_fingerprint', 'is_duplicate_file',
+        'state', 'decision', 'blocked',
     ];
 
     protected $casts = [
         'reason_counts'     => 'array',
         'column_profile'    => 'array',
         'is_duplicate_file' => 'boolean',
+        'blocked'           => 'boolean',
         'rows_seen'         => 'integer',
         'rows_promoted'     => 'integer',
         'rows_quarantined'  => 'integer',
@@ -52,5 +58,14 @@ class ImportQuality extends Model
     {
         $s = $this->qualityScore();
         return $s >= 90 ? 'success' : ($s >= 70 ? 'warning' : 'danger');
+    }
+
+    public function stateColor(): string
+    {
+        return match ($this->state) {
+            self::STATE_GREEN => 'success',
+            self::STATE_AMBER => 'warning',
+            default           => 'danger',
+        };
     }
 }

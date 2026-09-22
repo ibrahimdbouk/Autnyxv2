@@ -35,13 +35,24 @@ class DataQualityFirewall
     private int $profileCap = 2000;
     private bool $captureProfile = false;
     private ?ImportQuality $quality = null;
+    private bool $duplicateBatch = false;
 
     public function __construct(
         private CleansingEngine $cleanser,
         private RowValidator $validator,
         private DataProfiler $profiler,
         private Deduplicator $dedup,
+        private BatchDecisionService $decider,
     ) {
+    }
+
+    /**
+     * An identical file already ingested? When idempotent uploads are on, the caller
+     * skips the whole batch (no re-promotion → no duplicate canonical rows).
+     */
+    public function isDuplicateBatch(): bool
+    {
+        return $this->duplicateBatch;
     }
 
     public static function isEnabled(): bool
@@ -93,6 +104,7 @@ class DataQualityFirewall
             $quality->fill([
                 'tenant_id'         => $tenantId,
                 'data_type'         => $import->data_type,
+                'source'            => $this->sourceLabel($import),
                 'file_fingerprint'  => $fingerprint,
                 'is_duplicate_file' => $fingerprint !== null && ImportQuality::where('tenant_id', $tenantId)
                     ->where('data_type', $import->data_type)
@@ -102,6 +114,16 @@ class DataQualityFirewall
             ])->save();
         }
         $this->quality = $quality;
+
+        // Idempotency: an identical file already ingested → the caller skips the batch.
+        $this->duplicateBatch = $quality->is_duplicate_file
+            && (bool) config('data_quality.idempotent_uploads', true);
+    }
+
+    /** Coarse source label for the batch/source-health view (feed tagging comes with continuous ingest). */
+    private function sourceLabel(Import $import): string
+    {
+        return $import->original_filename ? 'file' : 'api';
     }
 
     /**
@@ -191,6 +213,18 @@ class DataQualityFirewall
         if ($this->captureProfile && empty($q->column_profile) && $this->profileRows !== []) {
             $q->column_profile = $this->profiler->profile($import->data_type, $this->profileRows);
         }
+
+        // Batch decision (GREEN/AMBER/RED) from the cumulative counts — the autonomy
+        // envelope and the input to the detection-readiness contract.
+        $decision = $this->decider->decide(
+            $import->data_type,
+            (int) $q->rows_promoted,
+            (int) $q->rows_quarantined,
+            (bool) $q->is_duplicate_file,
+        );
+        $q->state    = $decision['state'];
+        $q->decision = $decision['decision'];
+        $q->blocked  = $decision['blocked'];
 
         $q->save();
         $this->quality = $q;

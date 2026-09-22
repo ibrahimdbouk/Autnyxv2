@@ -44,8 +44,15 @@ class ImportQualityResource extends Resource
     {
         return $table
             ->columns([
-                TextColumn::make('import_id')->label('Import')->sortable(),
+                TextColumn::make('import_id')->label('Batch')->sortable(),
                 TextColumn::make('data_type')->badge()->color('gray'),
+                TextColumn::make('source')->badge()->color('gray')->toggleable(),
+                TextColumn::make('state')
+                    ->label('Decision')
+                    ->badge()
+                    ->formatStateUsing(fn (?string $state) => strtoupper((string) $state))
+                    ->color(fn (ImportQuality $r) => $r->stateColor()),
+                TextColumn::make('decision')->limit(64)->wrap()->tooltip(fn (ImportQuality $r) => $r->decision)->toggleable(),
                 TextColumn::make('quality_pct')
                     ->label('Quality')
                     ->badge()
