@@ -43,9 +43,12 @@ class AdminPanelProvider extends PanelProvider
             // + optional TOTP MFA with recovery codes. Opt-in per user, so an
             // un-enrolled account (e.g. the owner) logs in exactly as before.
             ->profile()
-            ->multiFactorAuthentication([
-                AppAuthentication::make()->recoverable(),
-            ])
+            ->multiFactorAuthentication(
+                [AppAuthentication::make()->recoverable()],
+                // Mandatory for super admins when MFA_REQUIRE_SUPER_ADMINS=true;
+                // fail-open otherwise so nobody is locked out. See MfaPolicy.
+                isRequired: fn (): bool => \App\Support\MfaPolicy::requiredForUser(),
+            )
             ->spa()
             ->tenant(Tenant::class, slugAttribute: 'slug')
             ->colors([

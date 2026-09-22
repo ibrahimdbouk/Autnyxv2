@@ -54,4 +54,22 @@ return [
     */
     'csp_mode' => env('CSP_MODE', 'report'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Mandatory MFA for super admins (3b)
+    |--------------------------------------------------------------------------
+    |
+    | When true, a super admin cannot reach the panels until they have enrolled
+    | in TOTP MFA (Filament forces the set-up step at login). Regular users are
+    | unaffected — MFA stays opt-in for them.
+    |
+    | Default FALSE so enabling MFA never locks anyone out on deploy: the owner
+    | (a super admin) enrols first via avatar menu → Edit profile, THEN flips
+    | MFA_REQUIRE_SUPER_ADMINS=true. The enforcement is fail-open — if the acting
+    | user can't be resolved at evaluation time it does NOT require MFA, so a
+    | misfire can never lock the owner out of break-glass.
+    |
+    */
+    'require_mfa_super_admins' => env('MFA_REQUIRE_SUPER_ADMINS', false),
+
 ];

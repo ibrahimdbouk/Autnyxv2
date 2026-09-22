@@ -222,12 +222,22 @@ class DataQualityFirewall
             (int) $q->rows_quarantined,
             (bool) $q->is_duplicate_file,
         );
+        // Detect the transition INTO red so a blocked feed alerts exactly once,
+        // not on every subsequent chunk that stays red.
+        $wasRed = $q->state === ImportQuality::STATE_RED;
+
         $q->state    = $decision['state'];
         $q->decision = $decision['decision'];
         $q->blocked  = $decision['blocked'];
 
         $q->save();
         $this->quality = $q;
+
+        // A RED batch must never be silent (the firewall guardrail). Best-effort —
+        // an alert failure can never break ingestion.
+        if ($decision['state'] === ImportQuality::STATE_RED && ! $wasRed) {
+            app(ReadinessAlerter::class)->redBatch($q);
+        }
     }
 
     // ── Loaders ────────────────────────────────────────────────────────────────

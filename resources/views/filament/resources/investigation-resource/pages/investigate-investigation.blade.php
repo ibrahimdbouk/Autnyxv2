@@ -988,6 +988,8 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
     .dinv-sim-inc .m { font-size:.72rem; color:var(--ax-accent-strong,#7c3aed); font-weight:600; margin-top:.1rem; }
     .dinv-sim-inc .r { display:flex; flex-wrap:wrap; gap:.35rem .9rem; margin-top:.45rem; font-size:.76rem; color:var(--ax-muted,#4b5563); }
     .dinv-sim-inc .r b { color:var(--ax-ink,#111827); }
+    .dinv-sim-inc .pb { margin-top:.5rem; padding:.4rem .6rem; border-radius:.45rem; background:var(--ax-accent-soft,#f5f3ff); font-size:.78rem; color:var(--ax-text,#374151); line-height:1.45; }
+    .dinv-sim-inc .pb b { color:var(--ax-accent-strong,#7c3aed); }
     /* What-If transfer alternative */
     .dinv-tr { margin-top:.9rem; border:1px solid #bfe6cf; background:#f2fbf6; border-radius:.6rem; padding:.8rem 1rem; }
     .dinv-tr-head { display:flex; align-items:center; gap:.5rem; font-size:.82rem; font-weight:800; color:#15803d; }
@@ -1214,6 +1216,9 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                                 @if($it['recovery'])<span>Recovery: <b>{{ $it['recovery'] }}</b></span>@endif
                                 @if($it['root_cause'])<span>Root cause: <b>{{ $it['root_cause'] }}</b></span>@endif
                             </div>
+                            @if($it['playbook'])
+                                <div class="pb">{{ $it['playbook']['done'] ? '✓ Worked last time' : 'Tried last time' }} — <b>{{ $it['playbook']['kind'] }}</b>: {{ $it['playbook']['title'] }}</div>
+                            @endif
                         </div>
                     @endforeach
                     <div class="dinv-note">{{ $si['note'] }}</div>

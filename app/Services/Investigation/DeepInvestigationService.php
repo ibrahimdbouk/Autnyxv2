@@ -104,7 +104,7 @@ class DeepInvestigationService
         $candidates = Investigation::where('tenant_id', $investigation->tenant_id)
             ->where('id', '!=', $investigation->id)
             ->whereIn('status', [Investigation::STATUS_RESOLVED, Investigation::STATUS_CLOSED])
-            ->with(['outcome', 'anomalies:id,investigation_id,rule_type'])
+            ->with(['outcome', 'anomalies:id,investigation_id,rule_type', 'actions'])
             ->latest('resolved_at')
             ->limit(60)
             ->get();
@@ -130,6 +130,10 @@ class DeepInvestigationService
                 'outcome'     => $o ? (InvestigationOutcome::TYPE_LABELS[$o->outcome_type] ?? ucfirst((string) $o->outcome_type)) : null,
                 'recovery'    => ($o && $o->observed_recovery !== null) ? $currency . number_format((float) $o->observed_recovery, 0) : null,
                 'root_cause'  => $o?->confirmed_root_cause,
+                // The borrowable playbook: what the team actually did on the prior
+                // incident that resolved it — the completed action if there is one,
+                // else the highest-priority action they recorded.
+                'playbook'    => $this->siblingPlaybook($c),
             ];
             if (count($matches) >= 5) {
                 break;
@@ -144,8 +148,44 @@ class DeepInvestigationService
             'available'    => true,
             'empty_reason' => null,
             'items'        => $matches,
-            'note'         => 'Matched on shared signal type or SKU among resolved / closed investigations. Recovery figures are analyst-recorded outcomes, not projections.',
+            'note'         => 'Matched on shared signal type or SKU among resolved / closed investigations. Recovery figures and actions are what analysts recorded, not projections.',
         ];
+    }
+
+    /**
+     * The one action from a resolved sibling worth borrowing: the completed action
+     * (what actually worked) if there is one, otherwise the highest-priority action
+     * the team recorded. Null when the sibling logged no action. Governed rows only.
+     */
+    private function siblingPlaybook(Investigation $sibling): ?array
+    {
+        $actions = $sibling->actions ?? collect();
+        if ($actions->isEmpty()) {
+            return null;
+        }
+
+        $completed = $actions->firstWhere('status', \App\Models\Action::STATUS_COMPLETED);
+        $act = $completed ?? $actions->sortBy(fn ($a) => $this->priorityRank($a->priority))->first();
+        if ($act === null) {
+            return null;
+        }
+
+        return [
+            'title' => $act->title,
+            'kind'  => \App\Models\Action::TYPE_LABELS[$act->action_type] ?? ucwords(str_replace('_', ' ', (string) ($act->action_type ?? 'action'))),
+            'done'  => $completed !== null,
+        ];
+    }
+
+    private function priorityRank(?string $priority): int
+    {
+        return match ($priority) {
+            \App\Models\Action::PRIORITY_CRITICAL => 0,
+            \App\Models\Action::PRIORITY_HIGH     => 1,
+            \App\Models\Action::PRIORITY_MEDIUM   => 2,
+            \App\Models\Action::PRIORITY_LOW      => 3,
+            default                               => 4,
+        };
     }
 
     // =========================================================================

@@ -32,11 +32,13 @@ class OpsPanelProvider extends PanelProvider
             ->id('ops')
             ->path('ops')
             ->login()
-            // 3b — MFA on the elevated control plane too (opt-in per super admin).
+            // 3b — MFA on the elevated control plane too. Opt-in per super admin,
+            // or mandatory when MFA_REQUIRE_SUPER_ADMINS=true (fail-open; MfaPolicy).
             ->profile()
-            ->multiFactorAuthentication([
-                AppAuthentication::make()->recoverable(),
-            ])
+            ->multiFactorAuthentication(
+                [AppAuthentication::make()->recoverable()],
+                isRequired: fn (): bool => \App\Support\MfaPolicy::requiredForUser(),
+            )
             ->spa()
             ->colors([
                 'primary' => Color::Amber,

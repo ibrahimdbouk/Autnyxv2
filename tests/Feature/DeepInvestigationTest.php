@@ -310,10 +310,46 @@ class DeepInvestigationTest extends TestCase
         ]);
         $this->anomaly($sibling, 'stockout_risk', 'SKU-9', 500);
 
+        // What worked last time: a COMPLETED action on the resolved sibling is the
+        // borrowable playbook the current investigation should surface.
+        \App\Models\Action::create([
+            'investigation_id' => $sibling->id,
+            'action_type'      => \App\Models\Action::TYPE_TRANSFER,
+            'title'            => 'Transfer 40 units from the DC',
+            'status'           => \App\Models\Action::STATUS_COMPLETED,
+            'priority'         => \App\Models\Action::PRIORITY_HIGH,
+        ]);
+
         $si = app(DeepInvestigationService::class)->build($inv->fresh())['similar'];
 
         $this->assertTrue($si['available']);
         $this->assertNotEmpty($si['items']);
         $this->assertStringContainsStringIgnoringCase('signal', $si['items'][0]['match']);
+
+        $playbook = $si['items'][0]['playbook'];
+        $this->assertNotNull($playbook, 'the completed action from the resolved sibling is the borrowable playbook');
+        $this->assertTrue($playbook['done'], 'a completed action is marked as what worked');
+        $this->assertSame('Inventory Transfer', $playbook['kind']);
+        $this->assertSame('Transfer 40 units from the DC', $playbook['title']);
+    }
+
+    public function test_similar_incident_playbook_is_null_when_sibling_logged_no_action(): void
+    {
+        $tenant = $this->createTenant();
+        $inv = Investigation::factory()->create(['tenant_id' => $tenant->id]);
+        $this->anomaly($inv, 'stockout_risk', 'SKU-1', 1200);
+
+        $sibling = Investigation::factory()->create([
+            'tenant_id' => $tenant->id,
+            'status' => Investigation::STATUS_RESOLVED,
+            'resolved_at' => now()->subDays(5),
+            'title' => 'Prior stockout, no action recorded',
+        ]);
+        $this->anomaly($sibling, 'stockout_risk', 'SKU-2', 400);
+
+        $si = app(DeepInvestigationService::class)->build($inv->fresh())['similar'];
+
+        $this->assertTrue($si['available']);
+        $this->assertNull($si['items'][0]['playbook'], 'no action on the sibling → no fabricated playbook');
     }
 }
