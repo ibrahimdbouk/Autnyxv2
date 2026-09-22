@@ -488,6 +488,7 @@ a.db-kpi:hover::after { opacity:1; }
      ════════════════════════════════════════════════════════════════════════ --}}
 @include('filament.partials.dashboard-briefings')
 @include('filament.partials.dashboard-feed-health')
+@include('filament.partials.dashboard-ops-pulse')
 
 {{-- ════════════════════════════════════════════════════════════════════════
      KPI CARDS
