@@ -22,6 +22,13 @@ class InventoryLevel extends Model
         'as_of_date',
         'on_order_qty',
         'inventory_value',
+        // Hardening (2026-09-23) — safety / allocation / lot.
+        'safety_stock',
+        'allocated_qty',
+        'in_transit_qty',
+        'unit_cost',
+        'batch_ref',
+        'expiry_date',
     ];
 
     protected $casts = [
@@ -30,6 +37,11 @@ class InventoryLevel extends Model
         'as_of_date'      => 'date',
         'on_order_qty'    => 'decimal:4',
         'inventory_value' => 'decimal:4',
+        'safety_stock'    => 'decimal:2',
+        'allocated_qty'   => 'decimal:2',
+        'in_transit_qty'  => 'decimal:2',
+        'unit_cost'       => 'decimal:4',
+        'expiry_date'     => 'date',
     ];
 
     public function tenant(): BelongsTo

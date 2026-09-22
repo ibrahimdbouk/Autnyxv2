@@ -26,6 +26,10 @@ class PurchaseOrder extends Model
         'open_qty',
         'late_days',
         'fill_rate',
+        // Hardening (2026-09-23) — commercial.
+        'currency',
+        'status',
+        'buyer',
     ];
 
     protected $casts = [

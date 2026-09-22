@@ -18,6 +18,19 @@ class Supplier extends Model
         'contact_phone',
         'type',
         'specialization',
+        // Hardening (2026-09-23) — location + commercial terms.
+        'country',
+        'region',
+        'city',
+        'currency',
+        'payment_terms',
+        'min_order_value',
+        'website',
+        'status',
+    ];
+
+    protected $casts = [
+        'min_order_value' => 'decimal:2',
     ];
 
     public function tenant(): BelongsTo

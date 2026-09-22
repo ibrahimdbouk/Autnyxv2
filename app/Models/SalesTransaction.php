@@ -24,6 +24,12 @@ class SalesTransaction extends Model
         'total_amount',
         'discount',
         'payment_method',
+        // Hardening (2026-09-23) — channel + cost/margin inputs.
+        'channel',
+        'cost_amount',
+        'currency',
+        'customer_ref',
+        'promotion_ref',
     ];
 
     protected $casts = [
@@ -32,6 +38,7 @@ class SalesTransaction extends Model
         'unit_price'   => 'decimal:4',
         'total_amount' => 'decimal:4',
         'discount'     => 'decimal:4',
+        'cost_amount'  => 'decimal:4',
     ];
 
     public function tenant(): BelongsTo

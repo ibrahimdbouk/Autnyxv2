@@ -21,11 +21,21 @@ class Product extends Model
         'barcode',
         'brand',
         'pack_size',
+        // Hardening (2026-09-23) — merchandising attributes.
+        'department',
+        'uom',
+        'weight_grams',
+        'tax_rate',
+        'gtin',
+        'season',
+        'status',
     ];
 
     protected $casts = [
         'unit_cost'     => 'decimal:4',
         'selling_price' => 'decimal:4',
+        'weight_grams'  => 'decimal:2',
+        'tax_rate'      => 'decimal:3',
     ];
 
     public function tenant(): BelongsTo

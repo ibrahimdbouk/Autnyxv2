@@ -24,6 +24,10 @@ class SalesReturn extends Model
         'quantity',
         'value',
         'reason',
+        // Hardening (2026-09-23) — channel + condition.
+        'channel',
+        'condition',
+        'original_transaction_ref',
     ];
 
     protected $casts = [

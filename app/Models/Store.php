@@ -18,6 +18,25 @@ class Store extends Model
         'region',
         'country',
         'format',
+        // Hardening (2026-09-23) — geography + operating attributes.
+        'postal_code',
+        'latitude',
+        'longitude',
+        'phone',
+        'email',
+        'timezone',
+        'currency',
+        'banner',
+        'status',
+        'opened_on',
+        'sales_area_sqm',
+    ];
+
+    protected $casts = [
+        'latitude'       => 'decimal:7',
+        'longitude'      => 'decimal:7',
+        'sales_area_sqm' => 'decimal:2',
+        'opened_on'      => 'date',
     ];
 
     public function tenant(): BelongsTo
