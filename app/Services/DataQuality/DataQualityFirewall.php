@@ -23,6 +23,7 @@ class DataQualityFirewall
     private array $ctx = [];
     private array $productSkus = [];
     private bool $referentialGate = false;
+    private bool $strict = false;
 
     private array $seen = [];          // row hash → true (within this request/chunk)
     private array $reasonCounts = [];  // reason/warning → count (this request)
@@ -60,6 +61,7 @@ class DataQualityFirewall
         $this->profileRows = [];
         $this->profileCap = (int) config('data_quality.profile_sample', 2000);
         $this->referentialGate = (bool) config('data_quality.referential_gate', false);
+        $this->strict = (bool) config('data_quality.strict_validation', false);
 
         // Context is stable for the import — rebuild only when the import changes.
         if ($this->preparedImportId !== $import->id) {
@@ -120,6 +122,7 @@ class DataQualityFirewall
         $result = $this->validator->check($import->data_type, $data, [
             'product_skus'     => $this->productSkus,
             'referential_gate' => $this->referentialGate,
+            'strict'           => $this->strict,
         ]);
         foreach ($result['warnings'] as $w) {
             $this->reasonCounts[$w] = ($this->reasonCounts[$w] ?? 0) + 1;
@@ -128,10 +131,14 @@ class DataQualityFirewall
             return ['data' => $data, 'reason' => $result['reason'], 'changed' => $changed];
         }
 
-        // Exact duplicate within this chunk.
+        // Exact duplicate within this import. Hard-gated only in strict mode; otherwise
+        // recorded as a warning and still promoted (pre-firewall behaviour).
         $hash = $this->dedup->rowHash($import->data_type, $data);
         if (isset($this->seen[$hash])) {
-            return ['data' => $data, 'reason' => Reasons::DUPLICATE_ROW, 'changed' => $changed];
+            if ($this->strict) {
+                return ['data' => $data, 'reason' => Reasons::DUPLICATE_ROW, 'changed' => $changed];
+            }
+            $this->reasonCounts[Reasons::DUPLICATE_ROW] = ($this->reasonCounts[Reasons::DUPLICATE_ROW] ?? 0) + 1;
         }
         $this->seen[$hash] = true;
 

@@ -56,9 +56,13 @@ class DataQualityFirewallTest extends TestCase
         $this->assertSame(Reasons::MISSING_KEY,
             $validator->check('sales_transactions', ['sku' => '', 'date' => '2026-01-01', 'quantity' => '1'], [])['reason']);
 
-        // Unparseable required date (post-cleanse must be ISO).
+        // Unparseable required date (post-cleanse must be ISO) — hard only in strict mode.
         $this->assertSame(Reasons::INVALID_DATE,
-            $validator->check('sales_transactions', ['sku' => 'SKU-1', 'date' => 'not-a-date', 'quantity' => '1'], [])['reason']);
+            $validator->check('sales_transactions', ['sku' => 'SKU-1', 'date' => 'not-a-date', 'quantity' => '1'], ['strict' => true])['reason']);
+        // Non-strict: the same row is a warning that still promotes.
+        $lenient = $validator->check('sales_transactions', ['sku' => 'SKU-1', 'date' => 'not-a-date', 'quantity' => '1'], []);
+        $this->assertNull($lenient['reason']);
+        $this->assertContains(Reasons::INVALID_DATE, $lenient['warnings']);
 
         // Orphan SKU: warns when the gate is off, rejects when on.
         $off = $validator->check('sales_transactions', ['sku' => 'NOPE', 'date' => '2026-01-01', 'quantity' => '1'],
@@ -73,6 +77,9 @@ class DataQualityFirewallTest extends TestCase
 
     public function test_firewall_screens_promotes_quarantines_and_records_quality(): void
     {
+        // Exercise the full hard gate (Phase 2 behaviour): duplicate + missing key quarantine.
+        config(['data_quality.strict_validation' => true]);
+
         $tenant = $this->createTenant();
         Product::create(['tenant_id' => $tenant->id, 'sku' => 'SKU-1', 'name' => 'Widget']);
 

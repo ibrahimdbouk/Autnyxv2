@@ -10,7 +10,13 @@ use App\Services\Import\CanonicalSchema;
  * parseability, and referential integrity (orphan SKU) live here. See
  * claude/data-quality-firewall.md.
  *
- * $ctx: ['product_skus' => array<string,true>, 'referential_gate' => bool]
+ * $ctx: ['product_skus' => array<string,true>, 'referential_gate' => bool, 'strict' => bool]
+ *
+ * A missing identity key is ALWAYS hard (a keyless row is unusable). When `strict`
+ * is off (default, behaviour-safe) missing-required and unparseable-type rows are
+ * returned as warnings and still promote — the existing writers coerce them (blank
+ * on-hand → 0) or throw to the failed-row ledger exactly as before. `strict` flips
+ * them to hard quarantine reasons (Phase 2).
  */
 class RowValidator
 {
@@ -33,15 +39,19 @@ class RowValidator
     {
         $schema   = CanonicalSchema::forType($dataType);
         $keyField = self::KEY_FIELD[$dataType] ?? null;
+        $strict   = ! empty($ctx['strict']);
         $warnings = [];
 
-        // 1. Required presence — the key first, then the rest.
+        // 1. Required presence — the key first (ALWAYS hard), then the rest.
         if ($keyField !== null && $this->blank($data[$keyField] ?? null)) {
             return ['reason' => Reasons::MISSING_KEY, 'warnings' => $warnings];
         }
         foreach ($schema as $field => $def) {
-            if (($def['required'] ?? false) && $this->blank($data[$field] ?? null)) {
-                return ['reason' => Reasons::MISSING_REQUIRED, 'warnings' => $warnings];
+            if (($def['required'] ?? false) && $field !== $keyField && $this->blank($data[$field] ?? null)) {
+                if ($strict) {
+                    return ['reason' => Reasons::MISSING_REQUIRED, 'warnings' => $warnings];
+                }
+                $warnings[] = Reasons::MISSING_REQUIRED; // let the writer coerce or fail to the ledger
             }
         }
 
@@ -53,10 +63,16 @@ class RowValidator
             $value = (string) $data[$field];
             $type  = FieldTypes::of($field);
             if ($type === FieldTypes::DATE && ! preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
-                return ['reason' => Reasons::INVALID_DATE, 'warnings' => $warnings];
+                if ($strict) {
+                    return ['reason' => Reasons::INVALID_DATE, 'warnings' => $warnings];
+                }
+                $warnings[] = Reasons::INVALID_DATE;
             }
             if (($type === FieldTypes::NUMBER || $type === FieldTypes::INT) && ! is_numeric($value)) {
-                return ['reason' => Reasons::INVALID_NUMBER, 'warnings' => $warnings];
+                if ($strict) {
+                    return ['reason' => Reasons::INVALID_NUMBER, 'warnings' => $warnings];
+                }
+                $warnings[] = Reasons::INVALID_NUMBER;
             }
         }
 

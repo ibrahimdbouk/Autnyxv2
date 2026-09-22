@@ -21,6 +21,14 @@ return [
     // master — an orphan SKU is recorded as a quality warning and still promotes.
     'referential_gate' => (bool) env('DATA_QUALITY_REFERENTIAL_GATE', false),
 
+    // Strict validation (Phase 2 "flip the gate"). When OFF (default, behaviour-safe),
+    // the firewall only quarantines a row with NO identity key; missing-required /
+    // unparseable-type / exact-duplicate rows are recorded as warnings and still flow
+    // to the existing writers (which coerce, e.g. blank on-hand → 0, or fail to the
+    // failed-row ledger — exactly as before the firewall). When ON, those become hard
+    // quarantine gates. See claude/data-quality-firewall.md.
+    'strict_validation' => (bool) env('DATA_QUALITY_STRICT_VALIDATION', false),
+
     // Entity-key canonicalization knobs (applied to sku/code fields).
     'canonicalize' => [
         'uppercase_keys'    => (bool) env('DATA_QUALITY_UPPERCASE_KEYS', true),
