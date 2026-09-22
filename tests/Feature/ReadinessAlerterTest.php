@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Import;
 use App\Models\ImportQuality;
 use App\Services\DataQuality\ReadinessAlerter;
 use Illuminate\Support\Facades\DB;
@@ -27,8 +28,16 @@ class ReadinessAlerterTest extends TestCase
         $regular = $this->createUser($tenant);
         $otherTenantAdmin = $this->createUser($other, admin: true);
 
+        $import = Import::create([
+            'tenant_id'         => $tenant->id,
+            'original_filename' => 'inventory.csv',
+            'path'              => 'tenant/'.$tenant->id.'/inventory.csv',
+            'data_type'         => 'inventory_levels',
+        ]);
+
         $q = ImportQuality::create([
             'tenant_id'        => $tenant->id,
+            'import_id'        => $import->id,
             'data_type'        => 'inventory_levels',
             'rows_promoted'    => 0,
             'rows_quarantined' => 1200,
@@ -52,8 +61,15 @@ class ReadinessAlerterTest extends TestCase
         Mail::fake();
 
         $tenant = $this->createTenant();
+        $import = Import::create([
+            'tenant_id'         => $tenant->id,
+            'original_filename' => 'sales.csv',
+            'path'              => 'tenant/'.$tenant->id.'/sales.csv',
+            'data_type'         => 'sales_transactions',
+        ]);
         $q = ImportQuality::create([
             'tenant_id' => $tenant->id,
+            'import_id' => $import->id,
             'data_type' => 'sales_transactions',
             'state'     => ImportQuality::STATE_RED,
             'blocked'   => true,
