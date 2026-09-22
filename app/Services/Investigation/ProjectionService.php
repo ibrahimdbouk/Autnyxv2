@@ -106,8 +106,8 @@ class ProjectionService
             ? $daysOutNoAction // no known lead time → cannot claim the gap closes
             : max(0.0, min((float) $leadTime, (float) $horizon) - $daysOfCover);
 
-        $lostUnitsNo   = round($daysOutNoAction * $avgDaily);
-        $lostUnitsWith = round($daysOutWithAction * $avgDaily);
+        $lostUnitsNo    = (int) round($daysOutNoAction * $avgDaily);
+        $lostUnitsWith  = (int) round($daysOutWithAction * $avgDaily);
         $protectedUnits = max(0, $lostUnitsNo - $lostUnitsWith);
 
         $row = [
