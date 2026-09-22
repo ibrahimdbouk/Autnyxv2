@@ -838,6 +838,378 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
         </div>
     </div>
 
+    {{-- ═══════════════════════════════════════════════════════════════════════
+         DEEP INVESTIGATION — optional, interactive drill-down. Appends BELOW the
+         canonical 7-question view above and changes nothing about it. Every value
+         is read from governed data (DeepInvestigationService); nothing is invented.
+         ═══════════════════════════════════════════════════════════════════════ --}}
+    @php($deep = $this->deepInvestigation())
+    @if(!empty($deep))
+    @php($cm = $deep['cause_map'] ?? []; $tr = $deep['trail'] ?? []; $cf = $deep['confidence'] ?? []; $ev = $deep['evidence'] ?? []; $imp = $deep['impact'] ?? [])
+    <style>
+    .dinv-wrap { margin-top:1.75rem; }
+    .dinv-head { display:flex; align-items:center; gap:.6rem; margin-bottom:.9rem; }
+    .dinv-head h2 { font-size:1.05rem; font-weight:800; color:var(--ax-ink,#111827); margin:0; letter-spacing:-.01em; }
+    .dinv-head .dinv-kicker { font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--ax-accent-strong,#7c3aed); background:var(--ax-accent-soft,#f5f3ff); padding:.2rem .55rem; border-radius:9999px; }
+    .dinv-sub { font-size:.8rem; color:var(--ax-faint,#6b7280); margin:-.4rem 0 1rem; line-height:1.5; max-width:76ch; }
+    .dinv-panel { border:1px solid var(--ax-line,#e5e7eb); border-radius:.85rem; background:var(--ax-bg,#fff); margin-bottom:.85rem; overflow:hidden; box-shadow:var(--ax-shadow,0 1px 2px rgba(0,0,0,.04)); }
+    .dinv-panel > summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:.6rem; padding:.85rem 1.15rem; font-weight:700; font-size:.875rem; color:var(--ax-text,#1f2937); user-select:none; }
+    .dinv-panel > summary::-webkit-details-marker { display:none; }
+    .dinv-panel > summary:hover { background:var(--ax-panel,#f9fafb); }
+    .dinv-panel > summary .dinv-chev { margin-left:auto; transition:transform .18s ease; color:var(--ax-faint,#9ca3af); font-size:.8rem; }
+    .dinv-panel[open] > summary .dinv-chev { transform:rotate(90deg); }
+    .dinv-panel > summary .dinv-count { font-weight:600; font-size:.72rem; color:var(--ax-faint,#6b7280); background:var(--ax-neutral-soft,#f3f4f6); padding:.1rem .5rem; border-radius:9999px; }
+    .dinv-body { padding:.25rem 1.15rem 1.15rem; }
+    .dinv-empty { padding:1.1rem; font-size:.8rem; color:var(--ax-faint,#6b7280); background:var(--ax-panel,#f9fafb); border:1px dashed var(--ax-line,#e5e7eb); border-radius:.6rem; line-height:1.55; }
+    .dinv-pill { display:inline-flex; align-items:center; gap:.3rem; padding:.15rem .55rem; border-radius:9999px; font-size:.72rem; font-weight:700; }
+    .dinv-pill.s-success { background:var(--ax-success-soft,#dcfce7); color:var(--ax-success-fg,#15803d); }
+    .dinv-pill.s-info    { background:var(--ax-info-soft,#dbeafe); color:var(--ax-info-fg,#1d4ed8); }
+    .dinv-pill.s-warning { background:var(--ax-warning-soft,#fef3c7); color:var(--ax-warning-fg,#b45309); }
+    .dinv-pill.s-danger  { background:var(--ax-danger-soft,#fee2e2); color:var(--ax-danger-fg,#b91c1c); }
+    .dinv-pill.s-gray    { background:var(--ax-neutral-soft,#f3f4f6); color:var(--ax-neutral-fg,#4b5563); }
+    /* Cause map */
+    .dinv-map { height:360px; width:100%; border:1px solid var(--ax-line,#e5e7eb); border-radius:.6rem; background:var(--ax-panel,#fafafa); }
+    .dinv-map-note { font-size:.75rem; color:var(--ax-faint,#6b7280); margin-top:.55rem; line-height:1.5; }
+    .dinv-fallback { margin-top:.6rem; font-size:.8rem; }
+    .dinv-fallback .row { padding:.35rem 0; border-bottom:1px solid var(--ax-line-2,#f1f5f9); color:var(--ax-text,#374151); }
+    /* Trail */
+    .dinv-trail { position:relative; padding-left:1.1rem; }
+    .dinv-trail::before { content:''; position:absolute; left:.28rem; top:.3rem; bottom:.3rem; width:2px; background:var(--ax-line,#e5e7eb); }
+    .dinv-trail-item { position:relative; padding:.4rem 0 .55rem .7rem; }
+    .dinv-trail-item::before { content:''; position:absolute; left:-.86rem; top:.65rem; width:.55rem; height:.55rem; border-radius:9999px; background:var(--ax-accent-strong,#7c3aed); box-shadow:0 0 0 3px var(--ax-bg,#fff); }
+    .dinv-trail-item.k-detected::before { background:#94a3b8; }
+    .dinv-trail-item.k-cleared::before { background:#16a34a; }
+    .dinv-trail-meta { font-size:.72rem; color:var(--ax-faint,#6b7280); }
+    .dinv-trail-summary { font-size:.82rem; color:var(--ax-text,#1f2937); margin-top:.1rem; line-height:1.45; }
+    .dinv-trail-actor { font-weight:700; color:var(--ax-text,#374151); }
+    /* Confidence */
+    .dinv-conf-grid { display:grid; grid-template-columns:1fr; gap:1rem; }
+    @media(min-width:720px){ .dinv-conf-grid { grid-template-columns:1fr 1fr; } }
+    .dinv-conf-card { border:1px solid var(--ax-line,#e5e7eb); border-radius:.6rem; padding:.85rem 1rem; }
+    .dinv-conf-card h4 { margin:0 0 .5rem; font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--ax-faint,#6b7280); }
+    .dinv-score { height:.5rem; border-radius:9999px; background:var(--ax-neutral-soft,#f1f5f9); overflow:hidden; margin:.45rem 0; }
+    .dinv-score > span { display:block; height:100%; border-radius:9999px; }
+    .dinv-kv { display:flex; justify-content:space-between; font-size:.78rem; padding:.2rem 0; color:var(--ax-text,#374151); }
+    .dinv-kv b { font-weight:700; }
+    .dinv-bars { display:flex; flex-wrap:wrap; gap:.4rem; }
+    .dinv-explain { font-size:.78rem; color:var(--ax-text,#374151); line-height:1.5; margin-top:.5rem; background:var(--ax-panel,#f9fafb); border-radius:.5rem; padding:.55rem .7rem; }
+    /* Evidence */
+    .dinv-chips { display:flex; flex-wrap:wrap; gap:.35rem; margin-bottom:.75rem; }
+    .dinv-chip { border:1px solid var(--ax-line,#e5e7eb); background:var(--ax-bg,#fff); border-radius:9999px; padding:.2rem .65rem; font-size:.74rem; font-weight:600; color:var(--ax-text,#374151); cursor:pointer; }
+    .dinv-chip:hover { background:var(--ax-panel,#f9fafb); }
+    .dinv-chip-on { background:var(--ax-accent-strong,#7c3aed); color:#fff; border-color:var(--ax-accent-strong,#7c3aed); }
+    .dinv-ev-table { width:100%; border-collapse:collapse; font-size:.8rem; }
+    .dinv-ev-table td { padding:.5rem .6rem; border-bottom:1px solid var(--ax-line-2,#f1f5f9); vertical-align:top; color:var(--ax-text,#374151); }
+    .dinv-ev-label { font-weight:600; color:var(--ax-ink,#111827); }
+    .dinv-ev-val { font-weight:700; white-space:nowrap; text-align:right; }
+    .dinv-ev-src { font-size:.7rem; color:var(--ax-faint,#9ca3af); }
+    /* Impact */
+    .dinv-impact-split { display:grid; grid-template-columns:1fr; gap:1rem; }
+    @media(min-width:720px){ .dinv-impact-split { grid-template-columns:1fr 1fr; } }
+    .dinv-impact-card { border:1px solid var(--ax-line,#e5e7eb); border-radius:.6rem; padding:.9rem 1rem; }
+    .dinv-impact-card .lab { font-size:.68rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--ax-faint,#6b7280); }
+    .dinv-impact-card .big { font-size:1.55rem; font-weight:800; color:var(--ax-ink,#111827); margin-top:.2rem; letter-spacing:-.01em; }
+    .dinv-impact-card.est { background:var(--ax-warning-soft,#fffbeb); border-color:#fde68a; }
+    .dinv-impact-card.meas { background:var(--ax-success-soft,#f0fdf4); border-color:#bbf7d0; }
+    .dinv-bar-row { display:flex; align-items:center; gap:.6rem; padding:.3rem 0; font-size:.78rem; }
+    .dinv-bar-row .nm { flex:0 0 40%; color:var(--ax-text,#374151); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .dinv-bar-row .bar { flex:1; height:.55rem; background:var(--ax-neutral-soft,#f1f5f9); border-radius:9999px; overflow:hidden; }
+    .dinv-bar-row .bar > span { display:block; height:100%; background:var(--ax-warning-fg,#d97706); border-radius:9999px; }
+    .dinv-bar-row .amt { flex:0 0 auto; font-weight:700; color:var(--ax-ink,#111827); }
+    .dinv-note { font-size:.73rem; color:var(--ax-faint,#6b7280); margin-top:.7rem; line-height:1.5; font-style:italic; }
+    </style>
+
+    @php
+        $confTierClass = ['verified'=>'s-success','likely'=>'s-info','correlated'=>'s-warning','single'=>'s-gray'];
+        $sigClass = ['established'=>'s-success','probable'=>'s-info','suspected'=>'s-warning','unknown'=>'s-gray'];
+        $dirClass = ['supports'=>'s-danger','contradicts'=>'s-success','neutral'=>'s-gray'];
+        $cur = $imp['currency'] ?? '';
+        $money = fn($n) => $cur . number_format((float) $n, ((float)$n == floor((float)$n)) ? 0 : 2);
+    @endphp
+
+    <div class="dinv-wrap">
+        <div class="dinv-head">
+            <span class="dinv-kicker">Deep Investigation</span>
+            <h2>Drill down</h2>
+        </div>
+        <p class="dinv-sub">An optional, interactive layer on top of the analysis above. It re-projects the same governed
+            evidence — it never adds new facts. Where a source hasn't produced data yet, the module says so plainly.</p>
+
+        {{-- ── Cause Map ─────────────────────────────────────────────────── --}}
+        <details class="dinv-panel" open>
+            <summary>
+                <span>🕸️ Cause Map</span>
+                @if(($cm['available'] ?? false))
+                    <span class="dinv-pill {{ $confTierClass[$cm['structure'] ?? 'single'] ?? 's-gray' }}">
+                        {{ ['verified'=>'Verified chain','likely'=>'Likely chain','correlated'=>'Correlated only','single'=>'Single signal'][$cm['structure'] ?? 'single'] ?? ucfirst($cm['structure'] ?? '') }}
+                    </span>
+                @endif
+                <span class="dinv-chev">▶</span>
+            </summary>
+            <div class="dinv-body">
+                @if(!($cm['available'] ?? false))
+                    <div class="dinv-empty">{{ $cm['empty_reason'] ?? 'Evidence unavailable.' }}</div>
+                @else
+                    <div wire:ignore>
+                        <div id="dinv-causemap" class="dinv-map"></div>
+                        <script type="application/json" id="dinv-causemap-data">@json(['nodes' => $cm['nodes'], 'edges' => $cm['edges']])</script>
+                    </div>
+                    {{-- Text fallback (also the accessible view if JS/canvas is unavailable) --}}
+                    <div class="dinv-fallback">
+                        @forelse($cm['edges'] as $e)
+                            <div class="row">{{ $e['cause_label'] }} <span style="color:var(--ax-accent-strong,#7c3aed)">→</span> {{ $e['effect_label'] }} <span class="dinv-ev-src">· {{ $e['scope_label'] }}</span></div>
+                        @empty
+                            <div class="row">{{ count($cm['nodes']) >= 2 ? 'These signals co-occur but form no known cause→effect chain — treat as correlated, not causally linked.' : 'A single signal — no causal chain to draw yet.' }}</div>
+                        @endforelse
+                    </div>
+                    @if(!empty($cm['inference']))
+                        <div class="dinv-explain">{{ $cm['inference']['explanation'] }}</div>
+                    @endif
+                    <div class="dinv-map-note">The root cause (highlighted) and the chain are inferred deterministically from the retail causal graph — the AI does not choose them. Drag to explore; scroll to zoom.</div>
+                @endif
+            </div>
+        </details>
+
+        {{-- ── Investigation Trail ───────────────────────────────────────── --}}
+        <details class="dinv-panel">
+            <summary>
+                <span>🧭 Investigation Trail</span>
+                @if(($tr['available'] ?? false))<span class="dinv-count">{{ count($tr['events']) }} events</span>@endif
+                <span class="dinv-chev">▶</span>
+            </summary>
+            <div class="dinv-body">
+                @if(!($tr['available'] ?? false))
+                    <div class="dinv-empty">{{ $tr['empty_reason'] ?? 'Evidence unavailable.' }}</div>
+                @else
+                    <div class="dinv-trail">
+                        @foreach($tr['events'] as $e)
+                            <div class="dinv-trail-item k-{{ $e['kind'] }}">
+                                <div class="dinv-trail-meta">{{ $e['at_label'] }} · {{ $e['at_human'] }}</div>
+                                <div class="dinv-trail-summary"><span class="dinv-trail-actor">{{ $e['actor'] }}</span> — {{ $e['summary'] }}</div>
+                            </div>
+                        @endforeach
+                    </div>
+                @endif
+            </div>
+        </details>
+
+        {{-- ── Confidence Explorer ───────────────────────────────────────── --}}
+        <details class="dinv-panel">
+            <summary>
+                <span>🎯 Confidence Explorer</span>
+                @if(!empty($cf['causal']))<span class="dinv-pill {{ $confTierClass[$cf['causal']['tier']] ?? 's-gray' }}">{{ ucfirst($cf['causal']['tier']) }} · {{ $cf['causal']['score'] }}%</span>@endif
+                <span class="dinv-chev">▶</span>
+            </summary>
+            <div class="dinv-body">
+                @if(!($cf['available'] ?? false))
+                    <div class="dinv-empty">{{ $cf['empty_reason'] ?? 'Evidence unavailable.' }}</div>
+                @else
+                    <div class="dinv-conf-grid">
+                        <div class="dinv-conf-card">
+                            <h4>Causal inference</h4>
+                            @if(!empty($cf['causal']))
+                                @php($ct = $cf['causal'])
+                                <div class="dinv-kv"><span>Strength</span><b><span class="dinv-pill {{ $confTierClass[$ct['tier']] ?? 's-gray' }}">{{ ucfirst($ct['tier']) }}</span></b></div>
+                                <div class="dinv-score"><span style="width:{{ max(4,(int)$ct['score']) }}%;background:var(--ax-accent-strong,#7c3aed)"></span></div>
+                                <div class="dinv-kv"><span>Confidence score</span><b>{{ $ct['score'] }}%</b></div>
+                                <div class="dinv-kv"><span>Causal links found</span><b>{{ $ct['links'] }}</b></div>
+                                <div class="dinv-kv"><span>Alternative root causes</span><b>{{ $ct['alternatives'] }}</b></div>
+                                <div class="dinv-explain">{{ $ct['explanation'] }}</div>
+                            @else
+                                <div class="dinv-empty">Causal inference needs at least two linked signals. Not enough to infer a chain here.</div>
+                            @endif
+                        </div>
+                        <div class="dinv-conf-card">
+                            <h4>Per-signal confidence &amp; evidence</h4>
+                            @if(!empty($cf['signals']))
+                                <div class="dinv-bars" style="margin-bottom:.6rem">
+                                    @foreach($cf['signals'] as $s)
+                                        <span class="dinv-pill {{ $sigClass[$s['tier']] ?? 's-gray' }}">{{ $s['label'] }} · {{ $s['count'] }}</span>
+                                    @endforeach
+                                </div>
+                            @endif
+                            <div class="dinv-kv"><span>Evidence supporting the signal</span><b style="color:var(--ax-danger-fg,#b91c1c)">{{ $cf['backing']['supports'] }}</b></div>
+                            <div class="dinv-kv"><span>Evidence contradicting (possible false positive)</span><b style="color:var(--ax-success-fg,#15803d)">{{ $cf['backing']['contradicts'] }}</b></div>
+                            <div class="dinv-kv"><span>Neutral / context</span><b>{{ $cf['backing']['neutral'] }}</b></div>
+                            <div class="dinv-kv" style="border-top:1px solid var(--ax-line-2,#f1f5f9);margin-top:.3rem;padding-top:.4rem"><span>Strong / moderate / weak</span><b>{{ $cf['strength']['strong'] }} / {{ $cf['strength']['moderate'] }} / {{ $cf['strength']['weak'] }}</b></div>
+                        </div>
+                    </div>
+                    @php($caveats = $this->dataHealthCaveats())
+                    @if(!empty($caveats))
+                        <div class="dinv-explain" style="margin-top:.85rem">
+                            <b>Data-health caveats:</b>
+                            @foreach($caveats as $cav)<div style="margin-top:.2rem">• {{ $cav }}</div>@endforeach
+                        </div>
+                    @endif
+                @endif
+            </div>
+        </details>
+
+        {{-- ── Evidence Explorer ─────────────────────────────────────────── --}}
+        <details class="dinv-panel">
+            <summary>
+                <span>🔍 Evidence Explorer</span>
+                @if(($ev['available'] ?? false))<span class="dinv-count">{{ $ev['count'] }} items</span>@endif
+                <span class="dinv-chev">▶</span>
+            </summary>
+            <div class="dinv-body">
+                @if(!($ev['available'] ?? false))
+                    <div class="dinv-empty">{{ $ev['empty_reason'] ?? 'Evidence unavailable.' }}</div>
+                @else
+                    <div class="dinv-chips">
+                        <button type="button" class="dinv-chip dinv-chip-on" onclick="dinvFilter('direction','all',this)">All</button>
+                        @foreach($ev['facets']['directions'] as $d)
+                            <button type="button" class="dinv-chip" onclick="dinvFilter('direction','{{ $d }}',this)">{{ ucfirst($d) }}</button>
+                        @endforeach
+                    </div>
+                    <table class="dinv-ev-table"><tbody id="dinv-evidence-rows">
+                        @foreach($ev['items'] as $it)
+                            <tr data-ev data-direction="{{ $it['direction'] }}" data-signal="{{ $it['signal'] }}">
+                                <td>
+                                    <div class="dinv-ev-label">{{ $it['label'] }}</div>
+                                    <div class="dinv-ev-src">{{ $it['signal'] }}@if($it['source']) · {{ $it['source'] }}@endif @if($it['observed_at'])· {{ $it['observed_at'] }}@endif</div>
+                                </td>
+                                <td><span class="dinv-pill {{ $dirClass[$it['direction']] ?? 's-gray' }}">{{ ucfirst($it['direction']) }}</span></td>
+                                <td class="dinv-ev-val">{{ $it['value'] }}</td>
+                            </tr>
+                        @endforeach
+                    </tbody></table>
+                @endif
+            </div>
+        </details>
+
+        {{-- ── Impact Explorer ───────────────────────────────────────────── --}}
+        <details class="dinv-panel">
+            <summary>
+                <span>💰 Impact Explorer</span>
+                @if(($imp['available'] ?? false) && ($imp['total_at_risk'] ?? 0) > 0)<span class="dinv-count">{{ $money($imp['total_at_risk']) }} at risk</span>@endif
+                <span class="dinv-chev">▶</span>
+            </summary>
+            <div class="dinv-body">
+                @if(!($imp['available'] ?? false))
+                    <div class="dinv-empty">{{ $imp['empty_reason'] ?? 'Evidence unavailable.' }}</div>
+                @else
+                    <div class="dinv-impact-split">
+                        <div class="dinv-impact-card est">
+                            <div class="lab">Estimated value at risk</div>
+                            <div class="big">{{ $money($imp['total_at_risk']) }}</div>
+                            @if(!is_null($imp['ai_estimate']))<div class="dinv-ev-src" style="margin-top:.25rem">Investigation estimate: {{ $money($imp['ai_estimate']) }}</div>@endif
+                        </div>
+                        <div class="dinv-impact-card meas">
+                            <div class="lab">Measured recovery</div>
+                            @if(!empty($imp['measured']))
+                                @php($ms = $imp['measured'])
+                                <div class="big">{{ !is_null($ms['observed_recovery']) ? $money($ms['observed_recovery']) : '—' }}</div>
+                                <div class="dinv-ev-src" style="margin-top:.25rem">
+                                    <span class="dinv-pill s-success">{{ $ms['state_label'] }}</span>
+                                    @if($ms['attribution_label']) · attribution: {{ $ms['attribution_label'] }}@endif
+                                    @if(!empty($ms['net'])) · net of cost: {{ $money($ms['net']) }}@endif
+                                </div>
+                            @else
+                                <div class="big" style="color:var(--ax-faint,#9ca3af)">Not yet measured</div>
+                                <div class="dinv-ev-src" style="margin-top:.25rem">Recovery is measured over a monitoring window after an action is taken.</div>
+                            @endif
+                        </div>
+                    </div>
+
+                    @if(!empty($imp['breakdown']))
+                        @php($mx = max(array_column($imp['breakdown'], 'amount')) ?: 1)
+                        <div style="margin-top:1rem">
+                            <h4 style="margin:0 0 .5rem;font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--ax-faint,#6b7280)">Value at risk by signal</h4>
+                            @foreach($imp['breakdown'] as $b)
+                                <div class="dinv-bar-row">
+                                    <span class="nm">{{ $b['signal'] }}@if($b['sku']) · {{ $b['sku'] }}@endif</span>
+                                    <span class="bar"><span style="width:{{ max(3, round($b['amount'] / $mx * 100)) }}%"></span></span>
+                                    <span class="amt">{{ $money($b['amount']) }}</span>
+                                </div>
+                            @endforeach
+                        </div>
+                    @endif
+
+                    @if(!empty($imp['metrics']))
+                        <div style="margin-top:1rem">
+                            <h4 style="margin:0 0 .5rem;font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--ax-faint,#6b7280)">Measured metrics</h4>
+                            <table class="dinv-ev-table"><tbody>
+                                @foreach($imp['metrics'] as $m)
+                                    <tr><td class="dinv-ev-label">{{ $m['metric'] }}<div class="dinv-ev-src">{{ $m['window'] }}</div></td>
+                                        <td>baseline {{ $m['baseline'] !== null ? number_format((float)$m['baseline'],2) : '—' }} → observed {{ $m['observed'] !== null ? number_format((float)$m['observed'],2) : '—' }}</td>
+                                        <td class="dinv-ev-val">{{ !is_null($m['recovery']) ? $money($m['recovery']) : '—' }}</td></tr>
+                                @endforeach
+                            </tbody></table>
+                        </div>
+                    @endif
+
+                    <div class="dinv-note">{{ $imp['note'] }}</div>
+                @endif
+            </div>
+        </details>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.9/dist/vis-network.min.js" defer></script>
+    <script>
+    (function () {
+        function initDeepCauseMap() {
+            var el = document.getElementById('dinv-causemap');
+            if (!el || el.dataset.rendered) return;
+            if (typeof vis === 'undefined') return; // text fallback stays visible
+            var dataEl = document.getElementById('dinv-causemap-data');
+            if (!dataEl) return;
+            try {
+                var payload = JSON.parse(dataEl.textContent);
+                var nodes = new vis.DataSet((payload.nodes || []).map(function (n) {
+                    var color = n.is_root
+                        ? { background: '#7c3aed', border: '#6d28d9' }
+                        : (n.severity === 'high' ? { background: '#fee2e2', border: '#ef4444' }
+                            : n.severity === 'medium' ? { background: '#ffedd5', border: '#f97316' }
+                                : { background: '#f1f5f9', border: '#94a3b8' });
+                    return {
+                        id: n.id,
+                        label: n.label + (n.sku ? '\n(' + n.sku + ')' : ''),
+                        shape: 'box',
+                        color: color,
+                        font: { color: n.is_root ? '#ffffff' : '#111827', size: 13 },
+                        borderWidth: n.is_root ? 3 : 1
+                    };
+                }));
+                var edges = new vis.DataSet((payload.edges || []).map(function (e) {
+                    return {
+                        from: e.from, to: e.to, arrows: 'to', label: e.scope_label,
+                        font: { size: 10, color: '#6b7280', align: 'middle', background: '#ffffff' },
+                        color: { color: '#c084fc', highlight: '#7c3aed' },
+                        smooth: { type: 'cubicBezier' }
+                    };
+                }));
+                var hasEdges = (payload.edges || []).length > 0;
+                new vis.Network(el, { nodes: nodes, edges: edges }, {
+                    layout: { hierarchical: { enabled: hasEdges, direction: 'LR', sortMethod: 'directed', levelSeparation: 190, nodeSpacing: 130 } },
+                    physics: { enabled: !hasEdges },
+                    interaction: { hover: true, zoomView: true, dragView: true, dragNodes: true },
+                    nodes: { margin: 10, widthConstraint: { maximum: 170 } }
+                });
+                el.dataset.rendered = '1';
+            } catch (err) { /* leave the text fallback in place */ }
+        }
+        window.dinvFilter = function (kind, val, btn) {
+            var group = btn.parentNode;
+            group.querySelectorAll('.dinv-chip').forEach(function (b) { b.classList.remove('dinv-chip-on'); });
+            btn.classList.add('dinv-chip-on');
+            document.querySelectorAll('#dinv-evidence-rows [data-ev]').forEach(function (r) {
+                r.style.display = (val === 'all' || r.getAttribute('data-' + kind) === val) ? '' : 'none';
+            });
+        };
+        document.addEventListener('DOMContentLoaded', function () { setTimeout(initDeepCauseMap, 250); });
+        window.addEventListener('load', initDeepCauseMap);
+        document.addEventListener('livewire:navigated', function () { setTimeout(initDeepCauseMap, 250); });
+        // Re-init when the Cause Map panel is first expanded (canvas needs a visible container).
+        document.addEventListener('toggle', function (ev) {
+            if (ev.target && ev.target.querySelector && ev.target.querySelector('#dinv-causemap')) {
+                setTimeout(initDeepCauseMap, 50);
+            }
+        }, true);
+    })();
+    </script>
+    @endif
+
 </div>
 
 </x-filament-panels::page>

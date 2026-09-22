@@ -131,6 +131,25 @@ class InvestigateInvestigation extends Page
         }
     }
 
+    /**
+     * DEEP INVESTIGATION — optional, read-only drill-down modules (Cause Map,
+     * Trail, Confidence, Evidence, Impact). Memoised per request. This never
+     * mutates the record and never changes the canonical 7-question view above.
+     */
+    private ?array $deepCache = null;
+
+    public function deepInvestigation(): array
+    {
+        if ($this->deepCache !== null) return $this->deepCache;
+
+        try {
+            return $this->deepCache = app(\App\Services\Investigation\DeepInvestigationService::class)
+                ->build($this->record);
+        } catch (\Throwable) {
+            return $this->deepCache = [];
+        }
+    }
+
     protected function getHeaderActions(): array
     {
         return [
