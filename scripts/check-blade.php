@@ -216,6 +216,56 @@ foreach (rglob($root . '/resources/views', '.blade.php') as $file) {
     }
 }
 
+/* ---------- INC-006: inline @php(...) pitfalls ------------------------- */
+// Two real Blade compile-breakers — both 500s the directive-balance checks
+// above CANNOT see (InvestigateInvestigation page 500, 2026-09-22, INC-011):
+//   (a) storePhpBlocks pairs the FIRST `@php` (even an inline `@php(`) with the
+//       NEXT `@endphp` anywhere in the file — INCLUDING one written inside a
+//       `{{-- comment --}}`, because that pass runs before comments are stripped.
+//       If an inline `@php(` sits before an `@endphp`, everything between is
+//       stored as a raw block and the wrapping @if/@foreach never compiles →
+//       a stray `endif`/`endforeach` → parse error → 500.
+//   (b) an inline @php(expr) directive compiles with the expression wrapped in
+//       parentheses, so a multi-statement expression (a top-level ';' between
+//       the parens) becomes a parse error. Split into one @php() per statement.
+foreach (rglob($root . '/resources/views', '.blade.php') as $file) {
+    $src = file_get_contents($file);
+    $r = rel($file, $root);
+
+    // (a) simulate storePhpBlocks; flag a block that began at an inline `@php(`
+    //     or swallowed a control directive.
+    if (preg_match_all('/(?<!@)@php(.*?)@endphp/s', $src, $mm, PREG_OFFSET_CAPTURE)) {
+        foreach ($mm[1] as $i => $body) {
+            [$code, $off] = $body;
+            $lineNo = lineOf($src, $mm[0][$i][1]);
+            if (preg_match('/^\s*\(/', $code)
+                || preg_match('/@(if|elseif|else|endif|foreach|endforeach|forelse|empty|endforelse|for|endfor|while|endwhile|json|switch)\b/', $code)) {
+                $problems[] = "[INC-006a] $r (~line $lineNo): a @php…@endphp block swallowed an "
+                    . "inline @php( or a control directive. An inline @php( before an @endphp — "
+                    . "often an @endphp written inside a {{-- comment --}} — mis-pairs and breaks "
+                    . "compilation. Use inline @php(...) only in that region, and never write the "
+                    . "@php / @endphp tokens inside a comment.";
+            }
+        }
+    }
+
+    // (b) multi-statement inline @php(...): a top-level ';' between the parens.
+    if (preg_match_all('/@php(\((?:[^()]|(?1))*\))/', $src, $inl, PREG_OFFSET_CAPTURE)) {
+        foreach ($inl[1] as $g) {
+            [$paren, $off] = $g;
+            $inner = substr($paren, 1, -1);                       // drop outer ( )
+            $stripped = preg_replace('/([\'"]).*?\1/s', '', $inner); // ignore ';' in strings
+            if (strpos($stripped, ';') !== false) {
+                $lineNo = lineOf($src, $off);
+                $problems[] = "[INC-006b] $r (line $lineNo): multi-statement inline @php() "
+                    . "directive (a ';' between the parens). Blade wraps the expression in "
+                    . "parentheses, so multiple statements become a parse error. "
+                    . "Split into one @php() directive per statement.";
+            }
+        }
+    }
+}
+
 /* ---------- report ---------------------------------------------------- */
 
 if (empty($problems)) {
