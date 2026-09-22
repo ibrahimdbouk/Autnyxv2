@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\SsoConnectionResource\Pages;
 use App\Models\SsoConnection;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -14,6 +15,8 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -173,6 +176,20 @@ class SsoConnectionResource extends Resource
                 TextColumn::make('issuer')->limit(40)->toggleable(),
                 IconColumn::make('enabled')->boolean()->label('Enabled'),
                 TextColumn::make('updated_at')->since()->label('Updated')->toggleable(),
+            ])
+            ->filters([
+                TernaryFilter::make('enabled')->label('Enabled'),
+                Filter::make('updated_at')
+                    ->label('Updated')
+                    ->form([
+                        DatePicker::make('from')->label('From'),
+                        DatePicker::make('until')->label('Until'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['from'],  fn (Builder $q, $d) => $q->whereDate('updated_at', '>=', $d))
+                            ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('updated_at', '<=', $d));
+                    }),
             ])
             ->emptyStateHeading('No single sign-on configured')
             ->emptyStateDescription('Add your identity provider to let this organisation sign in with SSO.');

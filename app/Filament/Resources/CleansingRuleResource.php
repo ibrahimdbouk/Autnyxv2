@@ -19,8 +19,12 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
+use Filament\Forms\Components\DatePicker;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -91,6 +95,32 @@ class CleansingRuleResource extends Resource
                 TextColumn::make('updated_at')->since()->sortable()->toggleable(),
             ])
             ->defaultSort('data_type')
+            ->filters([
+                SelectFilter::make('data_type')
+                    ->label('Data type')
+                    ->multiple()
+                    ->options(Import::dataTypeLabels()),
+
+                SelectFilter::make('rule_type')
+                    ->label('Transform')
+                    ->multiple()
+                    ->options(CleansingRule::TYPES),
+
+                TernaryFilter::make('enabled')
+                    ->label('Enabled'),
+
+                Filter::make('updated_at')
+                    ->label('Updated')
+                    ->form([
+                        DatePicker::make('from')->label('From'),
+                        DatePicker::make('until')->label('Until'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['from'],  fn (Builder $q, $d) => $q->whereDate('updated_at', '>=', $d))
+                            ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('updated_at', '<=', $d));
+                    }),
+            ])
             ->actions([
                 Action::make('dryRun')
                     ->label('Dry run')

@@ -9,7 +9,9 @@ use App\Models\Team;
 use Filament\Facades\Filament;
 use Filament\Resources\Resource;
 use Filament\Actions\BulkActionGroup;
+use Filament\Forms\Components\DatePicker;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -148,6 +150,27 @@ class InvestigationResource extends Resource
                     ->options(fn () => Team::where('tenant_id', Filament::getTenant()?->id)
                         ->pluck('name', 'id')
                         ->toArray()),
+
+                SelectFilter::make('ai_confidence')
+                    ->label('Confidence')
+                    ->multiple()
+                    ->options([
+                        'established' => 'Established',
+                        'probable'    => 'Probable',
+                        'suspected'   => 'Suspected',
+                    ]),
+
+                Filter::make('opened_at')
+                    ->label('Opened Date')
+                    ->form([
+                        DatePicker::make('from')->label('From'),
+                        DatePicker::make('until')->label('Until'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['from'],  fn (Builder $q, $d) => $q->whereDate('opened_at', '>=', $d))
+                            ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('opened_at', '<=', $d));
+                    }),
             ])
             ->actions([
                 \Filament\Actions\Action::make('investigate')

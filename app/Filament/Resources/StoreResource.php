@@ -7,6 +7,7 @@ use App\Models\Store;
 use Filament\Facades\Filament;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -106,6 +107,80 @@ class StoreResource extends Resource
                     ->label('Inventory Rows')
                     ->alignCenter()
                     ->sortable(),
+            ])
+            ->filters([
+                SelectFilter::make('city')
+                    ->options(fn () => Store::query()
+                        ->whereNotNull('city')
+                        ->distinct()
+                        ->orderBy('city')
+                        ->pluck('city', 'city')
+                        ->toArray()
+                    )
+                    ->label('City')
+                    ->multiple(),
+
+                SelectFilter::make('country')
+                    ->options(fn () => Store::query()
+                        ->whereNotNull('country')
+                        ->distinct()
+                        ->orderBy('country')
+                        ->pluck('country', 'country')
+                        ->toArray()
+                    )
+                    ->label('Country')
+                    ->multiple(),
+
+                SelectFilter::make('price_tier')
+                    ->label('Price tier')
+                    ->options(fn () => Store::query()
+                        ->with('feature')
+                        ->get()
+                        ->pluck('feature.price_tier')
+                        ->filter()
+                        ->unique()
+                        ->sort()
+                        ->mapWithKeys(fn ($v) => [$v => ucwords(str_replace('_', ' ', (string) $v))])
+                        ->toArray()
+                    )
+                    ->multiple()
+                    ->query(fn (Builder $query, array $data): Builder => $query
+                        ->when($data['values'] ?? null, fn (Builder $q, $values) => $q
+                            ->whereHas('feature', fn (Builder $fq) => $fq->whereIn('price_tier', $values)))),
+
+                SelectFilter::make('size_tier')
+                    ->label('Size tier')
+                    ->options(fn () => Store::query()
+                        ->with('feature')
+                        ->get()
+                        ->pluck('feature.size_tier')
+                        ->filter()
+                        ->unique()
+                        ->sort()
+                        ->mapWithKeys(fn ($v) => [$v => ucwords(str_replace('_', ' ', (string) $v))])
+                        ->toArray()
+                    )
+                    ->multiple()
+                    ->query(fn (Builder $query, array $data): Builder => $query
+                        ->when($data['values'] ?? null, fn (Builder $q, $values) => $q
+                            ->whereHas('feature', fn (Builder $fq) => $fq->whereIn('size_tier', $values)))),
+
+                SelectFilter::make('dominant_segment')
+                    ->label('Dominant demand segment')
+                    ->options(fn () => Store::query()
+                        ->with('feature')
+                        ->get()
+                        ->pluck('feature.dominant_segment')
+                        ->filter()
+                        ->unique()
+                        ->sort()
+                        ->mapWithKeys(fn ($v) => [$v => ucwords(str_replace('_', ' ', (string) $v))])
+                        ->toArray()
+                    )
+                    ->multiple()
+                    ->query(fn (Builder $query, array $data): Builder => $query
+                        ->when($data['values'] ?? null, fn (Builder $q, $values) => $q
+                            ->whereHas('feature', fn (Builder $fq) => $fq->whereIn('dominant_segment', $values)))),
             ])
             ->defaultSort('name');
     }

@@ -6,13 +6,17 @@ use App\Filament\Resources\TenantResource\Pages;
 use App\Models\Tenant;
 use App\Support\Money;
 use Filament\Schemas\Components\Section;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
 
 class TenantResource extends Resource
@@ -139,6 +143,24 @@ class TenantResource extends Resource
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
+            ])
+            ->filters([
+                SelectFilter::make('currency')
+                    ->label('Currency')
+                    ->options(Money::options())
+                    ->multiple(),
+
+                Filter::make('created_at')
+                    ->label('Created')
+                    ->form([
+                        DatePicker::make('from')->label('From'),
+                        DatePicker::make('until')->label('Until'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['from'],  fn (Builder $q, $d) => $q->whereDate('created_at', '>=', $d))
+                            ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('created_at', '<=', $d));
+                    }),
             ])
             ->defaultSort('name');
     }

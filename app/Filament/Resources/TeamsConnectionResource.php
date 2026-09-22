@@ -12,6 +12,7 @@ use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
@@ -19,6 +20,9 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -179,6 +183,27 @@ class TeamsConnectionResource extends Resource
                     ->tooltip(fn (TeamsConnection $record) => $record->last_error)
                     ->color('danger')
                     ->toggleable(),
+            ])
+            ->filters([
+                SelectFilter::make('status')
+                    ->options([
+                        TeamsConnection::STATUS_OK    => 'OK',
+                        TeamsConnection::STATUS_ERROR => 'Error',
+                    ]),
+                TernaryFilter::make('post_to_channel')->label('Channel'),
+                TernaryFilter::make('notify_users')->label('Per-user'),
+                TernaryFilter::make('is_active')->label('Active'),
+                Filter::make('last_success_at')
+                    ->label('Last sent')
+                    ->form([
+                        DatePicker::make('from')->label('From'),
+                        DatePicker::make('until')->label('Until'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['from'],  fn (Builder $q, $d) => $q->whereDate('last_success_at', '>=', $d))
+                            ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('last_success_at', '<=', $d));
+                    }),
             ])
             ->defaultSort('created_at', 'desc')
             ->actions([

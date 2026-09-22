@@ -127,6 +127,12 @@ class AuditLogResource extends Resource
                     ->label('Actor')
                     ->options(fn () => User::where('tenant_id', Filament::getTenant()?->id)->orderBy('name')->pluck('name', 'id')->toArray()),
 
+                SelectFilter::make('investigation')
+                    ->label('Investigation')
+                    ->relationship('investigation', 'title')
+                    ->searchable()
+                    ->preload(),
+
                 SelectFilter::make('period')
                     ->label('Period')
                     ->options([

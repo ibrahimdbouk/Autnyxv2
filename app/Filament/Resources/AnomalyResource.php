@@ -10,6 +10,7 @@ use App\Services\Anomaly\BaselineCalculatorService;
 use Filament\Actions\Action;
 use Filament\Resources\Resource;
 use Filament\Actions\BulkAction;
+use Filament\Forms\Components\DatePicker;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
@@ -150,6 +151,18 @@ class AnomalyResource extends Resource
                     ->label('Show dismissed')
                     ->query(fn (Builder $query) => $query->withoutGlobalScopes()->whereNotNull('dismissed_at'))
                     ->toggle(),
+
+                Filter::make('detected_at')
+                    ->label('Detected Date')
+                    ->form([
+                        DatePicker::make('from')->label('From'),
+                        DatePicker::make('until')->label('Until'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['from'],  fn (Builder $q, $d) => $q->whereDate('detected_at', '>=', $d))
+                            ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('detected_at', '<=', $d));
+                    }),
             ])
             ->actions([
                 Action::make('investigate')

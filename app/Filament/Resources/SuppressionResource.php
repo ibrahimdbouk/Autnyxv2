@@ -7,6 +7,7 @@ use App\Models\AnomalySetting;
 use App\Models\Store;
 use App\Models\Suppression;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -21,6 +22,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -168,6 +170,42 @@ class SuppressionResource extends Resource
                     ->options([1 => 'Active', 0 => 'Inactive'])
                     ->label('State'),
                 SelectFilter::make('reason')->options(Suppression::REASON_LABELS),
+
+                SelectFilter::make('scope_type')
+                    ->label('Scope')
+                    ->multiple()
+                    ->options(Suppression::SCOPE_LABELS),
+
+                SelectFilter::make('rule_type')
+                    ->label('Rule')
+                    ->multiple()
+                    ->options(fn () => collect(AnomalySetting::RULES ?? [])
+                        ->mapWithKeys(fn ($r, $k) => [$k => $r['label'] ?? $k])
+                        ->toArray()),
+
+                SelectFilter::make('store')
+                    ->label('Store')
+                    ->relationship('store', 'name')
+                    ->searchable()
+                    ->preload(),
+
+                SelectFilter::make('createdBy')
+                    ->label('Created by')
+                    ->relationship('createdBy', 'name')
+                    ->searchable()
+                    ->preload(),
+
+                Filter::make('expires_at')
+                    ->label('Expiry Date')
+                    ->form([
+                        DatePicker::make('from')->label('From'),
+                        DatePicker::make('until')->label('Until'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['from'],  fn (Builder $q, $d) => $q->whereDate('expires_at', '>=', $d))
+                            ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('expires_at', '<=', $d));
+                    }),
             ])
             ->actions([
                 EditAction::make(),

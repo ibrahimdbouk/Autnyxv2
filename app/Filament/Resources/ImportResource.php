@@ -8,7 +8,10 @@ use App\Services\Import\ImportProcessorService;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Filament\Forms\Components\DatePicker;
 use Filament\Actions\Action;
 
 class ImportResource extends Resource
@@ -94,6 +97,43 @@ class ImportResource extends Resource
                     ->since(),
             ])
             ->defaultSort('created_at', 'desc')
+            ->filters([
+                SelectFilter::make('data_type')
+                    ->label('Type')
+                    ->multiple()
+                    ->options(Import::dataTypeLabels()),
+
+                SelectFilter::make('status')
+                    ->label('Status')
+                    ->multiple()
+                    ->options([
+                        'uploaded'              => 'Uploaded',
+                        'mapping_review'        => 'Awaiting Review',
+                        'importing'             => 'Importing',
+                        'completed'             => 'Completed',
+                        'completed_with_errors' => 'Completed (errors)',
+                        'failed'                => 'Failed',
+                        'rolled_back'           => 'Rolled back',
+                    ]),
+
+                SelectFilter::make('user')
+                    ->label('Uploaded by')
+                    ->relationship('user', 'name')
+                    ->searchable()
+                    ->preload(),
+
+                Filter::make('created_at')
+                    ->label('Uploaded date')
+                    ->form([
+                        DatePicker::make('from')->label('From'),
+                        DatePicker::make('until')->label('Until'),
+                    ])
+                    ->query(function (\Illuminate\Database\Eloquent\Builder $query, array $data): \Illuminate\Database\Eloquent\Builder {
+                        return $query
+                            ->when($data['from'],  fn (\Illuminate\Database\Eloquent\Builder $q, $d) => $q->whereDate('created_at', '>=', $d))
+                            ->when($data['until'], fn (\Illuminate\Database\Eloquent\Builder $q, $d) => $q->whereDate('created_at', '<=', $d));
+                    }),
+            ])
             ->actions([
                 Action::make('review')
                     ->label('Review Mapping')

@@ -13,6 +13,7 @@ use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -23,6 +24,9 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -244,6 +248,25 @@ class SftpConnectionResource extends Resource
                     ->tooltip(fn (SftpConnection $record) => $record->last_error)
                     ->color('danger')
                     ->toggleable(),
+            ])
+            ->filters([
+                SelectFilter::make('status')
+                    ->options([
+                        SftpConnection::STATUS_OK    => 'OK',
+                        SftpConnection::STATUS_ERROR => 'Error',
+                    ]),
+                TernaryFilter::make('is_active')->label('Active'),
+                Filter::make('last_polled_at')
+                    ->label('Last polled')
+                    ->form([
+                        DatePicker::make('from')->label('From'),
+                        DatePicker::make('until')->label('Until'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['from'],  fn (Builder $q, $d) => $q->whereDate('last_polled_at', '>=', $d))
+                            ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('last_polled_at', '<=', $d));
+                    }),
             ])
             ->defaultSort('created_at', 'desc')
             ->actions([

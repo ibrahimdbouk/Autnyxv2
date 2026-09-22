@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Support\Screens\ScreenRegistry;
 use Filament\Schemas\Components\Section;
 use Filament\Forms\Components\CheckboxList;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
@@ -14,6 +15,8 @@ use Filament\Facades\Filament;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Hash;
@@ -167,6 +170,25 @@ class UserResource extends Resource
                     ->since()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
+            ])
+            ->filters([
+                TernaryFilter::make('is_super_admin')
+                    ->label('Super Admin'),
+
+                TernaryFilter::make('is_tenant_admin')
+                    ->label('Tenant Admin'),
+
+                Filter::make('created_at')
+                    ->label('Joined')
+                    ->form([
+                        DatePicker::make('from')->label('From'),
+                        DatePicker::make('until')->label('Until'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['from'],  fn (Builder $q, $d) => $q->whereDate('created_at', '>=', $d))
+                            ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('created_at', '<=', $d));
+                    }),
             ])
             ->defaultSort('name')
             ->emptyStateHeading('No users yet')

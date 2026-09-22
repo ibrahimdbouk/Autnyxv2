@@ -16,6 +16,8 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\ToggleColumn;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -245,6 +247,15 @@ class AnomalySettingResource extends Resource
                 ToggleColumn::make('enabled')
                     ->label('Active')
                     ->sortable(),
+            ])
+            ->filters([
+                SelectFilter::make('rule_type')
+                    ->label('Rule')
+                    ->multiple()
+                    ->options(collect(AnomalySetting::RULES)->map(fn ($r) => $r['label'])->toArray()),
+
+                TernaryFilter::make('enabled')
+                    ->label('Active'),
             ])
             ->defaultSort('rule_type')
             ->paginated(false)

@@ -7,6 +7,7 @@ use App\Filament\Resources\ReplenishmentResource\Pages;
 use App\Models\SkuReplenishment;
 use App\Support\Money;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\DatePicker;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
@@ -122,9 +123,35 @@ class ReplenishmentResource extends Resource
                     ->default(),
 
                 SelectFilter::make('segment')
+                    ->multiple()
                     ->options(fn () => SkuReplenishment::query()
                         ->whereNotNull('segment')->distinct()
                         ->orderBy('segment')->pluck('segment', 'segment')->toArray()),
+
+                SelectFilter::make('store')
+                    ->label('Store')
+                    ->relationship('store', 'name')
+                    ->searchable()
+                    ->preload(),
+
+                SelectFilter::make('supplier')
+                    ->label('Supplier')
+                    ->multiple()
+                    ->options(fn () => SkuReplenishment::query()
+                        ->whereNotNull('supplier')->distinct()
+                        ->orderBy('supplier')->pluck('supplier', 'supplier')->toArray()),
+
+                Filter::make('computed_at')
+                    ->label('Computed Date')
+                    ->form([
+                        DatePicker::make('from')->label('From'),
+                        DatePicker::make('until')->label('Until'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['from'],  fn (Builder $q, $d) => $q->whereDate('computed_at', '>=', $d))
+                            ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('computed_at', '<=', $d));
+                    }),
             ])
             ->defaultSort('suggested_order_qty', 'desc');
     }

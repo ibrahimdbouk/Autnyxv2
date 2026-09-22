@@ -15,7 +15,9 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
+use Filament\Forms\Components\DatePicker;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -136,7 +138,31 @@ class QuarantinedRowResource extends Resource
                     QuarantinedRow::STATUS_OPEN    => 'Open',
                     QuarantinedRow::STATUS_SKIPPED => 'Skipped',
                     QuarantinedRow::STATUS_RESOLVED=> 'Resolved',
-                ]),
+                ])->multiple(),
+                SelectFilter::make('data_type')
+                    ->label('Type')
+                    ->multiple()
+                    ->options([
+                        'sales_transactions' => 'Sales Transactions',
+                        'inventory_levels'   => 'Inventory Levels',
+                        'products'           => 'Products',
+                        'purchase_orders'    => 'Purchase Orders',
+                        'stores'             => 'Stores / Locations',
+                        'suppliers'          => 'Suppliers',
+                        'users'              => 'Users (account setup)',
+                        'returns'            => 'Returns / Refunds',
+                    ]),
+                Filter::make('created_at')
+                    ->label('Date')
+                    ->form([
+                        DatePicker::make('from')->label('From'),
+                        DatePicker::make('until')->label('Until'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['from'],  fn (Builder $q, $d) => $q->whereDate('created_at', '>=', $d))
+                            ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('created_at', '<=', $d));
+                    }),
             ])
             ->bulkActions([
                 BulkActionGroup::make([

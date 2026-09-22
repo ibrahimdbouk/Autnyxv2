@@ -79,7 +79,30 @@ class ProductResource extends Resource
                         ->pluck('category', 'category')
                         ->toArray()
                     )
-                    ->label('Category'),
+                    ->label('Category')
+                    ->multiple(),
+
+                SelectFilter::make('subcategory')
+                    ->options(fn () => Product::query()
+                        ->whereNotNull('subcategory')
+                        ->distinct()
+                        ->orderBy('subcategory')
+                        ->pluck('subcategory', 'subcategory')
+                        ->toArray()
+                    )
+                    ->label('Subcategory')
+                    ->multiple(),
+
+                SelectFilter::make('supplier')
+                    ->options(fn () => Product::query()
+                        ->whereNotNull('supplier')
+                        ->distinct()
+                        ->orderBy('supplier')
+                        ->pluck('supplier', 'supplier')
+                        ->toArray()
+                    )
+                    ->label('Supplier')
+                    ->multiple(),
             ])
             ->emptyStateIcon('heroicon-o-cube')
             ->emptyStateHeading('No products yet')

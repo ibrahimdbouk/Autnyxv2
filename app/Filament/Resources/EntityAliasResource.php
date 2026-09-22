@@ -12,8 +12,11 @@ use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
+use Filament\Forms\Components\DatePicker;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -77,6 +80,28 @@ class EntityAliasResource extends Resource
                 TextColumn::make('updated_at')->since()->sortable()->toggleable(),
             ])
             ->defaultSort('updated_at', 'desc')
+            ->filters([
+                SelectFilter::make('entity_type')
+                    ->label('Entity')
+                    ->multiple()
+                    ->options([
+                        EntityAlias::TYPE_SKU      => 'SKU',
+                        EntityAlias::TYPE_STORE    => 'Store / Location',
+                        EntityAlias::TYPE_SUPPLIER => 'Supplier',
+                    ]),
+
+                Filter::make('updated_at')
+                    ->label('Updated')
+                    ->form([
+                        DatePicker::make('from')->label('From'),
+                        DatePicker::make('until')->label('Until'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['from'],  fn (Builder $q, $d) => $q->whereDate('updated_at', '>=', $d))
+                            ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('updated_at', '<=', $d));
+                    }),
+            ])
             ->actions([
                 EditAction::make(),
                 DeleteAction::make(),

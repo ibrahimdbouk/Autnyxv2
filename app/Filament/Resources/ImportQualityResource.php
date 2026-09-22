@@ -6,8 +6,12 @@ use App\Filament\Resources\ImportQualityResource\Pages;
 use App\Models\ImportQuality;
 use Filament\Facades\Filament;
 use Filament\Resources\Resource;
+use Filament\Forms\Components\DatePicker;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -67,6 +71,45 @@ class ImportQualityResource extends Resource
                 TextColumn::make('created_at')->label('When')->since()->sortable(),
             ])
             ->defaultSort('created_at', 'desc')
+            ->filters([
+                SelectFilter::make('state')
+                    ->label('Decision')
+                    ->multiple()
+                    ->options([
+                        'green' => 'Green — detection ready',
+                        'amber' => 'Amber — review exceptions',
+                        'red'   => 'Red — blocked',
+                    ]),
+
+                SelectFilter::make('data_type')
+                    ->label('Type')
+                    ->multiple()
+                    ->options([
+                        'sales_transactions' => 'Sales Transactions',
+                        'inventory_levels'   => 'Inventory Levels',
+                        'products'           => 'Products',
+                        'purchase_orders'    => 'Purchase Orders',
+                        'stores'             => 'Stores / Locations',
+                        'suppliers'          => 'Suppliers',
+                        'users'              => 'Users (account setup)',
+                        'returns'            => 'Returns / Refunds',
+                    ]),
+
+                TernaryFilter::make('is_duplicate_file')
+                    ->label('Re-upload'),
+
+                Filter::make('created_at')
+                    ->label('Date')
+                    ->form([
+                        DatePicker::make('from')->label('From'),
+                        DatePicker::make('until')->label('Until'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['from'],  fn (Builder $q, $d) => $q->whereDate('created_at', '>=', $d))
+                            ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('created_at', '<=', $d));
+                    }),
+            ])
             ->emptyStateHeading('No import quality yet')
             ->emptyStateDescription('Quality summaries appear here after each import runs through the firewall.')
             ->emptyStateIcon('heroicon-o-shield-check');

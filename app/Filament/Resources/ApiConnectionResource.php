@@ -14,6 +14,7 @@ use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
@@ -24,6 +25,9 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -239,6 +243,28 @@ class ApiConnectionResource extends Resource
                 TextColumn::make('last_polled_at')->label('Last polled')->since()->placeholder('Never')->sortable(),
                 TextColumn::make('last_error')->label('Last error')->placeholder('—')->limit(40)
                     ->tooltip(fn (ApiConnection $r) => $r->last_error)->color('danger')->toggleable(),
+            ])
+            ->filters([
+                SelectFilter::make('provider')
+                    ->label('Source system')
+                    ->options(Profiles::labels()),
+                SelectFilter::make('status')
+                    ->options([
+                        ApiConnection::STATUS_OK    => 'OK',
+                        ApiConnection::STATUS_ERROR => 'Error',
+                    ]),
+                TernaryFilter::make('is_active')->label('Active'),
+                Filter::make('last_polled_at')
+                    ->label('Last polled')
+                    ->form([
+                        DatePicker::make('from')->label('From'),
+                        DatePicker::make('until')->label('Until'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['from'],  fn (Builder $q, $d) => $q->whereDate('last_polled_at', '>=', $d))
+                            ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('last_polled_at', '<=', $d));
+                    }),
             ])
             ->defaultSort('created_at', 'desc')
             ->actions([

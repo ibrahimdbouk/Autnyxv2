@@ -74,6 +74,17 @@ class SalesReturnResource extends Resource
                     ->wrap(),
             ])
             ->filters([
+                SelectFilter::make('location')
+                    ->options(fn () => SalesReturn::query()
+                        ->whereNotNull('location')
+                        ->distinct()
+                        ->orderBy('location')
+                        ->pluck('location', 'location')
+                        ->toArray()
+                    )
+                    ->label('Store')
+                    ->multiple(),
+
                 SelectFilter::make('reason')
                     ->options(fn () => SalesReturn::query()
                         ->whereNotNull('reason')

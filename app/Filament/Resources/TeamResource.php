@@ -6,6 +6,7 @@ use App\Filament\Resources\TeamResource\Pages;
 use App\Models\Team;
 use App\Models\User;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -18,6 +19,8 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -127,6 +130,22 @@ class TeamResource extends Resource
                     ->label('Created')
                     ->since()
                     ->sortable(),
+            ])
+            ->filters([
+                TernaryFilter::make('is_default')
+                    ->label('Default Team'),
+
+                Filter::make('created_at')
+                    ->label('Created')
+                    ->form([
+                        DatePicker::make('from')->label('From'),
+                        DatePicker::make('until')->label('Until'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['from'],  fn (Builder $q, $d) => $q->whereDate('created_at', '>=', $d))
+                            ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('created_at', '<=', $d));
+                    }),
             ])
             ->defaultSort('name')
             ->actions([

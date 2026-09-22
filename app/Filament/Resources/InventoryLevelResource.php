@@ -5,10 +5,13 @@ use App\Filament\Concerns\GatesResourceByScreen;
 
 use App\Filament\Resources\InventoryLevelResource\Pages;
 use App\Models\InventoryLevel;
+use Filament\Forms\Components\DatePicker;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class InventoryLevelResource extends Resource
 {
@@ -80,6 +83,30 @@ class InventoryLevelResource extends Resource
                         ->toArray()
                     )
                     ->label('Location'),
+
+                Filter::make('below_reorder')
+                    ->label('At or below reorder point')
+                    ->query(fn (Builder $query): Builder => $query
+                        ->whereNotNull('reorder_point')
+                        ->whereColumn('on_hand_qty', '<=', 'reorder_point'))
+                    ->toggle(),
+
+                Filter::make('out_of_stock')
+                    ->label('Out of stock')
+                    ->query(fn (Builder $query): Builder => $query->where('on_hand_qty', '<=', 0))
+                    ->toggle(),
+
+                Filter::make('as_of_range')
+                    ->label('As-of date')
+                    ->form([
+                        DatePicker::make('from')->label('From'),
+                        DatePicker::make('until')->label('Until'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['from'],  fn (Builder $q, $d) => $q->whereDate('as_of_date', '>=', $d))
+                            ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('as_of_date', '<=', $d));
+                    }),
             ])
             ->emptyStateIcon('heroicon-o-archive-box')
             ->emptyStateHeading('No inventory records yet')

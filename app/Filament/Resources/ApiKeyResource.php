@@ -9,12 +9,15 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\CheckboxList;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -89,6 +92,39 @@ class ApiKeyResource extends Resource
                 TextColumn::make('last_used_at')->label('Last used')->since()->placeholder('Never')->sortable(),
                 TextColumn::make('expires_at')->label('Expires')->dateTime('M j, Y')->placeholder('Never')->toggleable(),
                 TextColumn::make('created_at')->label('Created')->since()->sortable(),
+            ])
+            ->filters([
+                TernaryFilter::make('revoked')
+                    ->label('Revoked')
+                    ->placeholder('All')
+                    ->trueLabel('Revoked')
+                    ->falseLabel('Not revoked')
+                    ->queries(
+                        true: fn (Builder $query) => $query->whereNotNull('revoked_at'),
+                        false: fn (Builder $query) => $query->whereNull('revoked_at'),
+                        blank: fn (Builder $query) => $query,
+                    ),
+                TernaryFilter::make('used')
+                    ->label('Used')
+                    ->placeholder('All')
+                    ->trueLabel('Used at least once')
+                    ->falseLabel('Never used')
+                    ->queries(
+                        true: fn (Builder $query) => $query->whereNotNull('last_used_at'),
+                        false: fn (Builder $query) => $query->whereNull('last_used_at'),
+                        blank: fn (Builder $query) => $query,
+                    ),
+                Filter::make('created_at')
+                    ->label('Created')
+                    ->form([
+                        DatePicker::make('from')->label('From'),
+                        DatePicker::make('until')->label('Until'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['from'],  fn (Builder $q, $d) => $q->whereDate('created_at', '>=', $d))
+                            ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('created_at', '<=', $d));
+                    }),
             ])
             ->defaultSort('created_at', 'desc')
             ->actions([

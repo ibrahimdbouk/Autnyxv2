@@ -6,10 +6,13 @@ use App\Filament\Concerns\GatesResourceByScreen;
 use App\Filament\Resources\PurchaseOrderResource\Pages;
 use App\Models\PurchaseOrder;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\DatePicker;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class PurchaseOrderResource extends Resource
 {
@@ -97,7 +100,42 @@ class PurchaseOrderResource extends Resource
                         ->pluck('supplier', 'supplier')
                         ->toArray()
                     )
-                    ->label('Supplier'),
+                    ->label('Supplier')
+                    ->multiple(),
+
+                Filter::make('outstanding')
+                    ->label('Not fully received')
+                    ->query(fn (Builder $query): Builder => $query->whereColumn('qty_received', '<', 'qty_ordered'))
+                    ->toggle(),
+
+                Filter::make('fully_received')
+                    ->label('Fully received')
+                    ->query(fn (Builder $query): Builder => $query->whereColumn('qty_received', '>=', 'qty_ordered'))
+                    ->toggle(),
+
+                Filter::make('order_date_range')
+                    ->label('Order date')
+                    ->form([
+                        DatePicker::make('from')->label('From'),
+                        DatePicker::make('until')->label('Until'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['from'],  fn (Builder $q, $d) => $q->whereDate('order_date', '>=', $d))
+                            ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('order_date', '<=', $d));
+                    }),
+
+                Filter::make('expected_date_range')
+                    ->label('Expected date')
+                    ->form([
+                        DatePicker::make('from')->label('From'),
+                        DatePicker::make('until')->label('Until'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['from'],  fn (Builder $q, $d) => $q->whereDate('expected_date', '>=', $d))
+                            ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('expected_date', '<=', $d));
+                    }),
             ])
             ->emptyStateIcon('heroicon-o-truck')
             ->emptyStateHeading('No purchase orders yet')
