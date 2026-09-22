@@ -135,7 +135,7 @@ class ListImports extends ListRecords
                         ]);
 
                         $mapper = app(ColumnMappingService::class);
-                        foreach ($mapper->map($result['headers'], $result['rows'], $dt) as $mapping) {
+                        foreach ($mapper->map($result['headers'], $result['rows'], $dt, $tenantId) as $mapping) {
                             $import->columnMaps()->create($mapping);
                         }
 

@@ -5,11 +5,14 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\CleansingRuleResource\Pages;
 use App\Models\CleansingRule;
 use App\Models\Import;
+use App\Services\DataQuality\CleansingDryRunService;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Facades\Filament;
+use Filament\Notifications\Notification;
 use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -89,6 +92,29 @@ class CleansingRuleResource extends Resource
             ])
             ->defaultSort('data_type')
             ->actions([
+                Action::make('dryRun')
+                    ->label('Dry run')
+                    ->icon('heroicon-o-beaker')
+                    ->color('info')
+                    ->action(function (CleansingRule $record) {
+                        $r = app(CleansingDryRunService::class)->preview(
+                            (int) $record->tenant_id, $record->data_type, $record->field,
+                            $record->rule_type, $record->params ?? [],
+                        );
+                        if (! $r['supported']) {
+                            Notification::make()->title('No sample available')
+                                ->body("No stored values to preview for {$record->field} on {$record->data_type}.")
+                                ->warning()->send();
+
+                            return;
+                        }
+                        $examples = collect($r['samples'])
+                            ->map(fn ($s) => "\"{$s['before']}\" → \"{$s['after']}\"")->implode("\n");
+                        Notification::make()
+                            ->title("{$r['changed']} of {$r['checked']} sampled values would change")
+                            ->body($examples ?: 'No values would change with this rule.')
+                            ->info()->persistent()->send();
+                    }),
                 EditAction::make(),
                 DeleteAction::make(),
             ])

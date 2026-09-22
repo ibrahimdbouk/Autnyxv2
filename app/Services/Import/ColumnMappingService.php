@@ -24,12 +24,26 @@ class ColumnMappingService
      * @param  string   $dataType    One of Import::TYPE_*
      * @return array[]  Each item: [source_header, target_field|null, confidence, reasoning]
      */
-    public function map(array $headers, array $sampleRows, string $dataType): array
+    public function map(array $headers, array $sampleRows, string $dataType, ?int $tenantId = null): array
     {
         $schema = CanonicalSchema::forType($dataType);
 
         if (empty($schema) || empty($headers)) {
             return [];
+        }
+
+        // Slice 5 — learned mapping memory takes precedence over AI: if this tenant has
+        // already confirmed a mapping for this header signature, reuse it deterministically
+        // (drifted/new columns come back flagged for one-time confirmation). Best-effort.
+        if ($tenantId !== null) {
+            try {
+                $learned = \App\Models\MappingMemory::recall($tenantId, $dataType, $headers);
+                if ($learned !== null) {
+                    return $learned;
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Mapping memory recall failed', ['error' => $e->getMessage()]);
+            }
         }
 
         $apiKey = config('services.anthropic.key');

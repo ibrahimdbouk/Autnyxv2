@@ -312,6 +312,13 @@ class ImportProcessorService
                 'quarantined_rows' => $quarantined,
             ]);
 
+            // Slice 5 — learn this confirmed mapping for the next same-shaped import.
+            try {
+                \App\Models\MappingMemory::rememberFromImport($import);
+            } catch (\Throwable $e) {
+                Log::warning('Mapping memory learn failed', ['import_id' => $import->id, 'error' => $e->getMessage()]);
+            }
+
             // Record an IngestionRun so Data Health sees this ingestion.
             $this->recordIngestionRun($import, $total, $imported, $failed, $startedAt);
 
@@ -556,6 +563,13 @@ class ImportProcessorService
             'status'     => $status,
             'total_rows' => $total,
         ]);
+
+        // Slice 5 — learn this confirmed mapping so the next same-shaped import auto-maps.
+        try {
+            \App\Models\MappingMemory::rememberFromImport($import);
+        } catch (\Throwable $e) {
+            Log::warning('Mapping memory learn failed', ['import_id' => $import->id, 'error' => $e->getMessage()]);
+        }
 
         $this->recordIngestionRun(
             $import,

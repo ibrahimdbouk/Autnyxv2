@@ -73,7 +73,7 @@ class PipelineIngestor
             'total_rows'        => $parsed['total_rows'] ?? 0,
         ]);
 
-        foreach ($this->mapper->map($parsed['headers'] ?? [], $parsed['rows'] ?? [], $dataType) as $mapping) {
+        foreach ($this->mapper->map($parsed['headers'] ?? [], $parsed['rows'] ?? [], $dataType, $tenantId) as $mapping) {
             $import->columnMaps()->create($mapping);
         }
 

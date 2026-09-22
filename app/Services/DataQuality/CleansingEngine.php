@@ -66,6 +66,12 @@ class CleansingEngine
         return ['data' => $data, 'changed' => $changed];
     }
 
+    /** Apply a single transform to one value — used by the dry-run preview. */
+    public function applyRuleType(string $value, string $ruleType, array $params = []): string
+    {
+        return $this->applyRule($this->baseClean($value), $ruleType, $params);
+    }
+
     // ── Base hygiene ───────────────────────────────────────────────────────────
 
     private function baseClean(string $v): string
