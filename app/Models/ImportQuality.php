@@ -41,6 +41,16 @@ class ImportQuality extends Model
     }
 
     /**
+     * Required by Filament multi-tenancy: the panel auto-scopes tenant-aware
+     * resources through this ownership relationship. Without it, rendering the
+     * Import Quality table 500s ("model has no relationship named [tenant]").
+     */
+    public function tenant(): BelongsTo
+    {
+        return $this->belongsTo(Tenant::class);
+    }
+
+    /**
      * 0–100 — share of seen rows that promoted clean, minus a light cleansing penalty.
      * NB: not named `score()` — a bare method name collides with Eloquent's
      * relationship resolution (it would be called as a relation and throw).
