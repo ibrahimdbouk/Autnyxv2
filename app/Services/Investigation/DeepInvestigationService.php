@@ -44,6 +44,7 @@ class DeepInvestigationService
     public function __construct(
         private RootCauseAnalysisService $rootCause,
         private \App\Services\Anomaly\ReplenishmentRecommendationService $recommendations,
+        private ProjectionService $projections,
     ) {}
 
     /**
@@ -61,10 +62,89 @@ class DeepInvestigationService
             'cause_map'     => $this->causeMap($investigation),
             'what_changed'  => $this->whatChanged($investigation),
             'why_rec'       => $this->whyRecommendation($investigation),
+            'what_if'       => $this->whatIf($investigation),
+            'similar'       => $this->similarIncidents($investigation),
             'trail'         => $this->trail($investigation),
             'confidence'    => $this->confidence($investigation),
             'evidence'      => $this->evidence($investigation),
             'impact'        => $this->impact($investigation),
+        ];
+    }
+
+    // =========================================================================
+    // MODULE — WHAT-IF / ACTION SIMULATOR (deterministic projection, SIMULATED)
+    // =========================================================================
+
+    private function whatIf(Investigation $investigation): array
+    {
+        try {
+            $p = $this->projections->forInvestigation($investigation);
+            $p['currency'] = $this->currencySymbol($investigation);
+
+            return $p;
+        } catch (\Throwable) {
+            return ['available' => false, 'empty_reason' => 'Evidence unavailable.', 'simulated' => true];
+        }
+    }
+
+    // =========================================================================
+    // MODULE — SIMILAR INCIDENTS (resolved corpus; honest when thin)
+    // =========================================================================
+
+    /**
+     * Prior resolved/closed investigations that share a signal type or SKU, with
+     * the analyst-recorded outcome. Nothing is fabricated — it reflects only what
+     * has actually been resolved through Autnyx, and says so when the corpus is thin.
+     */
+    private function similarIncidents(Investigation $investigation): array
+    {
+        $rules = $investigation->anomalies->pluck('rule_type')->unique()->all();
+        $sku = $investigation->primary_sku;
+
+        $candidates = Investigation::where('tenant_id', $investigation->tenant_id)
+            ->where('id', '!=', $investigation->id)
+            ->whereIn('status', [Investigation::STATUS_RESOLVED, Investigation::STATUS_CLOSED])
+            ->with(['outcome', 'anomalies:id,investigation_id,rule_type'])
+            ->latest('resolved_at')
+            ->limit(60)
+            ->get();
+
+        $currency = $this->currencySymbol($investigation);
+        $matches = [];
+        foreach ($candidates as $c) {
+            $shared = array_values(array_intersect($rules, $c->anomalies->pluck('rule_type')->unique()->all()));
+            if (! empty($shared)) {
+                $reason = 'Same signal · ' . $this->ruleLabel($shared[0]);
+            } elseif ($sku && $c->primary_sku && $c->primary_sku === $sku) {
+                $reason = 'Same SKU · ' . $sku;
+            } else {
+                continue;
+            }
+
+            $o = $c->outcome;
+            $matches[] = [
+                'id'          => $c->id,
+                'title'       => $c->title,
+                'resolved_at' => optional($c->resolved_at ?? $c->closed_at)?->format('M j, Y'),
+                'match'       => $reason,
+                'outcome'     => $o ? (InvestigationOutcome::TYPE_LABELS[$o->outcome_type] ?? ucfirst((string) $o->outcome_type)) : null,
+                'recovery'    => ($o && $o->observed_recovery !== null) ? $currency . number_format((float) $o->observed_recovery, 0) : null,
+                'root_cause'  => $o?->confirmed_root_cause,
+            ];
+            if (count($matches) >= 5) {
+                break;
+            }
+        }
+
+        if (empty($matches)) {
+            return $this->unavailable('No comparable resolved investigation yet. This builds up as more investigations with the same signal type or SKU are resolved through Autnyx.');
+        }
+
+        return [
+            'available'    => true,
+            'empty_reason' => null,
+            'items'        => $matches,
+            'note'         => 'Matched on shared signal type or SKU among resolved / closed investigations. Recovery figures are analyst-recorded outcomes, not projections.',
         ];
     }
 
@@ -392,18 +472,30 @@ class DeepInvestigationService
             }
         }
 
-        // Change markers: the calculation / threshold evidence that quantifies the
-        // movement (z-score, days of cover, margin, return rate). Governed values.
+        // Change markers: the calculation / threshold / stat evidence that
+        // quantifies the movement (z-score, days of cover, margin, totals,
+        // baselines, return rate). Governed scalar values only.
         $markers = [];
         foreach ($evidence as $e) {
-            if (in_array($e->evidence_type, [InvestigationEvidence::TYPE_CALCULATION, InvestigationEvidence::TYPE_THRESHOLD_BREACH], true)) {
-                $markers[] = [
-                    'label'     => $e->label,
-                    'value'     => $e->getFormattedValue(),
-                    'direction' => $e->direction,
-                ];
+            if (! in_array($e->evidence_type, [
+                InvestigationEvidence::TYPE_CALCULATION,
+                InvestigationEvidence::TYPE_THRESHOLD_BREACH,
+                InvestigationEvidence::TYPE_STAT,
+            ], true)) {
+                continue;
             }
+            $value = $e->getFormattedValue();
+            if ($value === '—') {
+                continue; // JSON-only evidence with no scalar to show as a marker
+            }
+            $markers[] = [
+                'label'     => $e->label,
+                'value'     => $value,
+                'direction' => $e->direction,
+            ];
         }
+        // Show the evidence that moved (supports / contradicts) before neutral context.
+        usort($markers, fn ($a, $b) => (int) ($a['direction'] === 'neutral') <=> (int) ($b['direction'] === 'neutral'));
 
         $available = ! empty($series) || ! empty($markers);
 
@@ -437,8 +529,30 @@ class DeepInvestigationService
             $recs = [];
         }
 
+        // No live replenishment recommendation? Fall back to the actions already
+        // recorded on this investigation — real, governed, and often what the team
+        // adopted. Only when there is neither do we say there is nothing.
         if (empty($recs)) {
-            return $this->unavailable('No prescriptive recommendation applies here. Recommendations are generated for stockout / safety-stock signals that have a derived replenishment target.');
+            $actions = $investigation->actions ?? collect();
+            if ($actions->isNotEmpty()) {
+                return [
+                    'available'    => true,
+                    'empty_reason' => null,
+                    'source'       => 'actions',
+                    'items'        => $actions->map(fn ($act) => [
+                        'title'      => $act->title,
+                        'kind'       => $act->action_type ?? 'action',
+                        'qty'        => null,
+                        'value'      => null,
+                        'priority'   => $act->priority ?? null,
+                        'rationale'  => $act->description,
+                        'derivation' => null,
+                    ])->values()->all(),
+                    'note'         => 'These are the actions recorded on this investigation. Autnyx recommends only — nothing is transmitted; the team carries out each action in their own systems.',
+                ];
+            }
+
+            return $this->unavailable('No prescriptive recommendation applies here, and no action has been recorded yet. Recommendations are generated for stockout / safety-stock signals that have a derived replenishment target.');
         }
 
         $currency = $this->currencySymbol($investigation);

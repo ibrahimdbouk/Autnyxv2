@@ -169,11 +169,63 @@ class DeepInvestigationTest extends TestCase
     {
         $tenant = $this->createTenant();
         $inv = Investigation::factory()->create(['tenant_id' => $tenant->id]);
-        $this->anomaly($inv, 'stockout_risk', 'SKU-1', 1200); // no SkuReplenishment target seeded
+        $this->anomaly($inv, 'stockout_risk', 'SKU-1', 1200); // no SkuReplenishment target, no actions
 
         $wr = app(DeepInvestigationService::class)->build($inv->fresh())['why_rec'];
 
-        $this->assertFalse($wr['available'], 'with no derived target there is nothing to prescribe — say so, do not invent');
+        $this->assertFalse($wr['available'], 'with no derived target and no action there is nothing to prescribe — say so, do not invent');
         $this->assertNotEmpty($wr['empty_reason']);
+    }
+
+    public function test_what_if_projects_from_governed_inputs_and_labels_simulated(): void
+    {
+        $tenant = $this->createTenant();
+        $inv = Investigation::factory()->create(['tenant_id' => $tenant->id]);
+        $a = $this->anomaly($inv, 'stockout_risk', 'SKU-1', 1200);
+
+        InvestigationEvidence::create([
+            'investigation_id' => $inv->id, 'anomaly_id' => $a->id,
+            'evidence_type' => InvestigationEvidence::TYPE_SNAPSHOT,
+            'source' => 'inventory_levels', 'label' => 'Current on-hand quantity',
+            'value_numeric' => 6, 'unit' => 'units', 'direction' => InvestigationEvidence::DIRECTION_SUPPORTS,
+            'strength' => InvestigationEvidence::STRENGTH_STRONG, 'observed_at' => now(),
+        ]);
+        InvestigationEvidence::create([
+            'investigation_id' => $inv->id, 'anomaly_id' => $a->id,
+            'evidence_type' => InvestigationEvidence::TYPE_CALCULATION,
+            'source' => 'inventory_levels + sales_transactions', 'label' => 'Days of cover at current sales rate',
+            'value_numeric' => 2, 'unit' => 'days', 'direction' => InvestigationEvidence::DIRECTION_SUPPORTS,
+            'strength' => InvestigationEvidence::STRENGTH_STRONG, 'observed_at' => now(),
+        ]);
+
+        $wi = app(DeepInvestigationService::class)->build($inv->fresh())['what_if'];
+
+        $this->assertTrue($wi['available']);
+        $this->assertTrue($wi['simulated'], 'the simulator output must always carry the simulated flag');
+        $this->assertArrayHasKey($wi['default_horizon'], $wi['scenarios']);
+        // avg daily = on_hand(6)/cover(2) = 3; over 14 days, 12 stockout days → 36 units at risk.
+        $this->assertSame(36, $wi['scenarios'][14]['no_action']['lost_units']);
+        $this->assertGreaterThan(0, $wi['scenarios'][30]['protected_units'], 'a longer horizon protects more by acting');
+    }
+
+    public function test_similar_incidents_match_resolved_siblings(): void
+    {
+        $tenant = $this->createTenant();
+        $inv = Investigation::factory()->create(['tenant_id' => $tenant->id]);
+        $this->anomaly($inv, 'stockout_risk', 'SKU-1', 1200);
+
+        $sibling = Investigation::factory()->create([
+            'tenant_id' => $tenant->id,
+            'status' => Investigation::STATUS_RESOLVED,
+            'resolved_at' => now()->subDays(10),
+            'title' => 'Prior stockout on SKU-9',
+        ]);
+        $this->anomaly($sibling, 'stockout_risk', 'SKU-9', 500);
+
+        $si = app(DeepInvestigationService::class)->build($inv->fresh())['similar'];
+
+        $this->assertTrue($si['available']);
+        $this->assertNotEmpty($si['items']);
+        $this->assertStringContainsStringIgnoringCase('signal', $si['items'][0]['match']);
     }
 }

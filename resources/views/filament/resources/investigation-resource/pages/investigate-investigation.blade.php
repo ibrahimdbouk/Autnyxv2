@@ -852,6 +852,8 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
     @php($imp = $deep['impact'] ?? [])
     @php($wc = $deep['what_changed'] ?? [])
     @php($wr = $deep['why_rec'] ?? [])
+    @php($wi = $deep['what_if'] ?? [])
+    @php($si = $deep['similar'] ?? [])
     <style>
     .dinv-wrap { margin-top:1.75rem; }
     .dinv-head { display:flex; align-items:center; gap:.6rem; margin-bottom:.9rem; }
@@ -962,6 +964,30 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
     .dinv-wr-rat { font-size:.8rem; color:var(--ax-text,#374151); line-height:1.5; margin-top:.4rem; }
     .dinv-wr-deriv { display:flex; flex-wrap:wrap; gap:.35rem .9rem; margin-top:.55rem; font-size:.76rem; color:var(--ax-muted,#4b5563); }
     .dinv-wr-deriv b { color:var(--ax-ink,#111827); }
+    /* What-If simulator */
+    .dinv-sim-banner { display:flex; align-items:center; gap:.5rem; font-size:.72rem; font-weight:800; letter-spacing:.05em; color:#8a5a00; background:#fdf3e0; border:1px solid #f6d998; border-radius:.5rem; padding:.4rem .7rem; margin-bottom:.85rem; }
+    .dinv-sim-sub { font-weight:600; letter-spacing:0; color:#8a5a00; }
+    .dinv-hz { display:inline-flex; gap:.3rem; margin-bottom:.9rem; }
+    .dinv-hz button { border:1px solid var(--ax-line,#e5e7eb); background:var(--ax-bg,#fff); border-radius:9999px; padding:.2rem .7rem; font-size:.74rem; font-weight:700; color:var(--ax-text,#374151); cursor:pointer; }
+    .dinv-hz button.on { background:var(--ax-accent-strong,#7c3aed); color:#fff; border-color:var(--ax-accent-strong,#7c3aed); }
+    .dinv-sim-grid { display:grid; grid-template-columns:1fr; gap:.75rem; }
+    @media(min-width:640px){ .dinv-sim-grid { grid-template-columns:1fr 1fr; } }
+    .dinv-sim-card { border:1px solid var(--ax-line,#e5e7eb); border-radius:.6rem; padding:.85rem 1rem; }
+    .dinv-sim-card.no { background:#fdeceb; border-color:#f6c9c4; }
+    .dinv-sim-card.act { background:#e7f6ee; border-color:#bfe6cf; }
+    .dinv-sim-card .lab { font-size:.68rem; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:var(--ax-faint,#6b7280); }
+    .dinv-sim-card .big { font-size:1.4rem; font-weight:800; color:var(--ax-ink,#111827); margin-top:.15rem; }
+    .dinv-sim-card .sub { font-size:.76rem; color:var(--ax-muted,#4b5563); margin-top:.2rem; }
+    .dinv-sim-protect { margin-top:.75rem; font-size:.85rem; font-weight:700; color:var(--ax-success-fg,#15803d); }
+    .dinv-sim-assum { margin-top:.8rem; font-size:.74rem; color:var(--ax-faint,#6b7280); line-height:1.55; }
+    .dinv-sim-assum div { padding:.1rem 0 .1rem .8rem; position:relative; }
+    .dinv-sim-assum div::before { content:'·'; position:absolute; left:.2rem; }
+    /* Similar incidents */
+    .dinv-sim-inc { border:1px solid var(--ax-line,#e5e7eb); border-radius:.6rem; padding:.7rem .9rem; margin-bottom:.55rem; }
+    .dinv-sim-inc .t { font-weight:700; font-size:.83rem; color:var(--ax-ink,#111827); }
+    .dinv-sim-inc .m { font-size:.72rem; color:var(--ax-accent-strong,#7c3aed); font-weight:600; margin-top:.1rem; }
+    .dinv-sim-inc .r { display:flex; flex-wrap:wrap; gap:.35rem .9rem; margin-top:.45rem; font-size:.76rem; color:var(--ax-muted,#4b5563); }
+    .dinv-sim-inc .r b { color:var(--ax-ink,#111827); }
     </style>
 
     {{-- NB: use inline php(...) directives only in this section — never a
@@ -1104,6 +1130,73 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                         </div>
                     @endforeach
                     <div class="dinv-note">{{ $wr['note'] }}</div>
+                @endif
+            </div>
+        </details>
+
+        {{-- ── What-If / Action Simulator ────────────────────────────────── --}}
+        <details class="dinv-panel">
+            <summary>
+                <span>🔮 What-If · Action Simulator</span>
+                <span class="dinv-pill s-warning">Simulated</span>
+                <span class="dinv-chev">▶</span>
+            </summary>
+            <div class="dinv-body">
+                @if(!($wi['available'] ?? false))
+                    <div class="dinv-empty">{{ $wi['empty_reason'] ?? 'Evidence unavailable.' }}</div>
+                @else
+                    @php($def = $wi['scenarios'][$wi['default_horizon']])
+                    <div class="dinv-sim-banner">▲ SIMULATED <span class="dinv-sim-sub">— a deterministic projection from governed inputs, not a measured outcome.</span></div>
+                    <div class="dinv-hz" id="dinv-hz">
+                        @foreach($wi['horizons'] as $h)
+                            <button type="button" class="{{ $h == $wi['default_horizon'] ? 'on' : '' }}" onclick="dinvHz({{ $h }})">{{ $h }}-day</button>
+                        @endforeach
+                    </div>
+                    <div class="dinv-sim-grid">
+                        <div class="dinv-sim-card no">
+                            <div class="lab">If nothing changes</div>
+                            <div class="big" id="dinv-no-main">{{ $wi['has_revenue'] ? $money($def['lost_revenue_no']) : number_format($def['no_action']['lost_units']) . ' units' }} lost</div>
+                            <div class="sub" id="dinv-no-sub">{{ number_format($def['no_action']['lost_units']) }} units over {{ $def['no_action']['days_out'] }} stockout days · runs out in ~{{ $def['stockout_in_days'] }}d</div>
+                        </div>
+                        <div class="dinv-sim-card act">
+                            <div class="lab">If actioned now</div>
+                            <div class="big" id="dinv-act-main">{{ $wi['has_revenue'] ? $money($def['lost_revenue_with']) : number_format($def['with_action']['lost_units']) . ' units' }} lost</div>
+                            <div class="sub" id="dinv-act-sub">@if($def['with_action']['lead_known']){{ number_format($def['with_action']['lost_units']) }} units during the lead-time gap @else lead time unknown — the simulator does not assume the gap closes @endif</div>
+                        </div>
+                    </div>
+                    <div class="dinv-sim-protect" id="dinv-protect">{{ $wi['has_revenue'] ? $money($def['protected_revenue']) : number_format($def['protected_units']) . ' units' }} protected by acting now</div>
+                    <div class="dinv-sim-assum">
+                        @foreach($wi['assumptions'] as $as)<div>{{ $as }}</div>@endforeach
+                    </div>
+                    <script type="application/json" id="dinv-sim-data">@json(['scenarios' => $wi['scenarios'], 'has_revenue' => $wi['has_revenue'], 'currency' => $wi['currency'] ?? ''])</script>
+                @endif
+            </div>
+        </details>
+
+        {{-- ── Similar Incidents ─────────────────────────────────────────── --}}
+        <details class="dinv-panel">
+            <summary>
+                <span>🔗 Similar Incidents</span>
+                @if(($si['available'] ?? false))<span class="dinv-count">{{ count($si['items']) }}</span>@endif
+                <span class="dinv-chev">▶</span>
+            </summary>
+            <div class="dinv-body">
+                @if(!($si['available'] ?? false))
+                    <div class="dinv-empty">{{ $si['empty_reason'] ?? 'Evidence unavailable.' }}</div>
+                @else
+                    @foreach($si['items'] as $it)
+                        <div class="dinv-sim-inc">
+                            <div class="t">{{ $it['title'] }}</div>
+                            <div class="m">{{ $it['match'] }}</div>
+                            <div class="r">
+                                @if($it['resolved_at'])<span>Resolved <b>{{ $it['resolved_at'] }}</b></span>@endif
+                                @if($it['outcome'])<span>Outcome: <b>{{ $it['outcome'] }}</b></span>@endif
+                                @if($it['recovery'])<span>Recovery: <b>{{ $it['recovery'] }}</b></span>@endif
+                                @if($it['root_cause'])<span>Root cause: <b>{{ $it['root_cause'] }}</b></span>@endif
+                            </div>
+                        </div>
+                    @endforeach
+                    <div class="dinv-note">{{ $si['note'] }}</div>
                 @endif
             </div>
         </details>
@@ -1322,6 +1415,22 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
             document.querySelectorAll('.dinv-fish-node').forEach(function (g) { g.classList.remove('sel'); });
         };
 
+        function dinvSetText(id, t) { var e = document.getElementById(id); if (e) e.textContent = t; }
+        window.dinvHz = function (h) {
+            var el = document.getElementById('dinv-sim-data');
+            if (!el) return;
+            var d; try { d = JSON.parse(el.textContent); } catch (e) { return; }
+            var s = (d.scenarios || {})[h];
+            if (!s) return;
+            document.querySelectorAll('#dinv-hz button').forEach(function (b) { b.classList.toggle('on', b.textContent === (h + '-day')); });
+            function money(n) { return (d.currency || '') + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 }); }
+            function units(n) { return Number(n || 0).toLocaleString() + ' units'; }
+            dinvSetText('dinv-no-main', (d.has_revenue ? money(s.lost_revenue_no) : units(s.no_action.lost_units)) + ' lost');
+            dinvSetText('dinv-act-main', (d.has_revenue ? money(s.lost_revenue_with) : units(s.with_action.lost_units)) + ' lost');
+            dinvSetText('dinv-protect', (d.has_revenue ? money(s.protected_revenue) : units(s.protected_units)) + ' protected by acting now');
+            dinvSetText('dinv-no-sub', Number(s.no_action.lost_units).toLocaleString() + ' units over ' + s.no_action.days_out + ' stockout days · runs out in ~' + s.stockout_in_days + 'd');
+            dinvSetText('dinv-act-sub', s.with_action.lead_known ? (Number(s.with_action.lost_units).toLocaleString() + ' units during the lead-time gap') : 'lead time unknown — the simulator does not assume the gap closes');
+        };
         window.dinvFilter = function (kind, val, btn) {
             var group = btn.parentNode;
             group.querySelectorAll('.dinv-chip').forEach(function (b) { b.classList.remove('dinv-chip-on'); });
