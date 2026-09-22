@@ -19,6 +19,7 @@ class AgentRun extends Model
     // ── Agent keys ────────────────────────────────────────────────────────────
     const KEY_CAMPAIGN_PLAN   = 'campaign_action_plan';
     const KEY_WEEKLY_BRIEFING = 'weekly_briefing';
+    const KEY_DAILY_BRIEFING  = 'daily_briefing';
     const KEY_DATA_QUALITY    = 'data_quality';
     const KEY_ACTION_FOLLOWUP = 'action_followup';
     const KEY_SUPPLIER_PREP   = 'supplier_negotiation_prep';

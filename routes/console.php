@@ -17,6 +17,12 @@ Schedule::command('agents:weekly-briefing')
     ->weeklyOn(1, '07:00')
     ->withoutOverlapping();
 
+// Daily Briefing: every morning at 06:15 (after detection/agents settle, before
+// the working day). Runnable on demand from the Daily Briefing page too.
+Schedule::command('agents:daily-briefing')
+    ->dailyAt('06:15')
+    ->withoutOverlapping();
+
 // Agent #3 — Data-Quality / readiness: every Monday at 06:30.
 Schedule::command('agents:data-quality')
     ->weeklyOn(1, '06:30')

@@ -29,6 +29,7 @@ final class ScreenRegistry
         'investigations'  => ['label' => 'Investigations',   'group' => 'Intelligence'],
         'action_center'   => ['label' => 'Action Center',    'group' => 'Intelligence'],
         'action_queue'    => ['label' => 'Action Queue',     'group' => 'Intelligence'],
+        'daily_briefing'  => ['label' => 'Daily Briefing',   'group' => 'Intelligence'],
         'weekly_briefing' => ['label' => 'Weekly Briefing',  'group' => 'Intelligence'],
         'follow_ups'      => ['label' => 'Follow-Ups',       'group' => 'Intelligence'],
         'supplier_prep'   => ['label' => 'Supplier Prep',    'group' => 'Intelligence'],
