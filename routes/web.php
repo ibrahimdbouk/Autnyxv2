@@ -41,6 +41,9 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/anomaly/{id}/report.pdf', [AnomalyReportController::class, 'download'])
         ->name('anomaly.report.pdf');
 
+    Route::get('/investigation/{id}/report.pdf', [\App\Http\Controllers\InvestigationReportController::class, 'download'])
+        ->name('investigation.report.pdf');
+
     // Reporting page downloads: /reports/{type}/{format}?tenant=&from=&to=
     Route::get('/reports/{type}/{format}', [ReportController::class, 'download'])
         ->whereIn('type', ['recovery', 'investigations', 'anomalies', 'data-health'])
