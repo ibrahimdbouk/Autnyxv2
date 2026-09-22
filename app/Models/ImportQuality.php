@@ -34,8 +34,12 @@ class ImportQuality extends Model
         return $this->belongsTo(Import::class);
     }
 
-    /** 0–100 — share of seen rows that promoted clean, minus a light cleansing penalty. */
-    public function score(): int
+    /**
+     * 0–100 — share of seen rows that promoted clean, minus a light cleansing penalty.
+     * NB: not named `score()` — a bare method name collides with Eloquent's
+     * relationship resolution (it would be called as a relation and throw).
+     */
+    public function qualityScore(): int
     {
         $seen = max(1, (int) $this->rows_seen);
         $promoted = (int) $this->rows_promoted;
@@ -44,9 +48,9 @@ class ImportQuality extends Model
         return (int) round(max(0, min(1, $base - $penalty)) * 100);
     }
 
-    public function scoreColor(): string
+    public function qualityColor(): string
     {
-        $s = $this->score();
+        $s = $this->qualityScore();
         return $s >= 90 ? 'success' : ($s >= 70 ? 'warning' : 'danger');
     }
 }

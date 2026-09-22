@@ -46,11 +46,11 @@ class ImportQualityResource extends Resource
             ->columns([
                 TextColumn::make('import_id')->label('Import')->sortable(),
                 TextColumn::make('data_type')->badge()->color('gray'),
-                TextColumn::make('score')
+                TextColumn::make('quality_pct')
                     ->label('Quality')
                     ->badge()
-                    ->getStateUsing(fn (ImportQuality $r) => $r->score() . '%')
-                    ->color(fn (ImportQuality $r) => $r->scoreColor()),
+                    ->getStateUsing(fn (ImportQuality $r) => $r->qualityScore() . '%')
+                    ->color(fn (ImportQuality $r) => $r->qualityColor()),
                 TextColumn::make('rows_promoted')->label('Promoted')->numeric()->color('success'),
                 TextColumn::make('rows_quarantined')->label('Quarantined')->numeric()->color('danger'),
                 TextColumn::make('rows_cleansed')->label('Cleansed')->numeric()->color('warning'),
