@@ -845,7 +845,11 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
          ═══════════════════════════════════════════════════════════════════════ --}}
     @php($deep = $this->deepInvestigation())
     @if(!empty($deep))
-    @php($cm = $deep['cause_map'] ?? []; $tr = $deep['trail'] ?? []; $cf = $deep['confidence'] ?? []; $ev = $deep['evidence'] ?? []; $imp = $deep['impact'] ?? [])
+    @php($cm = $deep['cause_map'] ?? [])
+    @php($tr = $deep['trail'] ?? [])
+    @php($cf = $deep['confidence'] ?? [])
+    @php($ev = $deep['evidence'] ?? [])
+    @php($imp = $deep['impact'] ?? [])
     <style>
     .dinv-wrap { margin-top:1.75rem; }
     .dinv-head { display:flex; align-items:center; gap:.6rem; margin-bottom:.9rem; }
@@ -919,13 +923,16 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
     .dinv-note { font-size:.73rem; color:var(--ax-faint,#6b7280); margin-top:.7rem; line-height:1.5; font-style:italic; }
     </style>
 
-    @php
-        $confTierClass = ['verified'=>'s-success','likely'=>'s-info','correlated'=>'s-warning','single'=>'s-gray'];
-        $sigClass = ['established'=>'s-success','probable'=>'s-info','suspected'=>'s-warning','unknown'=>'s-gray'];
-        $dirClass = ['supports'=>'s-danger','contradicts'=>'s-success','neutral'=>'s-gray'];
-        $cur = $imp['currency'] ?? '';
-        $money = fn($n) => $cur . number_format((float) $n, ((float)$n == floor((float)$n)) ? 0 : 2);
-    @endphp
+    {{-- NB: use inline php(...) directives only in this section — never a
+         php/endphp block. Blade's storePhpBlocks pass pairs the first inline
+         php-open with any later endphp token and swallows the wrapper directive,
+         breaking compilation (a page 500). Do not write those tokens even in a
+         comment: this pass runs before comments are stripped. --}}
+    @php($confTierClass = ['verified'=>'s-success','likely'=>'s-info','correlated'=>'s-warning','single'=>'s-gray'])
+    @php($sigClass = ['established'=>'s-success','probable'=>'s-info','suspected'=>'s-warning','unknown'=>'s-gray'])
+    @php($dirClass = ['supports'=>'s-danger','contradicts'=>'s-success','neutral'=>'s-gray'])
+    @php($cur = $imp['currency'] ?? '')
+    @php($money = fn($n) => $cur . number_format((float) $n, floor((float) $n) == (float) $n ? 0 : 2))
 
     <div class="dinv-wrap">
         <div class="dinv-head">
