@@ -3,6 +3,7 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Ops\Pages\TenantsOverview;
+use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
@@ -31,6 +32,11 @@ class OpsPanelProvider extends PanelProvider
             ->id('ops')
             ->path('ops')
             ->login()
+            // 3b — MFA on the elevated control plane too (opt-in per super admin).
+            ->profile()
+            ->multiFactorAuthentication([
+                AppAuthentication::make()->recoverable(),
+            ])
             ->spa()
             ->colors([
                 'primary' => Color::Amber,

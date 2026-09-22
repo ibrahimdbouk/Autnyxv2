@@ -14,6 +14,7 @@ use App\Filament\Widgets\AnomalyTrendChartWidget;
 use App\Filament\Widgets\StoreComparisonWidget;
 use App\Filament\Widgets\TopSkusChartWidget;
 use App\Models\Tenant;
+use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
@@ -38,6 +39,13 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+            // 3b — self-service profile (hosts the MFA set-up flow in the user menu)
+            // + optional TOTP MFA with recovery codes. Opt-in per user, so an
+            // un-enrolled account (e.g. the owner) logs in exactly as before.
+            ->profile()
+            ->multiFactorAuthentication([
+                AppAuthentication::make()->recoverable(),
+            ])
             ->spa()
             ->tenant(Tenant::class, slugAttribute: 'slug')
             ->colors([
