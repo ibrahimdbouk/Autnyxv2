@@ -5,7 +5,9 @@ namespace App\Services\Import;
 use App\Models\IngestionRun;
 use App\Models\Import;
 use App\Models\ImportColumnMap;
+use App\Models\ImportQuality;
 use App\Models\ImportRow;
+use App\Models\QuarantinedRow;
 use App\Models\InventoryLevel;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
@@ -14,7 +16,9 @@ use App\Models\SalesTransaction;
 use App\Models\Store;
 use App\Models\Supplier;
 use App\Models\User;
-use App\Jobs\RunTenantDetectionJob;
+use App\Services\Anomaly\AnomalyDetectionService;
+use App\Services\DataQuality\DataQualityFirewall;
+use App\Services\DataQuality\QuarantineException;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -46,6 +50,21 @@ class ImportProcessorService
 
     /** Tenant the caches above were primed for. */
     private ?int $cachedTenantId = null;
+
+    /** Data Quality Firewall — resolved lazily, null when disabled via config. */
+    private ?DataQualityFirewall $firewall = null;
+    private bool $firewallResolved = false;
+
+    /** The firewall for this run, or null when the feature is off. Cleanses + gates every row. */
+    private function firewall(): ?DataQualityFirewall
+    {
+        if (! $this->firewallResolved) {
+            $this->firewallResolved = true;
+            $this->firewall = DataQualityFirewall::isEnabled() ? app(DataQualityFirewall::class) : null;
+        }
+
+        return $this->firewall;
+    }
 
     /**
      * Load every store / supplier / product for the tenant into in-memory maps
@@ -236,9 +255,12 @@ class ImportProcessorService
             $filePath = app(\App\Services\Storage\TenantStorage::class)->localPath($import->disk, $import->path);
             $allRows  = $this->readAllRows($filePath);
 
-            $total    = count($allRows);
-            $imported = 0;
-            $failed   = 0;
+            $total       = count($allRows);
+            $imported    = 0;
+            $failed      = 0;
+            $quarantined = 0;
+
+            $this->firewall()?->begin($import);
 
             foreach ($allRows as $rowNumber => $rawRow) {
                 try {
@@ -246,6 +268,10 @@ class ImportProcessorService
                     $this->writeRow($import, $columnMap, $rawRow, $rowNumber + 2); // +2 = 1-indexed + skip header
                     DB::commit();
                     $imported++;
+                } catch (QuarantineException $q) {
+                    DB::rollBack();
+                    $quarantined++;
+                    $this->firewall()?->quarantine($import, $rawRow, $q->cleansed, $q->reasonCode, $rowNumber + 2);
                 } catch (\Throwable $e) {
                     DB::rollBack();
                     $failed++;
@@ -261,29 +287,26 @@ class ImportProcessorService
                 }
             }
 
+            $this->firewall()?->recordChunk($import);
+
             $status = $failed > 0 ? Import::STATUS_COMPLETED_WITH_ERRORS : Import::STATUS_COMPLETED;
 
             $import->update([
-                'status'        => $status,
-                'total_rows'    => $total,
-                'imported_rows' => $imported,
-                'failed_rows'   => $failed,
+                'status'           => $status,
+                'total_rows'       => $total,
+                'imported_rows'    => $imported,
+                'failed_rows'      => $failed,
+                'quarantined_rows' => $quarantined,
             ]);
 
             // Record an IngestionRun so Data Health sees this ingestion.
             $this->recordIngestionRun($import, $total, $imported, $failed, $startedAt);
 
-            // Run anomaly detection off the web request via the queue (a full
-            // scan can take minutes). Incremental by default so only the SKUs
-            // this import touched are scanned; the nightly full scan backstops it.
-            // afterCommit so a worker never reads rows before this import commits.
+            // Run anomaly detection after every completed import
             try {
-                RunTenantDetectionJob::dispatch(
-                    $import->tenant_id,
-                    config('detection.import_trigger_mode', 'incremental')
-                )->afterCommit();
+                app(AnomalyDetectionService::class)->runForTenant($import->tenant_id);
             } catch (\Throwable $e) {
-                Log::error('Post-import detection dispatch failed', ['import_id' => $import->id, 'error' => $e->getMessage()]);
+                Log::error('Anomaly detection failed after import', ['import_id' => $import->id, 'error' => $e->getMessage()]);
             }
         } catch (\Throwable $e) {
             Log::error('Import processing failed', ['import_id' => $import->id, 'error' => $e->getMessage()]);
@@ -303,13 +326,17 @@ class ImportProcessorService
     public function startChunkedImport(Import $import): void
     {
         ImportRow::where('import_id', $import->id)->delete();
+        // Fresh firewall run: drop any prior quarantine + quality for this import.
+        QuarantinedRow::where('import_id', $import->id)->delete();
+        ImportQuality::where('import_id', $import->id)->delete();
 
         $import->update([
-            'status'         => Import::STATUS_IMPORTING,
-            'imported_rows'  => 0,
-            'failed_rows'    => 0,
-            'process_cursor' => 0,
-            'error_message'  => null,
+            'status'           => Import::STATUS_IMPORTING,
+            'imported_rows'    => 0,
+            'failed_rows'      => 0,
+            'quarantined_rows' => 0,
+            'process_cursor'   => 0,
+            'error_message'    => null,
         ]);
     }
 
@@ -352,17 +379,34 @@ class ImportProcessorService
             return ['done' => true, 'processed' => $offset, 'total' => (int) $import->total_rows, 'failed' => true];
         }
 
-        $imported  = 0;
-        $failed    = 0;
-        $rowNumber = $offset + 2; // 1-index + header row
+        $imported    = 0;
+        $failed      = 0;
+        $quarantined = 0;
+        $rowNumber   = $offset + 2; // 1-index + header row
 
         $table    = $this->insertTableFor($import->data_type);
         $template = $table ? $this->insertTemplate($table) : [];
         $now      = now();
         $batch    = [];
 
+        $this->firewall()?->begin($import);
+
         foreach ($chunk['rows'] as $rawRow) {
             $data = $this->applyMap($columnMap, $rawRow);
+
+            // Data Quality Firewall: cleanse + gate. Rejected rows are diverted to
+            // quarantine and never reach the canonical tables.
+            if ($fw = $this->firewall()) {
+                $screen = $fw->screen($import, $data);
+                if ($screen['reason'] !== null) {
+                    $fw->quarantine($import, $rawRow, $screen['data'], $screen['reason'], $rowNumber);
+                    $quarantined++;
+                    $rowNumber++;
+                    continue;
+                }
+                $data = $screen['data'];
+            }
+
             try {
                 if ($table !== null) {
                     // Insert-based type: build + collect for one bulk INSERT.
@@ -441,12 +485,15 @@ class ImportProcessorService
             }
         }
 
+        $this->firewall()?->recordChunk($import);
+
         $newCursor = $offset + (int) $chunk['consumed'];
 
         $import->update([
-            'process_cursor' => $newCursor,
-            'imported_rows'  => $import->imported_rows + $imported,
-            'failed_rows'    => $import->failed_rows + $failed,
+            'process_cursor'   => $newCursor,
+            'imported_rows'    => $import->imported_rows + $imported,
+            'failed_rows'      => $import->failed_rows + $failed,
+            'quarantined_rows' => $import->quarantined_rows + $quarantined,
         ]);
 
         $done = $chunk['eof']
@@ -498,14 +545,9 @@ class ImportProcessorService
             app(\App\Services\Sales\SalesDailyAggregator::class)->aggregateForImport($import);
 
             // Detection can take minutes on large data, so it runs off the web
-            // request as a queued job (requires a queue worker). Incremental by
-            // default — scans only the SKUs this import touched (the dirty keys
-            // recorded per chunk) — with the nightly full scan as backstop.
-            // afterCommit so a worker never reads rows before this import commits.
-            RunTenantDetectionJob::dispatch(
-                $import->tenant_id,
-                config('detection.import_trigger_mode', 'incremental')
-            )->afterCommit();
+            // request as a queued job (requires a queue worker). It populates
+            // anomalies + investigations, which the dashboards read.
+            \App\Jobs\RunTenantDetectionJob::dispatch($import->tenant_id);
         } catch (\Throwable $e) {
             Log::error('Post-import aggregation/detection dispatch failed', ['import_id' => $import->id, 'error' => $e->getMessage()]);
         }
@@ -596,6 +638,16 @@ class ImportProcessorService
     private function writeRow(Import $import, $columnMap, array $rawRow, int $rowNumber): void
     {
         $data = $this->applyMap($columnMap, $rawRow);
+
+        // Data Quality Firewall: cleanse + gate before the write. A rejected row is
+        // diverted to quarantine by the caller (which catches QuarantineException).
+        if ($fw = $this->firewall()) {
+            $screen = $fw->screen($import, $data);
+            if ($screen['reason'] !== null) {
+                throw new QuarantineException($screen['reason'], $screen['data']);
+            }
+            $data = $screen['data'];
+        }
 
         match ($import->data_type) {
             Import::TYPE_SALES           => $this->writeSalesTransaction($import, $data, $rowNumber),

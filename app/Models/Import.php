@@ -20,6 +20,7 @@ class Import extends Model
         'total_rows',
         'imported_rows',
         'failed_rows',
+        'quarantined_rows',
         'process_cursor',
         'error_message',
     ];
