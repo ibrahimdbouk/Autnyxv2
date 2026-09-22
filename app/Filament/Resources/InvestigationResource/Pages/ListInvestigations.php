@@ -37,6 +37,16 @@ class ListInvestigations extends ListRecords
     public string $ruleFilter    = '';
     #[Url(as: 'store')]
     public string $storeFilter   = '';
+    #[Url(as: 'conf')]
+    public string $confidenceFilter = '';
+    #[Url(as: 'team')]
+    public string $teamFilter    = '';
+    #[Url(as: 'from')]
+    public string $openedFrom    = '';
+    #[Url(as: 'to')]
+    public string $openedTo      = '';
+    #[Url(as: 'min')]
+    public string $minValue      = '';
     public string $sortField     = 'revenue_at_risk';
     public string $sortDir       = 'desc';
     public int    $perPage       = 25;
@@ -48,6 +58,27 @@ class ListInvestigations extends ListRecords
     public function updatingPriorityFilter(): void{ $this->currentPage = 1; }
     public function updatingRuleFilter(): void    { $this->currentPage = 1; }
     public function updatingStoreFilter(): void   { $this->currentPage = 1; }
+    public function updatingConfidenceFilter(): void { $this->currentPage = 1; }
+    public function updatingTeamFilter(): void    { $this->currentPage = 1; }
+    public function updatingOpenedFrom(): void    { $this->currentPage = 1; }
+    public function updatingOpenedTo(): void      { $this->currentPage = 1; }
+    public function updatingMinValue(): void      { $this->currentPage = 1; }
+
+    /** Clear every filter back to the default view. */
+    public function resetFilters(): void
+    {
+        $this->search = '';
+        $this->statusFilter = 'open';
+        $this->priorityFilter = '';
+        $this->ruleFilter = '';
+        $this->storeFilter = '';
+        $this->confidenceFilter = '';
+        $this->teamFilter = '';
+        $this->openedFrom = '';
+        $this->openedTo = '';
+        $this->minValue = '';
+        $this->currentPage = 1;
+    }
 
     // ── Feature 7 — bulk selection state ────────────────────────────────────────
     /** @var array<int,int> */
@@ -266,6 +297,25 @@ class ListInvestigations extends ListRecords
 
         if ($this->storeFilter) {
             $query->where('primary_store_id', $this->storeFilter);
+        }
+
+        if ($this->confidenceFilter) {
+            $query->where('ai_confidence', $this->confidenceFilter);
+        }
+
+        if ($this->teamFilter) {
+            $query->where('assigned_team_id', $this->teamFilter);
+        }
+
+        if ($this->openedFrom) {
+            $query->whereDate('opened_at', '>=', $this->openedFrom);
+        }
+        if ($this->openedTo) {
+            $query->whereDate('opened_at', '<=', $this->openedTo);
+        }
+
+        if ($this->minValue !== '' && is_numeric($this->minValue)) {
+            $query->where('revenue_at_risk', '>=', (float) $this->minValue);
         }
 
         return $query;

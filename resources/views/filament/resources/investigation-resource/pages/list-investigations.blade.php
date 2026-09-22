@@ -788,12 +788,41 @@ if ($selected) {
                     <option value="closed">Closed</option>
                     <option value="">All Statuses</option>
                 </select>
+                <select wire:model.live="ruleFilter" class="invs-select">
+                    <option value="">Signal type</option>
+                    @foreach($this->getAvailableRules() as $rk => $rl)
+                        <option value="{{ $rk }}">{{ $rl }}</option>
+                    @endforeach
+                </select>
+                <select wire:model.live="storeFilter" class="invs-select">
+                    <option value="">Store</option>
+                    @foreach($this->getAvailableStores() as $sid => $sname)
+                        <option value="{{ $sid }}">{{ $sname }}</option>
+                    @endforeach
+                </select>
+                <select wire:model.live="confidenceFilter" class="invs-select">
+                    <option value="">Confidence</option>
+                    <option value="established">Established</option>
+                    <option value="probable">Probable</option>
+                    <option value="suspected">Suspected</option>
+                    <option value="unknown">Unknown</option>
+                </select>
+                <select wire:model.live="teamFilter" class="invs-select">
+                    <option value="">Team</option>
+                    @foreach($this->getAvailableTeams() as $tid => $tname)
+                        <option value="{{ $tid }}">{{ $tname }}</option>
+                    @endforeach
+                </select>
+                <input type="date" wire:model.live="openedFrom" class="invs-select" title="Opened from" />
+                <input type="date" wire:model.live="openedTo" class="invs-select" title="Opened to" />
+                <input type="number" min="0" step="any" wire:model.live.debounce.400ms="minValue" placeholder="Min value" class="invs-select" title="Minimum value at risk" />
                 <select wire:model.live="sortField" class="invs-select">
                     <option value="opened_at">Sort: Newest</option>
                     <option value="priority">Sort: Priority</option>
                     <option value="revenue_at_risk">Sort: Impact</option>
                     <option value="status">Sort: Status</option>
                 </select>
+                <button type="button" wire:click="resetFilters" class="invs-select" style="cursor:pointer;">Clear</button>
             </div>
         </div>
 
