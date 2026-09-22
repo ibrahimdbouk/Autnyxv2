@@ -41,7 +41,10 @@ use App\Services\Anomaly\RootCauseAnalysisService;
  */
 class DeepInvestigationService
 {
-    public function __construct(private RootCauseAnalysisService $rootCause) {}
+    public function __construct(
+        private RootCauseAnalysisService $rootCause,
+        private \App\Services\Anomaly\ReplenishmentRecommendationService $recommendations,
+    ) {}
 
     /**
      * Assemble every module for an investigation.
@@ -55,11 +58,13 @@ class DeepInvestigationService
     public function build(Investigation $investigation): array
     {
         return [
-            'cause_map'  => $this->causeMap($investigation),
-            'trail'      => $this->trail($investigation),
-            'confidence' => $this->confidence($investigation),
-            'evidence'   => $this->evidence($investigation),
-            'impact'     => $this->impact($investigation),
+            'cause_map'     => $this->causeMap($investigation),
+            'what_changed'  => $this->whatChanged($investigation),
+            'why_rec'       => $this->whyRecommendation($investigation),
+            'trail'         => $this->trail($investigation),
+            'confidence'    => $this->confidence($investigation),
+            'evidence'      => $this->evidence($investigation),
+            'impact'        => $this->impact($investigation),
         ];
     }
 
@@ -340,6 +345,150 @@ class DeepInvestigationService
         }
 
         return $out;
+    }
+
+    // =========================================================================
+    // MODULE — WHAT CHANGED (before/after from governed evidence)
+    // =========================================================================
+
+    /**
+     * The movement behind the signals: the time-series and baseline/threshold
+     * evidence already collected, surfaced as a before→after view. Extracts from
+     * InvestigationEvidence only — computes no new statistics.
+     */
+    private function whatChanged(Investigation $investigation): array
+    {
+        $evidence = $investigation->evidence;
+        if ($evidence->isEmpty()) {
+            return $this->unavailable('No before/after evidence has been captured yet. It is collected when the investigation is opened or narrated.');
+        }
+
+        // The clearest "what changed": a daily numeric series (e.g. daily sales).
+        $series = [];
+        $seriesLabel = null;
+        $seriesUnit = null;
+        foreach ($evidence as $e) {
+            if ($e->evidence_type === InvestigationEvidence::TYPE_DATA_POINT && is_array($e->value_json)) {
+                $numeric = array_filter($e->value_json, 'is_numeric');
+                if (count($numeric) >= 3) {
+                    foreach ($e->value_json as $k => $v) {
+                        if (is_numeric($v)) {
+                            $series[] = ['label' => $this->shortDay((string) $k), 'value' => (float) $v];
+                        }
+                    }
+                    $seriesLabel = $e->label;
+                    $seriesUnit = $e->unit;
+                    break;
+                }
+            }
+        }
+
+        // Baseline reference line for the series, if a baseline mean is on file.
+        $baseline = null;
+        foreach ($evidence as $e) {
+            if ($e->value_numeric !== null && stripos((string) $e->label, 'baseline mean') !== false) {
+                $baseline = (float) $e->value_numeric;
+                break;
+            }
+        }
+
+        // Change markers: the calculation / threshold evidence that quantifies the
+        // movement (z-score, days of cover, margin, return rate). Governed values.
+        $markers = [];
+        foreach ($evidence as $e) {
+            if (in_array($e->evidence_type, [InvestigationEvidence::TYPE_CALCULATION, InvestigationEvidence::TYPE_THRESHOLD_BREACH], true)) {
+                $markers[] = [
+                    'label'     => $e->label,
+                    'value'     => $e->getFormattedValue(),
+                    'direction' => $e->direction,
+                ];
+            }
+        }
+
+        $available = ! empty($series) || ! empty($markers);
+
+        return [
+            'available'    => $available,
+            'empty_reason' => $available ? null : 'The evidence on file does not yet describe a before/after movement.',
+            'series'       => $series,
+            'series_label' => $seriesLabel,
+            'series_unit'  => $seriesUnit,
+            'series_max'   => empty($series) ? 0 : max(array_column($series, 'value')),
+            'baseline'     => $baseline,
+            'markers'      => array_slice($markers, 0, 8),
+        ];
+    }
+
+    // =========================================================================
+    // MODULE — WHY THIS RECOMMENDATION (traces the recommendation's inputs)
+    // =========================================================================
+
+    /**
+     * For each prescriptive recommendation, the inputs that produced it: the
+     * derived target level, the recommended quantity, the supplier/route and lead
+     * time — from the recommendation payload and the governed replenishment
+     * target. Autnyx recommends only; it never executes.
+     */
+    private function whyRecommendation(Investigation $investigation): array
+    {
+        try {
+            $recs = $this->recommendations->forInvestigation($investigation);
+        } catch (\Throwable) {
+            $recs = [];
+        }
+
+        if (empty($recs)) {
+            return $this->unavailable('No prescriptive recommendation applies here. Recommendations are generated for stockout / safety-stock signals that have a derived replenishment target.');
+        }
+
+        $currency = $this->currencySymbol($investigation);
+        $anomalies = $investigation->anomalies->keyBy('id');
+
+        $items = [];
+        foreach ($recs as $r) {
+            $anomaly = isset($r['anomaly_id']) ? $anomalies->get($r['anomaly_id']) : null;
+            $derivation = null;
+            if ($anomaly && $anomaly->sku !== null) {
+                $rep = \App\Models\SkuReplenishment::where('tenant_id', $investigation->tenant_id)
+                    ->where('sku', $anomaly->sku)
+                    ->when($anomaly->store_id, fn ($q) => $q->where('store_id', $anomaly->store_id))
+                    ->first();
+                if ($rep) {
+                    $derivation = [
+                        'target'         => $rep->order_up_to !== null ? (int) round((float) $rep->order_up_to) : null,
+                        'reorder_point'  => $rep->reorder_point !== null ? (int) round((float) $rep->reorder_point) : null,
+                        'lead_time_days' => $rep->lead_time_days !== null ? (int) round((float) $rep->lead_time_days) : null,
+                        'supplier'       => $rep->supplier,
+                    ];
+                }
+            }
+
+            $items[] = [
+                'title'      => $r['title'] ?? ($r['label'] ?? 'Recommended action'),
+                'kind'       => $r['kind'] ?? 'action',
+                'qty'        => isset($r['qty']) ? (int) round((float) $r['qty']) : null,
+                'value'      => isset($r['value']) ? $currency . number_format((float) $r['value'], 0) : null,
+                'priority'   => $r['priority'] ?? null,
+                'rationale'  => $r['description'] ?? null,
+                'derivation' => $derivation,
+            ];
+        }
+
+        return [
+            'available'    => true,
+            'empty_reason' => null,
+            'items'        => $items,
+            'note'         => 'Autnyx recommends only — carry the action out in your own ERP/WMS. Adopting one logs a tracked action; nothing is transmitted.',
+        ];
+    }
+
+    private function shortDay(string $day): string
+    {
+        try {
+            return \Illuminate\Support\Carbon::parse($day)->format('M j');
+        } catch (\Throwable) {
+            return mb_substr($day, 0, 10);
+        }
     }
 
     // =========================================================================

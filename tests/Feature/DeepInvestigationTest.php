@@ -130,5 +130,50 @@ class DeepInvestigationTest extends TestCase
         $this->assertNotEmpty($deep['cause_map']['empty_reason']);
         $this->assertFalse($deep['evidence']['available']);
         $this->assertFalse($deep['impact']['available']);
+        // Slice 2 modules also degrade honestly.
+        $this->assertFalse($deep['what_changed']['available']);
+        $this->assertFalse($deep['why_rec']['available']);
+    }
+
+    public function test_what_changed_surfaces_series_and_shifts_from_evidence(): void
+    {
+        $tenant = $this->createTenant();
+        $inv = Investigation::factory()->create(['tenant_id' => $tenant->id]);
+        $a = $this->anomaly($inv, 'sales_drop', 'SKU-1', 900);
+
+        InvestigationEvidence::create([
+            'investigation_id' => $inv->id, 'anomaly_id' => $a->id,
+            'evidence_type' => InvestigationEvidence::TYPE_DATA_POINT,
+            'source' => 'sales_transactions', 'label' => 'Daily sales last 14 days',
+            'value_json' => ['2026-09-01' => 12, '2026-09-02' => 9, '2026-09-03' => 3, '2026-09-04' => 2],
+            'unit' => 'units/day', 'direction' => InvestigationEvidence::DIRECTION_SUPPORTS,
+            'strength' => InvestigationEvidence::STRENGTH_STRONG, 'observed_at' => now(),
+        ]);
+        InvestigationEvidence::create([
+            'investigation_id' => $inv->id, 'anomaly_id' => $a->id,
+            'evidence_type' => InvestigationEvidence::TYPE_CALCULATION,
+            'source' => 'sku_baselines', 'label' => 'Z-score of most recent day vs baseline',
+            'value_numeric' => -2.1, 'unit' => 'σ', 'direction' => InvestigationEvidence::DIRECTION_CONTRADICTS,
+            'strength' => InvestigationEvidence::STRENGTH_STRONG, 'observed_at' => now(),
+        ]);
+
+        $wc = app(DeepInvestigationService::class)->build($inv->fresh())['what_changed'];
+
+        $this->assertTrue($wc['available']);
+        $this->assertGreaterThanOrEqual(4, count($wc['series']));
+        $this->assertNotEmpty($wc['markers']);
+        $this->assertSame(12.0, $wc['series_max']);
+    }
+
+    public function test_why_recommendation_is_honest_when_no_target_exists(): void
+    {
+        $tenant = $this->createTenant();
+        $inv = Investigation::factory()->create(['tenant_id' => $tenant->id]);
+        $this->anomaly($inv, 'stockout_risk', 'SKU-1', 1200); // no SkuReplenishment target seeded
+
+        $wr = app(DeepInvestigationService::class)->build($inv->fresh())['why_rec'];
+
+        $this->assertFalse($wr['available'], 'with no derived target there is nothing to prescribe — say so, do not invent');
+        $this->assertNotEmpty($wr['empty_reason']);
     }
 }

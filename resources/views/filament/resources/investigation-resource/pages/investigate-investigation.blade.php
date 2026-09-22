@@ -850,6 +850,8 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
     @php($cf = $deep['confidence'] ?? [])
     @php($ev = $deep['evidence'] ?? [])
     @php($imp = $deep['impact'] ?? [])
+    @php($wc = $deep['what_changed'] ?? [])
+    @php($wr = $deep['why_rec'] ?? [])
     <style>
     .dinv-wrap { margin-top:1.75rem; }
     .dinv-head { display:flex; align-items:center; gap:.6rem; margin-bottom:.9rem; }
@@ -945,6 +947,21 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
     .dinv-bar-row .bar > span { display:block; height:100%; background:var(--ax-warning-fg,#d97706); border-radius:9999px; }
     .dinv-bar-row .amt { flex:0 0 auto; font-weight:700; color:var(--ax-ink,#111827); }
     .dinv-note { font-size:.73rem; color:var(--ax-faint,#6b7280); margin-top:.7rem; line-height:1.5; font-style:italic; }
+    /* What Changed */
+    .dinv-wc-head { font-size:.72rem; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:var(--ax-faint,#6b7280); margin-bottom:.5rem; }
+    .dinv-wc-head span { font-weight:600; text-transform:none; letter-spacing:0; }
+    .dinv-wc-chart { position:relative; display:flex; align-items:flex-end; gap:2px; height:120px; padding:.3rem .1rem; border-bottom:1px solid var(--ax-line,#e5e7eb); }
+    .dinv-wc-col { flex:1 1 0; height:100%; display:flex; align-items:flex-end; justify-content:center; min-width:3px; }
+    .dinv-wc-bar { width:100%; max-width:16px; background:var(--ax-accent-strong,#7c3aed); border-radius:2px 2px 0 0; opacity:.85; }
+    .dinv-wc-baseline { position:absolute; left:0; right:0; bottom:var(--wc-base,0%); border-top:1.5px dashed var(--ax-warning-fg,#b45309); }
+    .dinv-wc-baseline::after { content:'baseline'; position:absolute; right:0; top:-1.1rem; font-size:.62rem; color:var(--ax-warning-fg,#b45309); }
+    .dinv-wc-markers { display:flex; flex-wrap:wrap; gap:.4rem; margin-top:.9rem; }
+    /* Why This Recommendation */
+    .dinv-wr-item { border:1px solid var(--ax-line,#e5e7eb); border-radius:.6rem; padding:.75rem .9rem; margin-bottom:.6rem; }
+    .dinv-wr-title { font-weight:700; font-size:.85rem; color:var(--ax-ink,#111827); display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
+    .dinv-wr-rat { font-size:.8rem; color:var(--ax-text,#374151); line-height:1.5; margin-top:.4rem; }
+    .dinv-wr-deriv { display:flex; flex-wrap:wrap; gap:.35rem .9rem; margin-top:.55rem; font-size:.76rem; color:var(--ax-muted,#4b5563); }
+    .dinv-wr-deriv b { color:var(--ax-ink,#111827); }
     </style>
 
     {{-- NB: use inline php(...) directives only in this section — never a
@@ -1020,6 +1037,73 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                         <div class="dinv-explain">{{ $cm['inference']['explanation'] }}</div>
                     @endif
                     <div class="dinv-map-note">Head = the downstream effect; each bone is a cause category, and the nodes on it are the contributing signals. The highlighted node is the deterministic root cause (from the retail causal graph — the AI does not choose it). <strong>Click any node</strong> for its evidence and confidence.</div>
+                @endif
+            </div>
+        </details>
+
+        {{-- ── What Changed ──────────────────────────────────────────────── --}}
+        <details class="dinv-panel">
+            <summary>
+                <span>📈 What Changed</span>
+                @if(($wc['available'] ?? false) && !empty($wc['markers']))<span class="dinv-count">{{ count($wc['markers']) }} shifts</span>@endif
+                <span class="dinv-chev">▶</span>
+            </summary>
+            <div class="dinv-body">
+                @if(!($wc['available'] ?? false))
+                    <div class="dinv-empty">{{ $wc['empty_reason'] ?? 'Evidence unavailable.' }}</div>
+                @else
+                    @if(!empty($wc['series']))
+                        <div class="dinv-wc-head">{{ $wc['series_label'] }} @if($wc['series_unit'])<span>({{ $wc['series_unit'] }})</span>@endif</div>
+                        <div class="dinv-wc-chart" style="--wc-base:{{ ($wc['baseline'] && $wc['series_max'] > 0) ? round($wc['baseline'] / $wc['series_max'] * 100) : 0 }}%">
+                            @if($wc['baseline'])<div class="dinv-wc-baseline"></div>@endif
+                            @foreach($wc['series'] as $pt)
+                                <div class="dinv-wc-col" title="{{ $pt['label'] }}: {{ $pt['value'] }}">
+                                    <div class="dinv-wc-bar" style="height:{{ max(2, round($pt['value'] / max(0.001, $wc['series_max']) * 100)) }}%"></div>
+                                </div>
+                            @endforeach
+                        </div>
+                    @endif
+                    @if(!empty($wc['markers']))
+                        <div class="dinv-wc-markers">
+                            @foreach($wc['markers'] as $m)
+                                <span class="dinv-pill {{ $dirClass[$m['direction']] ?? 's-gray' }}">{{ $m['label'] }}: {{ $m['value'] }}</span>
+                            @endforeach
+                        </div>
+                    @endif
+                    <div class="dinv-note">Every value here is a governed evidence row — the observed series and the measured shifts against baseline. Nothing is modelled or predicted.</div>
+                @endif
+            </div>
+        </details>
+
+        {{-- ── Why This Recommendation ───────────────────────────────────── --}}
+        <details class="dinv-panel">
+            <summary>
+                <span>🧭 Why This Recommendation</span>
+                @if(($wr['available'] ?? false))<span class="dinv-count">{{ count($wr['items']) }}</span>@endif
+                <span class="dinv-chev">▶</span>
+            </summary>
+            <div class="dinv-body">
+                @if(!($wr['available'] ?? false))
+                    <div class="dinv-empty">{{ $wr['empty_reason'] ?? 'Evidence unavailable.' }}</div>
+                @else
+                    @foreach($wr['items'] as $it)
+                        <div class="dinv-wr-item">
+                            <div class="dinv-wr-title">
+                                {{ $it['title'] }}
+                                @if($it['priority'])<span class="dinv-pill {{ ['high'=>'s-danger','medium'=>'s-warning','low'=>'s-gray'][$it['priority']] ?? 's-gray' }}">{{ ucfirst($it['priority']) }}</span>@endif
+                            </div>
+                            @if($it['rationale'])<div class="dinv-wr-rat">{{ $it['rationale'] }}</div>@endif
+                            <div class="dinv-wr-deriv">
+                                @if($it['derivation'] && !is_null($it['derivation']['target']))<span>Target level: <b>{{ $it['derivation']['target'] }}</b></span>@endif
+                                @if($it['derivation'] && !is_null($it['derivation']['reorder_point']))<span>Reorder point: <b>{{ $it['derivation']['reorder_point'] }}</b></span>@endif
+                                @if(!is_null($it['qty']))<span>Recommended qty: <b>{{ $it['qty'] }}</b></span>@endif
+                                @if($it['value'])<span>Est. value: <b>{{ $it['value'] }}</b></span>@endif
+                                @if($it['derivation'] && !is_null($it['derivation']['lead_time_days']))<span>Lead time: <b>{{ $it['derivation']['lead_time_days'] }}d</b></span>@endif
+                                @if($it['derivation'] && $it['derivation']['supplier'])<span>Supplier: <b>{{ $it['derivation']['supplier'] }}</b></span>@endif
+                            </div>
+                        </div>
+                    @endforeach
+                    <div class="dinv-note">{{ $wr['note'] }}</div>
                 @endif
             </div>
         </details>
