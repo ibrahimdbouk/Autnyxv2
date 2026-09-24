@@ -42,6 +42,7 @@ class User extends Authenticatable implements FilamentUser, HasTenants, HasAppAu
             'email_verified_at' => 'datetime',
             'password'          => 'hashed',
             'is_super_admin'    => 'boolean',
+            'is_owner'          => 'boolean',
             'is_tenant_admin'   => 'boolean',
             'visible_screens'   => 'array',
             'last_login_at'     => 'datetime',
@@ -55,11 +56,14 @@ class User extends Authenticatable implements FilamentUser, HasTenants, HasAppAu
      * The protected platform owner — the single super-super-admin. Identified by
      * email (config/autnyx.php › owner_email) so it survives re-seeding.
      */
+    /**
+     * WP2.1 (audit M1): ownership is an immutable flag set only by the seeder /
+     * console — never derived from the (changeable) email address, so nobody can
+     * become owner by taking over the owner's email.
+     */
     public function isOwner(): bool
     {
-        $ownerEmail = strtolower(trim((string) config('autnyx.owner_email')));
-
-        return $ownerEmail !== '' && strtolower(trim((string) $this->email)) === $ownerEmail;
+        return (bool) ($this->is_owner ?? false);
     }
 
     /**
@@ -74,6 +78,12 @@ class User extends Authenticatable implements FilamentUser, HasTenants, HasAppAu
     protected static function booted(): void
     {
         static::saving(function (User $user): void {
+            // WP2.1: ownership can only be granted/removed outside the app (seeder /
+            // console, no authenticated actor). Any in-app change is reverted.
+            if ($user->isDirty('is_owner') && auth()->check()) {
+                $user->is_owner = (bool) ($user->getOriginal('is_owner') ?? false);
+            }
+
             // The owner is always a super admin — never demote them.
             if ($user->isOwner()) {
                 $user->is_super_admin = true;

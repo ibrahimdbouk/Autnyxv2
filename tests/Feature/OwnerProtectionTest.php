@@ -23,6 +23,7 @@ class OwnerProtectionTest extends TestCase
         $this->tenant = $this->createTenant();
         $this->owner = User::factory()->create([
             'email'          => config('autnyx.owner_email'),
+            'is_owner'       => true,
             'tenant_id'      => $this->tenant->id,
             'is_super_admin' => true,
         ]);

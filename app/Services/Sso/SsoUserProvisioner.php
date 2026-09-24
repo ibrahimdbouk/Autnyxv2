@@ -33,7 +33,7 @@ class SsoUserProvisioner
         }
 
         if (! $conn->permitsEmail($email)) {
-            throw new RuntimeException('This email domain is not permitted for single sign-on.');
+            throw new RuntimeException('This email domain is not verified for single sign-on.');
         }
 
         $shouldBeAdmin = $this->mapsToAdmin($conn, $claims);
@@ -42,6 +42,13 @@ class SsoUserProvisioner
             ->where('tenant_id', $conn->tenant_id)
             ->whereRaw('LOWER(email) = ?', [$email])
             ->first();
+
+        // WP2.1 (audit C5): platform administrators (super admins, the owner) are
+        // never reachable through a tenant's identity provider — a tenant must
+        // not be able to mint a session for them. They sign in with password + MFA.
+        if ($user !== null && ($user->is_super_admin || $user->isOwner())) {
+            throw new RuntimeException('Platform administrators must sign in with their password, not single sign-on.');
+        }
 
         if ($user !== null) {
             // Group claim may promote to admin; never auto-demote here.

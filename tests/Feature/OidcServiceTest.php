@@ -6,6 +6,7 @@ use App\Models\SsoConnection;
 use App\Models\Tenant;
 use App\Services\Sso\OidcService;
 use RuntimeException;
+use Tests\Concerns\FakeIdp;
 use Tests\TestCase;
 
 /**
@@ -14,6 +15,8 @@ use Tests\TestCase;
  */
 class OidcServiceTest extends TestCase
 {
+    use FakeIdp;
+
     private OidcService $oidc;
     private SsoConnection $conn;
 
@@ -28,6 +31,7 @@ class OidcServiceTest extends TestCase
             'issuer'                 => 'https://idp.test',
             'authorization_endpoint' => 'https://idp.test/authorize',
             'token_endpoint'         => 'https://idp.test/token',
+            'jwks_uri'               => 'https://idp.test/jwks',
             'client_id'              => 'client123',
             'client_secret'          => 'shh',
             'scopes'                 => 'openid email profile',
@@ -56,8 +60,9 @@ class OidcServiceTest extends TestCase
 
     public function test_claims_from_id_token_decodes_payload(): void
     {
-        $token = $this->jwt(['sub' => 'u1', 'email' => 'a@idp.test', 'nonce' => 'N']);
-        $claims = $this->oidc->claimsFromIdToken($token);
+        $this->fakeIdpEndpoints();
+        $token = $this->signedIdToken(['sub' => 'u1', 'email' => 'a@idp.test', 'nonce' => 'N']);
+        $claims = $this->oidc->claimsFromIdToken($token, $this->conn);
 
         $this->assertSame('u1', $claims['sub']);
         $this->assertSame('a@idp.test', $claims['email']);
@@ -115,5 +120,47 @@ class OidcServiceTest extends TestCase
         $raw = \Illuminate\Support\Facades\DB::table('sso_connections')->where('id', $this->conn->id)->value('client_secret');
         $this->assertNotSame('shh', $raw, 'secret must not be stored in plaintext');
         $this->assertSame('shh', $this->conn->fresh()->client_secret, 'and must decrypt back');
+    }
+
+    // ── WP2.1 (audit C5): signatures are verified ───────────────────────────
+
+    public function test_unsigned_or_forged_tokens_are_rejected(): void
+    {
+        $this->fakeIdpEndpoints();
+        $claims = ['sub' => 'u1', 'email' => 'boss@idp.test'];
+
+        $forger = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+        $cases = [
+            'no signature'   => $this->jwt($claims),
+            'alg none'       => $this->b64url(json_encode(['alg' => 'none'])) . '.' . $this->b64url(json_encode($claims)) . '.',
+            'HS256'          => $this->b64url(json_encode(['alg' => 'HS256', 'kid' => 'k1'])) . '.' . $this->b64url(json_encode($claims)) . '.' . $this->b64url(hash_hmac('sha256', 'x', 'shh', true)),
+            'wrong key'      => $this->signedIdToken($claims, 'k1', $forger),
+            'unknown kid'    => $this->signedIdToken($claims, 'other'),
+        ];
+
+        foreach ($cases as $label => $token) {
+            try {
+                $this->oidc->claimsFromIdToken($token, $this->conn);
+                $this->fail("{$label}: a token that is not signed by the IdP was accepted");
+            } catch (RuntimeException) {
+                $this->assertTrue(true);
+            }
+        }
+    }
+
+    public function test_tampered_payload_is_rejected(): void
+    {
+        $this->fakeIdpEndpoints();
+        [$h, , $s] = explode('.', $this->signedIdToken(['email' => 'user@idp.test']));
+        $tampered = $h . '.' . $this->b64url(json_encode(['email' => 'owner@idp.test'])) . '.' . $s;
+
+        $this->expectException(RuntimeException::class);
+        $this->oidc->claimsFromIdToken($tampered, $this->conn);
+    }
+
+    public function test_future_iat_is_rejected(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->oidc->validateIdToken(['iss' => 'https://idp.test', 'aud' => 'client123', 'exp' => time() + 600, 'iat' => time() + 3600, 'nonce' => 'N'], $this->conn, 'N');
     }
 }

@@ -45,12 +45,8 @@ class TenantOffboardingService
             return true;
         }
 
-        $ownerEmail = strtolower(trim((string) config('autnyx.owner_email')));
-
-        return $ownerEmail !== ''
-            && User::where('tenant_id', $tenant->id)
-                ->whereRaw('LOWER(email) = ?', [$ownerEmail])
-                ->exists();
+        // WP2.1: ownership is the immutable is_owner flag, not an email match.
+        return User::where('tenant_id', $tenant->id)->where('is_owner', true)->exists();
     }
 
     /**

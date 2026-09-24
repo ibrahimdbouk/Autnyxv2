@@ -39,12 +39,23 @@ class SsoConnection extends Model
         'enabled'          => 'boolean',
         'jit_provisioning' => 'boolean',
         'allowed_domains'  => 'array',
+        'verified_domains' => 'array',
         'client_secret'    => 'encrypted',
     ];
 
     protected $hidden = [
         'client_secret',
     ];
+
+    protected static function booted(): void
+    {
+        // WP2.1: a verified domain that is no longer allowed stops being verified.
+        static::saving(function (SsoConnection $c): void {
+            if ($c->isDirty('allowed_domains') && ! empty($c->verified_domains)) {
+                $c->verified_domains = array_values(array_intersect($c->verifiedDomains(), $c->allowedDomains()));
+            }
+        });
+    }
 
     public function tenant(): BelongsTo
     {
@@ -83,7 +94,22 @@ class SsoConnection extends Model
         )));
     }
 
-    /** Is this email's domain permitted to sign in through this connection? */
+    /** Domains this connection has PROVEN it owns (DNS TXT) — a subset of the allowed ones. */
+    public function verifiedDomains(): array
+    {
+        $allowed = $this->allowedDomains();
+
+        return array_values(array_filter(array_map(
+            fn ($d) => strtolower(trim((string) $d)),
+            $this->verified_domains ?? []
+        ), fn ($d) => $d !== '' && in_array($d, $allowed, true)));
+    }
+
+    /**
+     * Is this email's domain permitted to sign in through this connection?
+     * WP2.1 (audit M8): only VERIFIED domains — there is no "any domain" mode,
+     * so a connection can never sign in people from a domain it does not own.
+     */
     public function permitsEmail(?string $email): bool
     {
         $email = strtolower(trim((string) $email));
@@ -91,13 +117,8 @@ class SsoConnection extends Model
             return false;
         }
 
-        $domains = $this->allowedDomains();
-        if ($domains === []) {
-            return true; // no restriction configured
-        }
-
         $domain = substr($email, strpos($email, '@') + 1);
 
-        return in_array($domain, $domains, true);
+        return in_array($domain, $this->verifiedDomains(), true);
     }
 }

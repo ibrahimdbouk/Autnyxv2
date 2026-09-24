@@ -15,17 +15,17 @@ use RuntimeException;
  * authorization-code flow: discover endpoints → redirect to the IdP → exchange
  * the code for tokens over a TLS back-channel → read the ID-token claims.
  *
- * ID-token handling: the token is obtained directly from the IdP's token
- * endpoint over TLS with client authentication, so per OIDC Core §3.1.3.7 the
- * client MAY rely on the transport channel rather than re-verifying the JWT
- * signature. We still validate the security-critical claims (iss, aud, exp,
- * nonce). Full JWKS/RS256 signature verification is a documented hardening
- * follow-up, not a correctness gap for this flow.
+ * ID-token handling (WP2.1 / audit C5): the JWS signature is ALWAYS verified
+ * against the issuer's JSON Web Key Set (IdTokenVerifier), then the
+ * security-critical claims (iss, aud, exp, iat/nbf, nonce) are validated.
+ * Relying on the TLS back-channel alone was not enough, because the token
+ * endpoint is configurable.
  */
 class OidcService
 {
     private const DISCOVERY_TTL = 3600; // seconds
-    private const LEEWAY = 60;           // clock-skew allowance for exp (seconds)
+    private const JWKS_TTL      = 3600; // seconds
+    private const LEEWAY = 60;           // clock-skew allowance for exp/iat/nbf (seconds)
 
     /**
      * Resolve the IdP endpoints — explicit column overrides win, otherwise the
@@ -126,25 +126,33 @@ class OidcService
     }
 
     /**
-     * Decode the ID-token payload claims (no signature check — see class note).
+     * Verify the ID token's signature against the IdP's JWKS and return its
+     * claims. Throws on any signature problem — never returns unverified claims.
      *
      * @return array<string,mixed>
      */
-    public function claimsFromIdToken(string $idToken): array
+    public function claimsFromIdToken(string $idToken, SsoConnection $conn): array
     {
-        $parts = explode('.', $idToken);
-        if (count($parts) < 2) {
-            throw new RuntimeException('Malformed ID token.');
+        $jwksUri = $this->endpoints($conn)['jwks_uri'] ?? null;
+        if (empty($jwksUri)) {
+            throw new RuntimeException('The identity provider publishes no signing keys (jwks_uri); cannot verify the ID token.');
         }
 
-        $payload = $this->base64UrlDecode($parts[1]);
-        $claims  = json_decode($payload, true);
+        return app(IdTokenVerifier::class)->verify($idToken, function (bool $refresh) use ($jwksUri): array {
+            $key = 'oidc_jwks_' . md5($jwksUri);
+            if ($refresh) {
+                Cache::forget($key);
+            }
 
-        if (! is_array($claims)) {
-            throw new RuntimeException('ID token payload is not valid JSON.');
-        }
+            return Cache::remember($key, self::JWKS_TTL, function () use ($jwksUri) {
+                $resp = Http::acceptJson()->timeout(10)->withoutRedirecting()->get($jwksUri);
+                if (! $resp->successful()) {
+                    throw new RuntimeException("Could not fetch the identity provider's signing keys ({$resp->status()}).");
+                }
 
-        return $claims;
+                return (array) $resp->json();
+            });
+        });
     }
 
     /**
@@ -173,6 +181,14 @@ class OidcService
             throw new RuntimeException('ID token has expired.');
         }
 
+        // Issued-at / not-before must not be in the future (beyond clock skew).
+        if (isset($claims['iat']) && (int) $claims['iat'] > time() + self::LEEWAY) {
+            throw new RuntimeException('ID token was issued in the future.');
+        }
+        if (isset($claims['nbf']) && (int) $claims['nbf'] > time() + self::LEEWAY) {
+            throw new RuntimeException('ID token is not valid yet.');
+        }
+
         // Nonce — replay protection tied to the session that started the flow.
         if (! isset($claims['nonce']) || ! hash_equals($expectedNonce, (string) $claims['nonce'])) {
             throw new RuntimeException('ID token nonce mismatch.');
@@ -194,20 +210,5 @@ class OidcService
         $resp = Http::withToken($accessToken)->acceptJson()->timeout(10)->get($endpoint);
 
         return $resp->successful() ? (array) $resp->json() : [];
-    }
-
-    private function base64UrlDecode(string $data): string
-    {
-        $remainder = strlen($data) % 4;
-        if ($remainder) {
-            $data .= str_repeat('=', 4 - $remainder);
-        }
-
-        $decoded = base64_decode(strtr($data, '-_', '+/'), true);
-        if ($decoded === false) {
-            throw new RuntimeException('ID token segment is not valid base64url.');
-        }
-
-        return $decoded;
     }
 }

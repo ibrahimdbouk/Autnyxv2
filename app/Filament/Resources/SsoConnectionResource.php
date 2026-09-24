@@ -133,8 +133,9 @@ class SsoConnectionResource extends Resource
                         ->default(true),
 
                     Textarea::make('allowed_domains')
-                        ->label('Allowed email domains')
-                        ->helperText('One per line, e.g. acme.com. Required for email-based org discovery; leave blank to allow any domain the IdP returns.')
+                        ->label('Email domains')
+                        ->required()
+                        ->helperText('One per line, e.g. acme.com. Each domain must be verified (DNS TXT record, below) before anyone from it can sign in with SSO.')
                         ->rows(3)
                         ->formatStateUsing(fn ($state) => is_array($state) ? implode("\n", $state) : (string) ($state ?? ''))
                         ->dehydrateStateUsing(fn ($state) => collect(preg_split('/[\s,]+/', (string) $state))
@@ -155,8 +156,28 @@ class SsoConnectionResource extends Resource
                         ->maxLength(255),
                 ])->columns(2),
 
+            // WP2.1 (audit M8): prove domain ownership.
+            Section::make('Domain verification')
+                ->description('Add this TXT record to the DNS of every domain above, then use "Verify domains" on this page. A domain can be verified by one organisation only.')
+                ->visible(fn (string $operation) => $operation === 'edit')
+                ->schema([
+                    Placeholder::make('txt_record')
+                        ->label('TXT record value')
+                        ->content(fn (?SsoConnection $record) => $record
+                            ? app(\App\Services\Sso\SsoDomainVerifier::class)->expectedTxt($record)
+                            : '—'),
+                    Placeholder::make('verified')
+                        ->label('Verified domains')
+                        ->content(fn (?SsoConnection $record) => $record && $record->verifiedDomains() !== []
+                            ? implode(', ', $record->verifiedDomains())
+                            : 'None yet — SSO sign-in is inactive until a domain is verified.'),
+                ])->columns(2),
+
+            // WP2.1 (audit C5): endpoint overrides redirect the whole trust chain
+            // (token endpoint, signing keys), so only platform super admins may set them.
             Section::make('Advanced — endpoint overrides')
-                ->description('Only needed when the IdP has no discovery document. Blank fields are resolved from the issuer.')
+                ->description('Only needed when the IdP has no discovery document. Blank fields are resolved from the issuer. Platform administrators only.')
+                ->visible(fn () => (bool) auth()->user()?->is_super_admin)
                 ->collapsed()
                 ->schema([
                     TextInput::make('discovery_url')->label('Discovery URL')->url()->maxLength(255),

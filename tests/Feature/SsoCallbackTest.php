@@ -7,6 +7,7 @@ use App\Models\SsoConnection;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Support\Facades\Http;
+use Tests\Concerns\FakeIdp;
 use Tests\TestCase;
 
 /**
@@ -16,6 +17,8 @@ use Tests\TestCase;
  */
 class SsoCallbackTest extends TestCase
 {
+    use FakeIdp;
+
     private Tenant $tenant;
 
     protected function setUp(): void
@@ -28,11 +31,12 @@ class SsoCallbackTest extends TestCase
             'issuer'                 => 'https://idp.test',
             'authorization_endpoint' => 'https://idp.test/authorize',
             'token_endpoint'         => 'https://idp.test/token',
+            'jwks_uri'               => 'https://idp.test/jwks',
             'client_id'              => 'client123',
             'client_secret'          => 'secret',
             'jit_provisioning'       => true,
             'allowed_domains'        => ['acme.com'],
-        ]);
+        ])->forceFill(['verified_domains' => ['acme.com']])->save(); // never mass-assignable
     }
 
     private function jwt(array $claims): string
@@ -47,7 +51,7 @@ class SsoCallbackTest extends TestCase
         $nonce = 'nonce-xyz';
         $state = 'state-abc';
 
-        $idToken = $this->jwt([
+        $idToken = $this->signedIdToken([
             'iss'   => 'https://idp.test',
             'aud'   => 'client123',
             'exp'   => time() + 600,
@@ -56,7 +60,7 @@ class SsoCallbackTest extends TestCase
             'name'  => 'SSO User',
         ]);
 
-        Http::fake([
+        $this->fakeIdpEndpoints('https://idp.test', [
             'https://idp.test/token' => Http::response(['id_token' => $idToken, 'access_token' => 'a']),
         ]);
 
@@ -101,5 +105,59 @@ class SsoCallbackTest extends TestCase
         $response = $this->get('/sso/acme/redirect');
         $response->assertRedirect(route('sso.start'));
         $this->assertGuest();
+    }
+
+    // ── WP2.1 ────────────────────────────────────────────────────────────────
+
+    private function callbackAs(string $email, ?string $idToken = null)
+    {
+        $idToken ??= $this->signedIdToken([
+            'iss' => 'https://idp.test', 'aud' => 'client123', 'exp' => time() + 600,
+            'nonce' => 'n1', 'email' => $email, 'name' => 'X',
+        ]);
+        $this->fakeIdpEndpoints('https://idp.test', [
+            'https://idp.test/token' => Http::response(['id_token' => $idToken, 'access_token' => 'a']),
+        ]);
+
+        return $this->withSession(['sso_state' => 's1', 'sso_nonce' => 'n1'])
+            ->get('/sso/acme/callback?state=s1&code=c');
+    }
+
+    public function test_tenant_sso_can_never_sign_in_a_super_admin_or_owner(): void
+    {
+        auth()->logout();
+        $super = User::factory()->create(['tenant_id' => $this->tenant->id, 'email' => 'root@acme.com', 'is_super_admin' => true]);
+        $owner = User::factory()->create(['tenant_id' => $this->tenant->id, 'email' => 'owner@acme.com', 'is_owner' => true]);
+
+        $this->callbackAs('root@acme.com')->assertRedirect(route('sso.start'));
+        $this->assertGuest();
+        $this->callbackAs('owner@acme.com')->assertRedirect(route('sso.start'));
+        $this->assertGuest();
+    }
+
+    public function test_unverified_domain_cannot_sign_in(): void
+    {
+        $this->tenant->ssoConnection->forceFill(['allowed_domains' => ['acme.com', 'victim.com'], 'verified_domains' => ['acme.com']])->save();
+
+        $this->callbackAs('ceo@victim.com')->assertRedirect(route('sso.start'));
+        $this->assertGuest();
+        $this->assertNull(User::where('email', 'ceo@victim.com')->first());
+    }
+
+    public function test_forged_token_from_a_rogue_token_endpoint_is_rejected(): void
+    {
+        $rogue = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+        $forged = $this->signedIdToken(['iss' => 'https://idp.test', 'aud' => 'client123', 'exp' => time() + 600, 'nonce' => 'n1', 'email' => 'x@acme.com'], 'k1', $rogue);
+
+        $this->callbackAs('x@acme.com', $forged)->assertRedirect(route('sso.start'));
+        $this->assertGuest();
+    }
+
+    public function test_discovery_only_routes_verified_domains(): void
+    {
+        $this->tenant->ssoConnection->forceFill(['allowed_domains' => ['acme.com', 'claimed.com'], 'verified_domains' => ['acme.com']])->save();
+
+        $this->post('/sso/start', ['email' => 'a@claimed.com'])->assertRedirect(route('sso.start'));
+        $this->post('/sso/start', ['email' => 'a@acme.com'])->assertRedirect(route('sso.redirect', ['tenant' => 'acme']));
     }
 }

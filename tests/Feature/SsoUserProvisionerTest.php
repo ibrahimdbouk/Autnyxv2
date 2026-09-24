@@ -27,7 +27,7 @@ class SsoUserProvisionerTest extends TestCase
 
     private function connection(array $overrides = []): SsoConnection
     {
-        return SsoConnection::create(array_merge([
+        $conn = SsoConnection::create(array_merge([
             'tenant_id'        => $this->tenant->id,
             'enabled'          => true,
             'issuer'           => 'https://idp.test',
@@ -36,7 +36,13 @@ class SsoUserProvisionerTest extends TestCase
             'email_claim'      => 'email',
             'name_claim'       => 'name',
             'jit_provisioning' => true,
+            'allowed_domains'  => ['acme.com'],
         ], $overrides));
+
+        // WP2.1: sign-in requires a VERIFIED domain (never mass-assignable).
+        $conn->forceFill(['verified_domains' => ['acme.com']])->save();
+
+        return $conn;
     }
 
     public function test_matches_existing_user_case_insensitively(): void

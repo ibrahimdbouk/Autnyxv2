@@ -40,11 +40,12 @@ class SsoController extends Controller
         $email = strtolower(trim($data['email']));
         $domain = substr($email, strpos($email, '@') + 1);
 
+        // WP2.1 (audit M8): only a domain the tenant has PROVEN it owns routes here.
         $connection = SsoConnection::query()
             ->where('enabled', true)
-            ->whereNotNull('allowed_domains')
+            ->whereNotNull('verified_domains')
             ->get()
-            ->first(fn (SsoConnection $c) => in_array($domain, $c->allowedDomains(), true));
+            ->first(fn (SsoConnection $c) => in_array($domain, $c->verifiedDomains(), true));
 
         if ($connection === null) {
             return redirect()->route('sso.start')
@@ -121,7 +122,8 @@ class SsoController extends Controller
                 route('sso.callback', ['tenant' => $connection->tenant->slug]),
             );
 
-            $claims = $this->oidc->claimsFromIdToken($tokens['id_token']);
+            // WP2.1: signature verified against the IdP's JWKS before any claim is trusted.
+            $claims = $this->oidc->claimsFromIdToken($tokens['id_token'], $connection);
             $this->oidc->validateIdToken($claims, $connection, (string) $nonce);
 
             $user = $this->provisioner->resolve($connection, $claims);

@@ -54,28 +54,32 @@ class DatabaseSeeder extends Seeder
         //    deploy. If OWNER_PASSWORD is unset, a random one is used and the
         //    owner must reset it (they can never be locked out of the account
         //    itself, since it can't be deleted).
+        //    WP2.1: ownership is the immutable users.is_owner flag. Once an owner
+        //    exists it is kept as-is (even if they changed their email); the
+        //    configured email is only used to bootstrap the very first owner.
         $ownerEmail = config('autnyx.owner_email');
+        $owner = User::where('is_owner', true)->first();
 
-        if (! empty($ownerEmail)) {
-            $owner = User::firstOrCreate(
-                ['email' => $ownerEmail],
-                [
+        if ($owner === null && ! empty($ownerEmail)) {
+            $owner = User::whereRaw('LOWER(email) = ?', [strtolower(trim($ownerEmail))])->first()
+                ?? User::create([
+                    'email'             => $ownerEmail,
                     'name'              => 'Owner',
                     'password'          => Hash::make(env('OWNER_PASSWORD') ?: Str::random(24)),
                     'email_verified_at' => now(),
                     'tenant_id'         => $tenant->id,
                     'is_super_admin'    => true,
-                ]
-            );
-
-            // Always keep the owner a super admin and attached to the root tenant;
-            // never touch their password here.
-            if (! $owner->wasRecentlyCreated) {
-                $owner->update([
-                    'tenant_id'      => $owner->tenant_id ?: $tenant->id,
-                    'is_super_admin' => true,
                 ]);
-            }
+        }
+
+        // Always keep the owner a super admin and attached to a tenant; never
+        // touch their password here.
+        if ($owner !== null) {
+            $owner->forceFill([
+                'is_owner'       => true,
+                'is_super_admin' => true,
+                'tenant_id'      => $owner->tenant_id ?: $tenant->id,
+            ])->save();
         }
     }
 }
