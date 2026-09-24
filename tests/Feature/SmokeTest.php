@@ -46,9 +46,8 @@ class SmokeTest extends TestCase
     #[DataProvider('resourceProvider')]
     public function test_resource_index_page_does_not_500(string $resourceClass): void
     {
-        if (!class_exists($resourceClass)) {
-            $this->markTestSkipped("$resourceClass not found");
-        }
+        // WP1.5: a renamed/removed class must FAIL, not silently skip.
+        $this->assertTrue(class_exists($resourceClass), "$resourceClass not found — update the provider list");
 
         try {
             $url = $resourceClass::getUrl('index', ['tenant' => $this->tenant]);
@@ -71,9 +70,7 @@ class SmokeTest extends TestCase
     #[DataProvider('pageProvider')]
     public function test_custom_page_does_not_500(string $pageClass): void
     {
-        if (!class_exists($pageClass)) {
-            $this->markTestSkipped("$pageClass not found");
-        }
+        $this->assertTrue(class_exists($pageClass), "$pageClass not found — update the provider list");
 
         try {
             $url = $pageClass::getUrl(['tenant' => $this->tenant]);
@@ -88,6 +85,84 @@ class SmokeTest extends TestCase
             $status,
             "$pageClass returned HTTP $status (server error) at $url"
         );
+    }
+
+    /**
+     * WP1.5 (audit M27): the hand-maintained provider lists above had drifted —
+     * 13 resources/pages were never smoke-tested (which is how agent-page 500s
+     * shipped before). This walks EVERYTHING the admin panel actually registers,
+     * and requires a real 200 — not merely "not a 500".
+     */
+    public function test_every_registered_admin_panel_route_renders(): void
+    {
+        $panel = Filament::getPanel('admin');
+        $failures = [];
+        // Super-admin-only screens: a tenant admin must get 403 (checked below).
+        $superOnly = [\App\Filament\Resources\TenantResource::class, \App\Filament\Pages\UiKit::class];
+
+        foreach ($panel->getResources() as $resource) {
+            if (in_array($resource, $superOnly, true)) {
+                continue;
+            }
+            if (! array_key_exists('index', $resource::getPages())) {
+                continue;
+            }
+            $url = $resource::getUrl('index', ['tenant' => $this->tenant]);
+            $status = $this->get($url)->baseResponse->getStatusCode();
+            if ($status !== 200) {
+                $failures[] = "$resource → HTTP $status ($url)";
+            }
+        }
+
+        foreach ($panel->getPages() as $page) {
+            if (in_array($page, $superOnly, true)) {
+                continue;
+            }
+            $url = $page::getUrl(['tenant' => $this->tenant]);
+            $status = $this->get($url)->baseResponse->getStatusCode();
+            if ($status !== 200) {
+                $failures[] = "$page → HTTP $status ($url)";
+            }
+        }
+
+        $this->assertSame([], $failures, "Panel routes that do not render for a tenant admin:\n" . implode("\n", $failures));
+
+        $this->get(\App\Filament\Resources\TenantResource::getUrl('index', ['tenant' => $this->tenant]))->assertForbidden();
+        $this->get(\App\Filament\Pages\UiKit::getUrl(['tenant' => $this->tenant]))->assertForbidden();
+    }
+
+    /** Every Ops-console route must render for a super admin. */
+    public function test_every_registered_ops_panel_route_renders(): void
+    {
+        auth()->logout(); // only the owner (or console) may mint a super admin
+        $super = $this->createUser($this->tenant, superAdmin: true);
+        $this->actingAs($super);
+        $panel = Filament::getPanel('ops');
+        Filament::setCurrentPanel($panel);
+        $failures = [];
+
+        foreach ($panel->getResources() as $resource) {
+            if (! array_key_exists('index', $resource::getPages())) {
+                continue;
+            }
+            $url = $resource::getUrl('index', panel: 'ops');
+            $status = $this->get($url)->baseResponse->getStatusCode();
+            if ($status !== 200) {
+                $failures[] = "$resource → HTTP $status ($url)";
+            }
+        }
+        foreach ($panel->getPages() as $page) {
+            $url = $page::getUrl(panel: 'ops');
+            if ($page === \App\Filament\Ops\Pages\TenantProfile::class) {
+                $url .= '?tenant=' . $this->tenant->id; // record-style page: needs ?tenant=
+            }
+            $status = $this->get($url)->baseResponse->getStatusCode();
+            if ($status !== 200) {
+                $failures[] = "$page → HTTP $status ($url)";
+            }
+        }
+
+        $this->assertSame([], $failures, "Ops routes that do not render for a super admin:\n" . implode("\n", $failures));
     }
 
     /** The public landing route must render. */

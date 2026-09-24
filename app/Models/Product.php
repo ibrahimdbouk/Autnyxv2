@@ -29,6 +29,11 @@ class Product extends Model
         'gtin',
         'season',
         'status',
+        // Physical dimensions (2026-09-23).
+        'length_mm',
+        'width_mm',
+        'height_mm',
+        'volume_cm3',
     ];
 
     protected $casts = [
@@ -36,6 +41,10 @@ class Product extends Model
         'selling_price' => 'decimal:4',
         'weight_grams'  => 'decimal:2',
         'tax_rate'      => 'decimal:3',
+        'length_mm'     => 'decimal:2',
+        'width_mm'      => 'decimal:2',
+        'height_mm'     => 'decimal:2',
+        'volume_cm3'    => 'decimal:2',
     ];
 
     public function tenant(): BelongsTo
