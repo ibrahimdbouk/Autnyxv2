@@ -50,6 +50,15 @@ class ImportProcessorService
     /** Tenant the caches above were primed for. */
     private ?int $cachedTenantId = null;
 
+    /** WP3.1: receipt → last line number seen in this import (file order). */
+    private array $lineCounters = [];
+
+    /** WP3.1: receipts whose counters changed in the current chunk. */
+    private array $touchedReceipts = [];
+
+    /** WP3.1: set by writeSalesTransaction() when the line was already loaded. */
+    private bool $lastWriteWasDuplicate = false;
+
     /** Data Quality Firewall — resolved lazily, null when disabled via config. */
     private ?DataQualityFirewall $firewall = null;
     private bool $firewallResolved = false;
@@ -121,16 +130,20 @@ class ImportProcessorService
     {
         $retried = 0;
         $stillFailed = 0;
+        $duplicates = 0;
 
         foreach ($rows as $importRow) {
             $mappedData = $importRow->mapped_data ?? [];
 
             try {
                 DB::beginTransaction();
+                $this->lastWriteWasDuplicate = false;
                 $this->writeMappedData($import, $mappedData, $importRow->row_number);
                 DB::commit();
                 $importRow->delete();
-                $retried++;
+                // WP3.1: a line that turned out to be loaded already is resolved,
+                // but counted as a duplicate, not as a newly imported row.
+                $this->lastWriteWasDuplicate ? $duplicates++ : $retried++;
             } catch (\Throwable $e) {
                 DB::rollBack();
                 $importRow->update(['error_message' => $e->getMessage()]);
@@ -144,10 +157,11 @@ class ImportProcessorService
         $import->update([
             'failed_rows' => $remaining,
             'imported_rows' => $import->imported_rows + $retried,
+            'duplicate_rows' => (int) $import->duplicate_rows + $duplicates,
             'status' => $status,
         ]);
 
-        return ['retried' => $retried, 'still_failed' => $stillFailed];
+        return ['retried' => $retried, 'still_failed' => $stillFailed, 'duplicates' => $duplicates];
     }
 
     /**
@@ -260,6 +274,8 @@ class ImportProcessorService
             $imported    = 0;
             $failed      = 0;
             $quarantined = 0;
+            $duplicates  = 0;
+            $this->lineCounters = [];
 
             $this->firewall()?->begin($import);
 
@@ -279,9 +295,10 @@ class ImportProcessorService
             foreach ($allRows as $rowNumber => $rawRow) {
                 try {
                     DB::beginTransaction();
+                    $this->lastWriteWasDuplicate = false;
                     $this->writeRow($import, $columnMap, $rawRow, $rowNumber + 2); // +2 = 1-indexed + skip header
                     DB::commit();
-                    $imported++;
+                    $this->lastWriteWasDuplicate ? $duplicates++ : $imported++;
                 } catch (QuarantineException $q) {
                     DB::rollBack();
                     $quarantined++;
@@ -311,6 +328,7 @@ class ImportProcessorService
                 'imported_rows'    => $imported,
                 'failed_rows'      => $failed,
                 'quarantined_rows' => $quarantined,
+                'duplicate_rows'   => $duplicates,
             ]);
 
             // Slice 5 — learn this confirmed mapping for the next same-shaped import.
@@ -353,6 +371,7 @@ class ImportProcessorService
     public function startChunkedImport(Import $import): void
     {
         ImportRow::where('import_id', $import->id)->delete();
+        DB::table('import_line_counters')->where('import_id', $import->id)->delete(); // WP3.1
         // Fresh firewall run: drop any prior quarantine + quality for this import.
         QuarantinedRow::where('import_id', $import->id)->delete();
         ImportQuality::where('import_id', $import->id)->delete();
@@ -409,7 +428,15 @@ class ImportProcessorService
         $imported    = 0;
         $failed      = 0;
         $quarantined = 0;
+        $duplicates  = 0;
         $rowNumber   = $offset + 2; // 1-index + header row
+        $isSales     = $import->data_type === Import::TYPE_SALES;
+
+        // WP3.1: continue each receipt's line numbering from earlier chunks.
+        $mappedRows = array_map(fn ($r) => $this->applyMap($columnMap, $r), $chunk['rows']);
+        if ($isSales) {
+            $this->loadLineCounters($import, $mappedRows);
+        }
 
         $table    = $this->insertTableFor($import->data_type);
         $template = $table ? $this->insertTemplate($table) : [];
@@ -431,8 +458,11 @@ class ImportProcessorService
             return ['done' => true, 'processed' => (int) $import->total_rows, 'total' => (int) $import->total_rows];
         }
 
-        foreach ($chunk['rows'] as $rawRow) {
-            $data = $this->applyMap($columnMap, $rawRow);
+        foreach ($chunk['rows'] as $i => $rawRow) {
+            $data = $mappedRows[$i];
+            if ($isSales) {
+                $data = $this->numberLine($data);
+            }
 
             // Data Quality Firewall: cleanse + gate. Rejected rows are diverted to
             // quarantine and never reach the canonical tables.
@@ -479,14 +509,28 @@ class ImportProcessorService
         if ($table !== null && ! empty($batch)) {
             foreach (array_chunk($batch, self::INSERT_BATCH) as $slice) {
                 try {
-                    DB::table($table)->insert(array_column($slice, 'attrs'));
+                    if ($isSales) {
+                        // WP3.1: a (receipt, line) already loaded is skipped, not failed.
+                        $skipped = count($slice) - DB::table($table)->insertOrIgnore(array_column($slice, 'attrs'));
+                        $imported -= $skipped;
+                        $duplicates += $skipped;
+                    } else {
+                        DB::table($table)->insert(array_column($slice, 'attrs'));
+                    }
                 } catch (\Throwable $e) {
                     // A single bad value aborts the whole multi-row INSERT. Fall
                     // back to per-row so the good rows still land and the bad ones
                     // are captured in the failed-row ledger instead of vanishing.
                     foreach ($slice as $entry) {
                         try {
-                            DB::table($table)->insert($entry['attrs']);
+                            if ($isSales) {
+                                if (DB::table($table)->insertOrIgnore($entry['attrs']) === 0) {
+                                    $imported--;
+                                    $duplicates++;
+                                }
+                            } else {
+                                DB::table($table)->insert($entry['attrs']);
+                            }
                         } catch (\Throwable $rowError) {
                             $imported--;
                             $failed++;
@@ -527,6 +571,10 @@ class ImportProcessorService
 
         $this->firewall()?->recordChunk($import);
 
+        if ($isSales) {
+            $this->persistLineCounters($import);
+        }
+
         $newCursor = $offset + (int) $chunk['consumed'];
 
         $import->update([
@@ -534,6 +582,7 @@ class ImportProcessorService
             'imported_rows'    => $import->imported_rows + $imported,
             'failed_rows'      => $import->failed_rows + $failed,
             'quarantined_rows' => $import->quarantined_rows + $quarantined,
+            'duplicate_rows'   => (int) $import->duplicate_rows + $duplicates,
         ]);
 
         $done = $chunk['eof']
@@ -563,13 +612,15 @@ class ImportProcessorService
 
         $total = max(
             (int) $import->total_rows,
-            (int) $import->imported_rows + (int) $import->failed_rows
+            (int) $import->imported_rows + (int) $import->failed_rows + (int) $import->duplicate_rows
         );
 
         $import->update([
             'status'     => $status,
             'total_rows' => $total,
         ]);
+
+        DB::table('import_line_counters')->where('import_id', $import->id)->delete(); // WP3.1
 
         // Slice 5 — learn this confirmed mapping so the next same-shaped import auto-maps.
         try {
@@ -650,7 +701,7 @@ class ImportProcessorService
         return match ($table) {
             'sales_transactions' => [
                 'tenant_id' => null, 'import_id' => null, 'store_id' => null, 'product_id' => null,
-                'transaction_id' => null, 'date' => null, 'sku' => null, 'location' => null,
+                'transaction_id' => null, 'line_no' => null, 'row_hash' => null, 'date' => null, 'sku' => null, 'location' => null,
                 'quantity' => null, 'unit_price' => null, 'total_amount' => null, 'discount' => null, 'payment_method' => null,
             ],
             'inventory_levels' => [
@@ -691,6 +742,9 @@ class ImportProcessorService
     private function writeRow(Import $import, $columnMap, array $rawRow, int $rowNumber): void
     {
         $data = $this->applyMap($columnMap, $rawRow);
+        if ($import->data_type === Import::TYPE_SALES) {
+            $data = $this->numberLine($data);
+        }
 
         // Data Quality Firewall: cleanse + gate before the write. A rejected row is
         // diverted to quarantine by the caller (which catches QuarantineException).
@@ -715,18 +769,85 @@ class ImportProcessorService
         };
     }
 
+    /**
+     * WP3.1 (audit C2): a sales row is one receipt LINE. Always insert — never
+     * update another line of the same receipt. A (receipt, line) that is already
+     * loaded is skipped as a duplicate (idempotent re-import), not overwritten.
+     */
     private function writeSalesTransaction(Import $import, array $data, int $row): void
     {
         $attrs = $this->buildSalesTransactionAttrs($import, $data, $row);
 
-        $uniqueKey = array_filter(['tenant_id' => $attrs['tenant_id'], 'transaction_id' => $attrs['transaction_id']]);
-
-        if ($attrs['transaction_id'] && SalesTransaction::where($uniqueKey)->exists()) {
-            // Upsert by transaction_id
-            SalesTransaction::where($uniqueKey)->update($attrs);
-        } else {
-            SalesTransaction::create($attrs);
+        // A retried row from before line numbering (or from a path that did not
+        // number it) takes the receipt's next free line.
+        if ($attrs['transaction_id'] !== null && $attrs['line_no'] === null) {
+            $attrs['line_no'] = 1 + (int) SalesTransaction::where('tenant_id', $attrs['tenant_id'])
+                ->where('transaction_id', $attrs['transaction_id'])
+                ->max('line_no');
         }
+
+        $now = now();
+        $inserted = DB::table('sales_transactions')->insertOrIgnore($attrs + ['created_at' => $now, 'updated_at' => $now]);
+        $this->lastWriteWasDuplicate = $inserted === 0;
+    }
+
+    /**
+     * WP3.1 (D10): give a sales row its line number. A mapped `line_no` wins;
+     * otherwise the line is numbered by its order of appearance within its
+     * receipt in the file (1, 2, 3…), so the same receipt re-sent in the same
+     * order maps onto the same lines. Every row of a receipt advances the
+     * counter — also rows that later fail or are quarantined — so numbering
+     * depends only on the file, never on what happened to earlier rows.
+     */
+    private function numberLine(array $data): array
+    {
+        $receipt = trim((string) ($data['transaction_id'] ?? ''));
+        if ($receipt === '') {
+            return $data;
+        }
+
+        $this->lineCounters[$receipt] = ($this->lineCounters[$receipt] ?? 0) + 1;
+        $this->touchedReceipts[$receipt] = true;
+
+        if (trim((string) ($data['line_no'] ?? '')) === '') {
+            $data['line_no'] = (string) $this->lineCounters[$receipt];
+        }
+
+        return $data;
+    }
+
+    /** Load the counters of the receipts in this chunk that earlier chunks already saw. */
+    private function loadLineCounters(Import $import, array $mappedRows): void
+    {
+        $this->lineCounters = [];
+        $this->touchedReceipts = [];
+
+        $receipts = array_values(array_unique(array_filter(array_map(
+            fn ($d) => trim((string) ($d['transaction_id'] ?? '')),
+            $mappedRows
+        ), fn ($r) => $r !== '')));
+
+        foreach (array_chunk($receipts, 5000) as $slice) {
+            DB::table('import_line_counters')
+                ->where('import_id', $import->id)
+                ->whereIn('transaction_id', $slice)
+                ->pluck('last_line', 'transaction_id')
+                ->each(function ($last, $receipt) {
+                    $this->lineCounters[(string) $receipt] = (int) $last;
+                });
+        }
+    }
+
+    private function persistLineCounters(Import $import): void
+    {
+        $rows = [];
+        foreach (array_keys($this->touchedReceipts) as $receipt) {
+            $rows[] = ['import_id' => $import->id, 'transaction_id' => (string) $receipt, 'last_line' => $this->lineCounters[$receipt]];
+        }
+        foreach (array_chunk($rows, 2000) as $slice) {
+            DB::table('import_line_counters')->upsert($slice, ['import_id', 'transaction_id'], ['last_line']);
+        }
+        $this->touchedReceipts = [];
     }
 
     private function buildSalesTransactionAttrs(Import $import, array $data, int $row): array
@@ -744,10 +865,18 @@ class ImportProcessorService
             'quantity'       => $this->numeric($data['quantity'] ?? null, 'quantity', $row),
             'unit_price'     => isset($data['unit_price'])  ? $this->numericOrNull($data['unit_price'])  : null,
             'total_amount'   => isset($data['total_amount']) ? $this->numericOrNull($data['total_amount']) : null,
-            'transaction_id' => $data['transaction_id'] ?? null,
+            'transaction_id' => ($t = trim((string) ($data['transaction_id'] ?? ''))) !== '' ? $t : null,
+            'line_no'        => $this->lineNo($data['line_no'] ?? null, $row),
             'discount'       => isset($data['discount']) ? $this->numericOrNull($data['discount']) : null,
             'payment_method' => $data['payment_method'] ?? null,
         ];
+
+        // WP3.1: content fingerprint (receipt line excluded), for cross-import
+        // duplicate checks on rows that carry no receipt id.
+        $attrs['row_hash'] = hash('sha256', implode('|', [
+            $attrs['tenant_id'], $attrs['date'], mb_strtolower($attrs['sku']), mb_strtolower(trim((string) $attrs['location'])),
+            $attrs['quantity'], $attrs['unit_price'], $attrs['total_amount'], $attrs['transaction_id'],
+        ]));
 
         if ($location) {
             $attrs['store_id'] = $this->resolveStore($import->tenant_id, $location);
@@ -1036,6 +1165,20 @@ class ImportProcessorService
         }
 
         return $rows;
+    }
+
+    /** WP3.1: a receipt line number is a positive whole number, or absent. */
+    private function lineNo(mixed $value, int $row): ?int
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return null;
+        }
+        if (! preg_match('/^\d+(\.0+)?$/', $value) || (int) $value < 1) {
+            throw new \InvalidArgumentException("Row {$row}: line number '{$value}' must be a whole number of 1 or more.");
+        }
+
+        return (int) $value;
     }
 
     private function requireFields(array $data, array $fields, int $row): void

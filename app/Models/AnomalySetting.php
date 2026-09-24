@@ -265,7 +265,7 @@ class AnomalySetting extends Model
         ],
         'duplicate_transaction_ids' => [
             'label'              => 'Duplicate Transaction IDs',
-            'description'        => 'The same transaction ID appears more than once in sales data — likely a duplicate import.',
+            'description'        => 'The same receipt was loaded by more than one import — likely a duplicate import.',
             'severity'           => 'high',
             'tier'               => 'core',   // Requires: sales_transactions.transaction_id
             'default_thresholds' => [],

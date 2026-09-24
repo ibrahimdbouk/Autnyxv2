@@ -22,6 +22,12 @@
             </div>
         </div>
 
+        @if((int) $this->record->duplicate_rows > 0)
+            <p class="mt-4 text-sm text-gray-600 dark:text-gray-300">
+                {{ number_format($this->record->duplicate_rows) }} line(s) were already loaded by an earlier import and were skipped.
+            </p>
+        @endif
+
         @if($this->record->error_message)
             <div class="mt-4 rounded-md bg-red-50 dark:bg-red-900/20 p-3 text-sm text-red-700 dark:text-red-300">
                 <strong>Error:</strong> {{ $this->record->error_message }}

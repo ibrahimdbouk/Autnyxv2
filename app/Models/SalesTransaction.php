@@ -16,6 +16,8 @@ class SalesTransaction extends Model
         'store_id',
         'product_id',
         'transaction_id',
+        'line_no',   // WP3.1: identity is (tenant, transaction_id, line_no)
+        'row_hash',
         'date',
         'sku',
         'location',

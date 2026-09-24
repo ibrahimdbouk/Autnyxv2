@@ -2887,19 +2887,29 @@ class AnomalyDetectionService
         }
     }
 
+    /**
+     * WP3.1 (audit C2): each receipt LINE is its own row now, so a receipt id on
+     * several rows is normal and a re-sent (receipt, line) is skipped at import.
+     * The remaining duplicate-load signal is a receipt whose lines arrived
+     * through more than one import (the same sales loaded twice with different
+     * line numbering). Newest first, capped per run.
+     */
     private function detectDuplicateTransactionIds(int $tenantId): void
     {
         $duplicates = SalesTransaction::where('tenant_id', $tenantId)
             ->whereNotNull('transaction_id')
-            ->selectRaw('transaction_id, COUNT(*) as cnt, MIN(sku) as sku')
+            ->whereNotNull('import_id')
+            ->selectRaw('transaction_id, COUNT(*) as cnt, COUNT(DISTINCT import_id) as imports, MIN(sku) as sku')
             ->groupBy('transaction_id')
-            ->havingRaw('COUNT(*) > 1')    // PostgreSQL does not support alias references in HAVING
+            ->havingRaw('COUNT(DISTINCT import_id) > 1')    // PostgreSQL does not support alias references in HAVING
+            ->orderByRaw('MAX(id) DESC')
+            ->limit(50)
             ->get();
 
         foreach ($duplicates as $dup) {
             $this->flag($tenantId, 'duplicate_transaction_ids', 'high', $dup->sku, null, null,
-                "Transaction ID '{$dup->transaction_id}' appears {$dup->cnt} times in sales data — possible duplicate import.",
-                ['transaction_id' => $dup->transaction_id, 'count' => $dup->cnt]
+                "Receipt '{$dup->transaction_id}' was loaded by {$dup->imports} different imports ({$dup->cnt} lines) — possible duplicate import.",
+                ['transaction_id' => $dup->transaction_id, 'count' => $dup->cnt, 'imports' => $dup->imports]
             );
         }
     }

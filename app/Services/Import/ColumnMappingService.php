@@ -157,6 +157,8 @@ PROMPT;
     // Fuzzy fallback (no API key required)
     // ─────────────────────────────────────────────────────────────────────────
 
+    private const EXACT_ONLY = ['line_no'];
+
     private function mapWithFuzzy(array $headers, array $schema): array
     {
         $targetFields = array_keys($schema);
@@ -174,6 +176,12 @@ PROMPT;
                     $bestField = $field;
                     $bestScore = 1.0;
                     break;
+                }
+
+                // WP3.1: some fields only ever match their exact header — a
+                // fuzzy score would map "Line Total" onto line_no, for example.
+                if (in_array($field, self::EXACT_ONLY, true)) {
+                    continue;
                 }
 
                 // Alias matching

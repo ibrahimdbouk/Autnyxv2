@@ -67,36 +67,28 @@ class AnomalyDetectionTest extends TestCase
     }
 
     /**
-     * Duplicate transaction IDs are PREVENTED at the storage layer, not flagged after the fact.
-     *
-     * The import writer upserts by (tenant_id, transaction_id) and the table carries a
-     * `unique_tenant_transaction` constraint, so the same transaction_id can never land twice
-     * for a tenant. That guarantee is the real protection against double-counted revenue —
-     * which is why the `duplicate_transaction_ids` detection rule can never observe a duplicate
-     * in stored sales. This test asserts the guarantee that actually holds.
-     *
-     * (Product note: the `duplicate_transaction_ids` rule is therefore unreachable as wired
-     * today. Retire it, or rework it to detect repeats in the raw import feed — a decision
-     * flagged separately.)
+     * WP3.1 (audit C2): identity is the receipt LINE — (tenant, transaction_id,
+     * line_no). Several lines of one receipt are stored; the same line twice is
+     * rejected by the database. (The old one-row-per-receipt constraint silently
+     * dropped or overwrote every extra line of a multi-line receipt.)
      */
-    public function test_duplicate_transaction_ids_are_prevented(): void
+    public function test_duplicate_receipt_lines_are_prevented_but_multi_line_receipts_are_kept(): void
     {
         $tenant = $this->createTenant();
         $dupId  = 'TXN-DUPE-001';
 
-        SalesTransaction::factory()->create([
-            'tenant_id'      => $tenant->id,
-            'sku'            => 'SKU-DUPE',
-            'transaction_id' => $dupId,
-        ]);
+        foreach ([1, 2] as $line) {
+            SalesTransaction::factory()->create([
+                'tenant_id' => $tenant->id, 'sku' => 'SKU-DUPE', 'transaction_id' => $dupId, 'line_no' => $line,
+            ]);
+        }
+        $this->assertSame(2, SalesTransaction::where('transaction_id', $dupId)->count());
 
-        // A second transaction with the same id for the same tenant must be rejected.
+        // The same line of the same receipt must be rejected.
         $this->expectException(\Illuminate\Database\QueryException::class);
 
         SalesTransaction::factory()->create([
-            'tenant_id'      => $tenant->id,
-            'sku'            => 'SKU-DUPE',
-            'transaction_id' => $dupId,
+            'tenant_id' => $tenant->id, 'sku' => 'SKU-DUPE', 'transaction_id' => $dupId, 'line_no' => 2,
         ]);
     }
 

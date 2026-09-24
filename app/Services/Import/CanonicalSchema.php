@@ -42,7 +42,8 @@ class CanonicalSchema
             'quantity'       => ['label' => 'Quantity',       'description' => 'Number of units sold',                      'required' => true],
             'unit_price'     => ['label' => 'Unit Price',     'description' => 'Price per unit sold',                       'required' => false],
             'total_amount'   => ['label' => 'Total Amount',   'description' => 'Total net revenue or sales amount for the row', 'required' => false],
-            'transaction_id' => ['label' => 'Transaction ID', 'description' => 'Unique identifier for the transaction',     'required' => false],
+            'transaction_id' => ['label' => 'Transaction ID', 'description' => 'Receipt / transaction number (shared by every line of the receipt)', 'required' => false],
+            'line_no'        => ['label' => 'Line Number',    'description' => 'Line number within the receipt (1, 2, 3…). Optional: derived from file order when not mapped', 'required' => false],
             'discount'       => ['label' => 'Discount',       'description' => 'Discount amount applied on the row',       'required' => false],
             'payment_method' => ['label' => 'Payment Method', 'description' => 'Payment type, e.g. cash, card, wallet',    'required' => false],
         ];

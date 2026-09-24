@@ -52,6 +52,12 @@
                 </div>
             </div>
 
+            @if ((int) $this->record->duplicate_rows > 0)
+                <p class="mt-4 text-sm text-gray-600 dark:text-gray-300">
+                    {{ number_format($this->record->duplicate_rows) }} line(s) were already loaded and were skipped.
+                </p>
+            @endif
+
             @if ($this->record->failed_rows > 0)
                 <p class="mt-4 text-sm text-warning-600 dark:text-warning-400">
                     {{ number_format($this->record->failed_rows) }} row(s) couldn't be imported and will be listed for review.

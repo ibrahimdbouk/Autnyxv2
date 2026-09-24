@@ -21,6 +21,7 @@ class Import extends Model
         'imported_rows',
         'failed_rows',
         'quarantined_rows',
+        'duplicate_rows', // WP3.1: lines already loaded, skipped (not an error)
         'process_cursor',
         'error_message',
     ];
