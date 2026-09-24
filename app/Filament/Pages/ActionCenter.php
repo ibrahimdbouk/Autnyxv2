@@ -49,6 +49,7 @@ class ActionCenter extends Page
     public string $priorityFilter= '';
     public string $sortField     = 'due_at';
     public string $sortDir       = 'asc';
+    #[\Livewire\Attributes\Locked] // WP2.5: not client-settable (a tampered 10^7 page size)
     public int    $perPage       = 25;
     public int    $currentPage   = 1;
 
@@ -350,7 +351,7 @@ class ActionCenter extends Page
             $query->orderBy($field, $dir);
         }
 
-        return $query->paginate($this->perPage, ['*'], 'ac_page', $this->currentPage);
+        return $query->paginate($this->perPage, ['*'], 'ac_page', max(1, $this->currentPage));
     }
 
     public function getSelectedAction(): ?Action

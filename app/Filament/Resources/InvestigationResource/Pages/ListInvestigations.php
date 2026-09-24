@@ -49,6 +49,7 @@ class ListInvestigations extends ListRecords
     public string $minValue      = '';
     public string $sortField     = 'revenue_at_risk';
     public string $sortDir       = 'desc';
+    #[\Livewire\Attributes\Locked] // WP2.5: not client-settable (a tampered 10^7 page size)
     public int    $perPage       = 25;
     public int    $currentPage   = 1;
 
@@ -346,7 +347,7 @@ class ListInvestigations extends ListRecords
             $query->orderBy($sortField, $sortDir);
         }
 
-        return $query->paginate($this->perPage, ['*'], 'inv_page', $this->currentPage);
+        return $query->paginate($this->perPage, ['*'], 'inv_page', max(1, $this->currentPage));
     }
 
     public function getOpenCount(): int
