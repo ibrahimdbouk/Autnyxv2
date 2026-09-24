@@ -6,6 +6,7 @@ use App\Models\DetectionDirtyKey;
 use App\Models\Tenant;
 use App\Services\Anomaly\AnomalyDetectionService;
 use App\Services\Anomaly\InvestigationCorrelationService;
+use Illuminate\Support\Facades\Log;
 
 /**
  * The single per-tenant detection orchestration: detect → correlate, then (for
@@ -39,6 +40,16 @@ class TenantDetectionRunner
     public function run(int $tenantId, ?string $mode = null): void
     {
         $mode = $mode ?: config('detection.mode', 'full');
+
+        // WP1.2 (audit C3): if a live import means we must wait, do NOTHING —
+        // keep the dirty-key queue and do not stamp the watermark, so the
+        // deferred change set is picked up by the next run and "last detection"
+        // never claims a scan that did not happen.
+        if (($reason = $this->detector->pendingImportBlock($tenantId)) !== null) {
+            Log::warning("[detect] tenant {$tenantId}: run deferred ({$mode}) — {$reason}; dirty keys and watermark kept.");
+
+            return;
+        }
 
         if ($mode === 'aggregate') {
             $this->detector->runForTenant($tenantId, null, true);

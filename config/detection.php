@@ -50,4 +50,21 @@ return [
 
     'import_trigger_mode' => env('DETECTION_IMPORT_MODE', 'incremental'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Pending-import guard (WP1.2 / audit C3)
+    |--------------------------------------------------------------------------
+    |
+    | Detection defers while a tenant has an import that could leave it reading
+    | half-loaded data — but only for a bounded time, so an abandoned upload can
+    | never silently switch detection off:
+    |   • importing                 → blocks while updated within N minutes
+    |   • uploaded / mapping_review → blocks while created within N hours
+    |     (e.g. part 2 of a two-file sales load still being mapped); after that
+    |     imports:expire-abandoned marks them "abandoned" and detection proceeds.
+    */
+
+    'import_block_minutes'      => (int) env('DETECTION_IMPORT_BLOCK_MINUTES', 30),
+    'pending_import_block_hours' => (int) env('DETECTION_PENDING_IMPORT_BLOCK_HOURS', 24),
+
 ];

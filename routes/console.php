@@ -46,3 +46,9 @@ Schedule::command('queue:tidy-tail')
 Schedule::command('api:poll')
     ->hourly()
     ->withoutOverlapping();
+
+// WP1.2 (audit C3) — retire uploads left awaiting review so they can never hold
+// detection back indefinitely (detection only waits for them for 24h anyway).
+Schedule::command('imports:expire-abandoned')
+    ->hourly()
+    ->withoutOverlapping();

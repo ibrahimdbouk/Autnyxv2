@@ -16,7 +16,6 @@ use App\Models\SalesTransaction;
 use App\Models\Store;
 use App\Models\Supplier;
 use App\Models\User;
-use App\Services\Anomaly\AnomalyDetectionService;
 use App\Services\DataQuality\DataQualityFirewall;
 use App\Services\DataQuality\QuarantineException;
 use Carbon\Carbon;
@@ -322,11 +321,17 @@ class ImportProcessorService
             // Record an IngestionRun so Data Health sees this ingestion.
             $this->recordIngestionRun($import, $total, $imported, $failed, $startedAt);
 
-            // Run anomaly detection after every completed import
+            // WP1.2 (audit H1): restore async detection. This path (SFTP / API /
+            // public ingest) used to run a full tenant scan inline — inside the
+            // hourly scheduler or an HTTP request. Keep sales_daily current, then
+            // queue a run. Mode = the configured detection.mode (full by default):
+            // this path does not record dirty keys, so an incremental run would
+            // see no change set. afterCommit so a worker never reads uncommitted rows.
             try {
-                app(AnomalyDetectionService::class)->runForTenant($import->tenant_id);
+                app(\App\Services\Sales\SalesDailyAggregator::class)->aggregateForImport($import);
+                \App\Jobs\RunTenantDetectionJob::dispatch($import->tenant_id)->afterCommit();
             } catch (\Throwable $e) {
-                Log::error('Anomaly detection failed after import', ['import_id' => $import->id, 'error' => $e->getMessage()]);
+                Log::error('Post-import aggregation/detection dispatch failed', ['import_id' => $import->id, 'error' => $e->getMessage()]);
             }
         } catch (\Throwable $e) {
             Log::error('Import processing failed', ['import_id' => $import->id, 'error' => $e->getMessage()]);
@@ -585,9 +590,15 @@ class ImportProcessorService
             app(\App\Services\Sales\SalesDailyAggregator::class)->aggregateForImport($import);
 
             // Detection can take minutes on large data, so it runs off the web
-            // request as a queued job (requires a queue worker). It populates
-            // anomalies + investigations, which the dashboards read.
-            \App\Jobs\RunTenantDetectionJob::dispatch($import->tenant_id);
+            // request as a queued job (requires a queue worker). Incremental by
+            // default (WP1.2 / audit H1 restores this) — scans only the SKUs this
+            // import touched (dirty keys recorded per chunk) plus open subjects;
+            // the nightly full scan is the backstop. afterCommit so a worker never
+            // reads rows before this import commits.
+            \App\Jobs\RunTenantDetectionJob::dispatch(
+                $import->tenant_id,
+                config('detection.import_trigger_mode', 'incremental')
+            )->afterCommit();
         } catch (\Throwable $e) {
             Log::error('Post-import aggregation/detection dispatch failed', ['import_id' => $import->id, 'error' => $e->getMessage()]);
         }

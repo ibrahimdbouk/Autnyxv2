@@ -66,6 +66,7 @@ class ImportResource extends Resource
                         'completed_with_errors'  => 'Completed (errors)',
                         'failed'                 => 'Failed',
                         'rolled_back'            => 'Rolled back',
+                        'abandoned'              => 'Abandoned',
                         default                  => ucfirst($state),
                     }),
 
@@ -114,6 +115,7 @@ class ImportResource extends Resource
                         'completed_with_errors' => 'Completed (errors)',
                         'failed'                => 'Failed',
                         'rolled_back'           => 'Rolled back',
+                        'abandoned'             => 'Abandoned',
                     ]),
 
                 SelectFilter::make('user')
@@ -140,6 +142,18 @@ class ImportResource extends Resource
                     ->icon('heroicon-o-eye')
                     ->url(fn (Import $record) => Pages\ReviewMapping::getUrl(['record' => $record]))
                     ->visible(fn (Import $record) => $record->status === Import::STATUS_MAPPING_REVIEW),
+
+                // WP1.2 — an abandoned upload can be picked back up where it stopped.
+                Action::make('resume_review')
+                    ->label('Resume')
+                    ->icon('heroicon-o-arrow-path')
+                    ->visible(fn (Import $record) => $record->status === Import::STATUS_ABANDONED
+                        && $record->columnMaps()->exists())
+                    ->action(function (Import $record) {
+                        $record->update(['status' => Import::STATUS_MAPPING_REVIEW, 'error_message' => null]);
+
+                        return redirect(Pages\ReviewMapping::getUrl(['record' => $record]));
+                    }),
 
                 Action::make('view_errors')
                     ->label('View Errors')

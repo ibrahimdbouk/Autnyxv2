@@ -37,6 +37,8 @@ class Import extends Model
     const STATUS_COMPLETED_WITH_ERRORS = 'completed_with_errors';
     const STATUS_FAILED               = 'failed';
     const STATUS_ROLLED_BACK          = 'rolled_back';
+    /** WP1.2 — an upload left in uploaded/mapping_review past the pending window. Resumable. */
+    const STATUS_ABANDONED            = 'abandoned';
 
     /** Data types whose rows are inserted (and therefore reversible via rollback). */
     const ROLLBACK_TYPES = [
