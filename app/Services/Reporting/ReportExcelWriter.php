@@ -85,7 +85,7 @@ class ReportExcelWriter
             $row += 1;
 
             if (! empty($section['rows'])) {
-                $sheet->fromArray($section['rows'], null, "A{$row}");
+                $sheet->fromArray(array_map([\App\Support\ExportAudit::class, 'safeRow'], $section['rows']), null, "A{$row}"); // WP2.4 formula-injection guard
                 $row += count($section['rows']);
             }
             $row += 1;
@@ -104,7 +104,7 @@ class ReportExcelWriter
         $this->styleHeaderRow($sheet, 1, count($spec['columns'] ?? []));
 
         if (! empty($spec['rows'])) {
-            $sheet->fromArray($spec['rows'], null, 'A2');
+            $sheet->fromArray(array_map([\App\Support\ExportAudit::class, 'safeRow'], $spec['rows']), null, 'A2'); // WP2.4 formula-injection guard
         }
 
         $lastCol = $this->columnLetter(max(1, count($spec['columns'] ?? [1])));

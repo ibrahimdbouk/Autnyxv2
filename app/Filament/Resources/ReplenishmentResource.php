@@ -124,7 +124,7 @@ class ReplenishmentResource extends Resource
 
                 SelectFilter::make('segment')
                     ->multiple()
-                    ->options(fn () => SkuReplenishment::query()
+                    ->options(fn () => SkuReplenishment::query()->where('tenant_id', \Filament\Facades\Filament::getTenant()?->id) /* WP2.4 explicit tenant scope */
                         ->whereNotNull('segment')->distinct()
                         ->orderBy('segment')->pluck('segment', 'segment')->toArray()),
 
@@ -137,7 +137,7 @@ class ReplenishmentResource extends Resource
                 SelectFilter::make('supplier')
                     ->label('Supplier')
                     ->multiple()
-                    ->options(fn () => SkuReplenishment::query()
+                    ->options(fn () => SkuReplenishment::query()->where('tenant_id', \Filament\Facades\Filament::getTenant()?->id) /* WP2.4 explicit tenant scope */
                         ->whereNotNull('supplier')->distinct()
                         ->orderBy('supplier')->pluck('supplier', 'supplier')->toArray()),
 

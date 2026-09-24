@@ -587,11 +587,15 @@ class ActionQueue extends Page
 
         $filename = 'po-draft-' . \Illuminate\Support\Str::slug($this->campaign) . '-' . now()->format('Ymd') . '.csv';
 
+        // WP2.4 (audit L1/L3): CSV exports are audited like PDF/XLSX ones.
+        if ($__tid = \Filament\Facades\Filament::getTenant()?->id) {
+            \App\Support\ExportAudit::log($__tid, 'purchase-order draft', 'csv');
+        }
         return response()->streamDownload(function () use ($lines, $currency) {
             $out = fopen('php://output', 'w');
-            fputcsv($out, ['SKU', 'Product', 'Store', 'Suggested Qty', "Value at risk ({$currency})"]);
+            \App\Support\ExportAudit::putcsv($out, ['SKU', 'Product', 'Store', 'Suggested Qty', "Value at risk ({$currency})"]);
             foreach ($lines as $l) {
-                fputcsv($out, [
+                \App\Support\ExportAudit::putcsv($out, [
                     $l['sku'] ?? '',
                     $l['sku_name'] ?? '',
                     $l['store'] ?? '',

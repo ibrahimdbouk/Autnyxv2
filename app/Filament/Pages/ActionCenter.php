@@ -486,11 +486,15 @@ class ActionCenter extends Page
     {
         $actions = $this->baseQuery()->orderBy('due_at')->get();
 
+        // WP2.4 (audit L1/L3): CSV exports are audited like PDF/XLSX ones.
+        if ($__tid = \Filament\Facades\Filament::getTenant()?->id) {
+            \App\Support\ExportAudit::log($__tid, 'actions', 'csv');
+        }
         return response()->streamDownload(function () use ($actions) {
             $out = fopen('php://output', 'w');
-            fputcsv($out, ['ID', 'Title', 'Type', 'Investigation', 'Priority', 'Status', 'Assigned To', 'Due At', 'SLA Status']);
+            \App\Support\ExportAudit::putcsv($out, ['ID', 'Title', 'Type', 'Investigation', 'Priority', 'Status', 'Assigned To', 'Due At', 'SLA Status']);
             foreach ($actions as $a) {
-                fputcsv($out, [
+                \App\Support\ExportAudit::putcsv($out, [
                     $a->id,
                     $a->title,
                     $a->getTypeLabel(),

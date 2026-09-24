@@ -26,8 +26,10 @@ class ImpersonationController extends Controller
         abort_unless($actor && $actor->is_super_admin, 403);
         abort_if(session()->has(self::SESSION_KEY), 409, 'Already impersonating — leave first.');
 
-        $target = $tenant->admins()->orderBy('id')->first()
-            ?? $tenant->users()->orderBy('id')->first();
+        // WP2.4 (audit L7): never "enter as" a platform administrator — the
+        // fallback used to be able to pick a super admin or the owner.
+        $target = $tenant->admins()->where('is_super_admin', false)->where('is_owner', false)->orderBy('id')->first()
+            ?? $tenant->users()->where('is_super_admin', false)->where('is_owner', false)->orderBy('id')->first();
 
         abort_unless($target, 404, 'This tenant has no user to enter as.');
 

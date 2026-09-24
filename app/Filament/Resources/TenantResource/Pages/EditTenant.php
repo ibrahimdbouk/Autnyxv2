@@ -12,8 +12,9 @@ class EditTenant extends EditRecord
 
     protected function getHeaderActions(): array
     {
-        return [
-            Actions\DeleteAction::make(),
-        ];
+        // WP2.4 (audit M9/H7): no raw delete here — it bypassed the protected-
+        // tenant check, the typed-name confirmation and the ordered erase. Tenants
+        // are removed only through Ops → Tenants → Erase (TenantOffboardingService).
+        return [];
     }
 }

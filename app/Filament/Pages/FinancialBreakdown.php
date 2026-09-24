@@ -62,6 +62,15 @@ class FinancialBreakdown extends Page
         return false;
     }
 
+    /**
+     * WP2.4 (audit M9): it lists investigation titles, SKUs and amounts, so it
+     * follows the Investigations screen permission (was reachable by URL).
+     */
+    public static function canAccess(): bool
+    {
+        return auth()->user()?->canSeeScreen('investigations') ?? false;
+    }
+
     public function getTitle(): string
     {
         return 'Financial Breakdown — ' . $this->metricLabel();

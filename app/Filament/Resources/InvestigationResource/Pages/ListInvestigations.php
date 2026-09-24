@@ -226,18 +226,24 @@ class ListInvestigations extends ListRecords
         $ids = $this->targetIds();
         $tenantId = Filament::getTenant()?->id;
 
-        $rows = Investigation::where('tenant_id', $tenantId)
-            ->when(! empty($ids), fn ($q) => $q->whereIn('id', $ids))
+        // WP2.4 (audit L1): with nothing selected, export what the user is
+        // looking at (the active filters) — not every investigation in the tenant.
+        $rows = (empty($ids) ? $this->filteredQuery() : Investigation::query()->whereIn('id', $ids))
+            ->where('tenant_id', $tenantId)
             ->with(['assignedTeam'])
             ->get();
 
         $filename = 'investigations_' . now()->format('Ymd_His') . '.csv';
 
+        // WP2.4 (audit L1/L3): CSV exports are audited like PDF/XLSX ones.
+        if ($__tid = \Filament\Facades\Filament::getTenant()?->id) {
+            \App\Support\ExportAudit::log($__tid, 'investigations', 'csv');
+        }
         return response()->streamDownload(function () use ($rows) {
             $out = fopen('php://output', 'w');
-            fputcsv($out, ['ID', 'Title', 'Status', 'Priority', 'SKU', 'Team', 'Revenue at Risk', 'Observed Recovery', 'Opened At']);
+            \App\Support\ExportAudit::putcsv($out, ['ID', 'Title', 'Status', 'Priority', 'SKU', 'Team', 'Revenue at Risk', 'Observed Recovery', 'Opened At']);
             foreach ($rows as $inv) {
-                fputcsv($out, [
+                \App\Support\ExportAudit::putcsv($out, [
                     $inv->id,
                     $inv->title,
                     $inv->status,

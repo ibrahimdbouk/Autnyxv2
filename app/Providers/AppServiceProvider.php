@@ -80,6 +80,15 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // WP2.4 (audit L3): audit changes to security-relevant configuration.
+        foreach ([
+            \App\Models\SsoConnection::class, \App\Models\ApiKey::class, \App\Models\ApiConnection::class,
+            \App\Models\SftpConnection::class, \App\Models\TeamsConnection::class, \App\Models\OutboundTarget::class,
+            \App\Models\TeamMember::class,
+        ] as $audited) {
+            $audited::observe(\App\Observers\ConfigChangeAuditor::class);
+        }
+
         // 3b — org-wide strong password policy (applied wherever a password is
         // validated via Password::defaults(), e.g. the user form).
         \Illuminate\Validation\Rules\Password::defaults(

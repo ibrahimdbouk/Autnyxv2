@@ -90,7 +90,7 @@ class SupplierResource extends Resource
             ])
             ->filters([
                 SelectFilter::make('type')
-                    ->options(fn () => Supplier::query()
+                    ->options(fn () => Supplier::query()->where('tenant_id', \Filament\Facades\Filament::getTenant()?->id) /* WP2.4 explicit tenant scope */
                         ->whereNotNull('type')
                         ->distinct()
                         ->orderBy('type')
@@ -100,7 +100,7 @@ class SupplierResource extends Resource
                     ->label('Type'),
 
                 SelectFilter::make('specialization')
-                    ->options(fn () => Supplier::query()
+                    ->options(fn () => Supplier::query()->where('tenant_id', \Filament\Facades\Filament::getTenant()?->id) /* WP2.4 explicit tenant scope */
                         ->whereNotNull('specialization')
                         ->distinct()
                         ->orderBy('specialization')

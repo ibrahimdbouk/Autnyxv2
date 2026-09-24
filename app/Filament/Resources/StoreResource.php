@@ -15,6 +15,12 @@ class StoreResource extends Resource
 {
     protected static ?string $model = Store::class;
 
+    /** WP2.4 (audit M9): honour screen permissions (was reachable by URL). */
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->canSeeScreen('stores') ?? false;
+    }
+
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-building-storefront';
 
     protected static \UnitEnum|string|null $navigationGroup = 'Data';
@@ -110,7 +116,7 @@ class StoreResource extends Resource
             ])
             ->filters([
                 SelectFilter::make('city')
-                    ->options(fn () => Store::query()
+                    ->options(fn () => Store::query()->where('tenant_id', \Filament\Facades\Filament::getTenant()?->id) /* WP2.4 explicit tenant scope */
                         ->whereNotNull('city')
                         ->distinct()
                         ->orderBy('city')
@@ -121,7 +127,7 @@ class StoreResource extends Resource
                     ->multiple(),
 
                 SelectFilter::make('country')
-                    ->options(fn () => Store::query()
+                    ->options(fn () => Store::query()->where('tenant_id', \Filament\Facades\Filament::getTenant()?->id) /* WP2.4 explicit tenant scope */
                         ->whereNotNull('country')
                         ->distinct()
                         ->orderBy('country')
@@ -133,7 +139,7 @@ class StoreResource extends Resource
 
                 SelectFilter::make('price_tier')
                     ->label('Price tier')
-                    ->options(fn () => Store::query()
+                    ->options(fn () => Store::query()->where('tenant_id', \Filament\Facades\Filament::getTenant()?->id) /* WP2.4 explicit tenant scope */
                         ->with('feature')
                         ->get()
                         ->pluck('feature.price_tier')
@@ -150,7 +156,7 @@ class StoreResource extends Resource
 
                 SelectFilter::make('size_tier')
                     ->label('Size tier')
-                    ->options(fn () => Store::query()
+                    ->options(fn () => Store::query()->where('tenant_id', \Filament\Facades\Filament::getTenant()?->id) /* WP2.4 explicit tenant scope */
                         ->with('feature')
                         ->get()
                         ->pluck('feature.size_tier')
@@ -167,7 +173,7 @@ class StoreResource extends Resource
 
                 SelectFilter::make('dominant_segment')
                     ->label('Dominant demand segment')
-                    ->options(fn () => Store::query()
+                    ->options(fn () => Store::query()->where('tenant_id', \Filament\Facades\Filament::getTenant()?->id) /* WP2.4 explicit tenant scope */
                         ->with('feature')
                         ->get()
                         ->pluck('feature.dominant_segment')

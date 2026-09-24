@@ -136,6 +136,27 @@ class User extends Authenticatable implements FilamentUser, HasTenants, HasAppAu
                 // best-effort — never break the save on an audit write.
             }
         });
+
+        // WP2.4 (audit H8/L3): credential changes are audited (values never logged).
+        static::updated(function (User $user): void {
+            $credential = array_values(array_intersect(['email', 'password'], array_keys($user->getChanges())));
+            if ($credential === [] || $user->tenant_id === null) {
+                return;
+            }
+            try {
+                AuditLog::create([
+                    'tenant_id'   => $user->tenant_id,
+                    'user_id'     => auth()->id(),
+                    'event_type'  => 'credentials_changed',
+                    'description' => 'Changed ' . implode(' and ', $credential) . ' for user #' . $user->id
+                        . (auth()->id() === $user->id ? ' (self-service)' : ' (by another user)'),
+                    'old_value'   => in_array('email', $credential, true) ? ['email' => $user->getOriginal('email')] : null,
+                    'new_value'   => in_array('email', $credential, true) ? ['email' => $user->email] : null,
+                ]);
+            } catch (\Throwable) {
+                // best-effort
+            }
+        });
     }
 
     // ---------- Relationships ----------

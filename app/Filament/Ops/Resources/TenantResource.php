@@ -134,7 +134,11 @@ class TenantResource extends Resource
                 Action::make('impersonate')
                     ->label('Enter')
                     ->icon('heroicon-o-arrow-right-on-rectangle')
-                    ->url(fn (Tenant $record) => route('ops.impersonate', ['tenant' => $record->id]))
+                    // WP2.4: a real confirmation (->url() skipped the modal), then a
+                    // one-minute signed link.
+                    ->action(fn (Tenant $record) => redirect(\Illuminate\Support\Facades\URL::temporarySignedRoute(
+                        'ops.impersonate', now()->addMinute(), ['tenant' => $record->id]
+                    )))
                     ->requiresConfirmation()
                     ->modalHeading('Enter tenant')
                     ->modalDescription(fn (Tenant $record) => 'Sign in as an admin of ' . $record->name . '? Your actions will be recorded in the audit log.'),

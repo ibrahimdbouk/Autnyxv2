@@ -50,6 +50,15 @@ class Account extends Page
                         ->required()
                         ->maxLength(255)
                         ->rule(fn () => Rule::unique('users', 'email')->ignore(auth()->id())),
+                    // WP2.4 (audit L4): a hijacked session must not be able to swap the
+                    // email (then reset the password) — re-authenticate for it.
+                    TextInput::make('current_password')
+                        ->label('Current password (required to change your email)')
+                        ->password()
+                        ->revealable()
+                        ->rules(fn ($get) => $get('email') !== auth()->user()?->email ? ['required', 'current_password'] : [])
+                        ->dehydrated(false)
+                        ->validationMessages(['current_password' => 'That is not your current password.']),
                 ])
                 ->action(function (array $data): void {
                     auth()->user()->update([

@@ -26,7 +26,9 @@ class InboundEmailController extends Controller
     public function handle(Request $request): JsonResponse
     {
         $secret = config('inbound.secret');
-        $provided = $request->header('X-Webhook-Secret') ?? $request->query('secret') ?? $request->input('secret');
+        // WP2.4 (audit L8): the secret travels in a header (or HTTP Basic auth
+        // password) only — never the query string, which ends up in access logs.
+        $provided = $request->header('X-Webhook-Secret') ?? $request->getPassword();
         if (empty($secret) || ! is_string($provided) || ! hash_equals((string) $secret, $provided)) {
             abort(403, 'Inbound email is not enabled or the secret is invalid.');
         }

@@ -77,11 +77,15 @@ class ListStoreClusters extends ListRecords
                 ->label('Reset to recommended')
                 ->icon('heroicon-o-arrow-path')
                 ->color('gray')
-                ->visible(fn () => ($t = Filament::getTenant()) && app(ClusterService::class)->hasPins($t->id))
+                // WP2.4 (audit M9): resetting throws away the admin's customised
+                // clustering, so it is admin-only like create/edit/delete.
+                ->visible(fn () => ($t = Filament::getTenant()) && app(ClusterService::class)->hasPins($t->id)
+                    && (auth()->user()?->canManageUsers() ?? false))
                 ->requiresConfirmation()
                 ->modalHeading('Reset clusters')
                 ->modalDescription('Discard your changes and regenerate the recommended clusters from store format and region?')
                 ->action(function () {
+                    abort_unless(auth()->user()?->canManageUsers() ?? false, 403);
                     app(ClusterService::class)->resetToRecommended(Filament::getTenant()->id);
                     Notification::make()->title('Clusters reset to the recommended grouping.')->success()->send();
                 }),

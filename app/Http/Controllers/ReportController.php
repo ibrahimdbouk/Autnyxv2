@@ -23,6 +23,7 @@ class ReportController extends Controller
         $user   = auth()->user();
         $tenant = Tenant::findOrFail((int) request('tenant'));
         abort_unless($user && $user->canAccessTenant($tenant), 403);
+        abort_unless($user->canSeeScreen('reports'), 403); // WP2.4 (audit M9)
 
         // 3b — audit the export (SOC 2 / ISO).
         \App\Support\ExportAudit::log($tenant->id, $type . ' report', $format);

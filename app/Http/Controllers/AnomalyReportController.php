@@ -22,6 +22,7 @@ class AnomalyReportController extends Controller
         // Tenant scope: user must belong to this anomaly's tenant
         $user = auth()->user();
         abort_unless($user && $user->canAccessTenant($anomaly->tenant), 403);
+        abort_unless($user->canSeeScreen('anomalies'), 403); // WP2.4 (audit M9)
 
         // 3b — audit the export (SOC 2 / ISO).
         \App\Support\ExportAudit::log($anomaly->tenant_id, 'anomaly report #' . $anomaly->id, 'pdf');

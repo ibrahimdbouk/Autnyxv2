@@ -215,10 +215,14 @@ class AnomalyResource extends Resource
                     ->action(function (Collection $records) {
                         $filename = 'anomalies-export-' . now()->format('Y-m-d') . '.csv';
 
+                        // WP2.4 (audit L1/L3): CSV exports are audited like PDF/XLSX ones.
+                        if ($__tid = \Filament\Facades\Filament::getTenant()?->id) {
+                            \App\Support\ExportAudit::log($__tid, 'anomalies', 'csv');
+                        }
                         return response()->streamDownload(function () use ($records) {
                             $out = fopen('php://output', 'w');
 
-                            fputcsv($out, [
+                            \App\Support\ExportAudit::putcsv($out, [
                                 'ID',
                                 'Severity',
                                 'Rule',
@@ -232,7 +236,7 @@ class AnomalyResource extends Resource
                             ]);
 
                             foreach ($records as $r) {
-                                fputcsv($out, [
+                                \App\Support\ExportAudit::putcsv($out, [
                                     $r->id,
                                     $r->severity,
                                     AnomalySetting::RULES[$r->rule_type]['label'] ?? $r->rule_type,

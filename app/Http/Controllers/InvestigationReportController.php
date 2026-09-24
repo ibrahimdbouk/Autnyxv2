@@ -30,6 +30,7 @@ class InvestigationReportController extends Controller
         // Tenant scope: the user must belong to this investigation's tenant.
         $user = auth()->user();
         abort_unless($user && $user->canAccessTenant($investigation->tenant), 403);
+        abort_unless($user->canSeeScreen('investigations'), 403); // WP2.4 (audit M9)
 
         // 3b — audit the export (SOC 2 / ISO).
         \App\Support\ExportAudit::log($investigation->tenant_id, 'investigation report #' . $investigation->id, 'pdf');

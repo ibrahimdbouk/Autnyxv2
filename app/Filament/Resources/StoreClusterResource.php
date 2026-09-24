@@ -34,6 +34,12 @@ class StoreClusterResource extends Resource
 {
     protected static ?string $model = StoreCluster::class;
 
+    /** WP2.4 (audit M9): honour screen permissions (was reachable by URL). */
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->canSeeScreen('store_clusters') ?? false;
+    }
+
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-rectangle-group';
 
     protected static \UnitEnum|string|null $navigationGroup = 'Data';
