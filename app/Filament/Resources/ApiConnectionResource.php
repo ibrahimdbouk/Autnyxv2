@@ -65,6 +65,26 @@ class ApiConnectionResource extends Resource
             ->withCount('feeds');
     }
 
+    /** WP2.2 (audit M5): secrets are write-only — never sent back to the browser. */
+    public const SECRET_KEYS = ['token', 'password', 'header_value', 'client_secret'];
+
+    private const SECRET_HINT = 'Stored encrypted and never shown again. Leave blank to keep the current value.';
+
+    /** WP2.2 (audit H12/M4): refuse internal / non-https targets at save time too. */
+    public static function egressRule(): \Closure
+    {
+        return function (string $attribute, $value, \Closure $fail): void {
+            if (blank($value)) {
+                return;
+            }
+            try {
+                app(\App\Support\Http\EgressGuard::class)->check((string) $value);
+            } catch (\RuntimeException $e) {
+                $fail($e->getMessage());
+            }
+        };
+    }
+
     public static function form(Schema $form): Schema
     {
         return $form->schema([
@@ -86,6 +106,7 @@ class ApiConnectionResource extends Resource
                 ->required()
                 ->url()
                 ->maxLength(1024)
+                ->rule(self::egressRule())
                 ->placeholder('https://host/api'),
 
             Select::make('auth_type')
@@ -104,7 +125,8 @@ class ApiConnectionResource extends Resource
 
             TextInput::make('auth_config.token')
                 ->label('Bearer token')
-                ->password()->revealable()->maxLength(4096)
+                ->password()->maxLength(4096)
+                ->helperText(self::SECRET_HINT)
                 ->visible(fn ($get) => $get('auth_type') === ApiConnection::AUTH_BEARER)
                 ->columnSpanFull(),
 
@@ -114,7 +136,8 @@ class ApiConnectionResource extends Resource
                 ->visible(fn ($get) => $get('auth_type') === ApiConnection::AUTH_BASIC),
             TextInput::make('auth_config.password')
                 ->label('Password')
-                ->password()->revealable()->maxLength(1024)
+                ->password()->maxLength(1024)
+                ->helperText(self::SECRET_HINT)
                 ->visible(fn ($get) => $get('auth_type') === ApiConnection::AUTH_BASIC),
 
             TextInput::make('auth_config.header_name')
@@ -124,12 +147,14 @@ class ApiConnectionResource extends Resource
                 ->visible(fn ($get) => $get('auth_type') === ApiConnection::AUTH_API_KEY),
             TextInput::make('auth_config.header_value')
                 ->label('Header value / key')
-                ->password()->revealable()->maxLength(4096)
+                ->password()->maxLength(4096)
+                ->helperText(self::SECRET_HINT)
                 ->visible(fn ($get) => $get('auth_type') === ApiConnection::AUTH_API_KEY),
 
             TextInput::make('auth_config.token_url')
                 ->label('Token URL')
                 ->url()->maxLength(1024)
+                ->rule(self::egressRule())
                 ->visible(fn ($get) => $get('auth_type') === ApiConnection::AUTH_OAUTH2_CC)
                 ->columnSpanFull(),
             TextInput::make('auth_config.client_id')
@@ -138,7 +163,8 @@ class ApiConnectionResource extends Resource
                 ->visible(fn ($get) => $get('auth_type') === ApiConnection::AUTH_OAUTH2_CC),
             TextInput::make('auth_config.client_secret')
                 ->label('Client secret')
-                ->password()->revealable()->maxLength(2048)
+                ->password()->maxLength(2048)
+                ->helperText(self::SECRET_HINT)
                 ->visible(fn ($get) => $get('auth_type') === ApiConnection::AUTH_OAUTH2_CC),
             TextInput::make('auth_config.scope')
                 ->label('Scope')

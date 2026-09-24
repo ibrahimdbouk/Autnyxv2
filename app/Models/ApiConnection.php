@@ -37,6 +37,12 @@ class ApiConnection extends Model
         'last_error',
     ];
 
+    /**
+     * WP2.2 (audit M5): the decrypted credentials must never reach the browser
+     * (Livewire snapshot) or any serialised output.
+     */
+    protected $hidden = ['auth_config'];
+
     protected $casts = [
         'is_active'      => 'boolean',
         'last_polled_at' => 'datetime',

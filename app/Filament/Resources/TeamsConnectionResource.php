@@ -70,12 +70,13 @@ class TeamsConnectionResource extends Resource
                 ->helperText('A label for this connection, e.g. "Midan Ops Teams".')
                 ->columnSpanFull(),
 
-            TextInput::make('aad_tenant_id')
-                ->label('Microsoft 365 tenant ID')
-                ->required()
-                ->maxLength(64)
-                ->placeholder('00000000-0000-0000-0000-000000000000')
-                ->helperText('The customer\'s Azure AD (Entra) tenant GUID — Entra admin center → Overview.')
+            // WP2.2 (audit H12/M7): the Microsoft tenant is linked by a signed
+            // admin sign-in ("Connect Microsoft 365" on the edit page), never typed.
+            \Filament\Forms\Components\Placeholder::make('aad_tenant_status')
+                ->label('Microsoft 365 tenant')
+                ->content(fn (?TeamsConnection $record) => $record?->isMicrosoftTenantVerified()
+                    ? $record->aad_tenant_id . ' — verified ' . $record->aad_verified_at?->diffForHumans()
+                    : 'Not linked yet. Save, then use "Connect Microsoft 365" — a Microsoft 365 admin signs in and grants consent.')
                 ->columnSpanFull(),
 
             Toggle::make('post_to_channel')
@@ -90,6 +91,12 @@ class TeamsConnectionResource extends Resource
                 ->revealable()
                 ->maxLength(2048)
                 ->dehydrated(fn ($state) => filled($state))
+                // WP2.2: only Microsoft Workflows / Incoming-Webhook hosts.
+                ->rule(fn () => function (string $attribute, $value, \Closure $fail) {
+                    if (filled($value) && ! TeamsConnection::webhookHostAllowed($value)) {
+                        $fail('Use a Microsoft Teams Workflows / Incoming-Webhook URL (https://…webhook.office.com, …logic.azure.com or …powerplatform.com).');
+                    }
+                })
                 ->helperText('Recommended: a Teams Workflows / Incoming-Webhook URL for the target channel. Leave blank to keep the existing value, or to post via Graph instead.')
                 ->visible(fn ($get) => (bool) $get('post_to_channel'))
                 ->columnSpanFull(),
@@ -97,12 +104,14 @@ class TeamsConnectionResource extends Resource
             TextInput::make('team_id')
                 ->label('Team ID')
                 ->maxLength(128)
+                ->regex('/^[0-9a-fA-F-]{36}$/')
                 ->helperText('Only needed to post via Graph (no webhook). The Teams team GUID.')
                 ->visible(fn ($get) => (bool) $get('post_to_channel')),
 
             TextInput::make('channel_id')
                 ->label('Channel ID')
                 ->maxLength(128)
+                ->regex('/^[A-Za-z0-9:@._-]+$/')
                 ->helperText('Only needed to post via Graph (no webhook). The channel GUID.')
                 ->visible(fn ($get) => (bool) $get('post_to_channel')),
 

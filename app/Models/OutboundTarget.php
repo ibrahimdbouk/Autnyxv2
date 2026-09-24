@@ -27,8 +27,13 @@ class OutboundTarget extends Model
         'active',
     ];
 
+    /** WP2.2: never serialise credentials (API output, Livewire payloads, exports). */
+    protected $hidden = ['config'];
+
     protected $casts = [
-        'config' => 'array',
+        // WP2.2 (audit M6): tokens, client secrets and HMAC secrets live here —
+        // encrypted at rest; legacy plaintext rows still read (see the cast).
+        'config' => \App\Casts\EncryptedArrayWithLegacy::class,
         'active' => 'boolean',
     ];
 
