@@ -109,12 +109,19 @@ class BulkInvestigationActionJob implements ShouldQueue
 
             case 'reassign_team':
                 $teamId = (int) ($params['team_id'] ?? 0);
+                // WP1.3: the team id comes from client-editable Livewire state.
+                if ($teamId && ! \App\Models\Team::whereKey($teamId)->where('tenant_id', $investigation->tenant_id)->exists()) {
+                    throw new \RuntimeException('Team is not in this organisation');
+                }
                 $investigation->update(['assigned_team_id' => $teamId ?: null, 'assigned_at' => now()]);
                 AuditLogger::assigned($investigation, \App\Models\Team::find($teamId)?->name, null, $userId);
                 break;
 
             case 'change_priority':
                 $priority = $params['priority'] ?? Investigation::PRIORITY_MEDIUM;
+                if (! in_array($priority, [Investigation::PRIORITY_LOW, Investigation::PRIORITY_MEDIUM, Investigation::PRIORITY_HIGH, Investigation::PRIORITY_CRITICAL], true)) {
+                    throw new \RuntimeException('Unknown priority');
+                }
                 $old = $investigation->priority;
                 $investigation->update(['priority' => $priority]);
                 AuditLogger::priorityChanged($investigation, $old, $priority, $userId);
@@ -122,7 +129,11 @@ class BulkInvestigationActionJob implements ShouldQueue
 
             case 'snooze':
                 $until = $snoozeService->resolveUntil($params['duration'] ?? '7d', $params['custom_date'] ?? null);
-                $snoozeService->snooze($investigation, $until, $params['reason'] ?? 'known_issue', $params['notes'] ?? null, $userId);
+                $reason = $params['reason'] ?? 'known_issue';
+                if (! array_key_exists($reason, SnoozeService::REASONS)) {
+                    $reason = 'other';
+                }
+                $snoozeService->snooze($investigation, $until, $reason, $params['notes'] ?? null, $userId);
                 break;
 
             case 'dismiss':

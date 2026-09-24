@@ -27,6 +27,7 @@ class ReviewMapping extends Page
 
     public function mount(Import $record): void
     {
+        $this->authorizeTenant($record);
         $this->record = $record;
 
         // Load current column maps into editable state
@@ -62,13 +63,22 @@ class ReviewMapping extends Page
 
     public function confirmAndImport(): void
     {
-        // Persist the user's choices back to the DB
+        // Persist the user's choices back to the DB.
+        // WP1.3 (audit H10): $mappings is client-editable Livewire state — only
+        // ever touch THIS import's maps, and only with a real canonical field.
+        $allowed = \App\Services\Import\CanonicalSchema::fieldNames((string) $this->record->data_type);
         foreach ($this->mappings as $mapping) {
-            ImportColumnMap::where('id', $mapping['id'])->update([
-                'target_field' => $mapping['target_field'] ?: null,
-                'is_skipped'   => empty($mapping['target_field']),
-                'is_confirmed' => true,
-            ]);
+            $target = $mapping['target_field'] ?? null;
+            if ($target !== null && $target !== '' && ! in_array($target, $allowed, true)) {
+                $target = null;
+            }
+            ImportColumnMap::where('id', (int) ($mapping['id'] ?? 0))
+                ->where('import_id', $this->record->id)
+                ->update([
+                    'target_field' => $target ?: null,
+                    'is_skipped'   => empty($target),
+                    'is_confirmed' => true,
+                ]);
         }
 
         // Kick off chunked, poll-driven processing. The heavy lifting happens
@@ -95,5 +105,11 @@ class ReviewMapping extends Page
                 ->color('gray')
                 ->url(ListImports::getUrl()),
         ];
+    }
+
+    /** WP1.3 (audit H10): a record page only ever opens its own tenant's import. */
+    private function authorizeTenant(Import $record): void
+    {
+        abort_unless((int) $record->tenant_id === (int) \Filament\Facades\Filament::getTenant()?->id, 404);
     }
 }

@@ -32,7 +32,11 @@ class ListImports extends ListRecords
         // timestamp fresh, so only a genuinely stalled one is flagged — flipping
         // it to "failed" surfaces the Cancel / Undo action instead of leaving it
         // stuck in "importing" forever.
-        ImportProcessorService::recoverStuckImports(2);
+        // WP1.3: scoped to this tenant, and 10 minutes (was 2, across ALL
+        // tenants) so a long SFTP/API run elsewhere is never failed mid-flight.
+        if ($tenantId = \Filament\Facades\Filament::getTenant()?->id) {
+            ImportProcessorService::recoverStuckImports(10, $tenantId);
+        }
     }
 
     protected function getHeaderActions(): array

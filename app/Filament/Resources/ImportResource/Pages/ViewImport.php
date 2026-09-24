@@ -30,6 +30,7 @@ class ViewImport extends Page
 
     public function mount(Import $record): void
     {
+        $this->authorizeTenant($record);
         $this->record = $record;
     }
 
@@ -110,7 +111,7 @@ class ViewImport extends Page
             return;
         }
 
-        ImportRow::whereIn('id', $ids)->update(['status' => ImportRow::STATUS_REJECTED]);
+        ImportRow::whereIn('id', $ids)->where('import_id', $this->record->id)->update(['status' => ImportRow::STATUS_REJECTED]);
         unset($this->failedGroups);
         $this->resetPage();
 
@@ -119,13 +120,14 @@ class ViewImport extends Page
 
     public function approveRow(int $rowId): void
     {
-        ImportRow::where('id', $rowId)->update(['status' => ImportRow::STATUS_APPROVED]);
+        // WP1.3 (audit H10): only rows of THIS import (and so this tenant).
+        ImportRow::where('id', $rowId)->where('import_id', $this->record->id)->update(['status' => ImportRow::STATUS_APPROVED]);
         $this->resetPage();
     }
 
     public function rejectRow(int $rowId): void
     {
-        ImportRow::where('id', $rowId)->update(['status' => ImportRow::STATUS_REJECTED]);
+        ImportRow::where('id', $rowId)->where('import_id', $this->record->id)->update(['status' => ImportRow::STATUS_REJECTED]);
         $this->resetPage();
     }
 
@@ -191,5 +193,11 @@ class ViewImport extends Page
                 ->color('gray')
                 ->url(ListImports::getUrl()),
         ];
+    }
+
+    /** WP1.3 (audit H10): a record page only ever opens its own tenant's import. */
+    private function authorizeTenant(Import $record): void
+    {
+        abort_unless((int) $record->tenant_id === (int) \Filament\Facades\Filament::getTenant()?->id, 404);
     }
 }

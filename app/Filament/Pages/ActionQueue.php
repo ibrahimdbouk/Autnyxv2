@@ -536,6 +536,10 @@ class ActionQueue extends Page
     /** Human accepts a plan → Autnyx executes its own side. */
     public function acceptPlan(int $runId): void
     {
+        // WP1.3 (audit H9): accepting a plan moves investigations into progress.
+        if (! $this->mayChangeStatus()) {
+            return;
+        }
         $run = $this->guardRun($runId);
         if (! $run) {
             return;
@@ -646,19 +650,18 @@ class ActionQueue extends Page
     /** Bulk-snooze the selected investigations for 30 days (defer the tail together). */
     public function bulkSnooze(): void
     {
+        if (! $this->mayChangeStatus()) {
+            return;
+        }
         $userId = auth()->id();
         $count  = 0;
+        $snoozer = app(\App\Services\Noise\SnoozeService::class);
         foreach ($this->selectedInvestigations() as $inv) {
             if (! in_array($inv->status, [Investigation::STATUS_OPEN, Investigation::STATUS_IN_PROGRESS], true)) {
                 continue;
             }
-            $inv->update([
-                'snoozed_until' => now()->addDays(30),
-                'snooze_reason' => 'bulk_snooze',
-                'snooze_notes'  => 'Bulk-snoozed from the ' . $this->campaign . ' campaign.',
-                'snoozed_by'    => $userId,
-                'snoozed_at'    => now(),
-            ]);
+            // WP1.3: through SnoozeService so every bulk snooze is audited.
+            $snoozer->snooze($inv, now()->addDays(30), 'bulk_snooze', 'Bulk-snoozed from the ' . $this->campaign . ' campaign.', $userId);
             $count++;
         }
 
@@ -675,6 +678,9 @@ class ActionQueue extends Page
      */
     public function bulkStart(): void
     {
+        if (! $this->mayChangeStatus()) {
+            return;
+        }
         $userId = auth()->id();
         $type   = self::BULK_ACTION_TYPE[$this->campaign] ?? Action::TYPE_INVESTIGATE_FURTHER;
         $created = 0;
@@ -735,5 +741,16 @@ class ActionQueue extends Page
             'price_anomaly'                        => "Price anomaly — {$sku}",
             default                                => ucwords(str_replace('_', ' ', $r['rule'])) . " — {$sku}{$where}",
         };
+    }
+
+    /** WP1.3 (audit H9): bulk status changes are for admins, as on the list page. */
+    private function mayChangeStatus(): bool
+    {
+        if (auth()->user()?->canChangeInvestigationStatus() ?? false) {
+            return true;
+        }
+        Notification::make()->title('Only admins can change investigation status in bulk')->danger()->send();
+
+        return false;
     }
 }

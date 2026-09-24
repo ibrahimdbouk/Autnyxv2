@@ -49,6 +49,9 @@ class UserResource extends Resource
         if (! $user) return false;
         // Only the owner can edit the owner account.
         if ($record->isOwner() && ! $user->isOwner()) return false;
+        // WP1.3 (audit H8): a tenant admin must never be able to reset a super
+        // admin's password/email (that would hand them /ops and every tenant).
+        if ($record->is_super_admin && ! $user->is_super_admin) return false;
 
         return $user->canManageUsers();
     }

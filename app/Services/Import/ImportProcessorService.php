@@ -154,9 +154,11 @@ class ImportProcessorService
      * Mark an import stuck in "importing" for more than $minutes as failed.
      * Call from a scheduled command or health check.
      */
-    public static function recoverStuckImports(int $minutes = 10): int
+    public static function recoverStuckImports(int $minutes = 10, ?int $tenantId = null): int
     {
         return Import::where('status', Import::STATUS_IMPORTING)
+            // WP1.3: a page load only ever heals its own tenant's imports.
+            ->when($tenantId !== null, fn ($q) => $q->where('tenant_id', $tenantId))
             ->where('updated_at', '<', now()->subMinutes($minutes))
             ->update([
                 'status'        => Import::STATUS_FAILED,

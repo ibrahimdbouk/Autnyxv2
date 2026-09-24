@@ -98,6 +98,11 @@ class BulkActionCenterJob implements ShouldQueue
         switch ($action) {
             case 'assign':
                 $userIdTarget = (int) ($params['assigned_to'] ?? 0);
+                // WP1.3: ids arrive from client-editable Livewire state — the
+                // assignee must belong to the action's own tenant.
+                if ($userIdTarget && ! \App\Models\User::whereKey($userIdTarget)->where('tenant_id', self::tenantOf($act))->exists()) {
+                    throw new \RuntimeException('Assignee is not in this organisation');
+                }
                 $act->update([
                     'assigned_to' => $userIdTarget ?: null,
                     'status'      => $act->status === Action::STATUS_UNASSIGNED ? Action::STATUS_ASSIGNED : $act->status,
@@ -106,11 +111,18 @@ class BulkActionCenterJob implements ShouldQueue
 
             case 'reassign_team':
                 $teamId = (int) ($params['team_id'] ?? 0);
+                if ($teamId && ! \App\Models\Team::whereKey($teamId)->where('tenant_id', self::tenantOf($act))->exists()) {
+                    throw new \RuntimeException('Team is not in this organisation');
+                }
                 $act->update(['assigned_team_id' => $teamId ?: null]);
                 break;
 
             case 'change_priority':
-                $act->update(['priority' => $params['priority'] ?? Action::PRIORITY_MEDIUM]);
+                $priority = $params['priority'] ?? Action::PRIORITY_MEDIUM;
+                if (! in_array($priority, [Action::PRIORITY_LOW, Action::PRIORITY_MEDIUM, Action::PRIORITY_HIGH, Action::PRIORITY_CRITICAL], true)) {
+                    throw new \RuntimeException('Unknown priority');
+                }
+                $act->update(['priority' => $priority]);
                 break;
 
             case 'escalate':
@@ -126,5 +138,11 @@ class BulkActionCenterJob implements ShouldQueue
             default:
                 throw new \InvalidArgumentException("Unknown bulk action: {$action}");
         }
+    }
+
+    /** Actions carry no tenant_id — their tenant is their investigation's. */
+    private static function tenantOf(Action $act): ?int
+    {
+        return $act->investigation?->tenant_id;
     }
 }

@@ -225,6 +225,31 @@ class User extends Authenticatable implements FilamentUser, HasTenants, HasAppAu
         return $this->is_super_admin || $this->is_tenant_admin;
     }
 
+    /**
+     * WP1.3 (audit H9): may this user move THIS investigation along its working
+     * states (start / resolve)? Admins always; otherwise only the person or a
+     * member of the team it is assigned to. Closing and recording financial
+     * outcomes stay admin-only (canCloseInvestigation / canRecordOutcomes).
+     */
+    public function canWorkInvestigation(\App\Models\Investigation $investigation): bool
+    {
+        if ((int) $investigation->tenant_id !== (int) $this->tenant_id && ! $this->is_super_admin) {
+            return false;
+        }
+        if ($this->canChangeInvestigationStatus()) {
+            return true;
+        }
+        if ($investigation->assigned_user_id !== null && (int) $investigation->assigned_user_id === (int) $this->id) {
+            return true;
+        }
+
+        return $investigation->assigned_team_id !== null
+            && \Illuminate\Support\Facades\DB::table('team_members')
+                ->where('team_id', $investigation->assigned_team_id)
+                ->where('user_id', $this->id)
+                ->exists();
+    }
+
     // Financial outcomes
 
     public function canRecordOutcomes(): bool

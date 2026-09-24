@@ -71,7 +71,13 @@ class ActionCenter extends Page
 
     public function selectAction(int $id): void
     {
-        $this->selectedActionId = $this->selectedActionId === $id ? null : $id;
+        if ($this->selectedActionId === $id) {
+            $this->selectedActionId = null;
+
+            return;
+        }
+        // WP1.3 (audit C6): only ever select an action of the current tenant.
+        $this->selectedActionId = $this->getVerifiedAction($id)?->id;
     }
 
     public function closePanel(): void
@@ -350,7 +356,13 @@ class ActionCenter extends Page
     public function getSelectedAction(): ?Action
     {
         if (!$this->selectedActionId) return null;
-        return Action::with([
+        $tenantId = Filament::getTenant()?->id;
+        if (!$tenantId) return null;
+
+        // WP1.3 (audit C6): actions carry no tenant_id — scope through the
+        // investigation, so a tampered selectedActionId can never render
+        // another tenant's action.
+        return Action::whereHas('investigation', fn ($q) => $q->where('tenant_id', $tenantId))->with([
             'investigation.primaryStore',
             'investigation.anomalies',
             'assignedTo',

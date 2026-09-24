@@ -50,6 +50,7 @@ class ProcessImport extends Page
 
     public function mount(Import $record): void
     {
+        $this->authorizeTenant($record);
         $this->record = $record;
 
         // Already finished (e.g. the page was revisited) — go straight to the summary.
@@ -102,5 +103,11 @@ class ProcessImport extends Page
         }
 
         $this->redirect(ViewImport::getUrl(['record' => $this->record]));
+    }
+
+    /** WP1.3 (audit H10): a record page only ever opens its own tenant's import. */
+    private function authorizeTenant(Import $record): void
+    {
+        abort_unless((int) $record->tenant_id === (int) \Filament\Facades\Filament::getTenant()?->id, 404);
     }
 }

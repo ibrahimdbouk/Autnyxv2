@@ -36,6 +36,45 @@ class TeamResource extends Resource
 
     protected static ?int $navigationSort = 10;
 
+    // ── Authorization (WP1.3 / audit H11) ─────────────────────────────────────
+    // Teams drive escalation email and default auto-assignment, so managing them
+    // is an admin task — same bar as managing users.
+
+    public static function canViewAny(): bool
+    {
+        return auth()->check();
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->canManageUsers() ?? false;
+    }
+
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->canManageUsers() ?? false;
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->canManageUsers() ?? false;
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return auth()->user()?->canManageUsers() ?? false;
+    }
+
+    /** @return array<int, string> */
+    private static function tenantUserOptions(): array
+    {
+        $tenantId = Filament::getTenant()?->id;
+
+        return $tenantId
+            ? User::where('tenant_id', $tenantId)->orderBy('name')->pluck('name', 'id')->toArray()
+            : [];
+    }
+
     public static function getEloquentQuery(): Builder
     {
         $tenantId = Filament::getTenant()?->id;
@@ -73,12 +112,13 @@ class TeamResource extends Resource
                 ->label('Members')
                 ->relationship('teamMemberRecords')
                 ->schema([
+                    // WP1.3 (audit H11): members come from THIS tenant's users.
+                    // (Was users.current_team_id — a column that does not exist,
+                    // so Edit/Add Member failed with a database error.)
                     Select::make('user_id')
                         ->label('User')
-                        ->options(fn () => User::where(
-                            'current_team_id',
-                            Filament::getTenant()?->id
-                        )->pluck('name', 'id')->toArray())
+                        ->options(fn () => self::tenantUserOptions())
+                        ->in(fn () => array_keys(self::tenantUserOptions()))
                         ->searchable()
                         ->required(),
 

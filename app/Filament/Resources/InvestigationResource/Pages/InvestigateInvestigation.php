@@ -262,8 +262,10 @@ class InvestigateInvestigation extends Page
                 ->label('Mark In Progress')
                 ->icon('heroicon-o-play')
                 ->color('info')
-                ->visible(fn () => $this->record->status === Investigation::STATUS_OPEN)
+                ->visible(fn () => $this->record->status === Investigation::STATUS_OPEN
+                    && (auth()->user()?->canWorkInvestigation($this->record) ?? false))
                 ->action(function () {
+                    abort_unless(auth()->user()?->canWorkInvestigation($this->record) ?? false, 403);
                     $old = $this->record->status;
                     $this->record->update([
                         'status'      => Investigation::STATUS_IN_PROGRESS,
@@ -282,7 +284,7 @@ class InvestigateInvestigation extends Page
                 ->visible(fn () => in_array($this->record->status, [
                     Investigation::STATUS_OPEN,
                     Investigation::STATUS_IN_PROGRESS,
-                ]))
+                ]) && (auth()->user()?->canWorkInvestigation($this->record) ?? false))
                 ->form([
                     Textarea::make('resolution_notes')
                         ->label('Resolution Notes')
@@ -291,6 +293,7 @@ class InvestigateInvestigation extends Page
                         ->placeholder('Describe what was done to resolve this investigation…'),
                 ])
                 ->action(function (array $data) {
+                    abort_unless(auth()->user()?->canWorkInvestigation($this->record) ?? false, 403);
                     $old = $this->record->status;
                     $this->record->update([
                         'status'           => Investigation::STATUS_RESOLVED,
@@ -307,11 +310,13 @@ class InvestigateInvestigation extends Page
                 ->label('Close')
                 ->icon('heroicon-o-x-circle')
                 ->color('gray')
-                ->visible(fn () => $this->record->status === Investigation::STATUS_RESOLVED)
+                ->visible(fn () => $this->record->status === Investigation::STATUS_RESOLVED
+                    && (auth()->user()?->canCloseInvestigation() ?? false))
                 ->requiresConfirmation()
                 ->modalHeading('Close Investigation?')
                 ->modalDescription('Closing marks this as permanently done. You can still view it.')
                 ->action(function () {
+                    abort_unless(auth()->user()?->canCloseInvestigation() ?? false, 403);
                     $old = $this->record->status;
                     $this->record->update([
                         'status'    => Investigation::STATUS_CLOSED,
@@ -330,7 +335,7 @@ class InvestigateInvestigation extends Page
                 ->visible(fn () => in_array($this->record->status, [
                     Investigation::STATUS_RESOLVED,
                     Investigation::STATUS_CLOSED,
-                ]))
+                ]) && (auth()->user()?->canRecordOutcomes() ?? false))
                 ->fillForm(fn () => $this->record->outcome ? $this->record->outcome->toArray() : [
                     'outcome_type'    => InvestigationOutcome::TYPE_RESOLVED,
                     'revenue_at_risk' => $this->record->revenue_at_risk,
@@ -346,7 +351,7 @@ class InvestigateInvestigation extends Page
                         ->label('Revenue at Risk')
                         ->numeric()
                         ->prefix(\App\Support\Money::symbol(Filament::getTenant()?->currencyCode()))
-                        ->helperText('AI estimate — adjust if needed'),
+                        ->helperText('Calculated from the detected signals — adjust if needed'),
 
                     TextInput::make('observed_recovery')
                         ->label('Observed Recovery')
@@ -390,6 +395,7 @@ class InvestigateInvestigation extends Page
                         ->rows(2),
                 ])
                 ->action(function (array $data) {
+                    abort_unless(auth()->user()?->canRecordOutcomes() ?? false, 403);
                     app(OutcomeService::class)->record($this->record, $data);
 
                     $this->record = $this->record->fresh([
