@@ -56,6 +56,7 @@ class ImportResource extends Resource
                         'failed'                 => 'danger',
                         'importing'              => 'info',
                         'mapping_review'         => 'warning',
+                        'held'                   => 'danger',
                         default                  => 'gray',
                     })
                     ->formatStateUsing(fn ($state) => match ($state) {
@@ -67,6 +68,7 @@ class ImportResource extends Resource
                         'failed'                 => 'Failed',
                         'rolled_back'            => 'Rolled back',
                         'abandoned'              => 'Abandoned',
+                        'held'                   => 'Held (quality)',
                         default                  => ucfirst($state),
                     }),
 
@@ -116,6 +118,7 @@ class ImportResource extends Resource
                         'failed'                => 'Failed',
                         'rolled_back'           => 'Rolled back',
                         'abandoned'             => 'Abandoned',
+                        'held'                  => 'Held (quality)',
                     ]),
 
                 SelectFilter::make('user')

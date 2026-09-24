@@ -79,6 +79,7 @@ class ImportQualityResource extends Resource
                         'green' => 'Green — detection ready',
                         'amber' => 'Amber — review exceptions',
                         'red'   => 'Red — blocked',
+                        'duplicate' => 'Duplicate upload — skipped',
                     ]),
 
                 SelectFilter::make('data_type')

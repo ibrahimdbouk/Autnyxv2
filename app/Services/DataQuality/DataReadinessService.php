@@ -54,7 +54,7 @@ class DataReadinessService
         $rows = DB::select(
             "SELECT DISTINCT ON (data_type) data_type, state, blocked
              FROM import_quality
-             WHERE tenant_id = ?
+             WHERE tenant_id = ? AND state IS DISTINCT FROM 'duplicate'
              ORDER BY data_type, created_at DESC",
             [$tenantId],
         );

@@ -166,6 +166,30 @@ class QuarantinedRowResource extends Resource
             ])
             ->bulkActions([
                 BulkActionGroup::make([
+                    // WP3.6: after fixing a rule / alias / product master, re-run the gate.
+                    BulkAction::make('rescreen')
+                        ->label('Re-screen')
+                        ->icon('heroicon-o-arrow-path')
+                        ->visible(fn () => (bool) auth()->user()?->canManageImports())
+                        ->action(function (Collection $records): void {
+                            abort_unless((bool) auth()->user()?->canManageImports(), 403);
+                            $r = app(\App\Services\Import\ImportProcessorService::class)->reprocessQuarantined($records, false, auth()->user());
+                            Notification::make()->title("{$r['promoted']} row(s) now pass and were loaded; {$r['still']} still quarantined")
+                                ->color($r['still'] > 0 ? 'warning' : 'success')->send();
+                        }),
+                    BulkAction::make('promote')
+                        ->label('Promote anyway')
+                        ->icon('heroicon-o-arrow-up-circle')
+                        ->color('danger')
+                        ->visible(fn () => (bool) auth()->user()?->isTenantAdmin())
+                        ->requiresConfirmation()
+                        ->modalDescription('Loads the selected rows despite their data-quality reason (rows without their key cannot be loaded). This is recorded in the audit log.')
+                        ->action(function (Collection $records): void {
+                            abort_unless((bool) auth()->user()?->isTenantAdmin(), 403);
+                            $r = app(\App\Services\Import\ImportProcessorService::class)->reprocessQuarantined($records, true, auth()->user());
+                            Notification::make()->title("{$r['promoted']} row(s) promoted; {$r['still']} could not be loaded")
+                                ->color($r['still'] > 0 ? 'warning' : 'success')->send();
+                        }),
                     BulkAction::make('skip')
                         ->label('Mark skipped')
                         ->icon('heroicon-o-x-circle')

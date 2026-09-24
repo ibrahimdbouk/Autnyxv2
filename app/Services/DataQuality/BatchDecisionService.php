@@ -17,10 +17,12 @@ class BatchDecisionService
     public function decide(string $dataType, int $promoted, int $quarantined, bool $isDuplicate): array
     {
         if ($isDuplicate) {
+            // WP3.6: a harmless re-upload — nothing new, nothing wrong. Not RED:
+            // it must not block the dataset's detection rules.
             return [
-                'state'    => ImportQuality::STATE_RED,
+                'state'    => ImportQuality::STATE_DUPLICATE,
                 'decision' => 'Duplicate upload — identical file already ingested; skipped (no new data).',
-                'blocked'  => true,
+                'blocked'  => false,
             ];
         }
 

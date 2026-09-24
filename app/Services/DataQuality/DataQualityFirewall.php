@@ -67,6 +67,7 @@ class DataQualityFirewall
 
         // Per-request state always resets (a request handles one chunk).
         $this->seen = [];
+        $this->writeWarnings = [];
         $this->reasonCounts = [];
         $this->promoted = $this->quarantined = $this->cleansed = 0;
         $this->profileRows = [];
@@ -179,10 +180,46 @@ class DataQualityFirewall
         return ['data' => $data, 'reason' => null, 'changed' => $changed];
     }
 
+    /** WP3.6: start a second pass over the same rows (the write pass) with clean per-pass state. */
+    public function resetPass(): void
+    {
+        $this->seen = [];
+        $this->reasonCounts = [];
+        $this->writeWarnings = [];
+        $this->promoted = $this->quarantined = $this->cleansed = 0;
+        $this->profileRows = [];
+        $this->captureProfile = false;
+    }
+
+    /** @var array<string,int> WP3.4/3.6: warnings raised by writers in the write pass. */
+    private array $writeWarnings = [];
+
     /** WP3.4: a soft data-quality warning raised by a writer (row still promoted). */
     public function warn(string $code): void
     {
         $this->reasonCounts[$code] = ($this->reasonCounts[$code] ?? 0) + 1;
+        $this->writeWarnings[$code] = ($this->writeWarnings[$code] ?? 0) + 1;
+    }
+
+    /**
+     * WP3.6: in the WRITE pass the batch was already counted while screening —
+     * only the writers' warnings are added to the quality record.
+     */
+    public function recordWarnings(Import $import): void
+    {
+        if ($this->writeWarnings === []) {
+            return;
+        }
+        $q = ImportQuality::where('import_id', $import->id)->first();
+        if ($q) {
+            $counts = $q->reason_counts ?? [];
+            foreach ($this->writeWarnings as $k => $v) {
+                $counts[$k] = ($counts[$k] ?? 0) + $v;
+            }
+            $q->reason_counts = $counts;
+            $q->save();
+        }
+        $this->writeWarnings = [];
     }
 
     public function quarantine(Import $import, array $raw, array $cleansed, string $reason, ?int $rowNumber): void
@@ -204,8 +241,12 @@ class DataQualityFirewall
         ]);
     }
 
-    /** Flush this request's counters into the per-import quality summary. */
-    public function recordChunk(Import $import): void
+    /**
+     * Flush this request's counters into the per-import quality summary.
+     * WP3.6: $alert=false while screening is still in progress — the RED alert
+     * is raised once, when the whole batch has been screened.
+     */
+    public function recordChunk(Import $import, bool $alert = true): void
     {
         $q = $this->quality ?? ImportQuality::firstOrCreate(
             ['import_id' => $import->id],
@@ -248,7 +289,7 @@ class DataQualityFirewall
 
         // A RED batch must never be silent (the firewall guardrail). Best-effort —
         // an alert failure can never break ingestion.
-        if ($decision['state'] === ImportQuality::STATE_RED && ! $wasRed) {
+        if ($alert && $decision['state'] === ImportQuality::STATE_RED && ! $wasRed) {
             app(ReadinessAlerter::class)->redBatch($q);
         }
     }

@@ -178,6 +178,21 @@ class ViewImport extends Page
                 ->modalDescription('This will re-attempt every failed row using the same column mapping. Rows that succeed will be removed from this list.')
                 ->action(fn () => $this->retryAllFailed()),
 
+            // WP3.6 (D6): a held RED batch is only loaded when an admin says so.
+            Action::make('promote_held')
+                ->label('Promote anyway')
+                ->icon('heroicon-o-arrow-up-circle')
+                ->color('danger')
+                ->visible(fn () => $this->record->status === Import::STATUS_HELD && (bool) auth()->user()?->isTenantAdmin())
+                ->requiresConfirmation()
+                ->modalHeading('Load this batch despite its quality?')
+                ->modalDescription(fn () => ($this->record->error_message ?? '') . ' Rows that failed the checks stay in quarantine. This is recorded in the audit log.')
+                ->action(function () {
+                    abort_unless((bool) auth()->user()?->isTenantAdmin(), 403);
+                    app(ImportProcessorService::class)->promoteHeld($this->record, auth()->user());
+                    $this->redirect(ProcessImport::getUrl(['record' => $this->record]));
+                }),
+
             Action::make('run_detection')
                 ->label('Run Detection Now')
                 ->icon('heroicon-o-cpu-chip')

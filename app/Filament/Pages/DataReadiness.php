@@ -45,7 +45,7 @@ class DataReadiness extends Page
         $rows = DB::select(
             "SELECT DISTINCT ON (data_type) data_type, state, decision, rows_promoted, rows_quarantined,
                     reason_counts, created_at
-             FROM import_quality WHERE tenant_id = ?
+             FROM import_quality WHERE tenant_id = ? AND state IS DISTINCT FROM 'duplicate'
              ORDER BY data_type, created_at DESC",
             [$tenantId],
         );

@@ -25,9 +25,10 @@ class DataQualityPhase2Test extends TestCase
         $this->assertSame(ImportQuality::STATE_AMBER, $svc->decide('sales_transactions', 92, 8, false)['state']);   // 92%
         $this->assertSame(ImportQuality::STATE_RED,   $svc->decide('sales_transactions', 80, 20, false)['state']);  // 80%
 
+        // WP3.6: a re-upload is its own state and never blocks the dataset.
         $dup = $svc->decide('sales_transactions', 100, 0, true);
-        $this->assertSame(ImportQuality::STATE_RED, $dup['state']);
-        $this->assertTrue($dup['blocked']);
+        $this->assertSame(ImportQuality::STATE_DUPLICATE, $dup['state']);
+        $this->assertFalse($dup['blocked']);
     }
 
     public function test_readiness_blocks_only_the_blocked_datasets_rules(): void

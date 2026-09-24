@@ -351,7 +351,49 @@ class ImportProcessorService
                 return;
             }
 
+            // WP3.6 (D6): screen the whole file first — quarantine what fails the
+            // gate and decide the batch; a RED batch is held with nothing written.
+            $skip = [];
+            if ($fw = $this->firewall()) {
+                $isSales = $import->data_type === Import::TYPE_SALES;
+                foreach ($allRows as $n => $rawRow) {
+                    $data = $this->applyMap($columnMap, $rawRow);
+                    $data = $this->parser()->normalizeRow($import->data_type, $isSales ? $this->numberLine($data) : $data);
+                    $screen = $fw->screen($import, $data);
+                    if ($screen['reason'] !== null) {
+                        $fw->quarantine($import, $rawRow, ValueParser::stripMeta($screen['data']), $screen['reason'], $n + 2);
+                        $skip[$n] = true;
+                        $quarantined++;
+                    }
+                }
+                $fw->recordChunk($import, alert: false);
+                $fw->resetPass();
+                $this->lineCounters = [];
+
+                $q = ImportQuality::where('import_id', $import->id)->first();
+                if ($q && $q->state === ImportQuality::STATE_RED) {
+                    $import->update([
+                        'status'           => Import::STATUS_HELD,
+                        'total_rows'       => $total,
+                        'quarantined_rows' => $quarantined,
+                        'process_phase'    => Import::PHASE_SCREEN,
+                        'error_message'    => 'Held — ' . $q->decision . ' Nothing was loaded. An admin can promote it anyway.',
+                    ]);
+                    app(\App\Services\DataQuality\ReadinessAlerter::class)->redBatch($q);
+                    $this->recordIngestionRun($import, $total, 0, 0, $startedAt);
+
+                    return;
+                }
+            }
+
             foreach ($allRows as $rowNumber => $rawRow) {
+                if (isset($skip[$rowNumber])) {
+                    // Keep receipt line numbering identical to the screen pass.
+                    if ($import->data_type === Import::TYPE_SALES) {
+                        $this->numberLine($this->applyMap($columnMap, $rawRow));
+                    }
+                    continue;
+                }
                 try {
                     DB::beginTransaction();
                     $this->lastWriteWasDuplicate = false;
@@ -359,9 +401,8 @@ class ImportProcessorService
                     DB::commit();
                     $this->lastWriteWasDuplicate ? $duplicates++ : $imported++;
                 } catch (QuarantineException $q) {
+                    // Already quarantined (and counted) by the screen pass.
                     DB::rollBack();
-                    $quarantined++;
-                    $this->firewall()?->quarantine($import, $rawRow, ValueParser::stripMeta($q->cleansed), $q->reasonCode, $rowNumber + 2);
                 } catch (\Throwable $e) {
                     DB::rollBack();
                     $failed++;
@@ -377,9 +418,9 @@ class ImportProcessorService
                 }
             }
 
-            $this->firewall()?->recordChunk($import);
+            $this->firewall()?->recordWarnings($import);
 
-            $status = $failed > 0 ? Import::STATUS_COMPLETED_WITH_ERRORS : Import::STATUS_COMPLETED;
+            $status = ($failed > 0 || $quarantined > 0) ? Import::STATUS_COMPLETED_WITH_ERRORS : Import::STATUS_COMPLETED;
 
             $import->update([
                 'status'           => $status,
@@ -388,7 +429,9 @@ class ImportProcessorService
                 'failed_rows'      => $failed,
                 'quarantined_rows' => $quarantined,
                 'duplicate_rows'   => $duplicates,
+                'process_phase'    => Import::PHASE_WRITE,
             ]);
+            $this->rescoreAfterWrite($import->fresh());
 
             // Slice 5 — learn this confirmed mapping for the next same-shaped import.
             try {
@@ -440,8 +483,11 @@ class ImportProcessorService
             'imported_rows'    => 0,
             'failed_rows'      => 0,
             'quarantined_rows' => 0,
+            'duplicate_rows'   => 0,
             'process_cursor'   => 0,
             'error_message'    => null,
+            // WP3.6 (D6): with the firewall on, the whole file is screened first.
+            'process_phase'    => $this->firewall() ? Import::PHASE_SCREEN : Import::PHASE_WRITE,
         ]);
     }
 
@@ -506,6 +552,9 @@ class ImportProcessorService
         $duplicates  = 0;
         $rowNumber   = $offset + 2; // 1-index + header row
         $isSales     = $import->data_type === Import::TYPE_SALES;
+        // WP3.6 (D6): SCREEN = decide quality, write nothing; WRITE = load the rows
+        // the screen passed (quarantine was already recorded while screening).
+        $screening   = $import->process_phase === Import::PHASE_SCREEN && $this->firewall() !== null;
 
         // WP3.1: continue each receipt's line numbering from earlier chunks.
         $mappedRows = array_map(fn ($r) => $this->applyMap($columnMap, $r), $chunk['rows']);
@@ -521,7 +570,7 @@ class ImportProcessorService
         $this->firewall()?->begin($import);
 
         // Idempotency: identical file already ingested → skip the whole batch (no
-        // re-promotion, so no duplicate canonical rows). Recorded as a RED batch.
+        // re-promotion, so no duplicate canonical rows). Recorded as a duplicate batch.
         if (($fw = $this->firewall()) && $fw->isDuplicateBatch()) {
             $fw->recordChunk($import);
             $import->update([
@@ -546,12 +595,19 @@ class ImportProcessorService
             if ($fw = $this->firewall()) {
                 $screen = $fw->screen($import, $data);
                 if ($screen['reason'] !== null) {
-                    $fw->quarantine($import, $rawRow, ValueParser::stripMeta($screen['data']), $screen['reason'], $rowNumber);
-                    $quarantined++;
+                    if ($screening || $import->process_phase === null) {
+                        $fw->quarantine($import, $rawRow, ValueParser::stripMeta($screen['data']), $screen['reason'], $rowNumber);
+                        $quarantined++;
+                    }
                     $rowNumber++;
                     continue;
                 }
                 $data = $screen['data'];
+            }
+
+            if ($screening) {
+                $rowNumber++;
+                continue;
             }
 
             try {
@@ -639,7 +695,13 @@ class ImportProcessorService
             }
         }
 
-        $this->firewall()?->recordChunk($import);
+        if ($screening) {
+            $this->firewall()->recordChunk($import, alert: false);
+        } elseif ($import->process_phase === Import::PHASE_WRITE) {
+            $this->firewall()?->recordWarnings($import);
+        } else {
+            $this->firewall()?->recordChunk($import); // an import started before WP3.6
+        }
 
         if ($isSales) {
             $this->persistLineCounters($import);
@@ -659,6 +721,10 @@ class ImportProcessorService
             || (int) $chunk['consumed'] === 0
             || ($import->total_rows > 0 && $newCursor >= $import->total_rows);
 
+        if ($done && $screening) {
+            return $this->finishScreening($import);
+        }
+
         if ($done) {
             $this->finalizeChunkedImport($import);
 
@@ -669,6 +735,191 @@ class ImportProcessorService
     }
 
     /**
+     * WP3.6 — quarantine triage. Re-screen open quarantined rows against the
+     * CURRENT rules, aliases and product master (after a fix) and load the ones
+     * that now pass; with $force, load them despite their reason (audited). A
+     * row without its key can never be forced. Loaded rows feed the daily
+     * aggregate and detection like any import.
+     *
+     * @return array{promoted: int, still: int}
+     */
+    public function reprocessQuarantined(\Illuminate\Support\Collection $rows, bool $force = false, ?User $by = null): array
+    {
+        $promoted = 0;
+        $still = 0;
+
+        foreach ($rows->groupBy('import_id') as $importId => $group) {
+            $import = Import::find($importId);
+            if (! $import) {
+                continue;
+            }
+            $this->parser = ValueParser::forImport($import);
+            $this->primeCaches((int) $import->tenant_id);
+            $columnMap = $import->columnMaps()->where('is_skipped', false)->whereNotNull('target_field')->get()->keyBy('source_header');
+            $fw = $this->firewall();
+            $fw?->begin($import);
+            $wrote = 0;
+
+            foreach ($group as $q) {
+                if ($q->status !== QuarantinedRow::STATUS_OPEN) {
+                    continue;
+                }
+                $data = $this->applyMap($columnMap, (array) $q->raw_data);
+                if (isset($q->cleansed_data['line_no'])) {
+                    $data['line_no'] = (string) $q->cleansed_data['line_no'];
+                }
+                $data = $this->parser()->normalizeRow($import->data_type, $data);
+
+                if ($fw) {
+                    $screen = $fw->screen($import, $data);
+                    $reason = $screen['reason'];
+                    if ($reason !== null && (! $force || $reason === \App\Services\DataQuality\Reasons::MISSING_KEY)) {
+                        $q->update([
+                            'reason_code'   => $reason,
+                            'severity'      => \App\Services\DataQuality\Reasons::severity($reason),
+                            'message'       => \App\Services\DataQuality\Reasons::label($reason),
+                            'cleansed_data' => ValueParser::stripMeta($screen['data']),
+                        ]);
+                        $still++;
+                        continue;
+                    }
+                    $data = $screen['data'];
+                }
+
+                try {
+                    DB::transaction(fn () => $this->writeMappedData($import, $data, (int) $q->row_number));
+                    $q->update(['status' => $force ? QuarantinedRow::STATUS_PROMOTED : QuarantinedRow::STATUS_RESOLVED]);
+                    $promoted++;
+                    $wrote++;
+                } catch (\Throwable $e) {
+                    $q->update(['message' => Str::limit($e->getMessage(), 250)]);
+                    $still++;
+                }
+            }
+
+            if ($wrote > 0) {
+                Import::whereKey($import->id)->update([
+                    'imported_rows'    => DB::raw('imported_rows + ' . $wrote),
+                    'quarantined_rows' => DB::raw('GREATEST(quarantined_rows - ' . $wrote . ', 0)'),
+                ]);
+                try {
+                    app(\App\Services\Sales\SalesDailyAggregator::class)->aggregateForImport($import);
+                    \App\Jobs\RunTenantDetectionJob::dispatch($import->tenant_id)->afterCommit();
+                } catch (\Throwable $e) {
+                    Log::error('Post-quarantine aggregation/detection dispatch failed', ['import_id' => $import->id, 'error' => $e->getMessage()]);
+                }
+                if ($force) {
+                    try {
+                        \App\Models\AuditLog::create([
+                            'tenant_id'   => $import->tenant_id,
+                            'user_id'     => $by?->id,
+                            'event_type'  => 'quarantine_promoted',
+                            'description' => "{$wrote} quarantined row(s) of import #{$import->id} promoted despite their data-quality reason.",
+                        ]);
+                    } catch (\Throwable) {
+                        // best-effort
+                    }
+                }
+            }
+        }
+
+        return ['promoted' => $promoted, 'still' => $still];
+    }
+
+    /**
+     * WP3.6 (audit H28): the batch verdict counts rows that FAILED TO WRITE, not
+     * just rows the firewall passed — a file whose every row fails at the
+     * database is no longer "100% clean". An admin override stands.
+     */
+    private function rescoreAfterWrite(Import $import): void
+    {
+        $failed = (int) $import->failed_rows;
+        $q = ImportQuality::where('import_id', $import->id)->first();
+        if ($failed === 0 || ! $q || $q->overridden_at !== null || $q->state === ImportQuality::STATE_DUPLICATE) {
+            return;
+        }
+
+        $decision = app(\App\Services\DataQuality\BatchDecisionService::class)->decide(
+            $import->data_type,
+            max(0, (int) $q->rows_promoted - $failed),
+            (int) $q->rows_quarantined + $failed,
+            false,
+        );
+        $wasRed = $q->state === ImportQuality::STATE_RED;
+        $q->update(['state' => $decision['state'], 'decision' => $decision['decision'] . " ({$failed} row(s) failed to load.)", 'blocked' => $decision['blocked']]);
+
+        if ($decision['state'] === ImportQuality::STATE_RED && ! $wasRed) {
+            app(\App\Services\DataQuality\ReadinessAlerter::class)->redBatch($q->fresh());
+        }
+    }
+
+    /**
+     * WP3.6 (D6): the whole file has been screened. A RED batch is HELD —
+     * nothing was written — and the admins are alerted; otherwise the write
+     * pass starts from the top.
+     */
+    private function finishScreening(Import $import): array
+    {
+        $q = ImportQuality::where('import_id', $import->id)->first();
+        $total = (int) max($import->total_rows, $import->process_cursor);
+
+        if ($q && $q->state === ImportQuality::STATE_RED) {
+            $import->update([
+                'status'        => Import::STATUS_HELD,
+                'total_rows'    => $total,
+                'error_message' => 'Held — ' . $q->decision . ' Nothing was loaded. An admin can promote it anyway.',
+            ]);
+            app(\App\Services\DataQuality\ReadinessAlerter::class)->redBatch($q);
+
+            return ['done' => true, 'processed' => $total, 'total' => $total];
+        }
+
+        DB::table('import_line_counters')->where('import_id', $import->id)->delete();
+        $import->update(['process_phase' => Import::PHASE_WRITE, 'process_cursor' => 0, 'total_rows' => $total]);
+
+        return ['done' => false, 'processed' => 0, 'total' => $total];
+    }
+
+    /**
+     * WP3.6 (D6): an admin loads a held (RED) batch anyway. Audited; the quality
+     * record keeps the original verdict in its decision text.
+     */
+    public function promoteHeld(Import $import, \App\Models\User $by): void
+    {
+        if ($import->status !== Import::STATUS_HELD) {
+            throw new \RuntimeException('Only a held import can be promoted.');
+        }
+
+        $q = ImportQuality::where('import_id', $import->id)->first();
+        $q?->update([
+            'state'         => ImportQuality::STATE_AMBER,
+            'blocked'       => false,
+            'decision'      => "Promoted by {$by->name} despite: " . $q->decision,
+            'overridden_by' => $by->id,
+            'overridden_at' => now(),
+        ]);
+
+        try {
+            \App\Models\AuditLog::create([
+                'tenant_id'   => $import->tenant_id,
+                'user_id'     => $by->id,
+                'event_type'  => 'import_promoted_despite_quality',
+                'description' => "Import #{$import->id} ({$import->original_filename}) promoted despite a RED quality decision.",
+            ]);
+        } catch (\Throwable) {
+            // best-effort
+        }
+
+        DB::table('import_line_counters')->where('import_id', $import->id)->delete();
+        $import->update([
+            'status'         => Import::STATUS_IMPORTING,
+            'process_phase'  => Import::PHASE_WRITE,
+            'process_cursor' => 0,
+            'error_message'  => null,
+        ]);
+    }
+
+    /**
      * Wrap up a chunked import: set the final status, record the ingestion run,
      * and run anomaly detection across the tenant.
      */
@@ -676,9 +927,12 @@ class ImportProcessorService
     {
         $import->refresh();
 
-        $status = $import->failed_rows > 0
+        // WP3.6 (audit H28): quarantined rows are errors too.
+        $status = ($import->failed_rows > 0 || $import->quarantined_rows > 0)
             ? Import::STATUS_COMPLETED_WITH_ERRORS
             : Import::STATUS_COMPLETED;
+
+        $this->rescoreAfterWrite($import);
 
         $total = max(
             (int) $import->total_rows,

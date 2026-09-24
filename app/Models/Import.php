@@ -30,6 +30,7 @@ class Import extends Model
         // WP3.3: a person confirmed the mapping (only then may it teach the memory).
         'mapping_confirmed_at',
         'mapping_confirmed_by',
+        'process_phase', // WP3.6
         'process_cursor',
         'error_message',
     ];
@@ -49,6 +50,12 @@ class Import extends Model
     const STATUS_ROLLED_BACK          = 'rolled_back';
     /** WP1.2 — an upload left in uploaded/mapping_review past the pending window. Resumable. */
     const STATUS_ABANDONED            = 'abandoned';
+    /** WP3.6 (D6) — screened RED: nothing written until an admin promotes it. */
+    const STATUS_HELD                 = 'held';
+
+    /** WP3.6 — screen (quality decided, nothing written) → write. */
+    const PHASE_SCREEN = 'screen';
+    const PHASE_WRITE  = 'write';
 
     /** Data types whose rows are inserted (and therefore reversible via rollback). */
     const ROLLBACK_TYPES = [
@@ -142,6 +149,13 @@ class Import extends Model
             return $this->isCompleted() ? 100 : 0;
         }
 
-        return (int) min(100, round(($this->process_cursor / $this->total_rows) * 100));
+        $pct = min(100, ($this->process_cursor / $this->total_rows) * 100);
+
+        // WP3.6: a screened import makes two passes — screen (0–50%), write (50–100%).
+        return (int) round(match ($this->process_phase) {
+            self::PHASE_SCREEN => $pct / 2,
+            self::PHASE_WRITE  => 50 + $pct / 2,
+            default            => $pct,
+        });
     }
 }

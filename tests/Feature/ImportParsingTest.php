@@ -128,11 +128,16 @@ class ImportParsingTest extends TestCase
 
     public function test_an_ambiguous_date_is_quarantined_and_a_misfit_date_fails_its_row(): void
     {
-        $csv = "Date,SKU,Store,Qty,Total\n03/04/2026,SKU-A,Downtown,1,1\n13/04/2026,SKU-B,Downtown,1,1\n";
+        // One ambiguous row among clean ones (≥90% clean, so the batch is loaded — WP3.6).
+        $csv = "Date,SKU,Store,Qty,Total\n03/04/2026,SKU-A,Downtown,1,1\n";
+        for ($i = 0; $i < 10; $i++) {
+            $csv .= "13/04/2026,SKU-B{$i},Downtown,1,1\n";
+        }
         $import = $this->runImport($this->import($csv, 'csv', self::SALES_MAP, ['date_format' => 'auto']));
 
         $this->assertSame('ambiguous_date', QuarantinedRow::where('import_id', $import->id)->value('reason_code'));
-        $this->assertSame(['SKU-B'], SalesTransaction::pluck('sku')->all());
+        $this->assertSame(0, SalesTransaction::where('sku', 'SKU-A')->count());
+        $this->assertSame(10, SalesTransaction::where('sku', 'like', 'SKU-B%')->count());
 
         $csv2 = "Date,SKU,Store,Qty,Total\n12/31/2026,SKU-C,Downtown,1,1\n";
         $import2 = $this->runImport($this->import($csv2, 'csv', self::SALES_MAP, ['date_format' => 'd/m/Y']));
