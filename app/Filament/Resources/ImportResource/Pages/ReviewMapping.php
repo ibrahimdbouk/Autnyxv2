@@ -63,6 +63,44 @@ class ReviewMapping extends Page
 
     public function confirmAndImport(): void
     {
+        // WP3.3: only an import waiting for review can be confirmed (a double
+        // click / replayed request must not restart a running import).
+        if ($this->record->fresh()->status !== Import::STATUS_MAPPING_REVIEW) {
+            Notification::make()->title('This import is no longer waiting for review')->warning()->send();
+
+            return;
+        }
+
+        // WP3.3 (audit H24): one column per field, and every required field mapped.
+        $schema = CanonicalSchema::forType((string) $this->record->data_type);
+        $claimed = [];
+        foreach ($this->mappings as $mapping) {
+            $target = $mapping['target_field'] ?? null;
+            if ($target !== null && $target !== '' && array_key_exists($target, $schema)) {
+                $claimed[$target][] = (string) ($mapping['source_header'] ?? '');
+            }
+        }
+        foreach ($claimed as $target => $headers) {
+            if (count($headers) > 1) {
+                Notification::make()
+                    ->title('A field is mapped twice')
+                    ->body("'" . implode("' and '", $headers) . "' both map to {$schema[$target]['label']}. Choose one.")
+                    ->danger()->send();
+
+                return;
+            }
+        }
+        foreach ($schema as $field => $def) {
+            if (($def['required'] ?? false) && ! isset($claimed[$field])) {
+                Notification::make()
+                    ->title('A required field is not mapped')
+                    ->body("Map a column to {$def['label']} before importing.")
+                    ->danger()->send();
+
+                return;
+            }
+        }
+
         // Persist the user's choices back to the DB.
         // WP1.3 (audit H10): $mappings is client-editable Livewire state — only
         // ever touch THIS import's maps, and only with a real canonical field.
@@ -80,6 +118,8 @@ class ReviewMapping extends Page
                     'is_confirmed' => true,
                 ]);
         }
+
+        $this->record->update(['mapping_confirmed_at' => now(), 'mapping_confirmed_by' => auth()->id()]);
 
         // Kick off chunked, poll-driven processing. The heavy lifting happens
         // on the ProcessImport page, one memory-safe chunk per poll, so large

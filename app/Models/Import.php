@@ -27,12 +27,16 @@ class Import extends Model
         'decimal_separator',
         'delimiter',
         'encoding',
+        // WP3.3: a person confirmed the mapping (only then may it teach the memory).
+        'mapping_confirmed_at',
+        'mapping_confirmed_by',
         'process_cursor',
         'error_message',
     ];
 
     protected $casts = [
         'sample_rows' => 'array',
+        'mapping_confirmed_at' => 'datetime',
     ];
 
     // Status constants

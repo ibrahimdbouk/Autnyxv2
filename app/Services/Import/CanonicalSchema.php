@@ -9,6 +9,13 @@ namespace App\Services\Import;
 class CanonicalSchema
 {
     /**
+     * WP3.3: bump whenever fields, their meaning or the aliases change — learned
+     * mapping memories from an older version are ignored (they could replay a
+     * mapping made under different rules).
+     */
+    public const VERSION = 2;
+
+    /**
      * Returns field definitions for the given data type.
      * Each field: ['label' => string, 'description' => string, 'required' => bool]
      */
@@ -38,7 +45,7 @@ class CanonicalSchema
             'date'           => ['label' => 'Date',           'description' => 'Transaction date (any common date format)', 'required' => true],
             'sku'            => ['label' => 'SKU',            'description' => 'Product SKU, item code, or product ID',     'required' => true],
             'product_name'   => ['label' => 'Product Name',   'description' => 'Name or description of the product',        'required' => false],
-            'location'       => ['label' => 'Location',       'description' => 'Store, outlet, channel, or region name',    'required' => false],
+            'location'       => ['label' => 'Location',       'description' => 'Store or outlet the sale happened at (name or code) — not a sales channel or region', 'required' => false],
             'quantity'       => ['label' => 'Quantity',       'description' => 'Number of units sold',                      'required' => true],
             'unit_price'     => ['label' => 'Unit Price',     'description' => 'Price per unit sold',                       'required' => false],
             'total_amount'   => ['label' => 'Total Amount',   'description' => 'Total net revenue or sales amount for the row', 'required' => false],
