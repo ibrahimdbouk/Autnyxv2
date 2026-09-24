@@ -19,13 +19,31 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class AuthenticateApiKey
 {
+    /** WP2.3: failed-auth attempts allowed per IP per minute before 429. */
+    private const MAX_FAILED_PER_MINUTE = 20;
+
     public function handle(Request $request, Closure $next, ?string $scope = null): Response
     {
+        // WP2.3 (audit M10): throttle BEFORE authenticating, so key guessing is
+        // rate-limited too (the per-key limiter only applies to valid keys).
+        $failKey = 'api-auth-fail:' . $request->ip();
+        if (\Illuminate\Support\Facades\RateLimiter::tooManyAttempts($failKey, self::MAX_FAILED_PER_MINUTE)) {
+            return response()->json(['error' => 'too_many_requests', 'message' => 'Too many failed authentication attempts. Try again later.'], 429);
+        }
+
         $token = $this->extractToken($request);
 
         $key = $token ? ApiKey::findActiveByToken($token) : null;
         if (! $key) {
+            \Illuminate\Support\Facades\RateLimiter::hit($failKey, 60);
+
             return $this->deny('Invalid or missing API key.', 401);
+        }
+
+        // WP2.3 (audit M10): a suspended or offboarded organisation's keys stop working.
+        $tenant = $key->tenant;
+        if ($tenant === null || ($tenant->status ?? \App\Models\Tenant::STATUS_ACTIVE) !== \App\Models\Tenant::STATUS_ACTIVE) {
+            return $this->deny('This organisation\'s API access is suspended.', 403);
         }
 
         if ($scope !== null && ! $key->hasScope($scope)) {

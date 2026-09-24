@@ -32,7 +32,7 @@ class PipelineIngestor
      * @param  iterable<int,array<string,mixed>>  $rows
      * @return Import|null  null when there were no rows
      */
-    public function ingestRows(int $tenantId, string $dataType, iterable $rows, string $source = 'api'): ?Import
+    public function ingestRows(int $tenantId, string $dataType, iterable $rows, string $source = 'api', bool $queue = false): ?Import
     {
         $headers = [];
         $buffer  = [];
@@ -75,6 +75,14 @@ class PipelineIngestor
 
         foreach ($this->mapper->map($parsed['headers'] ?? [], $parsed['rows'] ?? [], $dataType, $tenantId) as $mapping) {
             $import->columnMaps()->create($mapping);
+        }
+
+        // WP2.3: the public API queues processing (202 + poll); scheduled pulls
+        // already run in the background and process inline.
+        if ($queue) {
+            \App\Jobs\ProcessIngestedImportJob::dispatch($import->id)->afterCommit();
+
+            return $import->fresh();
         }
 
         $this->processor->process($import);

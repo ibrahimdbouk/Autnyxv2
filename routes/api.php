@@ -45,6 +45,9 @@ Route::prefix('v1')->group(function () {
     Route::middleware(['api.key:' . ApiKey::SCOPE_READ_DATA_HEALTH, 'throttle:publicapi'])
         ->get('data-health', [DataHealthController::class, 'index']);
 
-    Route::middleware(['api.key:' . ApiKey::SCOPE_WRITE_INGEST, 'throttle:publicapi'])
-        ->post('ingest', [IngestController::class, 'store']);
+    Route::middleware(['api.key:' . ApiKey::SCOPE_WRITE_INGEST, 'throttle:publicapi'])->group(function () {
+        Route::post('ingest', [IngestController::class, 'store']);
+        // WP2.3: ingest is queued — poll its status here.
+        Route::get('imports/{id}', [IngestController::class, 'show'])->whereNumber('id');
+    });
 });

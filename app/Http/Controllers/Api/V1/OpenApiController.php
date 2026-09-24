@@ -70,7 +70,10 @@ class OpenApiController
                     'responses' => ['200' => ['description' => 'OK']],
                 ]],
                 '/ingest' => ['post' => [
-                    'summary' => 'Push data into Autnyx', 'security' => $secured('write:ingest'),
+                    'summary' => 'Push data into Autnyx (queued; poll /imports/{id})', 'security' => $secured('write:ingest'),
+                    'parameters' => [['name' => 'Idempotency-Key', 'in' => 'header', 'required' => false,
+                        'description' => 'Retries with the same key within 24h return the original import instead of creating a duplicate.',
+                        'schema' => ['type' => 'string']]],
                     'requestBody' => ['required' => true, 'content' => ['application/json' => ['schema' => [
                         'type' => 'object', 'required' => ['data_type', 'rows'],
                         'properties' => [
@@ -78,7 +81,17 @@ class OpenApiController
                             'rows'      => ['type' => 'array', 'items' => ['type' => 'object']],
                         ],
                     ]]]],
-                    'responses' => ['201' => ['description' => 'Accepted'], '422' => ['description' => 'Validation error']],
+                    'responses' => [
+                        '202' => ['description' => 'Accepted — processing is queued'],
+                        '200' => ['description' => 'Idempotent replay of an earlier request'],
+                        '409' => ['description' => 'The same Idempotency-Key is being processed right now'],
+                        '422' => ['description' => 'Validation error (the users data type is not accepted over the API)'],
+                    ],
+                ]],
+                '/imports/{id}' => ['get' => [
+                    'summary' => 'Status of a queued ingest', 'security' => $secured('write:ingest'),
+                    'parameters' => [['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'integer']]],
+                    'responses' => ['200' => ['description' => 'Import status'], '404' => ['description' => 'Not found']],
                 ]],
             ],
         ], 200, [], JSON_UNESCAPED_SLASHES);

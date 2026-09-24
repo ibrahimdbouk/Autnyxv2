@@ -95,13 +95,65 @@ class PublicApiTest extends TestCase
         ];
 
         $this->postJson('/api/v1/ingest', $payload, $this->auth($token))
-            ->assertStatus(201)
+            ->assertStatus(202) // WP2.3: queued, not processed inside the request
             ->assertJsonPath('data_type', Import::TYPE_SALES)
             ->assertJsonPath('total_rows', 2);
 
         $this->assertTrue(
             Import::where('tenant_id', $tenant->id)->where('data_type', Import::TYPE_SALES)->exists()
         );
+        Bus::assertDispatched(\App\Jobs\ProcessIngestedImportJob::class);
+    }
+
+    // ── WP2.3 ────────────────────────────────────────────────────────────────
+
+    public function test_ingest_is_idempotent_with_an_idempotency_key_and_pollable(): void
+    {
+        Bus::fake();
+        Storage::fake('local');
+        $tenant = $this->createTenant();
+        [, $token] = $this->key($tenant->id, [ApiKey::SCOPE_WRITE_INGEST]);
+        $payload = ['data_type' => Import::TYPE_SALES, 'rows' => [['sku' => 'S', 'date' => '2026-01-01', 'quantity' => 1]]];
+        $headers = $this->auth($token) + ['Idempotency-Key' => 'order-batch-42'];
+
+        $first = $this->postJson('/api/v1/ingest', $payload, $headers)->assertStatus(202)->json('import_id');
+        $this->postJson('/api/v1/ingest', $payload, $headers)->assertStatus(200)
+            ->assertJsonPath('import_id', $first)->assertJsonPath('idempotent_replay', true);
+        $this->assertSame(1, Import::where('tenant_id', $tenant->id)->count(), 'a retried request does not duplicate the data');
+
+        $this->getJson("/api/v1/imports/{$first}", $this->auth($token))->assertOk()->assertJsonPath('import_id', $first);
+
+        // Another tenant cannot poll it.
+        $other = $this->createTenant();
+        [, $otherToken] = $this->key($other->id, [ApiKey::SCOPE_WRITE_INGEST]);
+        $this->getJson("/api/v1/imports/{$first}", $this->auth($otherToken))->assertNotFound();
+    }
+
+    public function test_users_cannot_be_ingested_over_the_api(): void
+    {
+        $tenant = $this->createTenant();
+        [, $token] = $this->key($tenant->id, [ApiKey::SCOPE_WRITE_INGEST]);
+
+        $this->postJson('/api/v1/ingest', ['data_type' => Import::TYPE_USERS, 'rows' => [['email' => 'x@y.z', 'name' => 'X', 'role' => 'admin']]], $this->auth($token))
+            ->assertStatus(422);
+    }
+
+    public function test_suspended_tenant_keys_stop_working(): void
+    {
+        $tenant = $this->createTenant();
+        [, $token] = $this->key($tenant->id, [ApiKey::SCOPE_READ_INVESTIGATIONS]);
+        $this->getJson('/api/v1/investigations', $this->auth($token))->assertOk();
+
+        $tenant->update(['status' => \App\Models\Tenant::STATUS_SUSPENDED]);
+        $this->getJson('/api/v1/investigations', $this->auth($token))->assertForbidden();
+    }
+
+    public function test_failed_authentication_is_rate_limited(): void
+    {
+        for ($i = 0; $i < 20; $i++) {
+            $this->getJson('/api/v1/investigations', ['Authorization' => 'Bearer atx_wrong_' . $i])->assertStatus(401);
+        }
+        $this->getJson('/api/v1/investigations', ['Authorization' => 'Bearer atx_wrong_x'])->assertStatus(429);
     }
 
     public function test_ingest_requires_write_scope(): void

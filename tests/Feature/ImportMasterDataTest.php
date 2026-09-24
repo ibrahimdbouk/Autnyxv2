@@ -89,6 +89,8 @@ class ImportMasterDataTest extends TestCase
     public function test_user_import_creates_tenant_scoped_user_with_role(): void
     {
         $import = $this->makeImport(Import::TYPE_USERS);
+        // WP2.3: roles are only applied when uploaded by someone who may manage users.
+        $import->update(['user_id' => $this->createUser($this->tenant, admin: true)->id]);
         $this->runRow($import, ['name' => 'Jane Ops', 'email' => 'JANE@Store.test', 'role' => 'tenant_admin']);
 
         $user = User::where('email', 'jane@store.test')->first();
@@ -96,6 +98,39 @@ class ImportMasterDataTest extends TestCase
         $this->assertSame($this->tenant->id, $user->tenant_id);
         $this->assertTrue($user->is_tenant_admin);
         $this->assertFalse((bool) $user->is_super_admin);
+    }
+
+    public function test_user_import_never_changes_roles_without_a_role_column_or_an_admin_uploader(): void
+    {
+        $admin = $this->createUser($this->tenant, admin: true);
+        $analyst = $this->createUser($this->tenant);
+
+        // No role column: an existing admin listed in the file is NOT demoted.
+        $import = $this->makeImport(Import::TYPE_USERS);
+        $import->update(['user_id' => $admin->id]);
+        $this->runRow($import, ['name' => 'Renamed', 'email' => $admin->email]);
+        $this->assertTrue($admin->fresh()->is_tenant_admin);
+
+        // Uploaded without an admin actor (e.g. an API key): roles are ignored.
+        $import2 = $this->makeImport(Import::TYPE_USERS);
+        $this->runRow($import2, ['name' => 'X', 'email' => $analyst->email, 'role' => 'admin']);
+        $this->assertFalse($analyst->fresh()->is_tenant_admin);
+    }
+
+    public function test_user_import_cannot_touch_a_super_admin(): void
+    {
+        auth()->logout();
+        $super = $this->createUser($this->tenant, superAdmin: true);
+        $import = $this->makeImport(Import::TYPE_USERS);
+        $import->update(['user_id' => $this->createUser($this->tenant, admin: true)->id]);
+
+        try {
+            $this->runRow($import, ['name' => 'Hijack', 'email' => $super->email, 'role' => 'user']);
+        } catch (\Throwable) {
+            // the row is rejected
+        }
+
+        $this->assertNotSame('Hijack', $super->fresh()->name);
     }
 
     public function test_returns_import_creates_return_with_reason(): void

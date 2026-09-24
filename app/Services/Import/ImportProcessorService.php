@@ -949,21 +949,33 @@ class ImportProcessorService
             throw new \InvalidArgumentException("Row {$row}: '{$email}' is not a valid email address.");
         }
 
-        $role = strtolower(trim((string) ($data['role'] ?? '')));
-        $isAdmin = in_array($role, ['admin', 'tenant_admin', 'tenant admin', 'administrator', 'manager'], true);
-
         $existing = User::where('email', $email)->first();
 
         $attrs = [
-            'tenant_id'       => $import->tenant_id,
-            'name'            => $this->str($data['name'], 'name', $row),
-            'is_tenant_admin' => $isAdmin,
+            'tenant_id' => $import->tenant_id,
+            'name'      => $this->str($data['name'], 'name', $row),
         ];
 
+        // WP2.3 (audit): an import only changes admin rights when a role column
+        // was actually mapped AND the person who uploaded it may manage users.
+        // (Before: a file without a role column demoted every listed admin, and
+        // an API key with write:ingest could grant admin rights.)
+        $roleMapped = array_key_exists('role', $data);
+        $actor = $import->user_id ? User::find($import->user_id) : null;
+        if ($roleMapped && $actor !== null && $actor->canManageUsers()) {
+            $role = strtolower(trim((string) ($data['role'] ?? '')));
+            $attrs['is_tenant_admin'] = in_array($role, ['admin', 'tenant_admin', 'tenant admin', 'administrator', 'manager'], true);
+        } elseif (! $existing) {
+            $attrs['is_tenant_admin'] = false;
+        }
+
         if ($existing) {
-            // Never let an import escalate a super admin or move another tenant's user.
-            if ($existing->tenant_id !== $import->tenant_id) {
+            // Never let an import touch a platform administrator or move another tenant's user.
+            if ((int) $existing->tenant_id !== (int) $import->tenant_id) {
                 throw new \InvalidArgumentException("Row {$row}: user '{$email}' already exists under a different tenant.");
+            }
+            if ($existing->is_super_admin || $existing->isOwner()) {
+                throw new \InvalidArgumentException("Row {$row}: '{$email}' is a platform administrator and cannot be changed by an import.");
             }
             $existing->update($attrs);
         } else {
