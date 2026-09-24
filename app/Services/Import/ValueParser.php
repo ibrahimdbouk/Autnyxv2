@@ -118,12 +118,19 @@ final class ValueParser
             }
             $type = FieldTypes::of($field);
             if (self::isBlank($data[$field])) {
-                if (in_array($type, [FieldTypes::DATE, FieldTypes::NUMBER, FieldTypes::INT], true)) {
+                if ($type === FieldTypes::DATE || FieldTypes::isNumeric($type)) {
                     $data[$field] = null;
                 }
                 continue;
             }
-            if ($type === FieldTypes::DATE) {
+            if (in_array($type, [FieldTypes::PERCENT, FieldTypes::WEIGHT, FieldTypes::LENGTH, FieldTypes::VOLUME], true)) {
+                $n = $this->byUnitType($type, $data[$field]);
+                if ($n !== null) {
+                    $data[$field] = $n;
+                } else {
+                    $invalid[$field] = self::INVALID_NUMBER;
+                }
+            } elseif ($type === FieldTypes::DATE) {
                 $r = $this->date($data[$field]);
                 if ($r['value'] !== null) {
                     $data[$field] = $r['value'];
@@ -314,6 +321,74 @@ final class ValueParser
         }
 
         return $this->signed($s, $negative);
+    }
+
+    // ── Units (WP3.4) ────────────────────────────────────────────────────────
+
+    public const WEIGHT_UNITS = [
+        'kg' => 1000, 'kgs' => 1000, 'kilo' => 1000, 'kilogram' => 1000, 'kilograms' => 1000,
+        'g' => 1, 'gr' => 1, 'gm' => 1, 'gms' => 1, 'gram' => 1, 'grams' => 1, 'mg' => 0.001,
+        'lb' => 453.59237, 'lbs' => 453.59237, 'oz' => 28.349523125,
+    ];
+    public const LENGTH_UNITS = ['mm' => 1, 'cm' => 10, 'm' => 1000, 'in' => 25.4, 'inch' => 25.4, 'inches' => 25.4];
+    public const VOLUME_UNITS = ['cm3' => 1, 'cm³' => 1, 'cc' => 1, 'ml' => 1, 'l' => 1000, 'ltr' => 1000, 'litre' => 1000, 'liter' => 1000, 'm3' => 1000000];
+
+    /** Canonical number for a unit-bearing field type (PERCENT / WEIGHT / LENGTH / VOLUME). */
+    public function byUnitType(string $type, mixed $raw): ?string
+    {
+        return match ($type) {
+            FieldTypes::PERCENT => $this->percent($raw),
+            FieldTypes::WEIGHT  => $this->measure($raw, self::WEIGHT_UNITS),
+            FieldTypes::LENGTH  => $this->measure($raw, self::LENGTH_UNITS),
+            FieldTypes::VOLUME  => $this->measure($raw, self::VOLUME_UNITS),
+            default             => $this->number($raw),
+        };
+    }
+
+    /**
+     * A rate as a percentage: "5%" → 5, "0.05" → 5, "15" → 15. A plain value of
+     * 1 or less is read as a fraction (0.5 means 50%; write "0.5%" for half a percent).
+     */
+    public function percent(mixed $raw): ?string
+    {
+        if (self::isBlank($raw)) {
+            return null;
+        }
+        $v = trim((string) $raw);
+        if (str_contains($v, '%')) {
+            return $this->number(str_replace('%', '', $v));
+        }
+        $n = $this->number($v);
+        if ($n === null) {
+            return null;
+        }
+
+        return abs((float) $n) <= 1 ? $this->plain((float) $n * 100) : $n;
+    }
+
+    /**
+     * A quantity with an optional unit ("1.5 kg", "500g", "12 cm"), converted to
+     * the base unit of $units (factor 1). No unit → already in the base unit.
+     * An unknown unit is rejected, not ignored.
+     */
+    public function measure(mixed $raw, array $units): ?string
+    {
+        if (self::isBlank($raw)) {
+            return null;
+        }
+        $v = trim((string) $raw);
+        $factor = 1.0;
+        if (preg_match('/^(.*?\d)\s*([a-zA-Z³]+[0-9³]?)\.?$/u', $v, $m)) {
+            $unit = mb_strtolower($m[2]);
+            if (! array_key_exists($unit, $units)) {
+                return null;
+            }
+            $factor = (float) $units[$unit];
+            $v = $m[1];
+        }
+        $n = $this->number($v);
+
+        return $n === null ? null : $this->plain((float) $n * $factor);
     }
 
     /** @return array{0: string, 1: bool} */

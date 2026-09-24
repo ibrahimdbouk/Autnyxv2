@@ -88,15 +88,22 @@ class ImportProcessorService
             return;
         }
 
-        $this->storeCache = Store::where('tenant_id', $tenantId)
-            ->pluck('id', 'name')
-            ->mapWithKeys(fn ($id, $name) => [trim((string) $name) => (int) $id])
-            ->all();
+        // WP3.4: case/space-insensitive keys; codes resolve too (names win on a clash).
+        $this->storeCache = [];
+        $stores = Store::where('tenant_id', $tenantId)->orderBy('id')->get(['id', 'name', 'code']);
+        foreach ($stores as $st) {
+            $this->storeCache[self::norm($st->name)] ??= (int) $st->id;
+        }
+        foreach ($stores as $st) {
+            if ($st->code) {
+                $this->storeCache[self::norm($st->code)] ??= (int) $st->id;
+            }
+        }
 
-        $this->supplierCache = Supplier::where('tenant_id', $tenantId)
-            ->pluck('id', 'name')
-            ->mapWithKeys(fn ($id, $name) => [trim((string) $name) => (int) $id])
-            ->all();
+        $this->supplierCache = [];
+        foreach (Supplier::where('tenant_id', $tenantId)->orderBy('id')->get(['id', 'name']) as $sup) {
+            $this->supplierCache[self::norm($sup->name)] ??= (int) $sup->id;
+        }
 
         $this->productCache = Product::where('tenant_id', $tenantId)
             ->pluck('id', 'sku')
@@ -713,22 +720,31 @@ class ImportProcessorService
                 'tenant_id' => null, 'import_id' => null, 'store_id' => null, 'product_id' => null,
                 'transaction_id' => null, 'line_no' => null, 'row_hash' => null, 'date' => null, 'sku' => null, 'location' => null,
                 'quantity' => null, 'unit_price' => null, 'total_amount' => null, 'discount' => null, 'payment_method' => null,
+                // WP3.4
+                'channel' => null, 'cost_amount' => null, 'currency' => null, 'customer_ref' => null, 'promotion_ref' => null,
             ],
             'inventory_levels' => [
                 'tenant_id' => null, 'import_id' => null, 'store_id' => null, 'product_id' => null,
                 'sku' => null, 'location' => null, 'on_hand_qty' => null, 'reorder_point' => null,
                 'as_of_date' => null, 'on_order_qty' => null, 'inventory_value' => null,
+                // WP3.4
+                'safety_stock' => null, 'allocated_qty' => null, 'in_transit_qty' => null, 'unit_cost' => null,
+                'batch_ref' => null, 'expiry_date' => null,
             ],
             'purchase_orders' => [
                 'tenant_id' => null, 'import_id' => null, 'supplier_id' => null, 'store_id' => null, 'product_id' => null,
                 'po_number' => null, 'supplier' => null, 'sku' => null, 'qty_ordered' => null, 'qty_received' => null,
                 'unit_cost' => null, 'order_date' => null, 'expected_date' => null, 'received_date' => null,
                 'location' => null, 'open_qty' => null, 'late_days' => null, 'fill_rate' => null,
+                // WP3.4
+                'currency' => null, 'status' => null, 'buyer' => null,
             ],
             'sales_returns' => [
                 'tenant_id' => null, 'import_id' => null, 'store_id' => null, 'product_id' => null,
                 'return_id' => null, 'date' => null, 'sku' => null, 'location' => null,
                 'quantity' => null, 'value' => null, 'reason' => null,
+                // WP3.4
+                'channel' => null, 'condition' => null, 'original_transaction_ref' => null,
             ],
             default => [],
         };
@@ -884,7 +900,13 @@ class ImportProcessorService
             'transaction_id' => ($t = trim((string) ($data['transaction_id'] ?? ''))) !== '' ? $t : null,
             'line_no'        => $this->lineNo($data['line_no'] ?? null, $row),
             'discount'       => isset($data['discount']) ? $this->numericOrNull($data['discount']) : null,
-            'payment_method' => $data['payment_method'] ?? null,
+            'payment_method' => $this->optText($data, 'payment_method'),
+            // WP3.4 — hardening fields (an unusable optional value → NULL + DQ warning).
+            'channel'        => $this->optText($data, 'channel'),
+            'cost_amount'    => $this->optNumber($data, 'cost_amount'),
+            'currency'       => $this->optCurrency($data, 'currency'),
+            'customer_ref'   => $this->optText($data, 'customer_ref'),
+            'promotion_ref'  => $this->optText($data, 'promotion_ref'),
         ];
 
         // WP3.1: content fingerprint (receipt line excluded), for cross-import
@@ -929,6 +951,13 @@ class ImportProcessorService
             'as_of_date'      => isset($data['as_of_date']) ? $this->parseDateOrNull($data['as_of_date'], $row) : null,
             'on_order_qty'    => isset($data['on_order_qty']) ? $this->numericOrNull($data['on_order_qty']) : null,
             'inventory_value' => isset($data['inventory_value']) ? $this->numericOrNull($data['inventory_value']) : null,
+            // WP3.4 — hardening fields.
+            'safety_stock'    => $this->optNumber($data, 'safety_stock'),
+            'allocated_qty'   => $this->optNumber($data, 'allocated_qty'),
+            'in_transit_qty'  => $this->optNumber($data, 'in_transit_qty'),
+            'unit_cost'       => $this->optNumber($data, 'unit_cost'),
+            'batch_ref'       => $this->optText($data, 'batch_ref'),
+            'expiry_date'     => isset($data['expiry_date']) ? $this->parseDateOrNull($data['expiry_date'], $row) : null,
         ];
 
         if ($location) {
@@ -942,28 +971,48 @@ class ImportProcessorService
         return $attrs;
     }
 
+    /**
+     * WP3.4 (audit H25): master data is updated PARTIALLY — only columns the
+     * file actually carries (mapped and non-blank) are written, so a
+     * price-only file no longer wipes category, supplier, cost and barcode.
+     */
     private function writeProduct(Import $import, array $data, int $row): void
     {
         $this->requireFields($data, ['sku', 'name'], $row);
 
-        $attrs = [
-            'tenant_id'     => $import->tenant_id,
-            'sku'           => $this->str($data['sku'], 'sku', $row),
+        $sku = $this->str($data['sku'], 'sku', $row);
+        $attrs = $this->present([
             'name'          => $this->str($data['name'], 'name', $row),
-            'category'      => $data['category'] ?? null,
-            'subcategory'   => $data['subcategory'] ?? null,
-            'unit_cost'     => isset($data['unit_cost'])     ? $this->numericOrNull($data['unit_cost'])     : null,
-            'selling_price' => isset($data['selling_price']) ? $this->numericOrNull($data['selling_price']) : null,
-            'supplier'      => $data['supplier'] ?? null,
-            'barcode'       => $data['barcode'] ?? null,
-            'brand'         => $data['brand'] ?? null,
-            'pack_size'     => $data['pack_size'] ?? null,
-        ];
+            'category'      => $this->optText($data, 'category'),
+            'subcategory'   => $this->optText($data, 'subcategory'),
+            'unit_cost'     => $this->optNumber($data, 'unit_cost'),
+            'selling_price' => $this->optNumber($data, 'selling_price'),
+            'supplier'      => $this->optText($data, 'supplier'),
+            'barcode'       => $this->optText($data, 'barcode'),
+            'brand'         => $this->optText($data, 'brand'),
+            'pack_size'     => $this->optText($data, 'pack_size'),
+            'department'    => $this->optText($data, 'department'),
+            'uom'           => $this->optText($data, 'uom'),
+            'weight_grams'  => $this->optNumber($data, 'weight_grams', 0),
+            'tax_rate'      => $this->optNumber($data, 'tax_rate', 0, 100),
+            'gtin'          => $this->optText($data, 'gtin', '/^\d{8}$|^\d{12,14}$/'),
+            'season'        => $this->optText($data, 'season'),
+            'status'        => $this->optText($data, 'status'),
+            'length_mm'     => $this->optNumber($data, 'length_mm', 0),
+            'width_mm'      => $this->optNumber($data, 'width_mm', 0),
+            'height_mm'     => $this->optNumber($data, 'height_mm', 0),
+            'volume_cm3'    => $this->optNumber($data, 'volume_cm3', 0),
+        ]);
 
-        Product::updateOrCreate(
-            ['tenant_id' => $attrs['tenant_id'], 'sku' => $attrs['sku']],
-            $attrs
-        );
+        $product = Product::firstOrNew(['tenant_id' => $import->tenant_id, 'sku' => $sku]);
+        $product->fill($attrs);
+
+        // Volume follows the dimensions when the file doesn't give it.
+        if (! array_key_exists('volume_cm3', $attrs) && $product->length_mm && $product->width_mm && $product->height_mm) {
+            $product->volume_cm3 = round((float) $product->length_mm * (float) $product->width_mm * (float) $product->height_mm / 1000, 2);
+        }
+
+        $product->save();
     }
 
     private function writePurchaseOrder(Import $import, array $data, int $row): void
@@ -991,6 +1040,10 @@ class ImportProcessorService
             'open_qty'      => isset($data['open_qty'])  ? $this->numericOrNull($data['open_qty'])  : null,
             'late_days'     => isset($data['late_days']) ? (int) $this->numericOrNull($data['late_days']) : null,
             'fill_rate'     => isset($data['fill_rate']) ? $this->numericOrNull($data['fill_rate']) : null,
+            // WP3.4 — hardening fields.
+            'currency'      => $this->optCurrency($data, 'currency'),
+            'status'        => $this->optText($data, 'status'),
+            'buyer'         => $this->optText($data, 'buyer'),
         ];
 
         if (! ValueParser::isBlank($data['location'] ?? null)) {
@@ -1012,43 +1065,71 @@ class ImportProcessorService
     {
         $this->requireFields($data, ['name'], $row);
 
-        $attrs = [
-            'tenant_id' => $import->tenant_id,
-            'name'      => $this->str($data['name'], 'name', $row),
-            'code'      => $data['code'] ?? null,
-            'address'   => $data['address'] ?? null,
-            'city'      => $data['city'] ?? null,
-            'region'    => $data['region'] ?? null,
-            'country'   => $data['country'] ?? null,
-            'format'    => $data['format'] ?? null,
-        ];
+        $name = $this->str($data['name'], 'name', $row);
+        $code = $this->optText($data, 'code');
+        $attrs = $this->present([
+            'name'           => $name,
+            'code'           => $code,
+            'address'        => $this->optText($data, 'address'),
+            'city'           => $this->optText($data, 'city'),
+            'region'         => $this->optText($data, 'region'),
+            'country'        => $this->optText($data, 'country'),
+            'format'         => $this->optText($data, 'format'),
+            'postal_code'    => $this->optText($data, 'postal_code'),
+            'latitude'       => $this->optNumber($data, 'latitude', -90, 90),
+            'longitude'      => $this->optNumber($data, 'longitude', -180, 180),
+            'phone'          => $this->optText($data, 'phone'),
+            'email'          => $this->optEmail($data, 'email'),
+            'timezone'       => $this->optTimezone($data, 'timezone'),
+            'currency'       => $this->optCurrency($data, 'currency'),
+            'banner'         => $this->optText($data, 'banner'),
+            'status'         => $this->optText($data, 'status'),
+            'opened_on'      => isset($data['opened_on']) ? $this->parseDateOrNull($data['opened_on'], $row) : null,
+            'sales_area_sqm' => $this->optNumber($data, 'sales_area_sqm', 0),
+        ]);
 
-        // Enrich the existing (possibly auto-created) store rather than duplicating.
-        Store::updateOrCreate(
-            ['tenant_id' => $attrs['tenant_id'], 'name' => $attrs['name']],
-            $attrs
-        );
+        // WP3.4: enrich the store the facts already point at — by code, then by
+        // name (case/space-insensitive), then a store auto-created from a sales
+        // file that identified it by this code — instead of duplicating it.
+        $tenantId = (int) $import->tenant_id;
+        $store = ($code !== null ? $this->storeByNormalised($tenantId, 'code', $code) : null)
+            ?? $this->storeByNormalised($tenantId, 'name', $name)
+            ?? ($code !== null ? Store::where('tenant_id', $tenantId)->whereNull('code')
+                ->whereRaw("lower(regexp_replace(trim(name), '\\s+', ' ', 'g')) = ?", [self::norm($code)])->first() : null);
+
+        $store ??= new Store(['tenant_id' => $tenantId]);
+        $store->fill($attrs)->save();
+
+        $this->rememberStore($tenantId, $store);
     }
 
     private function writeSupplier(Import $import, array $data, int $row): void
     {
         $this->requireFields($data, ['name'], $row);
 
-        $attrs = [
-            'tenant_id'      => $import->tenant_id,
-            'name'           => $this->str($data['name'], 'name', $row),
-            'code'           => $data['code'] ?? null,
-            'lead_time_days' => isset($data['lead_time_days']) ? (int) $this->numericOrNull($data['lead_time_days']) : null,
-            'contact_email'  => $data['contact_email'] ?? null,
-            'contact_phone'  => $data['contact_phone'] ?? null,
-            'type'           => $data['type'] ?? null,
-            'specialization' => $data['specialization'] ?? null,
-        ];
+        $name = $this->str($data['name'], 'name', $row);
+        $attrs = $this->present([
+            'name'            => $name,
+            'code'            => $this->optText($data, 'code'),
+            'lead_time_days'  => ($lt = $this->optNumber($data, 'lead_time_days', 0)) === null ? null : (int) round($lt),
+            'contact_email'   => $this->optEmail($data, 'contact_email'),
+            'contact_phone'   => $this->optText($data, 'contact_phone'),
+            'type'            => $this->optText($data, 'type'),
+            'specialization'  => $this->optText($data, 'specialization'),
+            'country'         => $this->optText($data, 'country'),
+            'region'          => $this->optText($data, 'region'),
+            'city'            => $this->optText($data, 'city'),
+            'currency'        => $this->optCurrency($data, 'currency'),
+            'payment_terms'   => $this->optText($data, 'payment_terms'),
+            'min_order_value' => $this->optNumber($data, 'min_order_value', 0),
+            'website'         => $this->optText($data, 'website'),
+            'status'          => $this->optText($data, 'status'),
+        ]);
 
-        Supplier::updateOrCreate(
-            ['tenant_id' => $attrs['tenant_id'], 'name' => $attrs['name']],
-            $attrs
-        );
+        $supplier = Supplier::where('tenant_id', $import->tenant_id)
+            ->whereRaw('lower(trim(name)) = ?', [mb_strtolower(trim($name))])
+            ->first() ?? new Supplier(['tenant_id' => $import->tenant_id]);
+        $supplier->fill($attrs)->save();
     }
 
     private function writeReturn(Import $import, array $data, int $row): void
@@ -1070,8 +1151,12 @@ class ImportProcessorService
             'location'  => $location,
             'quantity'  => $this->numeric($data['quantity'], 'quantity', $row),
             'value'     => isset($data['value']) ? $this->numericOrNull($data['value']) : null,
-            'reason'    => $data['reason'] ?? null,
-            'return_id' => $data['return_id'] ?? null,
+            'reason'    => $this->optText($data, 'reason'),
+            'return_id' => $this->optText($data, 'return_id'),
+            // WP3.4 — hardening fields.
+            'channel'   => $this->optText($data, 'channel'),
+            'condition' => $this->optText($data, 'condition'),
+            'original_transaction_ref' => $this->optText($data, 'original_transaction_ref'),
         ];
 
         if ($location) {
@@ -1143,10 +1228,40 @@ class ImportProcessorService
             /** @var ImportColumnMap|null $map */
             $map = $columnMap->get($sourceHeader);
             if ($map && $map->target_field) {
-                $data[$map->target_field] = $value !== '' ? $value : null;
+                $value = $value !== '' ? $value : null;
+                // WP3.4: "Weight (kg)" / "Length_cm" — a unit in the header applies
+                // to plain numbers in the column.
+                if ($value !== null && isset(self::UNIT_FIELDS[$map->target_field]) && preg_match('/^[\s\d.,\-+]+$/', (string) $value)) {
+                    $unit = self::headerUnit((string) $sourceHeader, self::UNIT_FIELDS[$map->target_field]);
+                    if ($unit !== null) {
+                        $value = trim((string) $value) . ' ' . $unit;
+                    }
+                }
+                $data[$map->target_field] = $value;
             }
         }
         return $data;
+    }
+
+    /** WP3.4: fields whose unit may be given in the column header. */
+    private const UNIT_FIELDS = [
+        'weight_grams' => ValueParser::WEIGHT_UNITS,
+        'length_mm'    => ValueParser::LENGTH_UNITS,
+        'width_mm'     => ValueParser::LENGTH_UNITS,
+        'height_mm'    => ValueParser::LENGTH_UNITS,
+        'volume_cm3'   => ValueParser::VOLUME_UNITS,
+    ];
+
+    private static function headerUnit(string $header, array $units): ?string
+    {
+        $tokens = preg_split('/[^a-z0-9³]+/u', mb_strtolower($header)) ?: [];
+        foreach (array_reverse($tokens) as $t) {
+            if ($t !== '' && array_key_exists($t, $units)) {
+                return $t;
+            }
+        }
+
+        return null;
     }
 
     /** WP3.2: the CSV dialect detected at upload (null for spreadsheets / legacy imports → re-detected). */
@@ -1175,6 +1290,123 @@ class ImportProcessorService
             // WP3.2 (audit H26): blank means blank — "0" is a value.
             if (ValueParser::isBlank($data[$field] ?? null)) {
                 throw new \InvalidArgumentException("Row {$row}: required field '{$field}' is missing or empty.");
+            }
+        }
+    }
+
+    // ── WP3.4: optional values — unusable → NULL + data-quality warning ──────
+
+    /** Only the attributes the file actually carries (mapped and non-blank). */
+    private function present(array $attrs): array
+    {
+        return array_filter($attrs, fn ($v) => $v !== null);
+    }
+
+    private function warnInvalid(): void
+    {
+        $this->firewall()?->warn(\App\Services\DataQuality\Reasons::WARN_INVALID_VALUE);
+    }
+
+    private function optText(array $data, string $field, ?string $pattern = null, int $max = 255): ?string
+    {
+        $v = $data[$field] ?? null;
+        if ($v === null) {
+            return null;
+        }
+        $v = trim((string) $v);
+        if ($v === '') {
+            return null;
+        }
+        if ($pattern !== null && ! preg_match($pattern, $v)) {
+            $this->warnInvalid();
+
+            return null;
+        }
+        if (mb_strlen($v) > $max) {
+            $this->warnInvalid();
+
+            return mb_substr($v, 0, $max);
+        }
+
+        return $v;
+    }
+
+    private function optNumber(array $data, string $field, ?float $min = null, ?float $max = null): ?float
+    {
+        $v = $data[$field] ?? null;
+        if ($v === null) {
+            return null;
+        }
+        $n = $v instanceof InvalidValue ? null : $this->canonical()->number($v);
+        if ($n === null || ($min !== null && (float) $n < $min) || ($max !== null && (float) $n > $max)) {
+            $this->warnInvalid();
+
+            return null;
+        }
+
+        return (float) $n;
+    }
+
+    private function optCurrency(array $data, string $field): ?string
+    {
+        $v = $this->optText($data, $field);
+        if ($v === null) {
+            return null;
+        }
+        $v = mb_strtoupper($v);
+        if (! preg_match('/^[A-Z]{3}$/', $v)) {
+            $this->warnInvalid();
+
+            return null;
+        }
+
+        return $v;
+    }
+
+    private function optEmail(array $data, string $field): ?string
+    {
+        $v = $this->optText($data, $field);
+        if ($v !== null && ! filter_var($v, FILTER_VALIDATE_EMAIL)) {
+            $this->warnInvalid();
+
+            return null;
+        }
+
+        return $v === null ? null : mb_strtolower($v);
+    }
+
+    private function optTimezone(array $data, string $field): ?string
+    {
+        $v = $this->optText($data, $field);
+        if ($v !== null && ! in_array($v, \DateTimeZone::listIdentifiers(), true)) {
+            $this->warnInvalid();
+
+            return null;
+        }
+
+        return $v;
+    }
+
+    /** Case- and space-insensitive key for store / supplier names and codes. */
+    private static function norm(?string $v): string
+    {
+        return mb_strtolower(trim(preg_replace('/\s+/u', ' ', (string) $v) ?? ''));
+    }
+
+    private function storeByNormalised(int $tenantId, string $column, string $value): ?Store
+    {
+        return Store::where('tenant_id', $tenantId)
+            ->whereRaw("lower(regexp_replace(trim({$column}), '\\s+', ' ', 'g')) = ?", [self::norm($value)])
+            ->orderBy('id')
+            ->first();
+    }
+
+    private function rememberStore(int $tenantId, Store $store): void
+    {
+        if ($this->storeCache !== null && $this->cachedTenantId === $tenantId) {
+            $this->storeCache[self::norm($store->name)] = (int) $store->id;
+            if ($store->code) {
+                $this->storeCache[self::norm($store->code)] ??= (int) $store->id;
             }
         }
     }
@@ -1232,7 +1464,12 @@ class ImportProcessorService
     private function parseDateOrNull(mixed $value, int $row = 0): ?string
     {
         if ($value instanceof InvalidValue) {
-            return $value->reason === ValueParser::AMBIGUOUS ? $this->parseDate($value, $row) : null;
+            if ($value->reason === ValueParser::AMBIGUOUS) {
+                return $this->parseDate($value, $row);
+            }
+            $this->warnInvalid();
+
+            return null;
         }
 
         return $this->canonical()->date($value)['value'];
@@ -1250,6 +1487,9 @@ class ImportProcessorService
 
     private function numericOrNull(mixed $value): ?float
     {
+        if ($value instanceof InvalidValue) {
+            $this->warnInvalid();
+        }
         $n = $value instanceof InvalidValue ? null : $this->canonical()->number($value);
 
         return $n === null ? null : (float) $n;
@@ -1280,28 +1520,22 @@ class ImportProcessorService
      */
     private function resolveStore(int $tenantId, string $locationName): int
     {
-        $name = trim($locationName);
+        $name = trim(preg_replace('/\s+/u', ' ', $locationName) ?? $locationName);
+        $key  = self::norm($name);
 
-        if ($this->storeCache !== null && $this->cachedTenantId === $tenantId && isset($this->storeCache[$name])) {
-            return $this->storeCache[$name];
+        if ($this->storeCache !== null && $this->cachedTenantId === $tenantId && isset($this->storeCache[$key])) {
+            return $this->storeCache[$key];
         }
 
-        // Match an existing store by NAME *or* CODE, so a transactions file that
-        // identifies stores by their code ("ST042") links to the master store
-        // record (name "Fujairah Grocery 42", code "ST042") instead of creating a
-        // duplicate. Only create a new store when neither matches.
-        $store = Store::where('tenant_id', $tenantId)
-            ->where(function ($q) use ($name) {
-                $q->where('name', $name)->orWhere('code', $name);
-            })
-            ->first();
-
-        if (! $store) {
-            $store = Store::create(['tenant_id' => $tenantId, 'name' => $name]);
-        }
+        // Match an existing store by NAME *or* CODE — case- and space-insensitive
+        // (WP3.4) — so "ST042", "st042 " and "Fujairah Grocery 42" all link to the
+        // master record instead of creating duplicates. Only create when nothing matches.
+        $store = $this->storeByNormalised($tenantId, 'name', $name)
+            ?? $this->storeByNormalised($tenantId, 'code', $name)
+            ?? Store::create(['tenant_id' => $tenantId, 'name' => $name]);
 
         if ($this->storeCache !== null && $this->cachedTenantId === $tenantId) {
-            $this->storeCache[$name] = (int) $store->id;
+            $this->storeCache[$key] = (int) $store->id;
         }
 
         return $store->id;
@@ -1318,17 +1552,16 @@ class ImportProcessorService
             return null;
         }
 
-        if ($this->supplierCache !== null && $this->cachedTenantId === $tenantId && isset($this->supplierCache[$name])) {
-            return $this->supplierCache[$name];
+        $key = self::norm($name);
+        if ($this->supplierCache !== null && $this->cachedTenantId === $tenantId && isset($this->supplierCache[$key])) {
+            return $this->supplierCache[$key];
         }
 
-        $supplier = Supplier::firstOrCreate(
-            ['tenant_id' => $tenantId, 'name' => $name],
-            ['tenant_id' => $tenantId, 'name' => $name]
-        );
+        $supplier = Supplier::where('tenant_id', $tenantId)->whereRaw('lower(trim(name)) = ?', [mb_strtolower($name)])->orderBy('id')->first()
+            ?? Supplier::create(['tenant_id' => $tenantId, 'name' => $name]);
 
         if ($this->supplierCache !== null && $this->cachedTenantId === $tenantId) {
-            $this->supplierCache[$name] = (int) $supplier->id;
+            $this->supplierCache[$key] = (int) $supplier->id;
         }
 
         return $supplier->id;

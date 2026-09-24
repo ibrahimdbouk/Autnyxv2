@@ -17,6 +17,11 @@ class FieldTypes
     public const EMAIL  = 'email';
     public const NAME   = 'name';   // entity / free text — trim + collapse
     public const TEXT   = 'text';
+    // WP3.4 — values that carry a unit and are converted to the column's unit.
+    public const PERCENT = 'percent'; // tax_rate: "5%" or 0.05 → 5
+    public const WEIGHT  = 'weight';  // → grams
+    public const LENGTH  = 'length';  // → millimetres
+    public const VOLUME  = 'volume';  // → cm³
 
     private const MAP = [
         // dates
@@ -30,10 +35,19 @@ class FieldTypes
         'selling_price' => self::NUMBER, 'qty_ordered' => self::NUMBER, 'qty_received' => self::NUMBER,
         'open_qty' => self::NUMBER, 'fill_rate' => self::NUMBER, 'value' => self::NUMBER,
         'late_days' => self::INT, 'lead_time_days' => self::INT, 'line_no' => self::INT,
+        // WP3.4 — hardening fields
+        'cost_amount' => self::NUMBER, 'safety_stock' => self::NUMBER, 'allocated_qty' => self::NUMBER,
+        'in_transit_qty' => self::NUMBER, 'sales_area_sqm' => self::NUMBER, 'min_order_value' => self::NUMBER,
+        'latitude' => self::NUMBER, 'longitude' => self::NUMBER,
+        'expiry_date' => self::DATE, 'opened_on' => self::DATE,
+        'tax_rate' => self::PERCENT, 'weight_grams' => self::WEIGHT, 'volume_cm3' => self::VOLUME,
+        'length_mm' => self::LENGTH, 'width_mm' => self::LENGTH, 'height_mm' => self::LENGTH,
         // identity / codes
         'sku' => self::KEY,
         'po_number' => self::CODE, 'transaction_id' => self::CODE, 'return_id' => self::CODE,
         'barcode' => self::CODE, 'code' => self::CODE, 'supplier_code' => self::CODE,
+        'gtin' => self::CODE, 'postal_code' => self::CODE, 'currency' => self::CODE, 'customer_ref' => self::CODE,
+        'promotion_ref' => self::CODE, 'batch_ref' => self::CODE, 'original_transaction_ref' => self::CODE,
         // email
         'email' => self::EMAIL, 'contact_email' => self::EMAIL,
     ];
@@ -43,7 +57,14 @@ class FieldTypes
         'name', 'product_name', 'location', 'supplier', 'category', 'subcategory',
         'brand', 'city', 'region', 'country', 'address', 'format', 'type',
         'specialization', 'reason', 'payment_method', 'pack_size', 'role',
+        'department', 'banner', 'channel', 'buyer', 'season', 'condition',
     ];
+
+    /** Types whose canonical form is a plain number (after any unit conversion). */
+    public static function isNumeric(string $type): bool
+    {
+        return in_array($type, [self::NUMBER, self::INT, self::PERCENT, self::WEIGHT, self::LENGTH, self::VOLUME], true);
+    }
 
     public static function of(string $field): string
     {

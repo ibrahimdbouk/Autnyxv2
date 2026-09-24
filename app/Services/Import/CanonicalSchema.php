@@ -12,8 +12,9 @@ class CanonicalSchema
      * WP3.3: bump whenever fields, their meaning or the aliases change — learned
      * mapping memories from an older version are ignored (they could replay a
      * mapping made under different rules).
+     *   v2 — WP3.3 conservative mapper.  v3 — WP3.4 hardening fields + dimensions.
      */
-    public const VERSION = 2;
+    public const VERSION = 3;
 
     /**
      * Returns field definitions for the given data type.
@@ -53,6 +54,12 @@ class CanonicalSchema
             'line_no'        => ['label' => 'Line Number',    'description' => 'Line number within the receipt (1, 2, 3…). Optional: derived from file order when not mapped', 'required' => false],
             'discount'       => ['label' => 'Discount',       'description' => 'Discount amount applied on the row',       'required' => false],
             'payment_method' => ['label' => 'Payment Method', 'description' => 'Payment type, e.g. cash, card, wallet',    'required' => false],
+            // WP3.4 — hardening fields.
+            'channel' => ['label' => 'Channel', 'description' => 'Sales channel, e.g. store, online, delivery app', 'required' => false],
+            'cost_amount' => ['label' => 'Cost Amount', 'description' => 'Cost of goods for the row (total, not per unit)', 'required' => false],
+            'currency' => ['label' => 'Currency', 'description' => '3-letter currency code, e.g. AED, SAR', 'required' => false],
+            'customer_ref' => ['label' => 'Customer Ref', 'description' => 'Customer or loyalty identifier (kept as a reference only)', 'required' => false],
+            'promotion_ref' => ['label' => 'Promotion Ref', 'description' => 'Promotion, coupon or campaign identifier', 'required' => false],
         ];
     }
 
@@ -67,6 +74,13 @@ class CanonicalSchema
             'as_of_date'      => ['label' => 'As Of Date',      'description' => 'Date this inventory snapshot was taken',             'required' => false],
             'on_order_qty'    => ['label' => 'On Order Qty',    'description' => 'Quantity currently on order (inbound, not yet received)', 'required' => false],
             'inventory_value' => ['label' => 'Inventory Value', 'description' => 'Monetary value of on-hand stock for this row',       'required' => false],
+            // WP3.4 — hardening fields.
+            'safety_stock' => ['label' => 'Safety Stock', 'description' => 'Safety / buffer stock quantity (not the reorder point)', 'required' => false],
+            'allocated_qty' => ['label' => 'Allocated Qty', 'description' => 'Quantity reserved or allocated to orders', 'required' => false],
+            'in_transit_qty' => ['label' => 'In-Transit Qty', 'description' => 'Quantity in transit to this location', 'required' => false],
+            'unit_cost' => ['label' => 'Unit Cost', 'description' => 'Cost per unit of this stock', 'required' => false],
+            'batch_ref' => ['label' => 'Batch / Lot', 'description' => 'Batch or lot number', 'required' => false],
+            'expiry_date' => ['label' => 'Expiry Date', 'description' => 'Expiry / best-before date of this batch (not the snapshot date)', 'required' => false],
         ];
     }
 
@@ -83,6 +97,18 @@ class CanonicalSchema
             'barcode'       => ['label' => 'Barcode',       'description' => 'Barcode, UPC, EAN, or GTIN',                         'required' => false],
             'brand'         => ['label' => 'Brand',         'description' => 'Product brand or manufacturer',                      'required' => false],
             'pack_size'     => ['label' => 'Pack Size',     'description' => 'Pack or unit size, e.g. 1L, 500g, 6-pack',           'required' => false],
+            // WP3.4 — hardening fields + physical dimensions.
+            'department' => ['label' => 'Department', 'description' => 'Department above category, e.g. Fresh, Grocery, Non-Food', 'required' => false],
+            'uom' => ['label' => 'Unit of Measure', 'description' => 'Selling unit, e.g. each, kg, case', 'required' => false],
+            'weight_grams' => ['label' => 'Weight', 'description' => 'Weight per unit. A unit in the value or header (kg, g, lb, oz) is converted; a plain number is grams', 'required' => false],
+            'tax_rate' => ['label' => 'Tax Rate', 'description' => 'VAT / tax rate: 5% or 0.05 both mean five percent', 'required' => false],
+            'gtin' => ['label' => 'GTIN', 'description' => 'Global trade item number (GTIN-8/12/13/14)', 'required' => false],
+            'season' => ['label' => 'Season', 'description' => 'Season or collection', 'required' => false],
+            'status' => ['label' => 'Status', 'description' => 'Product status, e.g. active, discontinued', 'required' => false],
+            'length_mm' => ['label' => 'Length', 'description' => 'Length per unit (mm, cm, m or in — converted to mm; plain number = mm)', 'required' => false],
+            'width_mm' => ['label' => 'Width', 'description' => 'Width per unit (mm, cm, m or in — converted to mm; plain number = mm)', 'required' => false],
+            'height_mm' => ['label' => 'Height', 'description' => 'Height per unit (mm, cm, m or in — converted to mm; plain number = mm)', 'required' => false],
+            'volume_cm3' => ['label' => 'Volume', 'description' => 'Volume per unit in cm³ (l / ml converted). Derived from the dimensions when missing', 'required' => false],
         ];
     }
 
@@ -96,6 +122,18 @@ class CanonicalSchema
             'city'    => ['label' => 'City',       'description' => 'City',                                    'required' => false],
             'region'  => ['label' => 'Region',     'description' => 'Region, state or area',                   'required' => false],
             'country' => ['label' => 'Country',    'description' => 'Country',                                 'required' => false],
+            // WP3.4 — hardening fields.
+            'postal_code' => ['label' => 'Postal Code', 'description' => 'Postal / ZIP code or PO box', 'required' => false],
+            'latitude' => ['label' => 'Latitude', 'description' => 'Latitude in decimal degrees (-90 to 90)', 'required' => false],
+            'longitude' => ['label' => 'Longitude', 'description' => 'Longitude in decimal degrees (-180 to 180)', 'required' => false],
+            'phone' => ['label' => 'Phone', 'description' => 'Store phone number', 'required' => false],
+            'email' => ['label' => 'Email', 'description' => 'Store email address', 'required' => false],
+            'timezone' => ['label' => 'Timezone', 'description' => 'IANA time zone, e.g. Asia/Dubai', 'required' => false],
+            'currency' => ['label' => 'Currency', 'description' => '3-letter currency code, e.g. AED', 'required' => false],
+            'banner' => ['label' => 'Banner', 'description' => 'Chain / fascia the store trades under', 'required' => false],
+            'status' => ['label' => 'Status', 'description' => 'Store status, e.g. active, closed, remodel', 'required' => false],
+            'opened_on' => ['label' => 'Opened On', 'description' => 'Store opening date', 'required' => false],
+            'sales_area_sqm' => ['label' => 'Sales Area (m²)', 'description' => 'Selling floor area in square metres', 'required' => false],
         ];
     }
 
@@ -109,6 +147,15 @@ class CanonicalSchema
             'contact_phone'  => ['label' => 'Contact Phone',   'description' => 'Supplier contact phone number',              'required' => false],
             'type'           => ['label' => 'Type',            'description' => 'Supplier type, e.g. distributor, manufacturer, importer', 'required' => false],
             'specialization' => ['label' => 'Specialization',  'description' => 'Supplier category focus, e.g. Dairy, Beverages, Frozen', 'required' => false],
+            // WP3.4 — hardening fields.
+            'country' => ['label' => 'Country', 'description' => 'Country', 'required' => false],
+            'region' => ['label' => 'Region', 'description' => 'Region, state or area', 'required' => false],
+            'city' => ['label' => 'City', 'description' => 'City', 'required' => false],
+            'currency' => ['label' => 'Currency', 'description' => '3-letter currency code the supplier invoices in', 'required' => false],
+            'payment_terms' => ['label' => 'Payment Terms', 'description' => 'Payment terms, e.g. NET30', 'required' => false],
+            'min_order_value' => ['label' => 'Min Order Value', 'description' => 'Minimum order value', 'required' => false],
+            'website' => ['label' => 'Website', 'description' => 'Website URL', 'required' => false],
+            'status' => ['label' => 'Status', 'description' => 'Supplier status, e.g. active, blocked', 'required' => false],
         ];
     }
 
@@ -131,6 +178,10 @@ class CanonicalSchema
             'value'    => ['label' => 'Value',    'description' => 'Refund or return value for the row',                 'required' => false],
             'location' => ['label' => 'Store',    'description' => 'Store, outlet or location where the return occurred (matches the Store name used elsewhere)', 'required' => false],
             'reason'   => ['label' => 'Reason',   'description' => 'Reason for the return (e.g. defective, wrong size, changed mind)', 'required' => false],
+            // WP3.4 — hardening fields.
+            'channel' => ['label' => 'Channel', 'description' => 'Channel the return came through, e.g. store, online', 'required' => false],
+            'condition' => ['label' => 'Condition', 'description' => 'Condition of the returned item, e.g. resellable, damaged', 'required' => false],
+            'original_transaction_ref' => ['label' => 'Original Receipt', 'description' => 'Receipt / transaction number of the original sale', 'required' => false],
         ];
     }
 
@@ -151,6 +202,10 @@ class CanonicalSchema
             'open_qty'      => ['label' => 'Open Qty',      'description' => 'Outstanding quantity not yet received',            'required' => false],
             'late_days'     => ['label' => 'Late Days',     'description' => 'Days late vs the expected date',                   'required' => false],
             'fill_rate'     => ['label' => 'Fill Rate',     'description' => 'Fill rate for the order (received ÷ ordered), as a percentage', 'required' => false],
+            // WP3.4 — hardening fields.
+            'currency' => ['label' => 'Currency', 'description' => '3-letter currency code of the order', 'required' => false],
+            'status' => ['label' => 'Status', 'description' => 'Order / line status, e.g. open, received, cancelled', 'required' => false],
+            'buyer' => ['label' => 'Buyer', 'description' => 'Buyer or planner who placed the order', 'required' => false],
         ];
     }
 }

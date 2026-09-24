@@ -20,6 +20,7 @@ class Reasons
 
     // ── Warnings (recorded, still promote) ──────────────────────────────────
     public const WARN_ORPHAN_SKU  = 'warn_orphan_sku';
+    public const WARN_INVALID_VALUE = 'warn_invalid_value'; // WP3.4: optional value unusable → stored empty
 
     public const LABELS = [
         self::MISSING_KEY      => 'Missing identity key',
@@ -30,6 +31,7 @@ class Reasons
         self::DUPLICATE_ROW    => 'Duplicate row',
         self::ORPHAN_REFERENCE => 'Orphan SKU (no product master)',
         self::WARN_ORPHAN_SKU  => 'Orphan SKU (promoted, unmatched)',
+        self::WARN_INVALID_VALUE => 'Invalid optional value (stored empty)',
     ];
 
     public const SEVERITY = [
@@ -41,6 +43,7 @@ class Reasons
         self::DUPLICATE_ROW    => 'medium',
         self::ORPHAN_REFERENCE => 'high',
         self::WARN_ORPHAN_SKU  => 'low',
+        self::WARN_INVALID_VALUE => 'low',
     ];
 
     public static function label(string $code): string

@@ -75,7 +75,7 @@ class RowValidator
                 }
                 $warnings[] = Reasons::INVALID_DATE;
             }
-            if (($type === FieldTypes::NUMBER || $type === FieldTypes::INT) && (isset($invalid[$field]) || ! is_numeric($value))) {
+            if (FieldTypes::isNumeric($type) && (isset($invalid[$field]) || ! is_numeric($value))) {
                 if ($strict) {
                     return ['reason' => Reasons::INVALID_NUMBER, 'warnings' => $warnings];
                 }

@@ -44,7 +44,7 @@ class MappingEngineTest extends TestCase
         $this->assertNotSame('sku', $sales['Unit Cost']['target_field']);
 
         $stores = $this->mapOf(['Latitude'], Import::TYPE_STORES);
-        $this->assertNull($stores['Latitude']['target_field']);
+        $this->assertNotSame('name', $stores['Latitude']['target_field'], 'Latitude is never a store name (WP3.4 gives it its own field)');
 
         $inv = $this->mapOf(['Safety Stock', 'Expiry Date'], Import::TYPE_INVENTORY);
         $this->assertNotSame('reorder_point', $inv['Safety Stock']['target_field']);

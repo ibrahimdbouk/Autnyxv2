@@ -174,6 +174,12 @@ class DataQualityFirewall
         return ['data' => $data, 'reason' => null, 'changed' => $changed];
     }
 
+    /** WP3.4: a soft data-quality warning raised by a writer (row still promoted). */
+    public function warn(string $code): void
+    {
+        $this->reasonCounts[$code] = ($this->reasonCounts[$code] ?? 0) + 1;
+    }
+
     public function quarantine(Import $import, array $raw, array $cleansed, string $reason, ?int $rowNumber): void
     {
         $this->quarantined++;

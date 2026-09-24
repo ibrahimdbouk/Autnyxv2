@@ -115,6 +115,12 @@ class CleansingEngine
             case FieldTypes::INT:
                 return ! empty($ctx['canonical_row']) ? $value : ($this->parser($ctx)->number($value) ?? $value);
 
+            case FieldTypes::PERCENT:
+            case FieldTypes::WEIGHT:
+            case FieldTypes::LENGTH:
+            case FieldTypes::VOLUME:
+                return ! empty($ctx['canonical_row']) ? $value : ($this->parser($ctx)->byUnitType(FieldTypes::of($field), $value) ?? $value);
+
             case FieldTypes::KEY:
                 $value = str_replace(' ', '', $value);
                 if (! empty($ctx['upper_keys'])) {
