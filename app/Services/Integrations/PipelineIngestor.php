@@ -82,6 +82,12 @@ class PipelineIngestor
             $import->columnMaps()->create($mapping);
         }
 
+        // WP3.3 (audit H24): an uncertain mapping waits for a person (the API
+        // client sees status "mapping_review" when it polls).
+        if (app(\App\Services\Import\MappingReviewGate::class)->holdIfUncertain($import)) {
+            return $import->fresh();
+        }
+
         // WP2.3: the public API queues processing (202 + poll); scheduled pulls
         // already run in the background and process inline.
         if ($queue) {

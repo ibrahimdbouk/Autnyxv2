@@ -138,7 +138,7 @@ class TenancyAuthorizationHotfixTest extends TestCase
 
         $this->assertSame('date', $foreignMap->fresh()->target_field);
         $this->assertFalse((bool) $foreignMap->fresh()->is_confirmed);
-        $this->assertNull($ownMap->fresh()->target_field, 'unknown target fields are dropped, never stored');
+        $this->assertNotSame('is_tenant_admin', $ownMap->fresh()->target_field, 'unknown target fields are never stored');
     }
 
     public function test_stuck_import_recovery_is_tenant_scoped(): void

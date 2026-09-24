@@ -20,6 +20,8 @@ class DataQualityMappingTest extends TestCase
             'tenant_id' => $tenantId, 'data_type' => Import::TYPE_SALES,
             'disk' => 'local', 'path' => 'x.csv', 'original_filename' => 'x.csv',
             'status' => Import::STATUS_COMPLETED,
+            // WP3.3: memory only learns from a person-confirmed, ≥90%-clean import.
+            'mapping_confirmed_at' => now(), 'imported_rows' => 100,
         ]);
         foreach ([['Item Code', 'sku'], ['Txn Date', 'date'], ['Qty', 'quantity']] as $i => [$h, $f]) {
             $import->columnMaps()->create([

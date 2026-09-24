@@ -185,6 +185,11 @@ class SftpPollService
             $import->columnMaps()->create($mapping);
         }
 
+        // WP3.3 (audit H24): an uncertain mapping waits for a person.
+        if (app(\App\Services\Import\MappingReviewGate::class)->holdIfUncertain($import)) {
+            return $import->fresh();
+        }
+
         // Run the standard processor (writes rows, records IngestionRun, detects anomalies).
         $this->processor->process($import);
 
