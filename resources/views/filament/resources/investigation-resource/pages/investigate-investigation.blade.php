@@ -1349,7 +1349,7 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                         <div class="dinv-impact-card est">
                             <div class="lab">Estimated value at risk</div>
                             <div class="big">{{ $money($imp['total_at_risk']) }}</div>
-                            @if(!is_null($imp['ai_estimate']))<div class="dinv-ev-src" style="margin-top:.25rem">Investigation estimate: {{ $money($imp['ai_estimate']) }}</div>@endif
+                            @if(!is_null($imp['ai_estimate']))<div class="dinv-ev-src" style="margin-top:.25rem">AI estimate (not used in calculations): {{ $money($imp['ai_estimate']) }}</div>@endif
                         </div>
                         <div class="dinv-impact-card meas">
                             <div class="lab">Measured recovery</div>

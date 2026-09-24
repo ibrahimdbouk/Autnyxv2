@@ -881,8 +881,10 @@ class DeepInvestigationService
         }
         usort($breakdown, fn ($x, $y) => $y['amount'] <=> $x['amount']);
 
-        $aiEstimate = $investigation->revenue_at_risk !== null
-            ? (float) $investigation->revenue_at_risk
+        // WP1.1: the AI's own guess lives in ai_revenue_estimate (labelled);
+        // revenue_at_risk is deterministic and already equals $totalAtRisk.
+        $aiEstimate = $investigation->ai_revenue_estimate !== null
+            ? (float) $investigation->ai_revenue_estimate
             : null;
 
         // ── Measured track — only what has actually been measured. ──────────

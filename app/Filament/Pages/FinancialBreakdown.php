@@ -47,7 +47,7 @@ class FinancialBreakdown extends Page
     /** Valid metrics this page can derive. */
     public const METRICS = [
         'value_funnel',      // B6: surfaced → at-risk → recovered, the full ROI story
-        'revenue_at_risk',   // open/in-progress investigations' AI-estimated risk (dashboard KPI)
+        'revenue_at_risk',   // open/in-progress investigations' deterministic risk (dashboard KPI)
         'recovered_mtd',     // observed recovery recorded this calendar month (dashboard KPI)
         'observed_cleared',  // R3: data-only observed recovery from the anomaly lifecycle
         'outcome_at_risk',   // revenue at risk snapshotted across ALL recorded outcomes (widget)
@@ -214,7 +214,7 @@ class FinancialBreakdown extends Page
             'metric'      => $this->metric,
             'label'       => 'Revenue at Risk',
             'value'       => $this->money($total),
-            'formula'     => 'Σ revenue_at_risk for every investigation whose status is Open or In Progress. Revenue at risk is the AI narrator\'s estimate captured per investigation.',
+            'formula'     => 'Σ revenue_at_risk for every investigation whose status is Open or In Progress. Revenue at risk is calculated deterministically: the sum of the detection engine\'s revenue impact across each investigation\'s anomalies (never an AI estimate).',
             'components'  => [
                 ['label' => 'Open / in-progress investigations', 'value' => number_format($count)],
                 ['label' => 'With a revenue-at-risk estimate',   'value' => number_format($withRisk)],

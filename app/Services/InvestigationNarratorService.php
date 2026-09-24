@@ -93,7 +93,7 @@ class InvestigationNarratorService
 
             $investigation->update([
                 'ai_headline'             => $data['headline']             ?? ($data['summary'] ?? null),
-                'ai_summary'              => $data['headline']             ?? ($data['summary'] ?? null),
+                'ai_summary'              => $data['summary']              ?? ($data['headline'] ?? null),
                 'ai_root_cause'           => $data['root_cause']           ?? null,
                 'ai_confidence'           => $data['confidence']           ?? Investigation::CONFIDENCE_UNKNOWN,
                 'ai_evidence'             => $toList($data['evidence']             ?? null),
@@ -101,9 +101,11 @@ class InvestigationNarratorService
                 'ai_business_impact'      => $data['business_impact']      ?? null,
                 'ai_recommended_action'   => $data['immediate_action']     ?? ($data['recommended_action'] ?? null),
                 'ai_long_term_fix'        => $data['long_term_fix']        ?? null,
-                'revenue_at_risk'         => isset($data['revenue_at_risk']) && is_numeric($data['revenue_at_risk'])
-                    ? (float) $data['revenue_at_risk']
-                    : $investigation->revenue_at_risk,
+                // WP1.1 (audit C1): the model's money guess is stored ONLY in the
+                // labelled ai_revenue_estimate column. revenue_at_risk is
+                // deterministic (DeterministicRevenueAtRisk) and drives snoozing,
+                // ordering, KPIs and the API — AI must never write it.
+                'ai_revenue_estimate'     => $this->numericOrNull($data['revenue_estimate'] ?? ($data['revenue_at_risk'] ?? null)),
                 'ai_generated_at'         => now(),
             ]);
 
@@ -120,6 +122,15 @@ class InvestigationNarratorService
         }
 
         return $investigation->fresh();
+    }
+
+    private function numericOrNull(mixed $v): ?float
+    {
+        if (is_string($v)) {
+            $v = str_replace([',', ' '], '', $v);
+        }
+
+        return is_numeric($v) && is_finite((float) $v) && (float) $v >= 0 ? round((float) $v, 2) : null;
     }
 
     /**
@@ -240,6 +251,7 @@ WRITING RULES — follow every one:
 Respond with ONLY this JSON object (no markdown, no code fences):
 {
   "headline": "ONE plain sentence: what is happening, to which product, and where. The 5-second version.",
+  "summary": "2-3 plain sentences: what happened, why it matters, and how big it is. Do not repeat the headline word for word.",
   "root_cause": "The most likely underlying cause in plain language, matching the evidence. Use 'Unknown' if evidence is insufficient.",
   "confidence": "one of: established | probable | suspected | unknown",
   "evidence": ["3-5 short plain-language facts that support the conclusion, each a complete phrase"],
@@ -247,7 +259,7 @@ Respond with ONLY this JSON object (no markdown, no code fences):
   "business_impact": "One sentence: the money at stake in {$currency}, whether it is large or small, and what worsens if ignored.",
   "immediate_action": "The single most important action right now — concrete, done by the user in their own ERP (Autnyx recommends, it never executes).",
   "long_term_fix": "One sentence on the systemic fix, or null if none is clear.",
-  "revenue_at_risk": null
+  "revenue_estimate": null
 }
 
 Confidence guidance:
@@ -255,7 +267,7 @@ Confidence guidance:
 - probable: evidence points one way but some gaps remain
 - suspected: limited evidence; plausible but unconfirmed
 - unknown: contradicting signals or insufficient data
-For revenue_at_risk: a number if you can estimate it (e.g. days_of_cover x daily_revenue), otherwise null. Keep every field tight.
+For revenue_estimate: your own rough estimate as a number if the evidence supports one (e.g. days_of_cover x daily_revenue), otherwise null. It is shown to users labelled as an AI estimate and never replaces the system's calculated value. Keep every field tight.
 PROMPT;
     }
 

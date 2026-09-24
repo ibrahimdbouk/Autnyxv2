@@ -297,12 +297,8 @@ class InvestigationCorrelationService
      */
     private function syncRevenueAtRisk(Investigation $investigation): void
     {
-        $total = 0.0;
-        foreach ($investigation->anomalies()->get(['context']) as $a) {
-            $total += (float) ($a->context['revenue_impact'] ?? 0);
-        }
-
-        $investigation->update(['revenue_at_risk' => round($total, 2)]);
+        // Single deterministic definition (WP1.1) — shared with the repair command.
+        app(\App\Services\Investigation\DeterministicRevenueAtRisk::class)->sync($investigation);
     }
 
     private function escalatePriorityIfNeeded(Investigation $investigation, Anomaly $anomaly): void
