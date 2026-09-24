@@ -120,7 +120,10 @@ class DataHealthService
         $lastIngestedAt = $lastRun?->completed_at ?? $lastRun?->started_at;
 
         $freshnessRef = $lastRecordAt ?? $lastIngestedAt;
-        $freshnessHours = $freshnessRef ? (int) round(now()->diffInMinutes($freshnessRef) / 60) : null;
+        // WP1.4: Carbon 3 diffs are signed — age = ref → now (never negative).
+        $freshnessHours = $freshnessRef
+            ? (int) round(max(0, \Illuminate\Support\Carbon::parse($freshnessRef)->diffInMinutes(now())) / 60)
+            : null;
 
         $freshnessScore = $this->freshnessScore($freshnessHours, $thresholds['freshness_max_hours']);
         if ($freshnessHours !== null && $freshnessHours > $thresholds['freshness_max_hours']) {

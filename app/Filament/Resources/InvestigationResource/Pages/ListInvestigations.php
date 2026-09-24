@@ -332,7 +332,10 @@ class ListInvestigations extends ListRecords
 
         // Priority needs a CASE sort
         if ($sortField === 'priority') {
-            $query->orderByRaw("CASE priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END");
+            $query->orderByRaw("CASE priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END " . ($sortDir === 'asc' ? 'DESC' : 'ASC'));
+        } elseif ($sortField === 'revenue_at_risk') {
+            // WP1.4: Postgres puts NULLs first on DESC — keep un-valued rows last.
+            $query->orderByRaw('revenue_at_risk ' . strtoupper($sortDir) . ' NULLS LAST');
         } else {
             $query->orderBy($sortField, $sortDir);
         }

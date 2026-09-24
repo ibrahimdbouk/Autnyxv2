@@ -69,7 +69,7 @@ class RecentAnomaliesWidget extends BaseTableWidget
                         $dismissedAt = now();
 
                         // False-positive feedback: dismiss within 10 min of detection
-                        if ($record->detected_at && $dismissedAt->diffInMinutes($record->detected_at) < 10) {
+                        if ($record->detected_at && $record->detected_at->diffInMinutes($dismissedAt, true) < 10) {
                             app(BaselineCalculatorService::class)
                                 ->recordFalsePositive($record->tenant_id, $record->rule_type, $record->sku);
                         }

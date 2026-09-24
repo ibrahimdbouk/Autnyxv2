@@ -42,7 +42,9 @@ class AnomalyResource extends Resource
         // Default: only show active anomalies — not dismissed, and not
         // recovery-resolved (resolved episodes are retained for measurement but
         // are no longer a live problem).
-        return parent::getEloquentQuery()->active();
+        // WP1.4: the active() default now lives in the "Show dismissed" filter's
+        // blank state (see table()), so that toggle can actually show them.
+        return parent::getEloquentQuery();
     }
 
     public static function getNavigationBadge(): ?string
@@ -123,7 +125,10 @@ class AnomalyResource extends Resource
             ->emptyStateIcon('heroicon-o-check-circle')
             ->emptyStateHeading('No anomalies detected')
             ->emptyStateDescription('Detection runs nightly. Anomalies appear here once your sales, inventory and PO data has been ingested.')
-            ->defaultSort('severity', 'desc')
+            // WP1.4: severity is a string — alphabetical DESC put High last.
+            ->defaultSort(fn (Builder $query) => $query
+                ->orderByRaw("CASE severity WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END")
+                ->orderByDesc('detected_at'))
             ->filters([
                 SelectFilter::make('severity')
                     ->options([
@@ -139,7 +144,7 @@ class AnomalyResource extends Resource
                 SelectFilter::make('investigation_status')
                     ->label('Investigation')
                     ->options([
-                        'not_started'       => 'Not Started',
+                        'detected'          => 'Not Started', // stored value is 'detected'
                         'investigating'     => 'Investigating',
                         'cause_established' => 'Cause Established',
                         'action_taken'      => 'Action Taken',
@@ -147,10 +152,18 @@ class AnomalyResource extends Resource
                         'unresolved'        => 'Unresolved',
                     ]),
 
-                Filter::make('dismissed')
-                    ->label('Show dismissed')
-                    ->query(fn (Builder $query) => $query->withoutGlobalScopes()->whereNotNull('dismissed_at'))
-                    ->toggle(),
+                // WP1.4: was ->withoutGlobalScopes() (a latent cross-tenant leak)
+                // on top of an active() base query, so it always showed nothing.
+                \Filament\Tables\Filters\TernaryFilter::make('dismissed')
+                    ->label('Dismissed')
+                    ->placeholder('Active only')
+                    ->trueLabel('Dismissed only')
+                    ->falseLabel('Active only')
+                    ->queries(
+                        true:  fn (Builder $query) => $query->whereNotNull('dismissed_at'),
+                        false: fn (Builder $query) => $query->active(),
+                        blank: fn (Builder $query) => $query->active(),
+                    ),
 
                 Filter::make('detected_at')
                     ->label('Detected Date')
@@ -182,7 +195,8 @@ class AnomalyResource extends Resource
                         $dismissedAt = now();
 
                         // False-positive feedback: dismiss within 10 min of detection
-                        if ($record->detected_at && $dismissedAt->diffInMinutes($record->detected_at) < 10) {
+                        // WP1.4: Carbon 3 diffs are signed — measure detected → dismissed.
+                        if ($record->detected_at && $record->detected_at->diffInMinutes($dismissedAt, true) < 10) {
                             app(BaselineCalculatorService::class)
                                 ->recordFalsePositive($record->tenant_id, $record->rule_type, $record->sku);
                         }

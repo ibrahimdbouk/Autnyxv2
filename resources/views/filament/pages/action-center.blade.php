@@ -871,7 +871,7 @@ $acDueLabel = static function(?string $due): string {
                     @php
                         $dlDue  = $dl['due_at'] ? \Carbon\Carbon::parse($dl['due_at']) : null;
                         $isOv   = $dlDue && $dlDue->isPast();
-                        $dlDot  = $isOv ? '#dc2626' : ($dlDue && $dlDue->diffInHours(now()) < 4 ? '#f59e0b' : '#16a34a');
+                        $dlDot  = $isOv ? '#dc2626' : ($dlDue && now()->diffInHours($dlDue) < 4 ? '#f59e0b' : '#16a34a');
                     @endphp
                     <div class="ac-deadline-item" wire:click="selectAction({{ $dl['id'] }})" wire:keydown.enter="selectAction({{ $dl['id'] }})" tabindex="0" role="button" aria-label="Open action: {{ \Illuminate\Support\Str::limit($dl['title'], 34) }}">
                         <span class="ac-deadline-dot" style="background:{{ $dlDot }}"></span>

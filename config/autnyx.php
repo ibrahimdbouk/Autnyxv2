@@ -72,4 +72,17 @@ return [
     */
     'require_mfa_super_admins' => env('MFA_REQUIRE_SUPER_ADMINS', false),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Anomaly digest email kill-switch (WP1.4)
+    |--------------------------------------------------------------------------
+    |
+    | The nightly anomaly digest crashed on every send until WP1.4, so no tenant
+    | has ever received one. It stays OFF until detection recalibration (W4)
+    | removes the known false-positive floods (store_outlier, null-SKU churn) —
+    | otherwise the first digests would email those to customers.
+    |
+    */
+    'digest_enabled' => (bool) env('ANOMALY_DIGEST_ENABLED', false),
+
 ];

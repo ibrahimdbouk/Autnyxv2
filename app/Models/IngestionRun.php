@@ -74,7 +74,7 @@ class IngestionRun extends Model
     public function getDurationSeconds(): ?int
     {
         if (!$this->started_at || !$this->completed_at) return null;
-        return $this->completed_at->diffInSeconds($this->started_at);
+        return (int) $this->started_at->diffInSeconds($this->completed_at, true);
     }
 
     public function getSuccessRate(): ?float

@@ -46,11 +46,13 @@ $prevHighCount = $tenantId
     : 0;
 
 /* ── KPI: Overdue Actions ──────────────────────────────────────────────── */
+// WP1.4: same definition as Action Center — active and past its due date.
+// (Was status='pending', a status no action has, so this was always 0.)
 $overdueCount = $tenantId
     ? \App\Models\Action::whereHas('investigation', fn($q) =>
         $q->where('tenant_id',$tenantId)->whereIn('status',['open','in_progress']))
-        ->where('status','pending')
-        ->where('created_at','<', $now->copy()->subHours(48))->count()
+        ->whereNotIn('status', [\App\Models\Action::STATUS_COMPLETED, \App\Models\Action::STATUS_CANCELLED])
+        ->where('due_at','<', $now)->count()
     : 0;
 
 /* ── KPI: Recovered MTD ────────────────────────────────────────────────── */
@@ -147,8 +149,9 @@ $recentHighPriority = $tenantId
 $pendingActions = $tenantId
     ? \App\Models\Action::whereHas('investigation', fn($q) =>
         $q->where('tenant_id',$tenantId)->whereIn('status',['open','in_progress']))
-        ->where('status','pending')
+        ->whereNotIn('status', [\App\Models\Action::STATUS_COMPLETED, \App\Models\Action::STATUS_CANCELLED])
         ->with(['investigation'])
+        ->orderByRaw('due_at IS NULL, due_at')
         ->orderBy('created_at')
         ->limit(6)
         ->get()
@@ -721,8 +724,8 @@ a.db-kpi:hover::after { opacity:1; }
         </div>
         @forelse($pendingActions as $action)
         @php
-            $ageHours = $action->created_at ? now()->diffInHours($action->created_at) : 0;
-            $isOverdue = $ageHours >= 48;
+            $ageHours = $action->created_at ? (int) $action->created_at->diffInHours(now(), true) : 0;
+            $isOverdue = $action->due_at ? $action->due_at->isPast() : $ageHours >= 48;
             $invPriority = $action->investigation?->priority ?? 'medium';
             $dotCls = match($invPriority) {
                 'critical' => 'db-dot-critical',

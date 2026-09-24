@@ -45,6 +45,10 @@ class AnomalyDigestMail extends Mailable
     {
         return new Content(
             view: 'mail.anomaly-digest',
+            // WP1.4 (audit H34): Mailables only pass public PROPERTIES to the
+            // view, so the template's $ruleLabel(...) was undefined and every
+            // send threw. Hand it over explicitly as a closure.
+            with: ['ruleLabel' => fn (string $ruleType): string => $this->ruleLabel($ruleType)],
         );
     }
 

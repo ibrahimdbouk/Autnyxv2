@@ -32,6 +32,13 @@ class NotifyAnomaliesCommand extends Command
             return Command::SUCCESS;
         }
 
+        // WP1.4: kill-switch — stays off until detection recalibration (W4).
+        if (! config('autnyx.digest_enabled') && ! $dryRun) {
+            $this->warn('Anomaly digest is disabled (ANOMALY_DIGEST_ENABLED=false) — nothing sent.');
+
+            return Command::SUCCESS;
+        }
+
         $sent = 0;
         foreach ($tenants as $tenant) {
             try {

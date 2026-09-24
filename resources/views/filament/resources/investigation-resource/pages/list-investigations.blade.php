@@ -739,7 +739,7 @@ if ($selected) {
         if ($slaOverdue) {
             $slaLabel = 'Assignment overdue';
         } else {
-            $diffMin = now()->diffInMinutes($slaDeadline);
+            $diffMin = (int) now()->diffInMinutes($slaDeadline, true);
             $slaLabel = floor($diffMin/60).'h '.($diffMin%60).'m remaining';
         }
     }

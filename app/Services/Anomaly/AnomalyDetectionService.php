@@ -2301,11 +2301,13 @@ class AnomalyDetectionService
             ->whereNotNull('expected_date')
             ->where('expected_date', '<', $today)
             ->whereNull('received_date')
-            ->whereColumn('qty_received', '<', 'qty_ordered')
+            // WP1.4 (audit H19): a PO with nothing received has qty_received
+            // NULL — the most common overdue case — and NULL < n is not true.
+            ->whereRaw('COALESCE(qty_received, 0) < qty_ordered')
             ->get();
 
         foreach ($pos as $po) {
-            $daysOverdue = Carbon::parse($po->expected_date)->diffInDays($this->analysisDate());
+            $daysOverdue = (int) Carbon::parse($po->expected_date)->diffInDays($this->analysisDate());
             $this->flag($tenantId, 'po_overdue', 'medium', $po->sku, null, $po->product_id,
                 "PO #{$po->po_number} from {$po->supplier} (SKU {$po->sku}) is {$daysOverdue} day(s) overdue "
                 . "(expected: {$po->expected_date}, received: {$po->qty_received}/{$po->qty_ordered}).",
