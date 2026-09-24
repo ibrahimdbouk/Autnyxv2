@@ -20,6 +20,8 @@ class SftpFeed extends Model
         'archive_path',
         'delete_after',
         'enabled',
+        'date_format',       // WP3.2: null → tenant default
+        'decimal_separator',
     ];
 
     protected $casts = [

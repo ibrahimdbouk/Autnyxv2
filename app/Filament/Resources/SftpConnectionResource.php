@@ -174,6 +174,17 @@ class SftpConnectionResource extends Resource
                         ->maxLength(1024)
                         ->helperText('Optional — move each file here after import (relative to base path).'),
 
+                    // WP3.2 (D4): per-feed override of the tenant's import settings.
+                    Select::make('date_format')
+                        ->label('Date format')
+                        ->options(\App\Services\Import\ValueParser::DATE_FORMATS)
+                        ->placeholder('Tenant default'),
+
+                    Select::make('decimal_separator')
+                        ->label('Decimal separator')
+                        ->options(\App\Services\Import\ValueParser::DECIMALS)
+                        ->placeholder('Tenant default'),
+
                     Toggle::make('delete_after')
                         ->label('Delete after import')
                         ->helperText('Ignored if an archive folder is set.')

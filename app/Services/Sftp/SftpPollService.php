@@ -129,7 +129,7 @@ class SftpPollService
             $localPath = 'sftp-imports/' . $connection->tenant_id . '/' . Str::uuid() . '_' . $filename;
             Storage::disk('local')->put($localPath, $contents);
 
-            $import = $this->autoImport($connection->tenant_id, $feed->data_type, $localPath, $filename);
+            $import = $this->autoImport($connection->tenant_id, $feed->data_type, $localPath, $filename, $feed);
 
             $ledger->fill([
                 'size_bytes'   => strlen($contents),
@@ -157,7 +157,7 @@ class SftpPollService
     /**
      * Create + process an Import non-interactively (auto column mapping).
      */
-    private function autoImport(int $tenantId, string $dataType, string $localPath, string $filename): Import
+    private function autoImport(int $tenantId, string $dataType, string $localPath, string $filename, ?SftpFeed $feed = null): Import
     {
         $fullPath = Storage::disk('local')->path($localPath);
         $parsed   = $this->reader->read($fullPath);
@@ -172,6 +172,11 @@ class SftpPollService
             'status'            => Import::STATUS_UPLOADED,
             'sample_rows'       => $parsed['rows'] ?? [],
             'total_rows'        => $parsed['total_rows'] ?? 0,
+            // WP3.2: the feed's format (null → tenant default) + detected dialect.
+            'date_format'       => $feed?->date_format,
+            'decimal_separator' => $feed?->decimal_separator,
+            'delimiter'         => $parsed['delimiter'] ?? null,
+            'encoding'          => $parsed['encoding'] ?? null,
         ]);
 
         // Auto column mapping — accept the AI/fuzzy matches without human review.

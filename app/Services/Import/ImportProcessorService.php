@@ -24,7 +24,6 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use PhpOffice\PhpSpreadsheet\IOFactory;
 
 /**
  * Applies a confirmed column mapping to the uploaded file and writes rows to the DB.
@@ -49,6 +48,10 @@ class ImportProcessorService
 
     /** Tenant the caches above were primed for. */
     private ?int $cachedTenantId = null;
+
+    /** WP3.2: date / number rules of the import being processed. */
+    private ?ValueParser $parser = null;
+    private ?ValueParser $canonicalParser = null;
 
     /** WP3.1: receipt → last line number seen in this import (file order). */
     private array $lineCounters = [];
@@ -131,6 +134,7 @@ class ImportProcessorService
         $retried = 0;
         $stillFailed = 0;
         $duplicates = 0;
+        $this->parser = ValueParser::forImport($import);
 
         foreach ($rows as $importRow) {
             $mappedData = $importRow->mapped_data ?? [];
@@ -268,7 +272,8 @@ class ImportProcessorService
                 ->keyBy('source_header');
 
             $filePath = app(\App\Services\Storage\TenantStorage::class)->localPath($import->disk, $import->path);
-            $allRows  = $this->readAllRows($filePath);
+            $this->parser = ValueParser::forImport($import);
+            $allRows  = app(FileReaderService::class)->readAll($filePath, $this->dialectOf($import));
 
             $total       = count($allRows);
             $imported    = 0;
@@ -302,7 +307,7 @@ class ImportProcessorService
                 } catch (QuarantineException $q) {
                     DB::rollBack();
                     $quarantined++;
-                    $this->firewall()?->quarantine($import, $rawRow, $q->cleansed, $q->reasonCode, $rowNumber + 2);
+                    $this->firewall()?->quarantine($import, $rawRow, ValueParser::stripMeta($q->cleansed), $q->reasonCode, $rowNumber + 2);
                 } catch (\Throwable $e) {
                     DB::rollBack();
                     $failed++;
@@ -404,6 +409,7 @@ class ImportProcessorService
         }
 
         $this->primeCaches($import->tenant_id);
+        $this->parser = ValueParser::forImport($import);
 
         $columnMap = $import->columnMaps()
             ->where('is_skipped', false)
@@ -417,7 +423,7 @@ class ImportProcessorService
         try {
             /** @var FileReaderService $reader */
             $reader = app(FileReaderService::class);
-            $chunk  = $reader->readRange($filePath, $offset, $chunkSize);
+            $chunk  = $reader->readRange($filePath, $offset, $chunkSize, $this->dialectOf($import));
         } catch (\Throwable $e) {
             Log::error('Import chunk read failed', ['import_id' => $import->id, 'error' => $e->getMessage()]);
             $import->update(['status' => Import::STATUS_FAILED, 'error_message' => $e->getMessage()]);
@@ -463,13 +469,15 @@ class ImportProcessorService
             if ($isSales) {
                 $data = $this->numberLine($data);
             }
+            // WP3.2: dates / numbers read ONCE under the import's format.
+            $data = $this->parser()->normalizeRow($import->data_type, $data);
 
             // Data Quality Firewall: cleanse + gate. Rejected rows are diverted to
             // quarantine and never reach the canonical tables.
             if ($fw = $this->firewall()) {
                 $screen = $fw->screen($import, $data);
                 if ($screen['reason'] !== null) {
-                    $fw->quarantine($import, $rawRow, $screen['data'], $screen['reason'], $rowNumber);
+                    $fw->quarantine($import, $rawRow, ValueParser::stripMeta($screen['data']), $screen['reason'], $rowNumber);
                     $quarantined++;
                     $rowNumber++;
                     continue;
@@ -664,6 +672,8 @@ class ImportProcessorService
      */
     private function writeMappedData(Import $import, array $data, int $rowNumber): void
     {
+        $data = $this->prepareForWrite($import, $data);
+
         match ($import->data_type) {
             Import::TYPE_SALES           => $this->writeSalesTransaction($import, $data, $rowNumber),
             Import::TYPE_INVENTORY       => $this->writeInventoryLevel($import, $data, $rowNumber),
@@ -730,6 +740,8 @@ class ImportProcessorService
      */
     private function buildInsertAttrs(Import $import, array $data, int $row): array
     {
+        $data = $this->prepareForWrite($import, $data);
+
         return match ($import->data_type) {
             Import::TYPE_SALES           => $this->buildSalesTransactionAttrs($import, $data, $row),
             Import::TYPE_INVENTORY       => $this->buildInventoryLevelAttrs($import, $data, $row),
@@ -745,6 +757,8 @@ class ImportProcessorService
         if ($import->data_type === Import::TYPE_SALES) {
             $data = $this->numberLine($data);
         }
+        // WP3.2: dates / numbers read ONCE under the import's format.
+        $data = $this->parser()->normalizeRow($import->data_type, $data);
 
         // Data Quality Firewall: cleanse + gate before the write. A rejected row is
         // diverted to quarantine by the caller (which catches QuarantineException).
@@ -755,6 +769,8 @@ class ImportProcessorService
             }
             $data = $screen['data'];
         }
+
+        $data = $this->prepareForWrite($import, $data);
 
         match ($import->data_type) {
             Import::TYPE_SALES           => $this->writeSalesTransaction($import, $data, $rowNumber),
@@ -910,7 +926,7 @@ class ImportProcessorService
             'location'      => $location,
             'on_hand_qty'   => $this->numericOrZero($data['on_hand_qty'] ?? null),
             'reorder_point'   => isset($data['reorder_point']) ? $this->numericOrNull($data['reorder_point']) : null,
-            'as_of_date'      => isset($data['as_of_date']) ? $this->parseDateOrNull($data['as_of_date']) : null,
+            'as_of_date'      => isset($data['as_of_date']) ? $this->parseDateOrNull($data['as_of_date'], $row) : null,
             'on_order_qty'    => isset($data['on_order_qty']) ? $this->numericOrNull($data['on_order_qty']) : null,
             'inventory_value' => isset($data['inventory_value']) ? $this->numericOrNull($data['inventory_value']) : null,
         ];
@@ -969,15 +985,15 @@ class ImportProcessorService
             'qty_received'  => isset($data['qty_received'])  ? $this->numericOrNull($data['qty_received'])  : null,
             'unit_cost'     => isset($data['unit_cost'])     ? $this->numericOrNull($data['unit_cost'])     : null,
             'order_date'    => $this->parseDate($data['order_date'], $row),
-            'expected_date' => isset($data['expected_date']) ? $this->parseDateOrNull($data['expected_date']) : null,
-            'received_date' => isset($data['received_date']) ? $this->parseDateOrNull($data['received_date']) : null,
+            'expected_date' => isset($data['expected_date']) ? $this->parseDateOrNull($data['expected_date'], $row) : null,
+            'received_date' => isset($data['received_date']) ? $this->parseDateOrNull($data['received_date'], $row) : null,
             'location'      => $data['location'] ?? null,
             'open_qty'      => isset($data['open_qty'])  ? $this->numericOrNull($data['open_qty'])  : null,
             'late_days'     => isset($data['late_days']) ? (int) $this->numericOrNull($data['late_days']) : null,
             'fill_rate'     => isset($data['fill_rate']) ? $this->numericOrNull($data['fill_rate']) : null,
         ];
 
-        if (! empty($data['location'])) {
+        if (! ValueParser::isBlank($data['location'] ?? null)) {
             $attrs['store_id'] = $this->resolveStore($import->tenant_id, $data['location']);
         }
 
@@ -1133,38 +1149,10 @@ class ImportProcessorService
         return $data;
     }
 
-    private function readAllRows(string $filePath): array
+    /** WP3.2: the CSV dialect detected at upload (null for spreadsheets / legacy imports → re-detected). */
+    private function dialectOf(Import $import): array
     {
-        // Read data only (skip styles/formatting) to keep memory down on large files.
-        $reader      = IOFactory::createReaderForFile($filePath);
-        $reader->setReadDataOnly(true);
-        $spreadsheet = $reader->load($filePath);
-        $sheet       = $spreadsheet->getActiveSheet();
-        $data        = $sheet->toArray(null, true, true, false);
-        $spreadsheet->disconnectWorksheets();
-        unset($spreadsheet);
-
-        if (empty($data)) {
-            return [];
-        }
-
-        $headers = array_map('trim', array_map('strval', array_shift($data)));
-        $rows    = [];
-
-        foreach ($data as $row) {
-            $rowData = [];
-            foreach ($headers as $i => $header) {
-                // toArray() uses formatData = true, so Excel dates are already formatted.
-                $value = $row[$i] ?? null;
-                $rowData[$header] = $value !== null ? (string) $value : '';
-            }
-
-            if (!empty(array_filter($rowData))) {
-                $rows[] = $rowData;
-            }
-        }
-
-        return $rows;
+        return ['delimiter' => $import->delimiter, 'encoding' => $import->encoding];
     }
 
     /** WP3.1: a receipt line number is a positive whole number, or absent. */
@@ -1184,45 +1172,87 @@ class ImportProcessorService
     private function requireFields(array $data, array $fields, int $row): void
     {
         foreach ($fields as $field) {
-            if (empty($data[$field])) {
+            // WP3.2 (audit H26): blank means blank — "0" is a value.
+            if (ValueParser::isBlank($data[$field] ?? null)) {
                 throw new \InvalidArgumentException("Row {$row}: required field '{$field}' is missing or empty.");
             }
         }
     }
 
-    private function parseDate(string $value, int $row): string
+    /** WP3.2: the import's date/number rules (import → tenant → default). */
+    private function parser(): ValueParser
     {
-        try {
-            return Carbon::parse($value)->format('Y-m-d');
-        } catch (\Throwable) {
-            throw new \InvalidArgumentException("Row {$row}: cannot parse '{$value}' as a date.");
-        }
+        return $this->parser ??= new ValueParser();
     }
 
-    private function parseDateOrNull(?string $value): ?string
+    /**
+     * WP3.2: make a row ready for the writers — normalised once (older failed
+     * rows stored before WP3.2 are normalised here), with every unreadable
+     * date / number replaced by an InvalidValue so no later step re-reads it
+     * under different rules.
+     */
+    private function prepareForWrite(Import $import, array $data): array
     {
-        if (empty($value)) return null;
-        try {
-            return Carbon::parse($value)->format('Y-m-d');
-        } catch (\Throwable) {
-            return null;
+        $data = $this->parser()->normalizeRow($import->data_type, $data);
+        foreach ($data[ValueParser::META_INVALID] ?? [] as $field => $reason) {
+            if (array_key_exists($field, $data) && ! $data[$field] instanceof InvalidValue) {
+                $data[$field] = new InvalidValue((string) $data[$field], (string) $reason);
+            }
         }
+
+        return ValueParser::stripMeta($data);
     }
 
-    private function numeric(?string $value, string $field, int $row): float
+    /** Values reaching the writers are canonical (ISO dates, dot decimals). */
+    private function canonical(): ValueParser
     {
-        $clean = preg_replace('/[^0-9.\-]/', '', $value ?? '');
-        if (!is_numeric($clean)) {
+        return $this->canonicalParser ??= ValueParser::canonical();
+    }
+
+    private function parseDate(mixed $value, int $row): string
+    {
+        if ($value instanceof InvalidValue) {
+            if ($value->reason === ValueParser::AMBIGUOUS) {
+                throw new \InvalidArgumentException("Row {$row}: date '{$value->raw}' could be day/month or month/day — set the date format for this file.");
+            }
+            throw new \InvalidArgumentException("Row {$row}: cannot read '{$value->raw}' as a date (expected {$this->parser()->dateFormatLabel()}).");
+        }
+        $iso = $this->canonical()->date($value)['value'];
+        if ($iso === null) {
+            throw new \InvalidArgumentException("Row {$row}: cannot read '{$value}' as a date (expected {$this->parser()->dateFormatLabel()}).");
+        }
+
+        return $iso;
+    }
+
+    /**
+     * Optional date: blank or unreadable → null, but an AMBIGUOUS value is never
+     * guessed — it fails the row like a required one.
+     */
+    private function parseDateOrNull(mixed $value, int $row = 0): ?string
+    {
+        if ($value instanceof InvalidValue) {
+            return $value->reason === ValueParser::AMBIGUOUS ? $this->parseDate($value, $row) : null;
+        }
+
+        return $this->canonical()->date($value)['value'];
+    }
+
+    private function numeric(mixed $value, string $field, int $row): float
+    {
+        $n = $value instanceof InvalidValue ? null : $this->canonical()->number($value);
+        if ($n === null) {
             throw new \InvalidArgumentException("Row {$row}: '{$field}' value '{$value}' is not a valid number.");
         }
-        return (float) $clean;
+
+        return (float) $n;
     }
 
-    private function numericOrNull(?string $value): ?float
+    private function numericOrNull(mixed $value): ?float
     {
-        if (empty($value)) return null;
-        $clean = preg_replace('/[^0-9.\-]/', '', $value);
-        return is_numeric($clean) ? (float) $clean : null;
+        $n = $value instanceof InvalidValue ? null : $this->canonical()->number($value);
+
+        return $n === null ? null : (float) $n;
     }
 
     /**
@@ -1230,13 +1260,9 @@ class ImportProcessorService
      * written as an empty cell by a CSV export). Non-numeric junk also falls
      * back to 0 rather than rejecting the row.
      */
-    private function numericOrZero(?string $value): float
+    private function numericOrZero(mixed $value): float
     {
-        if ($value === null || trim((string) $value) === '') {
-            return 0.0;
-        }
-        $clean = preg_replace('/[^0-9.\-]/', '', $value);
-        return is_numeric($clean) ? (float) $clean : 0.0;
+        return (float) (($value instanceof InvalidValue ? null : $this->canonical()->number($value)) ?? 0);
     }
 
     private function str(?string $value, string $field, int $row): string

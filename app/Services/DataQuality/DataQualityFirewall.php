@@ -82,6 +82,8 @@ class DataQualityFirewall
                 'rules'      => $this->loadRules($tenantId, $import->data_type),
                 'upper_keys' => (bool) config('data_quality.canonicalize.uppercase_keys', true),
                 'strip_zeros'=> (bool) config('data_quality.canonicalize.strip_leading_zeros', false),
+                // WP3.2: the import's date order + decimal mark.
+                'parser'     => \App\Services\Import\ValueParser::forImport($import),
             ];
             $this->productSkus = Product::where('tenant_id', $tenantId)
                 ->pluck('sku')
@@ -137,7 +139,7 @@ class DataQualityFirewall
         $changed = $clean['changed'];
 
         if ($this->captureProfile && count($this->profileRows) < $this->profileCap) {
-            $this->profileRows[] = $data;
+            $this->profileRows[] = \App\Services\Import\ValueParser::stripMeta($data);
         }
 
         // Validate (required, type, referential).

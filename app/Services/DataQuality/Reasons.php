@@ -13,6 +13,7 @@ class Reasons
     public const MISSING_KEY      = 'missing_key';       // required identity absent (sku / po_number / email…)
     public const MISSING_REQUIRED = 'missing_required';  // other required field blank
     public const INVALID_DATE     = 'invalid_date';      // required date won't parse
+    public const AMBIGUOUS_DATE   = 'ambiguous_date';    // WP3.2: could be day/month or month/day — never guessed
     public const INVALID_NUMBER   = 'invalid_number';    // required number won't parse
     public const DUPLICATE_ROW    = 'duplicate_row';     // exact duplicate within this import
     public const ORPHAN_REFERENCE = 'orphan_reference';  // SKU not in product master (only hard when the gate is on)
@@ -24,6 +25,7 @@ class Reasons
         self::MISSING_KEY      => 'Missing identity key',
         self::MISSING_REQUIRED => 'Missing required field',
         self::INVALID_DATE     => 'Unparseable date',
+        self::AMBIGUOUS_DATE   => 'Ambiguous date (day/month order)',
         self::INVALID_NUMBER   => 'Unparseable number',
         self::DUPLICATE_ROW    => 'Duplicate row',
         self::ORPHAN_REFERENCE => 'Orphan SKU (no product master)',
@@ -34,6 +36,7 @@ class Reasons
         self::MISSING_KEY      => 'high',
         self::MISSING_REQUIRED => 'medium',
         self::INVALID_DATE     => 'medium',
+        self::AMBIGUOUS_DATE   => 'medium',
         self::INVALID_NUMBER   => 'medium',
         self::DUPLICATE_ROW    => 'medium',
         self::ORPHAN_REFERENCE => 'high',

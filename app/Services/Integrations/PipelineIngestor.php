@@ -71,6 +71,11 @@ class PipelineIngestor
             'status'            => Import::STATUS_UPLOADED,
             'sample_rows'       => $parsed['rows'] ?? [],
             'total_rows'        => $parsed['total_rows'] ?? 0,
+            // WP3.2: this CSV is written by us from JSON — dot decimals, UTF-8,
+            // comma-delimited. Dates: ISO is always read; others follow the tenant.
+            'decimal_separator' => '.',
+            'delimiter'         => ',',
+            'encoding'          => 'UTF-8',
         ]);
 
         foreach ($this->mapper->map($parsed['headers'] ?? [], $parsed['rows'] ?? [], $dataType, $tenantId) as $mapping) {

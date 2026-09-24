@@ -3,6 +3,7 @@
 namespace App\Services\DataQuality;
 
 use App\Services\Import\CanonicalSchema;
+use App\Services\Import\ValueParser;
 use Carbon\Carbon;
 
 /**
@@ -33,6 +34,9 @@ class CleansingEngine
     {
         $fields  = array_keys(CanonicalSchema::forType($dataType));
         $changed = false;
+        // WP3.2: a row normalised by the importer already has canonical dates /
+        // numbers (unreadable ones are listed, raw, in its META_INVALID).
+        $ctx['canonical_row'] = ! empty($data[ValueParser::META_CANONICAL]);
 
         foreach ($fields as $field) {
             if (! array_key_exists($field, $data)) {
@@ -54,7 +58,7 @@ class CleansingEngine
 
             // Tenant rule overrides (ordinal order).
             foreach ($ctx['rules'][$field] ?? [] as $rule) {
-                $value = $this->applyRule($value, $rule['rule_type'] ?? '', $rule['params'] ?? []);
+                $value = $this->applyRule($value, $rule['rule_type'] ?? '', $rule['params'] ?? [], ! empty($ctx['canonical_row']) ? ValueParser::canonical() : $this->parser($ctx));
             }
 
             if ((string) $original !== (string) $value) {
@@ -69,7 +73,7 @@ class CleansingEngine
     /** Apply a single transform to one value — used by the dry-run preview. */
     public function applyRuleType(string $value, string $ruleType, array $params = []): string
     {
-        return $this->applyRule($this->baseClean($value), $ruleType, $params);
+        return $this->applyRule($this->baseClean($value), $ruleType, $params, new ValueParser());
     }
 
     // ── Base hygiene ───────────────────────────────────────────────────────────
@@ -101,12 +105,15 @@ class CleansingEngine
         }
 
         switch (FieldTypes::of($field)) {
+            // WP3.2 (audit C7/H26): the import's date order and decimal mark
+            // decide — an unreadable or ambiguous value is left as-is for the
+            // validator to reject, never guessed.
             case FieldTypes::DATE:
-                return $this->toIsoDate($value) ?? $value;
+                return ! empty($ctx['canonical_row']) ? $value : ($this->parser($ctx)->date($value)['value'] ?? $value);
 
             case FieldTypes::NUMBER:
             case FieldTypes::INT:
-                return $this->toNumber($value) ?? $value;
+                return ! empty($ctx['canonical_row']) ? $value : ($this->parser($ctx)->number($value) ?? $value);
 
             case FieldTypes::KEY:
                 $value = str_replace(' ', '', $value);
@@ -155,50 +162,14 @@ class CleansingEngine
 
     // ── Parsers ────────────────────────────────────────────────────────────────
 
-    private function toIsoDate(string $v): ?string
+    private function parser(array $ctx): ValueParser
     {
-        try {
-            return Carbon::parse($v)->toDateString();
-        } catch (\Throwable) {
-            return null;
-        }
-    }
-
-    /** Strip currency & thousands separators, handle parentheses-negatives; null if not numeric. */
-    private function toNumber(string $v): ?string
-    {
-        $neg = false;
-        if (preg_match('/^\((.*)\)$/', $v, $m)) {
-            $neg = true;
-            $v = $m[1];
-        }
-        // keep digits, separators, sign
-        $v = preg_replace('/[^0-9.,\-]/', '', $v) ?? $v;
-        if ($v === '' || $v === '-' || $v === '.') {
-            return null;
-        }
-
-        $hasComma = str_contains($v, ',');
-        $hasDot   = str_contains($v, '.');
-        if ($hasComma && $hasDot) {
-            $v = str_replace(',', '', $v);                       // comma = thousands
-        } elseif ($hasComma) {
-            // one comma with ≤2 trailing digits → decimal comma; else thousands
-            $v = (preg_match('/^-?\d+,\d{1,2}$/', $v))
-                ? str_replace(',', '.', $v)
-                : str_replace(',', '', $v);
-        }
-
-        if (! is_numeric($v)) {
-            return null;
-        }
-
-        return $neg ? (string) (-1 * (float) $v) : $v;
+        return $ctx['parser'] ?? new ValueParser();
     }
 
     // ── Tenant rule application ─────────────────────────────────────────────────
 
-    private function applyRule(string $value, string $type, array $params): string
+    private function applyRule(string $value, string $type, array $params, ValueParser $parser): string
     {
         return match ($type) {
             'trim'                => trim($value),
@@ -206,8 +177,8 @@ class CleansingEngine
             'upper'               => mb_strtoupper($value),
             'lower'               => mb_strtolower($value),
             'strip_leading_zeros' => ($s = ltrim($value, '0')) === '' ? ($value === '' ? '' : '0') : $s,
-            'date_iso'            => $this->toIsoDate($value) ?? $value,
-            'number'              => $this->toNumber($value) ?? $value,
+            'date_iso'            => $parser->date($value)['value'] ?? $value,
+            'number'              => $parser->number($value) ?? $value,
             'default_if_blank'    => $value === '' ? (string) ($params['value'] ?? '') : $value,
             'regex_replace'       => @preg_replace('/' . str_replace('/', '\/', (string) ($params['pattern'] ?? '')) . '/u', (string) ($params['replacement'] ?? ''), $value) ?? $value,
             'value_map'           => (mb_strtolower($value) === mb_strtolower((string) ($params['from'] ?? '__none__'))) ? (string) ($params['to'] ?? $value) : $value,

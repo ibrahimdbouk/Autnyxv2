@@ -9,6 +9,7 @@ use App\Services\Anomaly\InvestigationCorrelationService;
 use App\Services\Import\ColumnMappingService;
 use App\Services\Import\FileReaderService;
 use App\Services\Import\ImportProcessorService;
+use App\Services\Import\ValueParser;
 use App\Services\Storage\TenantStorage;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
@@ -64,6 +65,40 @@ class ListImports extends ListRecords
                         ->send();
                 }),
 
+            // WP3.2 (D4): the tenant's default way of reading dates and numbers.
+            Action::make('importSettings')
+                ->label('Import settings')
+                ->icon('heroicon-o-adjustments-horizontal')
+                ->color('gray')
+                ->visible(fn () => (bool) auth()->user()?->canManageImports() && (bool) auth()->user()?->isTenantAdmin())
+                ->modalHeading('How your files are read')
+                ->modalDescription('Defaults for every upload and SFTP feed. Each upload or feed can override them. A date that does not fit the format is rejected with a reason — it is never guessed.')
+                ->fillForm(fn () => [
+                    'import_date_format'       => ValueParser::forTenant(Filament::getTenant())->dateFormat,
+                    'import_decimal_separator' => ValueParser::forTenant(Filament::getTenant())->decimal,
+                ])
+                ->form([
+                    Select::make('import_date_format')
+                        ->label('Date format')
+                        ->options(ValueParser::DATE_FORMATS)
+                        ->required(),
+                    Select::make('import_decimal_separator')
+                        ->label('Decimal separator (CSV / text files)')
+                        ->options(ValueParser::DECIMALS)
+                        ->required()
+                        ->helperText('Excel files always use the numbers stored in the cells.'),
+                ])
+                ->action(function (array $data) {
+                    abort_unless(auth()->user()?->isTenantAdmin(), 403);
+                    $tenant = Filament::getTenant();
+                    $tenant->settings = array_merge($tenant->settings ?? [], [
+                        'import_date_format'       => array_key_exists($data['import_date_format'] ?? '', ValueParser::DATE_FORMATS) ? $data['import_date_format'] : ValueParser::DEFAULT_DATE_FORMAT,
+                        'import_decimal_separator' => array_key_exists($data['import_decimal_separator'] ?? '', ValueParser::DECIMALS) ? $data['import_decimal_separator'] : ValueParser::DEFAULT_DECIMAL,
+                    ]);
+                    $tenant->save();
+                    Notification::make()->title('Import settings saved')->success()->send();
+                }),
+
             Action::make('upload')
                 ->label('Upload File')
                 ->icon('heroicon-o-arrow-up-tray')
@@ -90,6 +125,18 @@ class ListImports extends ListRecords
                         ->disk('local')
                         ->directory('imports/pending')
                         ->helperText('Maximum 20 MB. CSV or .xlsx files supported.'),
+
+                    // WP3.2 (D4): per-file override of the tenant default.
+                    Select::make('date_format')
+                        ->label('Date format in this file')
+                        ->options(ValueParser::DATE_FORMATS)
+                        ->default(fn () => ValueParser::forTenant(Filament::getTenant())->dateFormat)
+                        ->required(),
+                    Select::make('decimal_separator')
+                        ->label('Decimal separator (CSV / text files)')
+                        ->options(ValueParser::DECIMALS)
+                        ->default(fn () => ValueParser::forTenant(Filament::getTenant())->decimal)
+                        ->required(),
                 ])
                 ->action(function (array $data, $livewire) {
                     $dt = $data['data_type'] ?? null;
@@ -136,6 +183,11 @@ class ListImports extends ListRecords
                             'status'            => Import::STATUS_UPLOADED,
                             'sample_rows'       => $result['rows'],
                             'total_rows'        => $result['total_rows'],
+                            // WP3.2: how this file is read, decided once.
+                            'date_format'       => array_key_exists($data['date_format'] ?? '', ValueParser::DATE_FORMATS) ? $data['date_format'] : null,
+                            'decimal_separator' => array_key_exists($data['decimal_separator'] ?? '', ValueParser::DECIMALS) ? $data['decimal_separator'] : null,
+                            'delimiter'         => $result['delimiter'] ?? null,
+                            'encoding'          => $result['encoding'] ?? null,
                         ]);
 
                         $mapper = app(ColumnMappingService::class);

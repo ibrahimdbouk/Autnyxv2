@@ -22,6 +22,11 @@ class Import extends Model
         'failed_rows',
         'quarantined_rows',
         'duplicate_rows', // WP3.1: lines already loaded, skipped (not an error)
+        // WP3.2: how the file is read (null → tenant default / detected).
+        'date_format',
+        'decimal_separator',
+        'delimiter',
+        'encoding',
         'process_cursor',
         'error_message',
     ];

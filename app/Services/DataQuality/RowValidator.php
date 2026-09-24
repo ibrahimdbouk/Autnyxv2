@@ -55,6 +55,13 @@ class RowValidator
             }
         }
 
+        // 1b. WP3.2 (audit C7): a date that could be day/month OR month/day is
+        //     never guessed — any date field, required or not, always hard.
+        $invalid = $data[\App\Services\Import\ValueParser::META_INVALID] ?? [];
+        if (in_array(\App\Services\Import\ValueParser::AMBIGUOUS, $invalid, true)) {
+            return ['reason' => Reasons::AMBIGUOUS_DATE, 'warnings' => $warnings];
+        }
+
         // 2. Required date / number parseability (post-cleanse: dates are ISO on success).
         foreach ($schema as $field => $def) {
             if (! ($def['required'] ?? false) || $this->blank($data[$field] ?? null)) {
@@ -62,13 +69,13 @@ class RowValidator
             }
             $value = (string) $data[$field];
             $type  = FieldTypes::of($field);
-            if ($type === FieldTypes::DATE && ! preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+            if ($type === FieldTypes::DATE && (isset($invalid[$field]) || ! preg_match('/^\d{4}-\d{2}-\d{2}$/', $value))) {
                 if ($strict) {
                     return ['reason' => Reasons::INVALID_DATE, 'warnings' => $warnings];
                 }
                 $warnings[] = Reasons::INVALID_DATE;
             }
-            if (($type === FieldTypes::NUMBER || $type === FieldTypes::INT) && ! is_numeric($value)) {
+            if (($type === FieldTypes::NUMBER || $type === FieldTypes::INT) && (isset($invalid[$field]) || ! is_numeric($value))) {
                 if ($strict) {
                     return ['reason' => Reasons::INVALID_NUMBER, 'warnings' => $warnings];
                 }
