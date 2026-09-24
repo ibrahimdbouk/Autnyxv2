@@ -81,43 +81,88 @@ class SftpPollService
         return $importedCount;
     }
 
+    /** WP3.7: partial / marker files are never imported themselves. */
+    private const IGNORED_SUFFIXES = ['.done', '.tmp', '.part', '.filepart', '.partial', '.lock'];
+
     private function pollFeed(SftpConnection $connection, SftpFeed $feed, $disk): int
     {
         $count = 0;
         $dir   = trim($feed->remote_path ?: '.');
 
         $files = $disk->files($dir);
+        $names = array_flip(array_map('strtolower', $files));
 
         foreach ($files as $path) {
             $filename = basename($path);
+            $lower = strtolower($filename);
 
+            if (str_starts_with($filename, '.') || array_filter(self::IGNORED_SUFFIXES, fn ($s) => str_ends_with($lower, $s))) {
+                continue;
+            }
             if (! $feed->matches($filename)) {
                 continue;
             }
 
-            // Skip already-ingested files (idempotency).
-            $already = SftpIngestedFile::where('sftp_connection_id', $connection->id)
-                ->where('remote_path', $path)
-                ->exists();
-            if ($already) {
-                continue;
+            // WP3.7 (audit H29): a file is its path + size + modification time —
+            // a daily file overwritten at the same path is new data.
+            $size  = (int) $disk->size($path);
+            $mtime = (int) $disk->lastModified($path);
+
+            $ledger = SftpIngestedFile::where('sftp_connection_id', $connection->id)
+                ->where('remote_path', $path)->where('size_bytes', $size)->where('remote_mtime', $mtime)
+                ->first();
+
+            // A file ingested before WP3.7 has no mtime on record — same path and
+            // size means it's the file we already have (don't re-import everything).
+            if (! $ledger) {
+                $legacy = SftpIngestedFile::where('sftp_connection_id', $connection->id)
+                    ->where('remote_path', $path)->whereNull('remote_mtime')->where('size_bytes', $size)
+                    ->first();
+                if ($legacy) {
+                    $legacy->forceFill(['remote_mtime' => $mtime])->save();
+                    continue;
+                }
             }
 
-            $this->ingestFile($connection, $feed, $disk, $path, $filename) && $count++;
+            if ($ledger) {
+                $retryable = $ledger->status === SftpIngestedFile::STATUS_FAILED
+                    && $ledger->attempts < SftpIngestedFile::MAX_ATTEMPTS
+                    && ($ledger->next_attempt_at === null || $ledger->next_attempt_at->isPast());
+                // Pending = seen unchanged on an earlier poll → complete; take it.
+                if ($ledger->status !== SftpIngestedFile::STATUS_PENDING && ! $retryable) {
+                    continue;
+                }
+            } else {
+                $ledger = new SftpIngestedFile([
+                    'tenant_id'          => $connection->tenant_id,
+                    'sftp_connection_id' => $connection->id,
+                    'sftp_feed_id'       => $feed->id,
+                    'remote_path'        => $path,
+                    'filename'           => $filename,
+                    'size_bytes'         => $size,
+                    'remote_mtime'       => $mtime,
+                ]);
+
+                // Stability: without a "<file>.done" marker, a new file is only
+                // taken once a later poll sees it unchanged (not mid-upload).
+                $marker = isset($names[strtolower($path . '.done')])
+                    || isset($names[strtolower(preg_replace('/\.[^.\/]+$/', '', $path) . '.done')]);
+                if (! $marker) {
+                    $ledger->fill(['status' => SftpIngestedFile::STATUS_PENDING])->save();
+                    continue;
+                }
+            }
+
+            $this->ingestFile($connection, $feed, $disk, $ledger) && $count++;
         }
 
         return $count;
     }
 
-    private function ingestFile(SftpConnection $connection, SftpFeed $feed, $disk, string $remotePath, string $filename): bool
+    private function ingestFile(SftpConnection $connection, SftpFeed $feed, $disk, SftpIngestedFile $ledger): bool
     {
-        $ledger = new SftpIngestedFile([
-            'tenant_id'          => $connection->tenant_id,
-            'sftp_connection_id' => $connection->id,
-            'sftp_feed_id'       => $feed->id,
-            'remote_path'        => $remotePath,
-            'filename'           => $filename,
-        ]);
+        $remotePath = $ledger->remote_path;
+        $filename   = $ledger->filename;
 
         try {
             $contents = $disk->get($remotePath);
@@ -132,21 +177,26 @@ class SftpPollService
             $import = $this->autoImport($connection->tenant_id, $feed->data_type, $localPath, $filename, $feed);
 
             $ledger->fill([
-                'size_bytes'   => strlen($contents),
-                'checksum'     => md5($contents),
-                'import_id'    => $import->id,
-                'status'       => SftpIngestedFile::STATUS_IMPORTED,
-                'processed_at' => now(),
+                'checksum'        => md5($contents),
+                'import_id'       => $import->id,
+                'status'          => SftpIngestedFile::STATUS_IMPORTED,
+                'error'           => null,
+                'next_attempt_at' => null,
+                'processed_at'    => now(),
             ])->save();
 
             $this->afterImport($feed, $disk, $remotePath, $filename);
 
             return true;
         } catch (\Throwable $e) {
+            // WP3.7: retried with backoff (10 min, 20, 40, 80 … capped at 6 h).
+            $attempts = (int) $ledger->attempts + 1;
             $ledger->fill([
-                'status'       => SftpIngestedFile::STATUS_FAILED,
-                'error'        => Str::limit($e->getMessage(), 500),
-                'processed_at' => now(),
+                'status'          => SftpIngestedFile::STATUS_FAILED,
+                'error'           => Str::limit($e->getMessage(), 500),
+                'attempts'        => $attempts,
+                'next_attempt_at' => now()->addMinutes(min(360, 10 * 2 ** ($attempts - 1))),
+                'processed_at'    => now(),
             ])->save();
 
             Log::error('[sftp] file ingest failed', ['path' => $remotePath, 'error' => $e->getMessage()]);
@@ -179,8 +229,8 @@ class SftpPollService
             'encoding'          => $parsed['encoding'] ?? null,
         ]);
 
-        // Auto column mapping — accept the AI/fuzzy matches without human review.
-        $mappings = $this->mapper->map($parsed['headers'] ?? [], $parsed['rows'] ?? [], $dataType);
+        // Auto column mapping (learned memory first); WP3.3 holds it for review when unsure.
+        $mappings = $this->mapper->map($parsed['headers'] ?? [], $parsed['rows'] ?? [], $dataType, $tenantId);
         foreach ($mappings as $mapping) {
             $import->columnMaps()->create($mapping);
         }
@@ -190,8 +240,9 @@ class SftpPollService
             return $import->fresh();
         }
 
-        // Run the standard processor (writes rows, records IngestionRun, detects anomalies).
-        $this->processor->process($import);
+        // WP3.7: processed on the queue by the chunked pipeline (screen → write →
+        // aggregate → incremental detection), never inline in the poller.
+        \App\Jobs\ProcessIngestedImportJob::dispatch($import->id)->afterCommit();
 
         return $import->fresh();
     }
@@ -200,7 +251,11 @@ class SftpPollService
     {
         try {
             if ($feed->archive_path) {
-                $dest = rtrim($feed->archive_path, '/') . '/' . $filename;
+                // WP3.7: a unique name — archiving today's "sales.csv" must not
+                // overwrite (or fail on) yesterday's archived copy.
+                $ext  = pathinfo($filename, PATHINFO_EXTENSION);
+                $base = pathinfo($filename, PATHINFO_FILENAME);
+                $dest = rtrim($feed->archive_path, '/') . '/' . $base . '_' . now()->format('Ymd_His') . '_' . Str::lower(Str::random(4)) . ($ext !== '' ? '.' . $ext : '');
                 $disk->move($remotePath, $dest);
             } elseif ($feed->delete_after) {
                 $disk->delete($remotePath);

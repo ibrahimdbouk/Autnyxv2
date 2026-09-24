@@ -32,10 +32,14 @@ class PipelineIngestor
      * @param  iterable<int,array<string,mixed>>  $rows
      * @return Import|null  null when there were no rows
      */
+    /** WP3.7: the last ingestRows() stopped at MAX_ROWS (the source had more). */
+    public bool $lastTruncated = false;
+
     public function ingestRows(int $tenantId, string $dataType, iterable $rows, string $source = 'api', bool $queue = false): ?Import
     {
         $headers = [];
         $buffer  = [];
+        $this->lastTruncated = false;
 
         foreach ($rows as $record) {
             $record = (array) $record;
@@ -44,6 +48,7 @@ class PipelineIngestor
             }
             $buffer[] = $record;
             if (count($buffer) >= self::MAX_ROWS) {
+                $this->lastTruncated = true;
                 break;
             }
         }
@@ -88,15 +93,9 @@ class PipelineIngestor
             return $import->fresh();
         }
 
-        // WP2.3: the public API queues processing (202 + poll); scheduled pulls
-        // already run in the background and process inline.
-        if ($queue) {
-            \App\Jobs\ProcessIngestedImportJob::dispatch($import->id)->afterCommit();
-
-            return $import->fresh();
-        }
-
-        $this->processor->process($import);
+        // WP2.3 / WP3.7: always processed on the queue by the chunked pipeline
+        // (the public API returns 202 + poll; scheduled pulls just enqueue).
+        \App\Jobs\ProcessIngestedImportJob::dispatch($import->id)->afterCommit();
 
         return $import->fresh();
     }

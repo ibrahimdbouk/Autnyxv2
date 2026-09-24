@@ -16,6 +16,7 @@ use Filament\Actions\EditAction;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\KeyValue;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -229,6 +230,22 @@ class ApiConnectionResource extends Resource
                     KeyValue::make('params')
                         ->label('Extra query params')
                         ->columnSpanFull(),
+
+                    // WP3.7 — incremental pulls + nested line items.
+                    TextInput::make('hwm_field')
+                        ->label('Changed-since field')
+                        ->maxLength(255)
+                        ->helperText('Optional. Record field holding a last-changed timestamp (e.g. LastChangeDateTime). Its highest value is remembered and put into any parameter containing {{since}}, so the next pull only fetches what changed.'),
+
+                    TextInput::make('split_path')
+                        ->label('Line items path')
+                        ->maxLength(255)
+                        ->helperText('Optional. Dot-path to nested line items inside each record (e.g. to_Item.results or line_items). Each item becomes its own row, repeating the header fields; field map paths can use item.<field>.'),
+
+                    Placeholder::make('last_warning')
+                        ->label('Last pull')
+                        ->content(fn ($record) => $record?->last_warning ?: 'Complete')
+                        ->visible(fn ($record) => $record !== null),
 
                     Toggle::make('enabled')->label('Enabled')->default(true)->inline(false),
                 ])

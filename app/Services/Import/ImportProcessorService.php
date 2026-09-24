@@ -17,7 +17,6 @@ use App\Models\Store;
 use App\Models\Supplier;
 use App\Models\User;
 use App\Services\DataQuality\DataQualityFirewall;
-use App\Services\DataQuality\QuarantineException;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -313,151 +312,25 @@ class ImportProcessorService
         return 0;
     }
 
+    /**
+     * Process a whole import unattended (SFTP, API, queued jobs).
+     *
+     * WP3.7: the old single-pass path (whole file in memory, its own writers,
+     * detection run inline) is retired — this drives the SAME chunked
+     * screen → write pipeline the upload screen uses, to completion.
+     */
     public function process(Import $import): void
     {
-        $import->update(['status' => Import::STATUS_IMPORTING]);
-        $startedAt = now();
-
         try {
-            $columnMap = $import->columnMaps()
-                ->where('is_skipped', false)
-                ->whereNotNull('target_field')
-                ->get()
-                ->keyBy('source_header');
-
-            $filePath = app(\App\Services\Storage\TenantStorage::class)->localPath($import->disk, $import->path);
-            $this->parser = ValueParser::forImport($import);
-            $allRows  = app(FileReaderService::class)->readAll($filePath, $this->dialectOf($import));
-
-            $total       = count($allRows);
-            $imported    = 0;
-            $failed      = 0;
-            $quarantined = 0;
-            $duplicates  = 0;
-            $this->lineCounters = [];
-
-            $this->firewall()?->begin($import);
-
-            // Idempotency: identical file already ingested → skip (no duplicate rows).
-            if (($fw = $this->firewall()) && $fw->isDuplicateBatch()) {
-                $fw->recordChunk($import);
-                $import->update([
-                    'status'        => Import::STATUS_ROLLED_BACK,
-                    'total_rows'    => $total,
-                    'error_message' => 'Duplicate upload — identical file already ingested; skipped.',
-                ]);
-                $this->recordIngestionRun($import, $total, 0, 0, $startedAt);
-
-                return;
-            }
-
-            // WP3.6 (D6): screen the whole file first — quarantine what fails the
-            // gate and decide the batch; a RED batch is held with nothing written.
-            $skip = [];
-            if ($fw = $this->firewall()) {
-                $isSales = $import->data_type === Import::TYPE_SALES;
-                foreach ($allRows as $n => $rawRow) {
-                    $data = $this->applyMap($columnMap, $rawRow);
-                    $data = $this->parser()->normalizeRow($import->data_type, $isSales ? $this->numberLine($data) : $data);
-                    $screen = $fw->screen($import, $data);
-                    if ($screen['reason'] !== null) {
-                        $fw->quarantine($import, $rawRow, ValueParser::stripMeta($screen['data']), $screen['reason'], $n + 2);
-                        $skip[$n] = true;
-                        $quarantined++;
-                    }
-                }
-                $fw->recordChunk($import, alert: false);
-                $fw->resetPass();
-                $this->lineCounters = [];
-
-                $q = ImportQuality::where('import_id', $import->id)->first();
-                if ($q && $q->state === ImportQuality::STATE_RED) {
-                    $import->update([
-                        'status'           => Import::STATUS_HELD,
-                        'total_rows'       => $total,
-                        'quarantined_rows' => $quarantined,
-                        'process_phase'    => Import::PHASE_SCREEN,
-                        'error_message'    => 'Held — ' . $q->decision . ' Nothing was loaded. An admin can promote it anyway.',
-                    ]);
-                    app(\App\Services\DataQuality\ReadinessAlerter::class)->redBatch($q);
-                    $this->recordIngestionRun($import, $total, 0, 0, $startedAt);
-
-                    return;
-                }
-            }
-
-            foreach ($allRows as $rowNumber => $rawRow) {
-                if (isset($skip[$rowNumber])) {
-                    // Keep receipt line numbering identical to the screen pass.
-                    if ($import->data_type === Import::TYPE_SALES) {
-                        $this->numberLine($this->applyMap($columnMap, $rawRow));
-                    }
-                    continue;
-                }
-                try {
-                    DB::beginTransaction();
-                    $this->lastWriteWasDuplicate = false;
-                    $this->writeRow($import, $columnMap, $rawRow, $rowNumber + 2); // +2 = 1-indexed + skip header
-                    DB::commit();
-                    $this->lastWriteWasDuplicate ? $duplicates++ : $imported++;
-                } catch (QuarantineException $q) {
-                    // Already quarantined (and counted) by the screen pass.
-                    DB::rollBack();
-                } catch (\Throwable $e) {
-                    DB::rollBack();
-                    $failed++;
-                    ImportRow::create([
-                        'import_id'     => $import->id,
-                        'tenant_id'     => $import->tenant_id,
-                        'row_number'    => $rowNumber + 2,
-                        'raw_data'      => $rawRow,
-                        'mapped_data'   => $this->applyMap($columnMap, $rawRow),
-                        'error_message' => $e->getMessage(),
-                        'status'        => ImportRow::STATUS_PENDING,
-                    ]);
-                }
-            }
-
-            $this->firewall()?->recordWarnings($import);
-
-            $status = ($failed > 0 || $quarantined > 0) ? Import::STATUS_COMPLETED_WITH_ERRORS : Import::STATUS_COMPLETED;
-
-            $import->update([
-                'status'           => $status,
-                'total_rows'       => $total,
-                'imported_rows'    => $imported,
-                'failed_rows'      => $failed,
-                'quarantined_rows' => $quarantined,
-                'duplicate_rows'   => $duplicates,
-                'process_phase'    => Import::PHASE_WRITE,
-            ]);
-            $this->rescoreAfterWrite($import->fresh());
-
-            // Slice 5 — learn this confirmed mapping for the next same-shaped import.
-            try {
-                \App\Models\MappingMemory::rememberFromImport($import);
-            } catch (\Throwable $e) {
-                Log::warning('Mapping memory learn failed', ['import_id' => $import->id, 'error' => $e->getMessage()]);
-            }
-
-            // Record an IngestionRun so Data Health sees this ingestion.
-            $this->recordIngestionRun($import, $total, $imported, $failed, $startedAt);
-
-            // WP1.2 (audit H1): restore async detection. This path (SFTP / API /
-            // public ingest) used to run a full tenant scan inline — inside the
-            // hourly scheduler or an HTTP request. Keep sales_daily current, then
-            // queue a run. Mode = the configured detection.mode (full by default):
-            // this path does not record dirty keys, so an incremental run would
-            // see no change set. afterCommit so a worker never reads uncommitted rows.
-            try {
-                app(\App\Services\Sales\SalesDailyAggregator::class)->aggregateForImport($import);
-                \App\Jobs\RunTenantDetectionJob::dispatch($import->tenant_id)->afterCommit();
-            } catch (\Throwable $e) {
-                Log::error('Post-import aggregation/detection dispatch failed', ['import_id' => $import->id, 'error' => $e->getMessage()]);
-            }
+            $this->startChunkedImport($import);
+            $guard = 0;
+            do {
+                $r = $this->processChunk($import->fresh());
+            } while (! ($r['done'] ?? false) && ++$guard < 100000);
         } catch (\Throwable $e) {
             Log::error('Import processing failed', ['import_id' => $import->id, 'error' => $e->getMessage()]);
             $import->update(['status' => Import::STATUS_FAILED, 'error_message' => $e->getMessage()]);
+            app(\App\Services\Storage\TenantStorage::class)->forgetImportCopy($import);
         }
     }
 
@@ -474,6 +347,7 @@ class ImportProcessorService
     {
         ImportRow::where('import_id', $import->id)->delete();
         DB::table('import_line_counters')->where('import_id', $import->id)->delete(); // WP3.1
+        app(\App\Services\Storage\TenantStorage::class)->forgetImportCopy($import); // WP3.7
         // Fresh firewall run: drop any prior quarantine + quality for this import.
         QuarantinedRow::where('import_id', $import->id)->delete();
         ImportQuality::where('import_id', $import->id)->delete();
@@ -518,7 +392,7 @@ class ImportProcessorService
             ->keyBy('source_header');
 
         $offset   = (int) $import->process_cursor;
-        $filePath = app(\App\Services\Storage\TenantStorage::class)->localPath($import->disk, $import->path);
+        $filePath = app(\App\Services\Storage\TenantStorage::class)->importCopy($import);
 
         try {
             /** @var FileReaderService $reader */
@@ -527,6 +401,7 @@ class ImportProcessorService
         } catch (\Throwable $e) {
             Log::error('Import chunk read failed', ['import_id' => $import->id, 'error' => $e->getMessage()]);
             $import->update(['status' => Import::STATUS_FAILED, 'error_message' => $e->getMessage()]);
+            app(\App\Services\Storage\TenantStorage::class)->forgetImportCopy($import);
 
             return ['done' => true, 'processed' => $offset, 'total' => (int) $import->total_rows, 'failed' => true];
         }
@@ -870,6 +745,7 @@ class ImportProcessorService
                 'error_message' => 'Held — ' . $q->decision . ' Nothing was loaded. An admin can promote it anyway.',
             ]);
             app(\App\Services\DataQuality\ReadinessAlerter::class)->redBatch($q);
+            app(\App\Services\Storage\TenantStorage::class)->forgetImportCopy($import);
 
             return ['done' => true, 'processed' => $total, 'total' => $total];
         }
@@ -1157,40 +1033,6 @@ class ImportProcessorService
             Import::TYPE_PURCHASE_ORDERS => $this->buildPurchaseOrderAttrs($import, $data, $row),
             Import::TYPE_RETURNS         => $this->buildReturnAttrs($import, $data, $row),
             default                      => throw new \InvalidArgumentException("Not a batch-insert type: {$import->data_type}"),
-        };
-    }
-
-    private function writeRow(Import $import, $columnMap, array $rawRow, int $rowNumber): void
-    {
-        $data = $this->applyMap($columnMap, $rawRow);
-        if ($import->data_type === Import::TYPE_SALES) {
-            $data = $this->numberLine($data);
-        }
-        // WP3.2: dates / numbers read ONCE under the import's format.
-        $data = $this->parser()->normalizeRow($import->data_type, $data);
-
-        // Data Quality Firewall: cleanse + gate before the write. A rejected row is
-        // diverted to quarantine by the caller (which catches QuarantineException).
-        if ($fw = $this->firewall()) {
-            $screen = $fw->screen($import, $data);
-            if ($screen['reason'] !== null) {
-                throw new QuarantineException($screen['reason'], $screen['data']);
-            }
-            $data = $screen['data'];
-        }
-
-        $data = $this->prepareForWrite($import, $data);
-
-        match ($import->data_type) {
-            Import::TYPE_SALES           => $this->writeSalesTransaction($import, $data, $rowNumber),
-            Import::TYPE_INVENTORY       => $this->writeInventoryLevel($import, $data, $rowNumber),
-            Import::TYPE_PRODUCTS        => $this->writeProduct($import, $data, $rowNumber),
-            Import::TYPE_PURCHASE_ORDERS => $this->writePurchaseOrder($import, $data, $rowNumber),
-            Import::TYPE_STORES          => $this->writeStore($import, $data, $rowNumber),
-            Import::TYPE_SUPPLIERS       => $this->writeSupplier($import, $data, $rowNumber),
-            Import::TYPE_USERS           => $this->writeUser($import, $data, $rowNumber),
-            Import::TYPE_RETURNS         => $this->writeReturn($import, $data, $rowNumber),
-            default                      => throw new \InvalidArgumentException("Unknown data type: {$import->data_type}"),
         };
     }
 

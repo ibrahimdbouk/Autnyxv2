@@ -99,7 +99,7 @@ class DataQualityFirewall
             // Best-effort re-upload fingerprint — never let it break ingestion.
             $fingerprint = null;
             try {
-                $path = app(\App\Services\Storage\TenantStorage::class)->localPath($import->disk, $import->path);
+                $path = app(\App\Services\Storage\TenantStorage::class)->importCopy($import);
                 $fingerprint = $this->dedup->fileFingerprint($path);
             } catch (\Throwable) {
                 $fingerprint = null;

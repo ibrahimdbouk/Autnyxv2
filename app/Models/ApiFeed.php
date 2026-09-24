@@ -31,6 +31,9 @@ class ApiFeed extends Model
         'page_strategy',
         'page_size',
         'enabled',
+        // WP3.7 — incremental pulls + nested line items.
+        'hwm_field',
+        'split_path',
     ];
 
     protected $casts = [

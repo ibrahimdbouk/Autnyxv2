@@ -122,7 +122,12 @@ class TenantStorage
             throw new RuntimeException("Unable to read {$path} from disk [{$diskName}].");
         }
 
+        // WP3.7: keep the extension — the readers pick CSV vs Excel by it.
+        $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
         $tmp = tempnam(sys_get_temp_dir(), 'autnyx_');
+        if ($ext !== '') {
+            @rename($tmp, $tmp .= '.' . $this->safeSegment($ext));
+        }
         $out = fopen($tmp, 'wb');
         stream_copy_to_stream($stream, $out);
         fclose($out);
@@ -131,6 +136,45 @@ class TenantStorage
         }
 
         return $tmp;
+    }
+
+    /**
+     * WP3.7: ONE local copy of an import's file for the whole import (a remote
+     * file used to be downloaded again on every chunk and never deleted).
+     * Local disks return the file itself. Pair with forgetImportCopy().
+     */
+    public function importCopy(\App\Models\Import $import): string
+    {
+        if (config("filesystems.disks.{$import->disk}.driver") === 'local') {
+            return Storage::disk($import->disk)->path($import->path);
+        }
+
+        $copy = $this->importCopyPath($import);
+        if (! is_file($copy) || filesize($copy) === 0) {
+            $downloaded = $this->localPath($import->disk, $import->path);
+            @mkdir(dirname($copy), 0700, true);
+            if (! @rename($downloaded, $copy)) {
+                copy($downloaded, $copy);
+                @unlink($downloaded);
+            }
+        }
+
+        return $copy;
+    }
+
+    /** Delete the import's local working copy (no-op for local disks). */
+    public function forgetImportCopy(\App\Models\Import $import): void
+    {
+        if (config("filesystems.disks.{$import->disk}.driver") !== 'local') {
+            @unlink($this->importCopyPath($import));
+        }
+    }
+
+    private function importCopyPath(\App\Models\Import $import): string
+    {
+        $ext = strtolower(pathinfo((string) $import->path, PATHINFO_EXTENSION)) ?: 'csv';
+
+        return sys_get_temp_dir() . '/autnyx-imports/import-' . (int) $import->id . '.' . $this->safeSegment($ext);
     }
 
     /** Allow only a safe path segment (no slashes, dots, traversal). */

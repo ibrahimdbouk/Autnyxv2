@@ -13,6 +13,9 @@ use Illuminate\Queue\SerializesModels;
 /**
  * WP2.3 (audit H13) — process a public-API ingest OFF the HTTP request. The
  * endpoint used to insert up to 200k rows and run detection inside the request.
+ *
+ * WP3.7 — every unattended import (public API, scheduled API pulls, SFTP)
+ * is processed by this job, through the chunked screen → write pipeline.
  */
 class ProcessIngestedImportJob implements ShouldQueue
 {

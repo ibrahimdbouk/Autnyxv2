@@ -20,7 +20,20 @@ use RuntimeException;
  */
 class GenericRestConnector implements Connector
 {
-    private const MAX_PAGES = 2000; // safety bound against a misbehaving endpoint
+    /** Safety bound against a misbehaving endpoint (a property so tests can lower it). */
+    protected int $maxPages = 2000;
+
+    /** WP3.7: 429 / 5xx are retried this many times, with backoff (Retry-After honoured). */
+    private const MAX_RETRIES = 4;
+
+    /**
+     * WP3.7 — what the last fetch() saw: the highest value of the feed's
+     * high-water-mark field, an OData delta link to resume from, and whether
+     * the page cap cut the pull short.
+     *
+     * @var array{max_hwm: ?string, delta_link: ?string, page_cap_hit: bool}
+     */
+    public array $runState = ['max_hwm' => null, 'delta_link' => null, 'page_cap_hit' => false];
 
     /** @param array<string,mixed> $profile provider defaults from Profiles::for() */
     public function __construct(private array $profile = [])
@@ -44,7 +57,16 @@ class GenericRestConnector implements Connector
         $offset     = 0;
         $absolute   = null; // set by next_link / link_header to a full URL
 
-        for ($i = 0; $i < self::MAX_PAGES; $i++) {
+        // WP3.7: incremental pulls — resume an OData delta link, or substitute the
+        // high-water mark into any "{{since}}" parameter (e.g. a $filter or updated_at_min).
+        $this->runState = ['max_hwm' => null, 'delta_link' => null, 'page_cap_hit' => false];
+        if (is_string($feed->delta_link) && $feed->delta_link !== '') {
+            $absolute = $feed->delta_link;
+        }
+        $since  = $feed->high_water_mark ?: '1970-01-01T00:00:00Z';
+        $params = array_map(fn ($v) => is_string($v) ? str_replace('{{since}}', $since, $v) : $v, $params);
+
+        for ($i = 0; $i < $this->maxPages; $i++) {
             $query = $params;
             switch ($strategy) {
                 case 'page':
@@ -82,7 +104,7 @@ class GenericRestConnector implements Connector
             // links must stay on the configured API host.
             $request = app(\App\Support\Http\EgressGuard::class)->apply($request, $url, $absolute ? $requestUrl : null);
 
-            $resp = $request->get($url, $sendQuery);
+            $resp = $this->getWithRetry($request, $url, $sendQuery);
 
             if (! $resp->successful()) {
                 throw new RuntimeException('Fetch failed: ' . $this->extractError($resp));
@@ -94,11 +116,31 @@ class GenericRestConnector implements Connector
                 $records = [];
             }
 
+            $hwmField = $feed->hwm_field ?: null;
             foreach ($records as $rec) {
-                yield $this->mapRecord((array) $rec, $fieldMap);
+                $rec = (array) $rec;
+                if ($hwmField !== null && is_scalar($v = data_get($rec, $hwmField)) && (string) $v > (string) $this->runState['max_hwm']) {
+                    $this->runState['max_hwm'] = (string) $v;
+                }
+                // WP3.7: one row per nested line item (e.g. order → lines), header fields repeated.
+                if ($feed->split_path) {
+                    $items = data_get($rec, $feed->split_path);
+                    foreach (is_array($items) ? $items : [] as $item) {
+                        $merged = $this->withItem($rec, (array) $item, (string) $feed->split_path);
+                        if ($fieldMap === []) {
+                            unset($merged['item']);
+                        }
+                        yield $this->mapRecord($merged, $fieldMap);
+                    }
+                    continue;
+                }
+                yield $this->mapRecord($rec, $fieldMap);
             }
 
             $count = count($records);
+            if (is_array($json) && is_string($json['@odata.deltaLink'] ?? null)) {
+                $this->runState['delta_link'] = $json['@odata.deltaLink'];
+            }
 
             // Decide continuation.
             if ($strategy === 'none') {
@@ -144,12 +186,42 @@ class GenericRestConnector implements Connector
                 }
                 return;
             }
-            // page / offset / odata_skiptop — stop on a short/empty page.
-            if ($count < $size) {
+            // WP3.7: page / offset stop on an EMPTY page, not a short one (servers
+            // cap page sizes below what was asked). OData honours $top — a server
+            // that pages on its own sends __next / nextLink (handled above).
+            if ($count === 0 || ($strategy === 'odata_skiptop' && $count < $size)) {
                 return;
             }
             $page++;
-            $offset += $size;
+            $offset += $count;
+        }
+
+        $this->runState['page_cap_hit'] = true;
+    }
+
+    /**
+     * WP3.7: a record with one nested item: header scalars, then the item's
+     * fields (item wins), and the item itself under "item" for field maps.
+     */
+    private function withItem(array $record, array $item, string $splitPath): array
+    {
+        $header = array_filter($record, fn ($v) => ! is_array($v));
+        data_forget($header, $splitPath);
+
+        return array_merge($header, $item, ['item' => $item]);
+    }
+
+    /** WP3.7: GET, retrying 429 / 5xx with backoff (Retry-After honoured, capped). */
+    private function getWithRetry(PendingRequest $request, string $url, array $query)
+    {
+        for ($attempt = 0; ; $attempt++) {
+            $resp = $request->get($url, $query);
+            $status = $resp->status();
+            if (($status !== 429 && $status < 500) || $attempt >= self::MAX_RETRIES) {
+                return $resp;
+            }
+            $after = (int) $resp->header('Retry-After');
+            \Illuminate\Support\Sleep::sleep(min(60, $after > 0 ? $after : 2 ** $attempt));
         }
     }
 

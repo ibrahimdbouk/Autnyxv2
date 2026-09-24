@@ -79,12 +79,30 @@ class ApiPollService
             return $this->planningExceptions->ingest($connection, $feed, $connector->fetch($connection, $feed)) > 0;
         }
 
+        $startedAt = now()->utc()->format('Y-m-d\\TH:i:s\\Z');
         $import = $this->ingestor->ingestRows(
             $connection->tenant_id,
             $feed->data_type,
             $connector->fetch($connection, $feed),
             'api',
         );
+
+        // WP3.7: remember where this pull got to, and say so when it was cut short.
+        $state = $connector instanceof GenericRestConnector ? $connector->runState : [];
+        $warnings = array_filter([
+            ($state['page_cap_hit'] ?? false) ? 'Stopped at the page limit — the source has more pages than one pull fetches.' : null,
+            $this->ingestor->lastTruncated ? 'Stopped at ' . number_format(PipelineIngestor::MAX_ROWS) . ' rows — the rest waits for the next pull.' : null,
+        ]);
+        $feed->forceFill([
+            'last_warning'    => $warnings ? implode(' ', $warnings) : null,
+            // A capped pull must not skip ahead: keep the old mark so the rest is fetched next time.
+            'high_water_mark' => ($warnings || $import === null) ? $feed->high_water_mark : ($state['max_hwm'] ?? null ?: $startedAt),
+            'delta_link'      => ($state['delta_link'] ?? null) ?: $feed->delta_link,
+        ])->save();
+
+        if ($warnings) {
+            Log::warning('[api] feed pull capped', ['feed' => $feed->id, 'warning' => $feed->last_warning]);
+        }
 
         return $import !== null;
     }
