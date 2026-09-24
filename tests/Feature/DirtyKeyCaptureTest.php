@@ -82,7 +82,8 @@ class DirtyKeyCaptureTest extends TestCase
         ]);
 
         InventoryLevel::factory()->create(['tenant_id' => $t->id, 'import_id' => $import->id, 'store_id' => $store->id, 'sku' => 'SKU1']);
-        InventoryLevel::factory()->create(['tenant_id' => $t->id, 'import_id' => $import->id, 'store_id' => $store->id, 'sku' => 'SKU1']); // same subject
+        // Same subject, another day's snapshot (WP3.5: an identical snapshot key is unique).
+        InventoryLevel::factory()->create(['tenant_id' => $t->id, 'import_id' => $import->id, 'store_id' => $store->id, 'sku' => 'SKU1', 'as_of_date' => now()->subDays(3)->toDateString()]);
         InventoryLevel::factory()->create(['tenant_id' => $t->id, 'import_id' => $import->id, 'store_id' => $store->id, 'sku' => 'SKU2']);
 
         app(ImportProcessorService::class)->rollback($import);

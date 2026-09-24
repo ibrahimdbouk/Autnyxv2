@@ -108,10 +108,15 @@ class DataQualityFirewall
                 'data_type'         => $import->data_type,
                 'source'            => $this->sourceLabel($import),
                 'file_fingerprint'  => $fingerprint,
-                'is_duplicate_file' => $fingerprint !== null && ImportQuality::where('tenant_id', $tenantId)
-                    ->where('data_type', $import->data_type)
-                    ->where('file_fingerprint', $fingerprint)
-                    ->where('import_id', '!=', $import->id)
+                // WP3.5: only an identical file whose data is still loaded counts —
+                // not one that was rolled back, cancelled, failed or abandoned.
+                'is_duplicate_file' => $fingerprint !== null && ImportQuality::where('import_quality.tenant_id', $tenantId)
+                    ->where('import_quality.data_type', $import->data_type)
+                    ->where('import_quality.file_fingerprint', $fingerprint)
+                    ->where('import_quality.import_id', '!=', $import->id)
+                    ->whereHas('import', fn ($q) => $q->whereNotIn('status', [
+                        Import::STATUS_ROLLED_BACK, Import::STATUS_FAILED, Import::STATUS_ABANDONED,
+                    ]))
                     ->exists(),
             ])->save();
         }

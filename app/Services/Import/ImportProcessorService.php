@@ -141,10 +141,29 @@ class ImportProcessorService
         $retried = 0;
         $stillFailed = 0;
         $duplicates = 0;
+        $quarantined = 0;
         $this->parser = ValueParser::forImport($import);
+        $this->primeCaches((int) $import->tenant_id);
+
+        // WP3.5: a retried row goes through the same gate as a first attempt —
+        // normalise, cleanse + validate (quarantine), write — and afterwards the
+        // same post-import hooks run.
+        $fw = $this->firewall();
+        $fw?->begin($import);
 
         foreach ($rows as $importRow) {
-            $mappedData = $importRow->mapped_data ?? [];
+            $mappedData = $this->parser()->normalizeRow($import->data_type, $importRow->mapped_data ?? []);
+
+            if ($fw) {
+                $screen = $fw->screen($import, $mappedData);
+                if ($screen['reason'] !== null) {
+                    $fw->quarantine($import, (array) ($importRow->raw_data ?? []), ValueParser::stripMeta($screen['data']), $screen['reason'], $importRow->row_number);
+                    $importRow->delete();
+                    $quarantined++;
+                    continue;
+                }
+                $mappedData = $screen['data'];
+            }
 
             try {
                 DB::beginTransaction();
@@ -162,6 +181,8 @@ class ImportProcessorService
             }
         }
 
+        $fw?->recordChunk($import);
+
         // Recompute failed_rows count
         $remaining = ImportRow::where('import_id', $import->id)->count();
         $status = $remaining === 0 ? Import::STATUS_COMPLETED : Import::STATUS_COMPLETED_WITH_ERRORS;
@@ -169,10 +190,21 @@ class ImportProcessorService
             'failed_rows' => $remaining,
             'imported_rows' => $import->imported_rows + $retried,
             'duplicate_rows' => (int) $import->duplicate_rows + $duplicates,
+            'quarantined_rows' => (int) $import->quarantined_rows + $quarantined,
             'status' => $status,
         ]);
 
-        return ['retried' => $retried, 'still_failed' => $stillFailed, 'duplicates' => $duplicates];
+        // WP3.5: the rows that landed now feed the daily aggregate and detection.
+        if ($retried > 0) {
+            try {
+                app(\App\Services\Sales\SalesDailyAggregator::class)->aggregateForImport($import);
+                \App\Jobs\RunTenantDetectionJob::dispatch($import->tenant_id)->afterCommit();
+            } catch (\Throwable $e) {
+                Log::error('Post-retry aggregation/detection dispatch failed', ['import_id' => $import->id, 'error' => $e->getMessage()]);
+            }
+        }
+
+        return ['retried' => $retried, 'still_failed' => $stillFailed, 'duplicates' => $duplicates, 'quarantined' => $quarantined];
     }
 
     /**
@@ -225,9 +257,24 @@ class ImportProcessorService
                 ->all();
         }
 
+        // WP3.5 (audit H27): remember the sales dates so the daily aggregate is
+        // rebuilt for them after the delete (no phantom demand after an undo).
+        $salesRange = $import->data_type === Import::TYPE_SALES
+            ? $modelClass::where('tenant_id', $import->tenant_id)->where('import_id', $import->id)
+                ->selectRaw('MIN(date) as mn, MAX(date) as mx')->first()
+            : null;
+
         $deleted = $modelClass::where('tenant_id', $import->tenant_id)
             ->where('import_id', $import->id)
             ->delete();
+
+        if ($salesRange && $salesRange->mn) {
+            app(\App\Services\Sales\SalesDailyAggregator::class)->aggregateRange(
+                (int) $import->tenant_id,
+                \Illuminate\Support\Carbon::parse($salesRange->mn)->toDateString(),
+                \Illuminate\Support\Carbon::parse($salesRange->mx)->toDateString(),
+            );
+        }
 
         if (! empty($dirtyKeys)) {
             app(\App\Services\Detection\DirtyKeyRecorder::class)->record(
@@ -438,6 +485,21 @@ class ImportProcessorService
             return ['done' => true, 'processed' => $offset, 'total' => (int) $import->total_rows, 'failed' => true];
         }
 
+        // WP3.5: claim this window atomically — a second poll (another tab, a
+        // retried request) that read the same cursor loses and writes nothing.
+        $newCursor = $offset + (int) $chunk['consumed'];
+        if ((int) $chunk['consumed'] > 0) {
+            $claimed = Import::whereKey($import->id)
+                ->where('status', Import::STATUS_IMPORTING)
+                ->where('process_cursor', $offset)
+                ->update(['process_cursor' => $newCursor]);
+            if ($claimed === 0) {
+                $fresh = $import->fresh();
+
+                return ['done' => $fresh->status !== Import::STATUS_IMPORTING, 'processed' => (int) $fresh->process_cursor, 'total' => (int) $fresh->total_rows];
+            }
+        }
+
         $imported    = 0;
         $failed      = 0;
         $quarantined = 0;
@@ -520,31 +582,24 @@ class ImportProcessorService
             $rowNumber++;
         }
 
-        // One multi-row INSERT per sub-batch — the core speedup for large files.
+        // One multi-row write per sub-batch — the core speedup for large files.
+        // WP3.1/WP3.5: each table is written against its natural key, so a
+        // re-sent row is skipped (events) or updated (snapshots), never doubled.
         if ($table !== null && ! empty($batch)) {
             foreach (array_chunk($batch, self::INSERT_BATCH) as $slice) {
                 try {
-                    if ($isSales) {
-                        // WP3.1: a (receipt, line) already loaded is skipped, not failed.
-                        $skipped = count($slice) - DB::table($table)->insertOrIgnore(array_column($slice, 'attrs'));
-                        $imported -= $skipped;
-                        $duplicates += $skipped;
-                    } else {
-                        DB::table($table)->insert(array_column($slice, 'attrs'));
-                    }
+                    $skipped = $this->writeBatch($table, array_column($slice, 'attrs'));
+                    $imported -= $skipped;
+                    $duplicates += $skipped;
                 } catch (\Throwable $e) {
-                    // A single bad value aborts the whole multi-row INSERT. Fall
+                    // A single bad value aborts the whole multi-row write. Fall
                     // back to per-row so the good rows still land and the bad ones
                     // are captured in the failed-row ledger instead of vanishing.
                     foreach ($slice as $entry) {
                         try {
-                            if ($isSales) {
-                                if (DB::table($table)->insertOrIgnore($entry['attrs']) === 0) {
-                                    $imported--;
-                                    $duplicates++;
-                                }
-                            } else {
-                                DB::table($table)->insert($entry['attrs']);
+                            if ($this->writeBatch($table, [$entry['attrs']]) > 0) {
+                                $imported--;
+                                $duplicates++;
                             }
                         } catch (\Throwable $rowError) {
                             $imported--;
@@ -590,15 +645,15 @@ class ImportProcessorService
             $this->persistLineCounters($import);
         }
 
-        $newCursor = $offset + (int) $chunk['consumed'];
-
-        $import->update([
-            'process_cursor'   => $newCursor,
-            'imported_rows'    => $import->imported_rows + $imported,
-            'failed_rows'      => $import->failed_rows + $failed,
-            'quarantined_rows' => $import->quarantined_rows + $quarantined,
-            'duplicate_rows'   => (int) $import->duplicate_rows + $duplicates,
+        // Counters as increments (never read-modify-write).
+        Import::whereKey($import->id)->update([
+            'imported_rows'    => DB::raw('imported_rows + ' . (int) $imported),
+            'failed_rows'      => DB::raw('failed_rows + ' . (int) $failed),
+            'quarantined_rows' => DB::raw('quarantined_rows + ' . (int) $quarantined),
+            'duplicate_rows'   => DB::raw('duplicate_rows + ' . (int) $duplicates),
+            'updated_at'       => now(),
         ]);
+        $import->refresh();
 
         $done = $chunk['eof']
             || (int) $chunk['consumed'] === 0
@@ -692,6 +747,90 @@ class ImportProcessorService
             Import::TYPE_RETURNS         => $this->writeReturn($import, $data, $rowNumber),
             default                      => throw new \InvalidArgumentException("Unknown data type: {$import->data_type}"),
         };
+    }
+
+    /**
+     * WP3.5 — natural keys. Events (sales lines, returns) are skipped when
+     * already loaded; snapshots (inventory positions, PO lines) are updated to
+     * the newest values (and re-owned by the newest import). Until a table's
+     * unique index exists (deployed separately, after de-duplication) it is a
+     * plain insert, as before.
+     */
+    private const NATURAL_KEYS = [
+        'inventory_levels' => ['tenant_id', 'store_id', 'sku', 'as_of_date', 'batch_ref'],
+        'purchase_orders'  => ['tenant_id', 'po_number', 'sku', 'store_id'],
+    ];
+    private const NATURAL_KEY_INDEXES = [
+        'sales_transactions' => 'sales_tx_receipt_line_unique',
+        'sales_returns'      => 'sales_returns_natural_key',
+        'inventory_levels'   => 'inventory_levels_natural_key',
+        'purchase_orders'    => 'purchase_orders_natural_key',
+    ];
+
+    /** @var array<string,bool> */
+    private static array $naturalKeyReady = [];
+
+    private function hasNaturalKey(string $table): bool
+    {
+        if (! isset(self::NATURAL_KEY_INDEXES[$table])) {
+            return false;
+        }
+        if (! array_key_exists($table, self::$naturalKeyReady)) {
+            try {
+                self::$naturalKeyReady[$table] = DB::getDriverName() === 'pgsql'
+                    && (bool) DB::selectOne(
+                        'select 1 as x from pg_class c join pg_index i on i.indexrelid = c.oid where c.relname = ? and i.indisvalid',
+                        [self::NATURAL_KEY_INDEXES[$table]]
+                    );
+            } catch (\Throwable) {
+                self::$naturalKeyReady[$table] = false;
+            }
+        }
+
+        return self::$naturalKeyReady[$table];
+    }
+
+    /** For tests / after a migration in the same process. */
+    public static function forgetNaturalKeys(): void
+    {
+        self::$naturalKeyReady = [];
+    }
+
+    /**
+     * Write rows to a fact table against its natural key.
+     *
+     * @return int  rows NOT newly written (already loaded, or a later row in
+     *              the same batch superseded them)
+     */
+    private function writeBatch(string $table, array $rows): int
+    {
+        if ($rows === []) {
+            return 0;
+        }
+        if (! $this->hasNaturalKey($table)) {
+            DB::table($table)->insert($rows);
+
+            return 0;
+        }
+
+        if (! isset(self::NATURAL_KEYS[$table])) {
+            // Events: skip what is already there.
+            return count($rows) - DB::table($table)->insertOrIgnore($rows);
+        }
+
+        // Snapshots: the last row per key wins (inside the batch and over the table).
+        $keys = self::NATURAL_KEYS[$table];
+        $unique = [];
+        foreach ($rows as $r) {
+            $k = implode("\x1F", array_map(fn ($c) => var_export($r[$c] ?? null, true), $keys));
+            unset($unique[$k]);
+            $unique[$k] = $r;
+        }
+        $unique = array_values($unique);
+        $update = array_values(array_diff(array_keys($unique[0]), array_merge($keys, ['created_at'])));
+        DB::table($table)->upsert($unique, $keys, $update);
+
+        return count($rows) - count($unique);
     }
 
     /**
@@ -819,8 +958,9 @@ class ImportProcessorService
         }
 
         $now = now();
-        $inserted = DB::table('sales_transactions')->insertOrIgnore($attrs + ['created_at' => $now, 'updated_at' => $now]);
-        $this->lastWriteWasDuplicate = $inserted === 0;
+        $this->lastWriteWasDuplicate = $this->hasNaturalKey('sales_transactions')
+            ? DB::table('sales_transactions')->insertOrIgnore($attrs + ['created_at' => $now, 'updated_at' => $now]) === 0
+            : ! DB::table('sales_transactions')->insert($attrs + ['created_at' => $now, 'updated_at' => $now]);
     }
 
     /**
@@ -929,7 +1069,10 @@ class ImportProcessorService
 
     private function writeInventoryLevel(Import $import, array $data, int $row): void
     {
-        InventoryLevel::create($this->buildInventoryLevelAttrs($import, $data, $row));
+        // WP3.5: same natural-key semantics as the bulk path.
+        $now = now();
+        $attrs = array_merge($this->insertTemplate('inventory_levels'), $this->buildInventoryLevelAttrs($import, $data, $row), ['created_at' => $now, 'updated_at' => $now]);
+        $this->lastWriteWasDuplicate = $this->writeBatch('inventory_levels', [$attrs]) > 0;
     }
 
     private function buildInventoryLevelAttrs(Import $import, array $data, int $row): array
@@ -948,7 +1091,9 @@ class ImportProcessorService
             'location'      => $location,
             'on_hand_qty'   => $this->numericOrZero($data['on_hand_qty'] ?? null),
             'reorder_point'   => isset($data['reorder_point']) ? $this->numericOrNull($data['reorder_point']) : null,
-            'as_of_date'      => isset($data['as_of_date']) ? $this->parseDateOrNull($data['as_of_date'], $row) : null,
+            // WP3.5: a snapshot without a date is the import day's snapshot (it is part of the natural key).
+            'as_of_date'      => (isset($data['as_of_date']) ? $this->parseDateOrNull($data['as_of_date'], $row) : null)
+                ?? ($import->created_at ?? now())->toDateString(),
             'on_order_qty'    => isset($data['on_order_qty']) ? $this->numericOrNull($data['on_order_qty']) : null,
             'inventory_value' => isset($data['inventory_value']) ? $this->numericOrNull($data['inventory_value']) : null,
             // WP3.4 — hardening fields.
@@ -1017,7 +1162,10 @@ class ImportProcessorService
 
     private function writePurchaseOrder(Import $import, array $data, int $row): void
     {
-        PurchaseOrder::create($this->buildPurchaseOrderAttrs($import, $data, $row));
+        // WP3.5: same natural-key semantics as the bulk path.
+        $now = now();
+        $attrs = array_merge($this->insertTemplate('purchase_orders'), $this->buildPurchaseOrderAttrs($import, $data, $row), ['created_at' => $now, 'updated_at' => $now]);
+        $this->lastWriteWasDuplicate = $this->writeBatch('purchase_orders', [$attrs]) > 0;
     }
 
     private function buildPurchaseOrderAttrs(Import $import, array $data, int $row): array
@@ -1134,7 +1282,10 @@ class ImportProcessorService
 
     private function writeReturn(Import $import, array $data, int $row): void
     {
-        SalesReturn::create($this->buildReturnAttrs($import, $data, $row));
+        // WP3.5: same natural-key semantics as the bulk path.
+        $now = now();
+        $attrs = array_merge($this->insertTemplate('sales_returns'), $this->buildReturnAttrs($import, $data, $row), ['created_at' => $now, 'updated_at' => $now]);
+        $this->lastWriteWasDuplicate = $this->writeBatch('sales_returns', [$attrs]) > 0;
     }
 
     private function buildReturnAttrs(Import $import, array $data, int $row): array

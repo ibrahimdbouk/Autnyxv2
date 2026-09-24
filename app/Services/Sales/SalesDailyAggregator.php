@@ -25,6 +25,18 @@ class SalesDailyAggregator
     {
         $now = now()->toDateTimeString();
 
+        // WP3.5 (audit H27): the range is REBUILT, not merely upserted — a
+        // (store, SKU, day) whose raw rows were rolled back must disappear
+        // instead of lingering as phantom demand.
+        return DB::transaction(function () use ($tenantId, $from, $to, $now) {
+            DB::table('sales_daily')->where('tenant_id', $tenantId)->whereBetween('date', [$from, $to])->delete();
+
+            return $this->insertRange($tenantId, $from, $to, $now);
+        });
+    }
+
+    private function insertRange(int $tenantId, string $from, string $to, string $now): int
+    {
         // Portable upsert (works on PostgreSQL and the SQLite test DB). Null
         // store_id rows are excluded — cannibalization is store-level and a null
         // store cannot be attributed, and a nullable column breaks the ON CONFLICT
@@ -35,7 +47,8 @@ class SalesDailyAggregator
              SELECT tenant_id, store_id, sku, date,
                     SUM(quantity)                AS units_sold,
                     SUM(COALESCE(total_amount, 0)) AS revenue,
-                    COUNT(*)                     AS transaction_count,
+                    -- WP3.1: rows are receipt LINES; count receipts (lines without a receipt id count alone).
+                    COUNT(DISTINCT transaction_id) + COUNT(*) FILTER (WHERE transaction_id IS NULL) AS transaction_count,
                     ?, ?
              FROM sales_transactions
              WHERE tenant_id = ?
