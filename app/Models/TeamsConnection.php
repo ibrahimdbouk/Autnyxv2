@@ -29,7 +29,8 @@ class TeamsConnection extends Model
     protected $fillable = [
         'tenant_id',
         'name',
-        'aad_tenant_id',
+        // aad_tenant_id is NOT fillable (WP2.2 / audit M7): it is set only by the
+        // signed Microsoft admin sign-in (TeamsConsentController), never typed in.
         'team_id',
         'channel_id',
         'teams_app_id',
@@ -49,11 +50,36 @@ class TeamsConnection extends Model
         'is_active'           => 'boolean',
         'last_success_at'     => 'datetime',
         'last_error_at'       => 'datetime',
+        'aad_verified_at'     => 'datetime',
         // The webhook URL is a bearer-like secret — encrypt at rest.
         'channel_webhook_url' => 'encrypted',
     ];
 
     protected $hidden = ['channel_webhook_url'];
+
+    /** Has a Microsoft 365 admin of aad_tenant_id proven it (signed sign-in)? */
+    public function isMicrosoftTenantVerified(): bool
+    {
+        return ! empty($this->aad_tenant_id) && $this->aad_verified_at !== null;
+    }
+
+    /** Workflows / Incoming-Webhook hosts a channel webhook may point at. */
+    public static function webhookHostAllowed(?string $url): bool
+    {
+        $host = strtolower((string) parse_url((string) $url, PHP_URL_HOST));
+        $scheme = strtolower((string) parse_url((string) $url, PHP_URL_SCHEME));
+        if ($host === '' || $scheme !== 'https') {
+            return false;
+        }
+        foreach ((array) config('services.teams.webhook_hosts', []) as $allowed) {
+            $allowed = strtolower(ltrim((string) $allowed, '.'));
+            if ($host === $allowed || str_ends_with($host, '.' . $allowed)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     public function tenant(): BelongsTo
     {

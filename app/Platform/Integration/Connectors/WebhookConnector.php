@@ -31,6 +31,7 @@ class WebhookConnector implements OutboundConnector
                 ]);
             }
 
+            $request  = app(\App\Support\Http\EgressGuard::class)->apply($request, (string) $target->endpoint); // WP2.2 SSRF guard
             $response = $request->post((string) $target->endpoint, $payload);
 
             return new DispatchResult(

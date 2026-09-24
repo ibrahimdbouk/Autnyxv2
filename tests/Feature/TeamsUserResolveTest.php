@@ -37,9 +37,8 @@ class TeamsUserResolveTest extends TestCase
         $this->graphOk('AAD-XYZ');
 
         $tenant = $this->createTenant();
-        $conn = TeamsConnection::create([
-            'tenant_id' => $tenant->id, 'aad_tenant_id' => 'aad-1', 'is_active' => true,
-        ]);
+        $conn = TeamsConnection::create(['tenant_id' => $tenant->id, 'is_active' => true]);
+        $conn->forceFill(['aad_tenant_id' => 'aad-1', 'aad_verified_at' => now()])->save();
 
         $id = app(GraphClient::class)->resolveUserIdByEmail($conn, "o'brien@example.com");
 
@@ -54,7 +53,7 @@ class TeamsUserResolveTest extends TestCase
         $this->graphOk('AAD-1');
 
         $tenant = $this->createTenant();
-        TeamsConnection::create(['tenant_id' => $tenant->id, 'aad_tenant_id' => 'aad-1', 'is_active' => true]);
+        tap(TeamsConnection::create(['tenant_id' => $tenant->id, 'is_active' => true]), fn ($c) => $c->forceFill(['aad_tenant_id' => 'aad-1', 'aad_verified_at' => now()])->save());
 
         $mapped = $this->createUser($tenant); // has email, no id → should map
 
@@ -84,7 +83,7 @@ class TeamsUserResolveTest extends TestCase
         Http::fake();
 
         $tenant = $this->createTenant();
-        TeamsConnection::create(['tenant_id' => $tenant->id, 'aad_tenant_id' => 'aad-1', 'is_active' => true]);
+        tap(TeamsConnection::create(['tenant_id' => $tenant->id, 'is_active' => true]), fn ($c) => $c->forceFill(['aad_tenant_id' => 'aad-1', 'aad_verified_at' => now()])->save());
         $this->createUser($tenant);
 
         app(TeamsUserResolver::class)->resyncTenant($tenant->id);

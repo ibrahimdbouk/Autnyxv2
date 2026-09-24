@@ -66,7 +66,7 @@ class OidcService
         $url = $conn->discoveryUrl();
 
         return Cache::remember('oidc_discovery_' . md5($url), self::DISCOVERY_TTL, function () use ($url) {
-            $resp = Http::acceptJson()->timeout(10)->get($url);
+            $resp = app(\App\Support\Http\EgressGuard::class)->apply(Http::acceptJson()->timeout(10), $url)->get($url);
             if (! $resp->successful()) {
                 throw new RuntimeException("OIDC discovery failed ({$resp->status()}) for {$url}.");
             }
@@ -105,7 +105,7 @@ class OidcService
     {
         $endpoint = $this->endpoints($conn)['token_endpoint'];
 
-        $resp = Http::asForm()->acceptJson()->timeout(10)->post($endpoint, [
+        $resp = app(\App\Support\Http\EgressGuard::class)->apply(Http::asForm()->acceptJson()->timeout(10), $endpoint)->post($endpoint, [
             'grant_type'    => 'authorization_code',
             'code'          => $code,
             'redirect_uri'  => $redirectUri,
@@ -145,7 +145,7 @@ class OidcService
             }
 
             return Cache::remember($key, self::JWKS_TTL, function () use ($jwksUri) {
-                $resp = Http::acceptJson()->timeout(10)->withoutRedirecting()->get($jwksUri);
+                $resp = app(\App\Support\Http\EgressGuard::class)->apply(Http::acceptJson()->timeout(10), $jwksUri)->get($jwksUri);
                 if (! $resp->successful()) {
                     throw new RuntimeException("Could not fetch the identity provider's signing keys ({$resp->status()}).");
                 }
@@ -207,7 +207,7 @@ class OidcService
             return [];
         }
 
-        $resp = Http::withToken($accessToken)->acceptJson()->timeout(10)->get($endpoint);
+        $resp = app(\App\Support\Http\EgressGuard::class)->apply(Http::withToken($accessToken)->acceptJson()->timeout(10), $endpoint)->get($endpoint);
 
         return $resp->successful() ? (array) $resp->json() : [];
     }

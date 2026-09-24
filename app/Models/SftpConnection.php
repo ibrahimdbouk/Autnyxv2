@@ -48,6 +48,16 @@ class SftpConnection extends Model
 
     protected $hidden = ['password', 'private_key', 'private_key_passphrase'];
 
+    protected static function booted(): void
+    {
+        // WP2.2: pointing the connection at another server re-trusts on next connect.
+        static::saving(function (SftpConnection $c): void {
+            if ($c->exists && $c->isDirty(['host', 'port'])) {
+                $c->host_key_fingerprint = null;
+            }
+        });
+    }
+
     public function tenant(): BelongsTo
     {
         return $this->belongsTo(Tenant::class);
@@ -87,6 +97,11 @@ class SftpConnection extends Model
             'root'     => $this->base_path ?: '',
             'timeout'  => 30,
         ];
+
+        // WP2.2: trust-on-first-use host key pin (see SftpService::disk()).
+        if (! empty($this->host_key_fingerprint)) {
+            $config['hostFingerprint'] = $this->host_key_fingerprint;
+        }
 
         if ($this->auth_type === self::AUTH_KEY && $this->private_key) {
             $config['privateKey'] = $this->private_key;

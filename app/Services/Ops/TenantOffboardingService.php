@@ -39,6 +39,17 @@ class TenantOffboardingService
      * The platform root tenant, or any tenant that holds the protected owner
      * account, must never be erased.
      */
+    /** Columns stripped from the offboarding export (WP2.2 / audit L1). */
+    private const SECRET_COLUMNS = [
+        'users'             => ['password', 'remember_token', 'app_authentication_secret', 'app_authentication_recovery_codes'],
+        'api_keys'          => ['key_hash'],
+        'api_connections'   => ['auth_config'],
+        'outbound_targets'  => ['config'],
+        'sftp_connections'  => ['password', 'private_key', 'private_key_passphrase'],
+        'sso_connections'   => ['client_secret', 'domain_verification_token'],
+        'teams_connections' => ['channel_webhook_url'],
+    ];
+
     public function isProtected(Tenant $tenant): bool
     {
         if ($tenant->slug === 'autnyx') {
@@ -73,7 +84,10 @@ class TenantOffboardingService
         $zip->addFromString('tenant.json', json_encode($tenant->toArray(), JSON_PRETTY_PRINT));
 
         foreach ($this->tenantScopedTables() as $table) {
-            $rows = DB::table($table)->where('tenant_id', $tenant->id)->get();
+            // WP2.2 (audit L1): a data-portability export never carries credential
+            // material (password hashes, tokens, integration secrets, MFA seeds).
+            $rows = DB::table($table)->where('tenant_id', $tenant->id)->get()
+                ->map(fn ($row) => (object) array_diff_key((array) $row, array_flip(self::SECRET_COLUMNS[$table] ?? [])));
             $manifest['tables'][$table] = $rows->count();
 
             if ($rows->isNotEmpty()) {

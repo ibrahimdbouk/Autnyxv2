@@ -32,6 +32,10 @@ return [
         'client_id'     => env('TEAMS_CLIENT_ID'),
         'client_secret' => env('TEAMS_CLIENT_SECRET'),
         'app_id'        => env('TEAMS_APP_ID'), // Autnyx Teams app catalog id (activity feed)
+        // WP2.2 (audit H12): channel webhooks may only point at Microsoft's
+        // Workflows / Incoming-Webhook / Logic Apps hosts (no SSRF via webhook URL).
+        'webhook_hosts' => array_filter(explode(',', (string) env('TEAMS_WEBHOOK_HOSTS',
+            'webhook.office.com,logic.azure.com,api.powerplatform.com,environment.api.powerplatform.com,powerautomate.com'))),
     ],
 
     'anthropic' => [

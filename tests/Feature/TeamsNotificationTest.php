@@ -29,14 +29,13 @@ class TeamsNotificationTest extends TestCase
         config(['services.teams.enabled' => false]);
 
         $tenant = $this->createTenant();
-        TeamsConnection::create([
+        tap(TeamsConnection::create([
             'tenant_id'           => $tenant->id,
-            'aad_tenant_id'       => 'aad-1',
-            'channel_webhook_url' => 'https://example.com/webhook',
+            'channel_webhook_url' => 'https://acme.webhook.office.com/webhookb2/x',
             'post_to_channel'     => true,
             'notify_users'        => false,
             'is_active'           => true,
-        ]);
+        ]), fn ($c) => $c->forceFill(['aad_tenant_id' => 'aad-1', 'aad_verified_at' => now()])->save());
         $user = $this->createUser($tenant);
 
         $this->notifier()->notify($tenant->id, collect([$user]), 'Hi', 'body', 'https://app.autnyx.com/x');
@@ -63,21 +62,20 @@ class TeamsNotificationTest extends TestCase
         config(['services.teams.enabled' => true]);
 
         $tenant = $this->createTenant();
-        $conn = TeamsConnection::create([
+        $conn = tap(TeamsConnection::create([
             'tenant_id'           => $tenant->id,
-            'aad_tenant_id'       => 'aad-1',
-            'channel_webhook_url' => 'https://webhook.example/teams',
+            'channel_webhook_url' => 'https://acme.webhook.office.com/webhookb2/teams',
             'post_to_channel'     => true,
             'notify_users'        => false,
             'is_active'           => true,
             'status'              => TeamsConnection::STATUS_NEVER,
-        ]);
+        ]), fn ($c) => $c->forceFill(['aad_tenant_id' => 'aad-1', 'aad_verified_at' => now()])->save());
         $user = $this->createUser($tenant);
 
         $this->notifier()->notify($tenant->id, collect([$user]), 'Anomaly', 'Revenue at risk', 'https://app.autnyx.com/i/1');
 
         Http::assertSent(function ($request) {
-            return $request->url() === 'https://webhook.example/teams'
+            return $request->url() === 'https://acme.webhook.office.com/webhookb2/teams'
                 && $request['type'] === 'message'
                 && ($request['attachments'][0]['contentType'] ?? null) === 'application/vnd.microsoft.card.adaptive';
         });
@@ -100,13 +98,12 @@ class TeamsNotificationTest extends TestCase
         ]);
 
         $tenant = $this->createTenant();
-        TeamsConnection::create([
+        tap(TeamsConnection::create([
             'tenant_id'       => $tenant->id,
-            'aad_tenant_id'   => 'aad-xyz',
             'post_to_channel' => false,
             'notify_users'    => true,
             'is_active'       => true,
-        ]);
+        ]), fn ($c) => $c->forceFill(['aad_tenant_id' => 'aad-xyz', 'aad_verified_at' => now()])->save());
         $user = $this->createUser($tenant);
         $user->forceFill(['teams_aad_user_id' => 'user-guid-1'])->save();
 
@@ -121,13 +118,12 @@ class TeamsNotificationTest extends TestCase
         config(['services.teams.enabled' => true]);
 
         $tenant = $this->createTenant();
-        TeamsConnection::create([
+        tap(TeamsConnection::create([
             'tenant_id'       => $tenant->id,
-            'aad_tenant_id'   => 'aad-xyz',
             'post_to_channel' => false,
             'notify_users'    => true,
             'is_active'       => true,
-        ]);
+        ]), fn ($c) => $c->forceFill(['aad_tenant_id' => 'aad-xyz', 'aad_verified_at' => now()])->save());
         $user = $this->createUser($tenant); // no teams_aad_user_id
 
         $this->notifier()->notify($tenant->id, collect([$user]), 'Anomaly', 'body', null);

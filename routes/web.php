@@ -36,6 +36,13 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/impersonate/{tenant}', [ImpersonationController::class, 'start'])->name('ops.impersonate');
 });
 
+// WP2.2 (audit H12/M7) — bind a Teams connection to a Microsoft 365 tenant by
+// a signed admin sign-in + consent (never a typed-in tenant id).
+Route::middleware(['auth'])->group(function () {
+    Route::get('/teams/connect/{tenant}', [\App\Http\Controllers\TeamsConsentController::class, 'connect'])->name('teams.consent.connect');
+    Route::get('/teams/consent/callback', [\App\Http\Controllers\TeamsConsentController::class, 'callback'])->name('teams.consent.callback');
+});
+
 // Reports & PDF exports — protected by Filament's auth middleware
 Route::middleware(['auth'])->group(function () {
     Route::get('/anomaly/{id}/report.pdf', [AnomalyReportController::class, 'download'])

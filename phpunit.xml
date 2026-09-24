@@ -31,5 +31,8 @@
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
+        <!-- WP2.2: test hosts are faked, so skip real DNS in the egress guard
+             (EgressGuardTest turns it back on with a fake resolver). -->
+        <env name="EGRESS_RESOLVE_DNS" value="false"/>
     </php>
 </phpunit>

@@ -85,4 +85,18 @@ return [
     */
     'digest_enabled' => (bool) env('ANOMALY_DIGEST_ENABLED', false),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Outbound HTTP egress guard (WP2.2 — SSRF protection)
+    |--------------------------------------------------------------------------
+    | Every call to a tenant-configurable URL goes through App\Support\Http\EgressGuard.
+    | resolve_dns — resolve + check every address and pin the connection to it
+    |               (off only in the test suite, where hosts are faked).
+    | allow_http  — permit plain http:// targets (never in production).
+    */
+    'egress' => [
+        'resolve_dns' => (bool) env('EGRESS_RESOLVE_DNS', true),
+        'allow_http'  => (bool) env('EGRESS_ALLOW_HTTP', false),
+    ],
+
 ];

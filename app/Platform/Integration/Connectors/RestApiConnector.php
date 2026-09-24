@@ -38,6 +38,7 @@ class RestApiConnector implements OutboundConnector
                 ]);
             }
 
+            $request  = app(\App\Support\Http\EgressGuard::class)->apply($request, (string) $target->endpoint); // WP2.2 SSRF guard
             $response = $request->post((string) $target->endpoint, $payload);
 
             return new DispatchResult(
@@ -77,7 +78,8 @@ class RestApiConnector implements OutboundConnector
             'scope'         => $config['scope'] ?? null,
         ], fn ($v) => $v !== null && $v !== '');
 
-        $resp = Http::asForm()->timeout(15)->post((string) ($config['token_url'] ?? ''), $payload);
+        $tokenUrl = (string) ($config['token_url'] ?? '');
+        $resp = app(\App\Support\Http\EgressGuard::class)->apply(Http::asForm()->timeout(15), $tokenUrl)->post($tokenUrl, $payload);
         if (! $resp->successful() || ! $resp->json('access_token')) {
             throw new \RuntimeException('OAuth token request failed: HTTP ' . $resp->status());
         }

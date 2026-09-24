@@ -101,7 +101,13 @@ class TeamsNotifier
     private function postToChannel(TeamsConnection $conn, array $card): void
     {
         if ($conn->channel_webhook_url) {
-            $resp = Http::timeout(20)->post($conn->channel_webhook_url, [
+            // WP2.2 (audit H12): only Microsoft webhook hosts, and SSRF-guarded.
+            if (! TeamsConnection::webhookHostAllowed($conn->channel_webhook_url)) {
+                throw new \RuntimeException('Webhook URL is not a Microsoft Teams / Workflows webhook host.');
+            }
+            $resp = app(\App\Support\Http\EgressGuard::class)
+                ->apply(Http::timeout(20), $conn->channel_webhook_url)
+                ->post($conn->channel_webhook_url, [
                 'type'        => 'message',
                 'attachments' => [[
                     'contentType' => 'application/vnd.microsoft.card.adaptive',
@@ -111,7 +117,7 @@ class TeamsNotifier
             ]);
 
             if (! $resp->successful()) {
-                throw new \RuntimeException('Webhook post failed: HTTP ' . $resp->status() . ' ' . $resp->body());
+                throw new \RuntimeException('Webhook post failed: HTTP ' . $resp->status() . ' ' . \Illuminate\Support\Str::limit($resp->body(), 300));
             }
 
             return;

@@ -48,7 +48,7 @@ class GraphClient
     {
         $resp = Http::asForm()
             ->timeout(15)
-            ->post("https://login.microsoftonline.com/{$aadTenantId}/oauth2/v2.0/token", [
+            ->post('https://login.microsoftonline.com/' . rawurlencode($aadTenantId) . '/oauth2/v2.0/token', [
                 'grant_type'    => 'client_credentials',
                 'client_id'     => $clientId,
                 'client_secret' => $clientSecret,
@@ -77,10 +77,11 @@ class GraphClient
         if (! $conn->team_id || ! $conn->channel_id) {
             throw new RuntimeException('Teams connection is missing team_id/channel_id for a channel post.');
         }
+        $this->assertVerified($conn);
 
         $resp = Http::withToken($this->token($conn->aad_tenant_id))
             ->timeout(20)
-            ->post(self::GRAPH . "/teams/{$conn->team_id}/channels/{$conn->channel_id}/messages", [
+            ->post(self::GRAPH . '/teams/' . rawurlencode($conn->team_id) . '/channels/' . rawurlencode($conn->channel_id) . '/messages', [
                 'body' => [
                     'contentType' => 'html',
                     'content'     => '<attachment id="card"></attachment>',
@@ -112,9 +113,11 @@ class GraphClient
         array $templateParameters,
         string $previewText,
     ): void {
+        $this->assertVerified($conn);
+
         $resp = Http::withToken($this->token($conn->aad_tenant_id))
             ->timeout(20)
-            ->post(self::GRAPH . "/users/{$aadUserId}/teamwork/sendActivityNotification", [
+            ->post(self::GRAPH . '/users/' . rawurlencode($aadUserId) . '/teamwork/sendActivityNotification', [
                 'topic' => [
                     'source' => 'text',
                     'value'  => 'Autnyx',
@@ -143,6 +146,8 @@ class GraphClient
             return null;
         }
 
+        $this->assertVerified($conn);
+
         // Escape single quotes for the OData string literal (' → '').
         $literal = str_replace("'", "''", $email);
         $filter  = "mail eq '{$literal}' or userPrincipalName eq '{$literal}'";
@@ -162,5 +167,17 @@ class GraphClient
         $id = $resp->json('value.0.id');
 
         return is_string($id) && $id !== '' ? $id : null;
+    }
+
+    /**
+     * WP2.2 (audit H12 / M7): Autnyx's multi-tenant Entra app can obtain tokens
+     * for ANY Microsoft tenant that consented to it. Only act for a Microsoft
+     * tenant this connection has PROVEN it administers (signed admin sign-in).
+     */
+    private function assertVerified(TeamsConnection $conn): void
+    {
+        if (! $conn->isMicrosoftTenantVerified()) {
+            throw new RuntimeException('This Teams connection is not linked to a verified Microsoft 365 tenant yet — use "Connect Microsoft 365".');
+        }
     }
 }

@@ -78,6 +78,10 @@ class GenericRestConnector implements Connector
                 $request = $request->withHeaders($signed);
             }
 
+            // WP2.2 (audit H12/M4): SSRF guard; server-supplied continuation
+            // links must stay on the configured API host.
+            $request = app(\App\Support\Http\EgressGuard::class)->apply($request, $url, $absolute ? $requestUrl : null);
+
             $resp = $request->get($url, $sendQuery);
 
             if (! $resp->successful()) {
@@ -152,7 +156,9 @@ class GenericRestConnector implements Connector
     public function test(ApiConnection $connection): array
     {
         try {
-            $resp = $this->client($connection)->get($connection->base_url);
+            $resp = app(\App\Support\Http\EgressGuard::class)
+                ->apply($this->client($connection), (string) $connection->base_url)
+                ->get($connection->base_url);
             $ok   = $resp->status() < 400;
 
             return [
@@ -194,9 +200,13 @@ class GenericRestConnector implements Connector
             'scope'         => $connection->authValue('scope') ?: $this->oauthScope($connection),
         ], fn ($v) => $v !== null && $v !== '');
 
-        $resp = Http::asForm()->timeout(20)->post((string) $connection->authValue('token_url'), $payload);
+        $tokenUrl = (string) $connection->authValue('token_url');
+        $resp = app(\App\Support\Http\EgressGuard::class)
+            ->apply(Http::asForm()->timeout(20), $tokenUrl)
+            ->post($tokenUrl, $payload);
         if (! $resp->successful() || ! $resp->json('access_token')) {
-            throw new RuntimeException("OAuth token request failed: HTTP {$resp->status()} {$resp->body()}");
+            // WP2.2: never echo a remote body in full (it lands in last_error).
+            throw new RuntimeException("OAuth token request failed: HTTP {$resp->status()} " . \Illuminate\Support\Str::limit($resp->body(), 300));
         }
 
         $token   = (string) $resp->json('access_token');
@@ -251,7 +261,8 @@ class GenericRestConnector implements Connector
     /** Human error message from a failed response. SAP parses the OData envelope. */
     protected function extractError($response): string
     {
-        return 'HTTP ' . $response->status() . ' ' . $response->body();
+        // WP2.2: bounded — the remote body is stored in last_error and shown in the UI.
+        return 'HTTP ' . $response->status() . ' ' . \Illuminate\Support\Str::limit((string) $response->body(), 300);
     }
 
     /**
