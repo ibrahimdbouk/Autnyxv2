@@ -39,7 +39,7 @@ class ImpersonationTest extends TestCase
 
         // Enter.
         $this->actingAs($super)
-            ->get(route('ops.impersonate', ['tenant' => $this->tenant->id]))
+            ->get(\Illuminate\Support\Facades\URL::temporarySignedRoute('ops.impersonate', now()->addMinute(), ['tenant' => $this->tenant->id]))
             ->assertRedirect('/admin/acme');
 
         $this->assertAuthenticatedAs($this->admin);
@@ -69,7 +69,7 @@ class ImpersonationTest extends TestCase
     public function test_non_super_admin_cannot_impersonate(): void
     {
         $this->actingAs($this->admin)
-            ->get(route('ops.impersonate', ['tenant' => $this->tenant->id]))
+            ->get(\Illuminate\Support\Facades\URL::temporarySignedRoute('ops.impersonate', now()->addMinute(), ['tenant' => $this->tenant->id]))
             ->assertForbidden();
 
         $this->assertSame($this->admin->id, Auth::id(), 'still the same user');
@@ -80,10 +80,10 @@ class ImpersonationTest extends TestCase
         $super = $this->superAdmin();
 
         // Enter — the actor is now the tenant admin, no longer a super admin.
-        $this->actingAs($super)->get(route('ops.impersonate', ['tenant' => $this->tenant->id]));
+        $this->actingAs($super)->get(\Illuminate\Support\Facades\URL::temporarySignedRoute('ops.impersonate', now()->addMinute(), ['tenant' => $this->tenant->id]));
 
         // A second attempt is made as the tenant admin → not permitted.
-        $this->get(route('ops.impersonate', ['tenant' => $this->tenant->id]))
+        $this->get(\Illuminate\Support\Facades\URL::temporarySignedRoute('ops.impersonate', now()->addMinute(), ['tenant' => $this->tenant->id]))
             ->assertForbidden();
     }
 
@@ -93,7 +93,30 @@ class ImpersonationTest extends TestCase
         $super = $this->superAdmin();
 
         $this->actingAs($super)
-            ->get(route('ops.impersonate', ['tenant' => $empty->id]))
+            ->get(\Illuminate\Support\Facades\URL::temporarySignedRoute('ops.impersonate', now()->addMinute(), ['tenant' => $empty->id]))
+            ->assertNotFound();
+    }
+
+    // ── WP2.4 ────────────────────────────────────────────────────────────────
+
+    public function test_an_unsigned_impersonation_link_is_refused(): void
+    {
+        auth()->logout();
+        $super = \App\Models\User::factory()->create(['is_super_admin' => true]);
+
+        $this->actingAs($super)->get(route('ops.impersonate', ['tenant' => $this->tenant->id]))->assertForbidden();
+        $this->assertFalse(session()->has(\App\Http\Controllers\ImpersonationController::SESSION_KEY));
+    }
+
+    public function test_impersonation_never_enters_as_a_platform_administrator(): void
+    {
+        auth()->logout();
+        $empty = $this->createTenant();
+        \App\Models\User::factory()->create(['tenant_id' => $empty->id, 'is_super_admin' => true]);
+        $super = \App\Models\User::factory()->create(['is_super_admin' => true]);
+
+        $this->actingAs($super)
+            ->get(\Illuminate\Support\Facades\URL::temporarySignedRoute('ops.impersonate', now()->addMinute(), ['tenant' => $empty->id]))
             ->assertNotFound();
     }
 }

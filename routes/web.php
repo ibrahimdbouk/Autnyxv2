@@ -33,7 +33,9 @@ Route::post('/webhooks/inbound-email', [InboundEmailController::class, 'handle']
 // path prefix so it never collides with the ops panel's own routes.
 Route::middleware(['auth'])->group(function () {
     Route::get('/impersonate/leave', [ImpersonationController::class, 'stop'])->name('ops.leave-impersonation');
-    Route::get('/impersonate/{tenant}', [ImpersonationController::class, 'start'])->name('ops.impersonate');
+    // WP2.4 (audit L7): a short-lived SIGNED link, minted only by the confirmed
+    // "Enter" action — a link on another site can no longer start impersonation.
+    Route::get('/impersonate/{tenant}', [ImpersonationController::class, 'start'])->middleware('signed')->name('ops.impersonate');
 });
 
 // WP2.2 (audit H12/M7) — bind a Teams connection to a Microsoft 365 tenant by

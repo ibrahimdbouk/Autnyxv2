@@ -45,6 +45,9 @@ final class ScreenRegistry
         'purchase_orders' => ['label' => 'Purchase Orders',  'group' => 'Data'],
         'suppliers'       => ['label' => 'Suppliers',        'group' => 'Data'],
         'data_health'     => ['label' => 'Data Health',      'group' => 'Data'],
+        // WP2.4 (audit M9): previously ungated — reachable by URL for anyone.
+        'stores'          => ['label' => 'Stores',           'group' => 'Data'],
+        'store_clusters'  => ['label' => 'Store Clustering', 'group' => 'Intelligence'],
     ];
 
     /** @return array<int,string> every valid screen key */
