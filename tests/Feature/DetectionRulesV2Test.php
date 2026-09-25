@@ -300,6 +300,23 @@ class DetectionRulesV2Test extends TestCase
         $this->assertSame($this->day(120), $flag->context['unchanged_since']);
     }
 
+    public function test_reorder_points_stale_almost_everywhere_are_one_process_finding(): void
+    {
+        $a = $this->store('A');
+        foreach (range(1, 60) as $i) {
+            foreach ([120, 1] as $ago) {
+                $this->snapshot($a, "S{$i}", $ago, 40, 25);
+            }
+            $this->daily($a->id, "S{$i}", 5, 0, 2);
+        }
+
+        $this->detect();
+
+        $flag = $this->flags('reorder_point_staleness')->sole();
+        $this->assertNull($flag->sku);
+        $this->assertSame(60, $flag->context['positions_stale']);
+    }
+
     public function test_money_in_descriptions_uses_the_tenant_currency(): void
     {
         Product::create(['tenant_id' => $this->tenant->id, 'sku' => 'CAN', 'name' => 'Can', 'selling_price' => 5, 'unit_cost' => 8]);

@@ -580,14 +580,27 @@ trait DetectsV2
         );
 
         $staleBefore = $clock->copy()->subDays($days)->format('Y-m-d');
-        foreach ($rows as $r) {
-            if ($r->since === null || $r->since > $staleBefore) {
-                continue;
-            }
+        $stale = array_values(array_filter($rows, fn ($r) => $r->since !== null && $r->since <= $staleBefore
+            && ($this->recentDemand[$r->store_id . '|' . $r->sku] ?? 0) > 0)); // selling here → it matters now
+
+        // When most reorder points are stale it is ONE process finding — reorder
+        // points aren't being maintained — not thousands of items for the queue.
+        $selling = count(array_filter($rows, fn ($r) => ($this->recentDemand[$r->store_id . '|' . $r->sku] ?? 0) > 0));
+        $maxItems = (int) ($thresholds['max_items'] ?? 50);
+        if (count($stale) > $maxItems && count($stale) >= 0.2 * max(1, $selling)) {
+            $this->flag($tenantId, 'reorder_point_staleness', 'medium', null, null, null,
+                count($stale) . " of {$selling} selling positions have kept the same reorder point for {$days}+ days — "
+                . 'reorder points look unmaintained. Review how they are set rather than item by item.',
+                ['positions_stale' => count($stale), 'positions_selling' => $selling, 'days' => $days,
+                 'examples' => array_map(fn ($r) => ['store_id' => (int) $r->store_id, 'sku' => $r->sku, 'since' => $r->since], array_slice($stale, 0, 10))],
+                'reorder_points'
+            );
+
+            return;
+        }
+
+        foreach ($stale as $r) {
             $k = $r->store_id . '|' . $r->sku;
-            if (($this->recentDemand[$k] ?? 0) <= 0) {
-                continue; // not selling here → its reorder point doesn't matter now
-            }
             $daysStale = (int) Carbon::parse($r->since)->diffInDays($clock, absolute: true);
             $oh = $this->latestOnHand[$k] ?? null;
             $this->flag($tenantId, 'reorder_point_staleness', 'low', $r->sku, (int) $r->store_id, $oh['product_id'] ?? null,
