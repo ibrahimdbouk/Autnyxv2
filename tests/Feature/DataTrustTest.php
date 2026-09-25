@@ -133,18 +133,37 @@ class DataTrustTest extends TestCase
     /** W9: uploads went to the container's ephemeral disk on production and were lost on each deploy. */
     public function test_tenant_files_follow_the_default_private_disk_unless_set_explicitly(): void
     {
-        $cfg = fn (array $env) => (function () use ($env) {
+        // env() reads $_SERVER, then $_ENV, then getenv() — set (and restore) all three.
+        $cfg = function (array $env) {
+            $saved = [];
             foreach ($env as $k => $v) {
-                $v === null ? putenv($k) : putenv("{$k}={$v}");
+                $saved[$k] = [$_SERVER[$k] ?? null, $_ENV[$k] ?? null, getenv($k)];
+                if ($v === null) {
+                    unset($_SERVER[$k], $_ENV[$k]);
+                    putenv($k);
+                } else {
+                    $_SERVER[$k] = $_ENV[$k] = $v;
+                    putenv("{$k}={$v}");
+                }
             }
             try {
                 return (require base_path('config/autnyx.php'))['storage_disk'];
             } finally {
-                foreach (array_keys($env) as $k) {
-                    putenv($k);
+                foreach ($saved as $k => [$server, $envv, $getenv]) {
+                    if ($server === null) {
+                        unset($_SERVER[$k]);
+                    } else {
+                        $_SERVER[$k] = $server;
+                    }
+                    if ($envv === null) {
+                        unset($_ENV[$k]);
+                    } else {
+                        $_ENV[$k] = $envv;
+                    }
+                    $getenv === false ? putenv($k) : putenv("{$k}={$getenv}");
                 }
             }
-        })();
+        };
 
         $this->assertSame('private', $cfg(['FILESYSTEM_DISK' => 'private', 'AUTNYX_STORAGE_DISK' => null]));
         $this->assertSame('s3', $cfg(['FILESYSTEM_DISK' => 'private', 'AUTNYX_STORAGE_DISK' => 's3']));
