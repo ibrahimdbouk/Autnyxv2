@@ -16,9 +16,22 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  APP_ENV: testing
+  APP_KEY: base64:2fl+Ktvkfl+Fuz4Qp/A75G2RTiWVA/ZoKZvp6fiiM10=
+  APP_DEBUG: "false"
+  DB_CONNECTION: pgsql
+  DB_HOST: 127.0.0.1
+  DB_PORT: "5432"
+  DB_DATABASE: autnyx_test
+  DB_USERNAME: autnyx
+  DB_PASSWORD: secret
+  SESSION_DRIVER: array
+  MAIL_MAILER: array
+
 jobs:
   test:
-    name: Compile gate + SmokeTest (PostgreSQL)
+    name: Compile gate + full suite (PostgreSQL)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -35,19 +48,8 @@ jobs:
           --health-timeout=5s
           --health-retries=10
     env:
-      APP_ENV: testing
-      APP_KEY: base64:2fl+Ktvkfl+Fuz4Qp/A75G2RTiWVA/ZoKZvp6fiiM10=
-      APP_DEBUG: "false"
-      DB_CONNECTION: pgsql
-      DB_HOST: 127.0.0.1
-      DB_PORT: "5432"
-      DB_DATABASE: autnyx_test
-      DB_USERNAME: autnyx
-      DB_PASSWORD: secret
       CACHE_STORE: array
-      SESSION_DRIVER: array
       QUEUE_CONNECTION: sync
-      MAIL_MAILER: array
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Set up PHP
@@ -58,18 +60,54 @@ jobs:
           coverage: none
       - name: Prepare environment file
         run: '[ -f .env ] || cp .env.example .env 2>/dev/null || touch .env'
-      # WP1.5 (audit H2): install EXACTLY what composer.lock pins — the same
-      # versions production runs — instead of resolving fresh on every build.
+      # WP1.5 (audit H2): install EXACTLY what composer.lock pins.
       - name: Install dependencies from composer.lock (runs the compile gate via composer scripts)
         run: composer install --no-interaction --prefer-dist --no-progress
       - name: Blade / Filament footgun linter
         run: php scripts/check-blade.php
-      - name: Run tests (route SmokeTest boots every page against PostgreSQL)
+      - name: Run tests
         run: php artisan test
+
+  # WP5.1: what the sync queue and array cache hide — afterCommit dispatch and
+  # unique jobs on the real database queue and cache production uses.
+  queue-db:
+    name: Database queue + cache behaviour
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: autnyx_test
+          POSTGRES_USER: autnyx
+          POSTGRES_PASSWORD: secret
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U autnyx"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      CACHE_STORE: database
+      QUEUE_CONNECTION: database
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: "8.5"
+          extensions: pdo, pdo_pgsql, pgsql, mbstring, bcmath, intl, gd, zip, dom
+          coverage: none
+      - name: Prepare environment file
+        run: '[ -f .env ] || cp .env.example .env 2>/dev/null || touch .env'
+      - name: Install dependencies from composer.lock
+        run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Run the database-queue group
+        run: php artisan test --group=database-queue
 
   promote:
     name: Promote green build to production
-    needs: test
+    needs: [ test, queue-db ]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
