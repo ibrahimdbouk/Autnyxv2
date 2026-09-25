@@ -85,6 +85,13 @@ class ResilienceTest extends TestCase
         \App\Models\JobRun::create(['command' => 'db:backup', 'status' => 'success', 'ran_at' => now()->subHours(40)]);
         $stale = collect(app(\App\Services\Ops\PlatformHealthService::class)->staleCommands())->pluck('command');
         $this->assertContains('db:backup', $stale->all());
+
+        // A manual run counts as the latest backup.
+        $this->needsPgTools();
+        Storage::fake('backups');
+        config(['backup.disk' => 'backups']);
+        $this->artisan('db:backup')->assertSuccessful();
+        $this->assertNotContains('db:backup', collect(app(\App\Services\Ops\PlatformHealthService::class)->staleCommands())->pluck('command')->all());
     }
 
     public function test_the_runtime_role_can_touch_rows_but_never_the_schema(): void

@@ -35,6 +35,11 @@ class DatabaseBackupCommand extends Command
             $r = $backup->run();
             $this->info(sprintf('Backed up %d tables to %s (%.1f MB, %ss, sha256 %s…).',
                 $r['tables'], $r['path'], $r['bytes'] / 1048576, $r['seconds'], substr($r['sha256'], 0, 12)));
+
+            // A manual run counts as the last backup too (the scheduler records
+            // its own runs); the health check judges backup age from this.
+            \App\Models\JobRun::create(['command' => 'db:backup', 'status' => \App\Models\JobRun::STATUS_SUCCESS,
+                'duration_ms' => (int) round($r['seconds'] * 1000), 'message' => $r['path'], 'ran_at' => now()]);
         }
 
         $deleted = $backup->prune();
