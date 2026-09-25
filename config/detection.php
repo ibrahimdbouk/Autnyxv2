@@ -112,4 +112,10 @@ return [
     'dismissal_worsen_factor' => (float) env('DETECTION_DISMISSAL_WORSEN_FACTOR', 1.5),
     'dismissal_max_days'      => (int) env('DETECTION_DISMISSAL_MAX_DAYS', 90),
 
+    // W10: a demand swing a promotion explains is not an anomaly — a spike
+    // during one, or a drop measured against a promo-inflated baseline or in
+    // the dip after it. Promotions come from the calendar import and from
+    // promotion_ref on sales lines. Off = flag them as before.
+    'promo_suppression'       => (bool) env('DETECTION_PROMO_SUPPRESSION', true),
+
 ];

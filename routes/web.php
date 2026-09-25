@@ -61,6 +61,9 @@ Route::middleware(['auth'])->group(function () {
 });
 
 // Reports & PDF exports — protected by Filament's auth middleware
+// W10: blank import templates (field names only — no tenant data).
+Route::middleware(['auth'])->get('/import-templates/{type}.csv', \App\Http\Controllers\ImportTemplateController::class)->name('import-template');
+
 Route::middleware(['auth'])->group(function () {
     Route::get('/anomaly/{id}/report.pdf', [AnomalyReportController::class, 'download'])
         ->name('anomaly.report.pdf');

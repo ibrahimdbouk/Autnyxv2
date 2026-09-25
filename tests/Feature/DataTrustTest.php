@@ -320,7 +320,9 @@ class DataTrustTest extends TestCase
         $this->assertStringContainsString('Store B', $open['store_went_silent']->message);
         $this->assertSame(DqFinding::SEVERITY_CRITICAL, $open['future_dated']->severity);
         $this->assertSame(1, $open['negative_stock']->metrics['positions']);
-        $this->assertSame(3, $r['opened']);
+        // W10: no promotion calendar yet — an info finding, never an alert.
+        $this->assertSame(DqFinding::SEVERITY_INFO, $open['promotions_missing']->severity);
+        $this->assertSame(4, $r['opened']);
         \Illuminate\Support\Facades\Notification::assertSentToTimes($admin, \Filament\Notifications\DatabaseNotification::class, 1);
 
         // Seen again: counted, not re-alerted.
@@ -333,7 +335,7 @@ class DataTrustTest extends TestCase
         DB::table('inventory_current')->update(['on_hand_qty' => 3]);
         $r = app(DataQualityChecks::class)->run($this->tenant->id);
         $this->assertSame(2, $r['resolved']);
-        $this->assertSame(['store_went_silent'], DqFinding::where('tenant_id', $this->tenant->id)->open()->pluck('check')->all());
+        $this->assertEqualsCanonicalizing(['store_went_silent', 'promotions_missing'], DqFinding::where('tenant_id', $this->tenant->id)->open()->pluck('check')->all());
     }
 
     public function test_data_checks_find_a_half_loaded_day_price_outliers_and_missing_costs(): void

@@ -352,13 +352,16 @@ a.db-kpi:hover::after { opacity:1; }
     </a>
 
     {{-- Recovered MTD (attributed — analyst/action confirmed) --}}
-    <a @if($links['recovered_mtd']) href="{{ $links['recovered_mtd'] }}" @endif class="db-kpi" title="Attributed recovery recorded this month">
+    <a @if($links['recovered_mtd']) href="{{ $links['recovered_mtd'] }}" @endif class="db-kpi" title="Recovery measured against what sales would have been, this month. Figures entered by hand count only once measured.">
         <div class="db-kpi-label">Recovered MTD</div>
         <div class="db-kpi-value db-green">{{ $dbFormatMoney((float)$recoveredMTD) }}</div>
         <div class="db-kpi-trend {{ $dbTrendClass($recTrend) }}" title="Month to date against the same days of last month">
             {{ $dbArrow($recTrend) }}
-            @if($recTrend['pct'] !== null) {{ $recTrend['pct'] }}% vs same point last month @else Attributed · month to date @endif
+            @if($recTrend['pct'] !== null) {{ $recTrend['pct'] }}% vs same point last month @else Measured · month to date @endif
         </div>
+        @if(($k['claimed_mtd'] ?? 0) > 0)
+            <div class="db-kpi-trend db-trend-flat" title="Entered on outcomes by hand; counted once the measurement confirms it">+ {{ $dbFormatMoney((float) $k['claimed_mtd']) }} claimed, not yet measured</div>
+        @endif
         <div class="db-kpi-spark">{!! $dbSparkline($recSparkData, '#16a34a') !!}</div>
     </a>
 
@@ -374,6 +377,23 @@ a.db-kpi:hover::after { opacity:1; }
     </a>
 
 </div>
+
+{{-- W10: the tenant's own KPIs (Intelligence → Custom KPIs) --}}
+@if(! empty($customKpis))
+<div style="display:flex;align-items:baseline;justify-content:space-between;margin:1.25rem 0 .5rem;">
+    <div style="font-size:.8rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#6b7280;">Your KPIs</div>
+    @if($customKpisUrl)<a href="{{ $customKpisUrl }}" style="font-size:.8rem;color:#6d28d9;text-decoration:none;">Edit KPIs</a>@endif
+</div>
+<div class="db-kpi-grid">
+    @foreach($customKpis as $kpi)
+        <div class="db-kpi" title="{{ $kpi['description'] ?? $kpi['label'] }}">
+            <div class="db-kpi-label">{{ $kpi['label'] }}</div>
+            <div class="db-kpi-value">{{ \App\Platform\Extensibility\CustomRuleEngine::formatValue($kpi['value'], (string) $kpi['unit'], $currency) }}</div>
+            <div class="db-kpi-trend db-trend-flat">{{ \Illuminate\Support\Str::limit($kpi['description'] ?? 'Your formula', 60) }}</div>
+        </div>
+    @endforeach
+</div>
+@endif
 
 {{-- ════════════════════════════════════════════════════════════════════════
      CHARTS SECTION

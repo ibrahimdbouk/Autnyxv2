@@ -235,6 +235,7 @@ class ImportProcessorService
             Import::TYPE_INVENTORY       => \App\Models\InventoryLevel::class,
             Import::TYPE_RETURNS         => \App\Models\SalesReturn::class,
             Import::TYPE_PURCHASE_ORDERS => \App\Models\PurchaseOrder::class,
+            Import::TYPE_PROMOTIONS      => \App\Models\Promotion::class,
             default                      => null,
         };
 
@@ -1040,6 +1041,7 @@ class ImportProcessorService
             Import::TYPE_SUPPLIERS       => $this->writeSupplier($import, $data, $rowNumber),
             Import::TYPE_USERS           => $this->writeUser($import, $data, $rowNumber),
             Import::TYPE_RETURNS         => $this->writeReturn($import, $data, $rowNumber),
+            Import::TYPE_PROMOTIONS      => $this->writePromotion($import, $data, $rowNumber),
             default                      => throw new \InvalidArgumentException("Unknown data type: {$import->data_type}"),
         };
     }
@@ -1054,12 +1056,14 @@ class ImportProcessorService
     private const NATURAL_KEYS = [
         'inventory_levels' => ['tenant_id', 'store_id', 'sku', 'as_of_date', 'batch_ref'],
         'purchase_orders'  => ['tenant_id', 'po_number', 'sku', 'store_id'],
+        'promotions'       => ['tenant_id', 'promotion_ref', 'sku', 'store_id'],   // W10: a re-sent calendar updates
     ];
     private const NATURAL_KEY_INDEXES = [
         'sales_transactions' => 'sales_tx_receipt_line_unique',
         'sales_returns'      => 'sales_returns_natural_key',
         'inventory_levels'   => 'inventory_levels_natural_key',
         'purchase_orders'    => 'purchase_orders_natural_key',
+        'promotions'         => 'promotions_natural_key',
     ];
 
     /** @var array<string,bool> */
@@ -1177,6 +1181,7 @@ class ImportProcessorService
             Import::TYPE_INVENTORY       => 'inventory_levels',
             Import::TYPE_PURCHASE_ORDERS => 'purchase_orders',
             Import::TYPE_RETURNS         => 'sales_returns',
+            Import::TYPE_PROMOTIONS      => 'promotions',
             default                      => null,
         };
     }
@@ -1218,6 +1223,11 @@ class ImportProcessorService
                 // WP3.4
                 'channel' => null, 'condition' => null, 'original_transaction_ref' => null,
             ],
+            'promotions' => [
+                'tenant_id' => null, 'import_id' => null, 'store_id' => null, 'product_id' => null,
+                'promotion_ref' => null, 'name' => null, 'sku' => null, 'location' => null,
+                'starts_on' => null, 'ends_on' => null, 'mechanic' => null, 'discount_pct' => null, 'promo_price' => null,
+            ],
             default => [],
         };
     }
@@ -1235,6 +1245,7 @@ class ImportProcessorService
             Import::TYPE_INVENTORY       => $this->buildInventoryLevelAttrs($import, $data, $row),
             Import::TYPE_PURCHASE_ORDERS => $this->buildPurchaseOrderAttrs($import, $data, $row),
             Import::TYPE_RETURNS         => $this->buildReturnAttrs($import, $data, $row),
+            Import::TYPE_PROMOTIONS      => $this->buildPromotionAttrs($import, $data, $row),
             default                      => throw new \InvalidArgumentException("Not a batch-insert type: {$import->data_type}"),
         };
     }
@@ -1585,6 +1596,47 @@ class ImportProcessorService
         $now = now();
         $attrs = array_merge($this->insertTemplate('sales_returns'), $this->buildReturnAttrs($import, $data, $row), ['created_at' => $now, 'updated_at' => $now]);
         $this->lastWriteWasDuplicate = $this->writeBatch('sales_returns', [$attrs]) > 0;
+    }
+
+    /** W10: a promotion-calendar row (natural key: promotion, SKU, store). */
+    private function writePromotion(Import $import, array $data, int $row): void
+    {
+        $now = now();
+        $attrs = array_merge($this->insertTemplate('promotions'), $this->buildPromotionAttrs($import, $data, $row), ['created_at' => $now, 'updated_at' => $now]);
+        $this->lastWriteWasDuplicate = $this->writeBatch('promotions', [$attrs]) > 0;
+    }
+
+    private function buildPromotionAttrs(Import $import, array $data, int $row): array
+    {
+        $this->requireFields($data, ['promotion_ref', 'sku', 'start_date', 'end_date'], $row);
+        $from = $this->parseDate($data['start_date'], $row);
+        $to   = $this->parseDate($data['end_date'], $row);
+        if ($to < $from) {
+            throw new \InvalidArgumentException("Row {$row}: the promotion ends ({$to}) before it starts ({$from}).");
+        }
+        $location = $data['location'] ?? null;
+
+        $attrs = [
+            'tenant_id'     => $import->tenant_id,
+            'import_id'     => $import->id,
+            'promotion_ref' => $this->str($data['promotion_ref'], 'promotion_ref', $row),
+            'name'          => $this->optText($data, 'promotion_name'),
+            'sku'           => $this->str($data['sku'], 'sku', $row),
+            'location'      => $location,
+            'starts_on'     => $from,
+            'ends_on'       => $to,
+            'mechanic'      => $this->optText($data, 'mechanic'),
+            'discount_pct'  => $this->optNumber($data, 'discount_pct', 0, 100),
+            'promo_price'   => $this->optNumber($data, 'promo_price', 0),
+        ];
+        if ($location) {
+            $attrs['store_id'] = $this->resolveStore($import->tenant_id, $location);
+        }
+        if ($productId = $this->resolveProductId($import->tenant_id, $attrs['sku'])) {
+            $attrs['product_id'] = $productId;
+        }
+
+        return $attrs;
     }
 
     private function buildReturnAttrs(Import $import, array $data, int $row): array

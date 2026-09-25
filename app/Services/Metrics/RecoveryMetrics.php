@@ -33,9 +33,11 @@ class RecoveryMetrics
     {
         $appTz = config('app.timezone', 'UTC');
 
+        // W10: MEASURED recovery only — a figure a person typed in is a claim
+        // (see claimed()), never counted as recovered.
         return InvestigationOutcome::query()
             ->where('tenant_id', $tenantId)
-            ->where('observed_recovery', '>', 0)
+            ->where('measured_recovery', '>', 0)
             ->when($from, fn ($q) => $q->where('recorded_at', '>=', Carbon::instance($from)->setTimezone($appTz)))
             ->when($to, fn ($q) => $q->where('recorded_at', '<', Carbon::instance($to)->setTimezone($appTz)));
     }
@@ -45,8 +47,30 @@ class RecoveryMetrics
     {
         $row = $this->attributedQuery($tenantId, $from, $to)
             ->toBase()
-            ->selectRaw('COALESCE(SUM(observed_recovery), 0) AS amount, COUNT(*) AS cnt')
+            ->selectRaw('COALESCE(SUM(measured_recovery), 0) AS amount, COUNT(*) AS cnt')
             ->first();
+
+        return ['amount' => (float) ($row->amount ?? 0), 'count' => (int) ($row->cnt ?? 0)];
+    }
+
+    /** W10: outcomes with a recovery figure a person entered and no measurement confirmed. */
+    public function claimedQuery(int $tenantId, ?CarbonInterface $from = null, ?CarbonInterface $to = null): Builder
+    {
+        $appTz = config('app.timezone', 'UTC');
+
+        return InvestigationOutcome::query()
+            ->where('tenant_id', $tenantId)
+            ->where('observed_recovery', '>', 0)
+            ->whereNull('measured_recovery')
+            ->when($from, fn ($q) => $q->where('recorded_at', '>=', Carbon::instance($from)->setTimezone($appTz)))
+            ->when($to, fn ($q) => $q->where('recorded_at', '<', Carbon::instance($to)->setTimezone($appTz)));
+    }
+
+    /** @return array{amount: float, count: int} */
+    public function claimed(int $tenantId, ?CarbonInterface $from = null, ?CarbonInterface $to = null): array
+    {
+        $row = $this->claimedQuery($tenantId, $from, $to)->toBase()
+            ->selectRaw('COALESCE(SUM(observed_recovery), 0) AS amount, COUNT(*) AS cnt')->first();
 
         return ['amount' => (float) ($row->amount ?? 0), 'count' => (int) ($row->cnt ?? 0)];
     }
@@ -81,8 +105,11 @@ class RecoveryMetrics
         $ap = $this->attributedPrevMtd($tenantId);
         $o  = $this->observed->mtd($tenantId);
         $op = $this->observed->prevMtd($tenantId);
+        $c  = $this->claimed($tenantId, $this->monthStart($tenantId));
 
         return [
+            'claimed'          => $c['amount'],
+            'claimed_count'    => $c['count'],
             'attributed'       => $a['amount'],
             'attributed_prev'  => $ap['amount'],
             'attributed_count' => $a['count'],
@@ -103,7 +130,7 @@ class RecoveryMetrics
 
         return $this->attributedQuery($tenantId, TenantClock::today($tenantId)->subDays($days - 1))
             ->toBase()
-            ->selectRaw("TO_CHAR({$day}, 'YYYY-MM-DD') AS d, SUM(observed_recovery) AS total")
+            ->selectRaw("TO_CHAR({$day}, 'YYYY-MM-DD') AS d, SUM(measured_recovery) AS total")
             ->groupByRaw("TO_CHAR({$day}, 'YYYY-MM-DD')")
             ->pluck('total', 'd')
             ->map(fn ($v) => (float) $v)

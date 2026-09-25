@@ -69,6 +69,12 @@ final class ValueModel
 
     public static function type(string $ruleType, array $context = []): string
     {
+        // W10: a tenant-defined rule says what its money is.
+        if ($ruleType === 'custom_rule') {
+            $v = $context['value_type'] ?? null;
+
+            return in_array($v, [self::LOST_REVENUE, self::CAPITAL, self::UPSIDE, self::DATA_QUALITY], true) ? $v : self::DATA_QUALITY;
+        }
         $type = self::BY_RULE[$ruleType] ?? self::DATA_QUALITY;
 
         // Demand/plan rules fire both ways: demand ABOVE expectation is upside.

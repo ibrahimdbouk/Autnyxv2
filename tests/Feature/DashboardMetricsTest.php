@@ -35,6 +35,8 @@ class DashboardMetricsTest extends TestCase
 
         return InvestigationOutcome::create([
             'investigation_id' => $inv->id, 'tenant_id' => $t->id, 'observed_recovery' => $amount,
+            // W10: only measured recovery counts as recovered.
+            'measured_recovery' => $amount, 'attribution_status' => InvestigationOutcome::ATTR_ESTIMATED,
             'recorded_at' => Carbon::parse($recordedAtUtc, 'UTC'),
         ]);
     }

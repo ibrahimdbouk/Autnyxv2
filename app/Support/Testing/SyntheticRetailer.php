@@ -18,7 +18,7 @@ final class SyntheticRetailer
      * @param  int  $signalEvery  about 1 in this many store-SKUs carries each planted
      *                            signal (collapse, spike, shrink, stock-out); a power of 2
      */
-    public static function seed(int $t, int $stores, int $skus, int $days, float $density = 0.6, int $signalEvery = 256): void
+    public static function seed(int $t, int $stores, int $skus, int $days, float $density = 0.6, int $signalEvery = 256, bool $benchmark = false): void
     {
         DB::statement('SELECT setseed(0.4242)');
         $m = max(4, $signalEvery) - 1;       // sales signal mask
@@ -47,11 +47,21 @@ final class SyntheticRetailer
                 SELECT GREATEST(0, round(
                     (1 + (hashtext(p.sku) & 7)) * (CASE WHEN extract(dow FROM d) IN (4, 5) THEN 1.4 ELSE 1 END)
                     * (CASE WHEN d > ?::date - 7 AND (hashtext(s.code || p.sku) & {$m}) = 1 THEN 0.1
-                            WHEN d > ?::date - 7 AND (hashtext(s.code || p.sku) & {$m}) = 2 THEN 4 ELSE 1 END)
+                            WHEN d > ?::date - 7 AND (hashtext(s.code || p.sku) & {$m}) = 2 THEN 4
+                            " . ($benchmark ? "WHEN d > '{$end}'::date - 7 AND (hashtext(s.code || p.sku) & {$m}) = 5 THEN 3" : '') . " ELSE 1 END)
                     * (0.6 + random() * 0.8 + 0 * s.id)))::int AS u
             ) x
             WHERE s.tenant_id = ? AND p.tenant_id = ? AND random() < ?",
             [$t, $now, $now, $start, $end, $end, $end, $t, $t, $density]);
+
+        // W10: planted promotions (a 3× lift in the last week) are on the calendar.
+        if ($benchmark) {
+            DB::insert("INSERT INTO promotions (tenant_id, promotion_ref, sku, store_id, starts_on, ends_on, mechanic, created_at, updated_at)
+                SELECT ?, 'PROMO-' || s.code, p.sku, s.id, ?::date - 6, ?::date, 'price cut', ?, ?
+                FROM stores s CROSS JOIN products p
+                WHERE s.tenant_id = ? AND p.tenant_id = ? AND (hashtext(s.code || p.sku) & {$m}) = 5",
+                [$t, $end, $end, $now, $now, $t, $t]);
+        }
 
         // One receipt line per store-SKU-day for the last 35 days (price rules read lines).
         DB::insert("INSERT INTO sales_transactions (tenant_id, store_id, sku, transaction_id, line_no, date, quantity, unit_price, total_amount, location, channel, created_at, updated_at)
@@ -63,12 +73,21 @@ final class SyntheticRetailer
 
         // Weekly snapshots, two lots per position: steady stock per position; a
         // few positions lose stock over the last weeks (shrink), a few run out.
+        // W10 benchmark mode: ordinary positions hold ~50 days of cover (so a
+        // stock-out flag means the planted one), and a shrink position loses
+        // twice what it sells every week (half of it unexplained by sales).
+        $invExpr = $benchmark
+            ? "CASE
+                   WHEN (hashtext(s.code || p.sku || 'inv') & {$mi}) = 3 THEN (1 + (hashtext(p.sku) & 7)) * (100 - 7 * ((d::date - ?::date) / 7))
+                   WHEN (hashtext(s.code || p.sku || 'inv') & {$mi}) = 4 THEN 0
+                   ELSE (1 + (hashtext(p.sku) & 7)) * 25 END"
+            : "CASE
+                   WHEN (hashtext(s.code || p.sku || 'inv') & {$mi}) = 3 THEN 30 - 4 * ((d::date - ?::date) / 7)
+                   WHEN (hashtext(s.code || p.sku || 'inv') & {$mi}) = 4 THEN 0
+                   ELSE 12 + (hashtext(s.code || p.sku) & 31) END";
         DB::insert("INSERT INTO inventory_levels (tenant_id, store_id, sku, location, as_of_date, on_hand_qty, reorder_point, unit_cost, batch_ref, created_at, updated_at)
             SELECT ?, s.id, p.sku, s.name, d::date,
-                   GREATEST(0, CASE
-                       WHEN (hashtext(s.code || p.sku || 'inv') & {$mi}) = 3 THEN 30 - 4 * ((d::date - ?::date) / 7)
-                       WHEN (hashtext(s.code || p.sku || 'inv') & {$mi}) = 4 THEN 0
-                       ELSE 12 + (hashtext(s.code || p.sku) & 31) END),
+                   GREATEST(0, {$invExpr}),
                    10 + (hashtext(p.sku) & 15), p.unit_cost, 'L' || lot, ?, ?
             FROM stores s CROSS JOIN products p
             CROSS JOIN generate_series(?::date, ?::date, interval '7 days') d

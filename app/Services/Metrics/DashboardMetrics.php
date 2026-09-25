@@ -129,6 +129,7 @@ class DashboardMetrics
                 'high'            => (int) $openNow->high,
                 'overdue'         => $overdue,
                 'recovered_mtd'   => $rec['attributed'],
+                'claimed_mtd'     => $rec['claimed'],   // W10: entered, not measured — shown apart
                 'cleared_mtd'     => $rec['observed'],
             ],
             'flow' => [

@@ -172,6 +172,9 @@ class OutcomeMeasurementService
             'measurement_window_end'   => $windowEnd->toDateString(),
             'baseline_json'            => ['daily_revenue' => round($baselineDaily, 4)],
             'metrics_json'             => $details + ['recovery_amount' => $recoveryAmount],
+            // W10: what the measurement itself found (0 = no recovery seen).
+            'measured_recovery'        => in_array($state, [OutcomeMeasurement::STATE_OBSERVED_RECOVERY, OutcomeMeasurement::STATE_PARTIAL_RECOVERY], true)
+                ? $recoveryAmount : 0,
             'calculation_version'      => self::VERSION,
             'monitoring_started_at'    => $windowStart,
             'next_measurement_at'      => $stillMonitoring ? $now->copy()->addDay() : null,
@@ -318,6 +321,10 @@ class OutcomeMeasurementService
             'monitoring_started_at'    => $done,
             'next_measurement_at'      => $next !== null ? $done->copy()->addDays($next) : null,
         ];
+        // W10: revenue recovery measured against the counterfactual (capital released is not revenue).
+        if ($type === ValueModel::LOST_REVENUE) {
+            $payload['measured_recovery'] = $recovered ? $metrics['recovered'] : 0;
+        }
         $existing = $investigation->outcome()->first();
         if ($type === ValueModel::LOST_REVENUE && $recovered && (! $existing || $existing->observed_recovery === null
                 || ($existing->calculation_version === self::VERSION_V2))) {

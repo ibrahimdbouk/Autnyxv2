@@ -23,6 +23,14 @@ class OutcomeService
     public function record(Investigation $investigation, array $data): InvestigationOutcome
     {
         return DB::transaction(function () use ($investigation, $data) {
+            // W10: a recovery figure typed in by a person is a CLAIM until the
+            // measurement confirms it (measured_recovery is never set from here).
+            unset($data['measured_recovery']);
+            $existing = InvestigationOutcome::where('investigation_id', $investigation->id)->first();
+            if ((float) ($data['observed_recovery'] ?? 0) > 0 && ($existing?->measured_recovery === null)) {
+                $data['attribution_status'] = InvestigationOutcome::ATTR_CLAIMED;
+            }
+
             $payload = array_merge($data, [
                 'investigation_id' => $investigation->id,
                 'tenant_id'        => $investigation->tenant_id,
@@ -79,17 +87,20 @@ class OutcomeService
         $row = InvestigationOutcome::where('tenant_id', $tenantId)
             ->selectRaw('
                 COALESCE(SUM(revenue_at_risk), 0)    AS total_at_risk,
-                COALESCE(SUM(observed_recovery), 0)  AS total_recovered,
+                COALESCE(SUM(measured_recovery) FILTER (WHERE measured_recovery > 0), 0) AS total_recovered,
+                COALESCE(SUM(observed_recovery) FILTER (WHERE measured_recovery IS NULL AND observed_recovery > 0), 0) AS total_claimed,
                 COUNT(*) FILTER (WHERE was_false_positive) AS fp_count
             ')
             ->first();
 
+        // W10: "recovered" is measured recovery; hand-entered figures are claims.
         $atRisk    = (float) ($row->total_at_risk ?? 0);
         $recovered = (float) ($row->total_recovered ?? 0);
 
         return [
             'total_at_risk'  => $atRisk,
             'total_recovered' => $recovered,
+            'total_claimed'  => (float) ($row->total_claimed ?? 0),
             'recovery_rate'  => $atRisk > 0 ? round(($recovered / $atRisk) * 100, 1) : null,
             'fp_count'       => (int) ($row->fp_count ?? 0),
         ];

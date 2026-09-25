@@ -51,6 +51,6 @@
     <div class="opp-tile">
         <div class="opp-lab">↩ Recovery (MTD)</div>
         <div class="opp-val">{{ \App\Support\Money::compact($opRecoveryMtd, $currency) }}</div>
-        <div class="opp-sub">attributed, recorded this month</div>
+        <div class="opp-sub">measured, this month</div>
     </div>
 </div>
