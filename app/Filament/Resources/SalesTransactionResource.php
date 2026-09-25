@@ -38,11 +38,11 @@ class SalesTransactionResource extends Resource
     {
         $currency = Filament::getTenant()?->currencyCode() ?? 'USD';
 
-        return $table
+        return \App\Filament\Support\FactTable::configure($table)   // WP6.4
             ->columns([
                 TextColumn::make('transaction_id')
                     ->label('Transaction ID')
-                    ->searchable()
+                    ->searchable(query: \App\Filament\Support\FactTable::searchExact('transaction_id'))
                     ->copyable(),
 
                 TextColumn::make('date')
@@ -51,10 +51,10 @@ class SalesTransactionResource extends Resource
 
                 TextColumn::make('sku')
                     ->label('SKU')
-                    ->searchable(),
+                    ->searchable(query: \App\Filament\Support\FactTable::searchExact('sku')),
 
                 TextColumn::make('location')
-                    ->searchable()
+                    ->searchable(query: fn (Builder $query, string $search) => \App\Filament\Support\FactTable::searchStore($query, $search))
                     ->badge()
                     ->color('gray'),
 
@@ -76,27 +76,8 @@ class SalesTransactionResource extends Resource
                     ->weight('bold'),
             ])
             ->filters([
-                SelectFilter::make('location')
-                    ->options(fn () => SalesTransaction::query()
-                        ->whereNotNull('location')
-                        ->distinct()
-                        ->orderBy('location')
-                        ->pluck('location', 'location')
-                        ->toArray()
-                    )
-                    ->label('Location'),
-
-                Filter::make('date_range')
-                    ->label('Date Range')
-                    ->form([
-                        DatePicker::make('from')->label('From'),
-                        DatePicker::make('until')->label('Until'),
-                    ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        return $query
-                            ->when($data['from'],  fn (Builder $q, $d) => $q->whereDate('date', '>=', $d))
-                            ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('date', '<=', $d));
-                    }),
+                \App\Filament\Support\FactTable::storeFilter(),
+                \App\Filament\Support\FactTable::dateRange('date_range', 'date', 'Date', 30),
             ])
             ->emptyStateIcon('heroicon-o-shopping-cart')
             ->emptyStateHeading('No sales yet')

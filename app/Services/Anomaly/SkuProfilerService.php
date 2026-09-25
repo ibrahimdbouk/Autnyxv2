@@ -88,11 +88,10 @@ class SkuProfilerService
 
         // 2. Latest on-hand per (store, sku): mark has_inventory, and add
         //    dead-stock profiles (stock on hand, no sales in the window).
-        $inv = DB::select(
-            "SELECT DISTINCT ON (store_id, sku) store_id, sku, on_hand_qty
-             FROM inventory_levels
-             WHERE tenant_id = ? AND store_id IS NOT NULL
-             ORDER BY store_id, sku, as_of_date DESC NULLS LAST",
+        // WP6.2: current positions, lots summed.
+        app(\App\Services\Inventory\InventoryCurrentService::class)->ensure($tenantId);
+        $inv = DB::cursor(
+            'SELECT store_id, sku, on_hand_qty FROM inventory_current WHERE tenant_id = ?',
             [$tenantId]
         );
 

@@ -107,7 +107,7 @@ class PipelineIngestor
     private function toCsv(array $headers, array $rows): string
     {
         $fh = fopen('php://temp', 'r+');
-        fputcsv($fh, $headers);
+        fputcsv($fh, $headers, escape: '');
 
         foreach ($rows as $row) {
             $line = [];
@@ -115,7 +115,7 @@ class PipelineIngestor
                 $v = $row[$h] ?? null;
                 $line[] = is_scalar($v) ? $v : ($v === null ? '' : json_encode($v));
             }
-            fputcsv($fh, $line);
+            fputcsv($fh, $line, escape: '');
         }
 
         rewind($fh);

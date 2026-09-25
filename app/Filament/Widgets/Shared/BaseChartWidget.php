@@ -18,7 +18,15 @@ use Filament\Widgets\ChartWidget;
  */
 abstract class BaseChartWidget extends ChartWidget
 {
+    use CachesPerTenant;
+
     protected ?string $pollingInterval = null;
+
+    /** WP6.4: a chart's data is computed at most once per tenant (and filter) every 2 minutes. */
+    protected function getCachedData(): array
+    {
+        return $this->cachedData ??= $this->cachedForTenant('data:' . ($this->filter ?? '-'), fn () => $this->getData());
+    }
 
     protected int | string | array $columnSpan = 'full';
 

@@ -35,16 +35,16 @@ class InventoryLevelResource extends Resource
 
     public static function table(Table $table): Table
     {
-        return $table
+        return \App\Filament\Support\FactTable::configure($table)   // WP6.4
             ->columns([
                 TextColumn::make('sku')
                     ->label('SKU')
-                    ->searchable()
+                    ->searchable(query: \App\Filament\Support\FactTable::searchExact('sku'))
                     ->sortable()
                     ->copyable(),
 
                 TextColumn::make('location')
-                    ->searchable()
+                    ->searchable(query: fn (Builder $query, string $search) => \App\Filament\Support\FactTable::searchStore($query, $search))
                     ->badge()
                     ->color('gray')
                     ->sortable(),
@@ -74,15 +74,7 @@ class InventoryLevelResource extends Resource
                     ->sortable(),
             ])
             ->filters([
-                SelectFilter::make('location')
-                    ->options(fn () => InventoryLevel::query()
-                        ->whereNotNull('location')
-                        ->distinct()
-                        ->orderBy('location')
-                        ->pluck('location', 'location')
-                        ->toArray()
-                    )
-                    ->label('Location'),
+                \App\Filament\Support\FactTable::storeFilter(),
 
                 Filter::make('below_reorder')
                     ->label('At or below reorder point')
@@ -96,22 +88,13 @@ class InventoryLevelResource extends Resource
                     ->query(fn (Builder $query): Builder => $query->where('on_hand_qty', '<=', 0))
                     ->toggle(),
 
-                Filter::make('as_of_range')
-                    ->label('As-of date')
-                    ->form([
-                        DatePicker::make('from')->label('From'),
-                        DatePicker::make('until')->label('Until'),
-                    ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        return $query
-                            ->when($data['from'],  fn (Builder $q, $d) => $q->whereDate('as_of_date', '>=', $d))
-                            ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('as_of_date', '<=', $d));
-                    }),
+                // WP6.4: the recent snapshots by default — this page is the history.
+                \App\Filament\Support\FactTable::dateRange('as_of_range', 'as_of_date', 'As-of date', 14),
             ])
             ->emptyStateIcon('heroicon-o-archive-box')
             ->emptyStateHeading('No inventory records yet')
             ->emptyStateDescription('Inventory levels appear here after an inventory import.')
-            ->defaultSort('sku');
+            ->defaultSort('as_of_date', 'desc');
     }
 
     public static function getRelations(): array

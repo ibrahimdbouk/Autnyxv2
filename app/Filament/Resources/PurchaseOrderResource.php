@@ -38,11 +38,11 @@ class PurchaseOrderResource extends Resource
     {
         $currency = Filament::getTenant()?->currencyCode() ?? 'USD';
 
-        return $table
+        return \App\Filament\Support\FactTable::configure($table)   // WP6.4
             ->columns([
                 TextColumn::make('po_number')
                     ->label('PO #')
-                    ->searchable()
+                    ->searchable(query: \App\Filament\Support\FactTable::searchExact('po_number'))
                     ->sortable()
                     ->copyable(),
 
@@ -52,7 +52,7 @@ class PurchaseOrderResource extends Resource
 
                 TextColumn::make('sku')
                     ->label('SKU')
-                    ->searchable(),
+                    ->searchable(query: \App\Filament\Support\FactTable::searchExact('sku')),
 
                 TextColumn::make('qty_ordered')
                     ->label('Ordered')
@@ -92,16 +92,7 @@ class PurchaseOrderResource extends Resource
                     ->toggleable(),
             ])
             ->filters([
-                SelectFilter::make('supplier')
-                    ->options(fn () => PurchaseOrder::query()
-                        ->whereNotNull('supplier')
-                        ->distinct()
-                        ->orderBy('supplier')
-                        ->pluck('supplier', 'supplier')
-                        ->toArray()
-                    )
-                    ->label('Supplier')
-                    ->multiple(),
+                \App\Filament\Support\FactTable::supplierFilter(),
 
                 Filter::make('outstanding')
                     ->label('Not fully received')
@@ -113,17 +104,8 @@ class PurchaseOrderResource extends Resource
                     ->query(fn (Builder $query): Builder => $query->whereColumn('qty_received', '>=', 'qty_ordered'))
                     ->toggle(),
 
-                Filter::make('order_date_range')
-                    ->label('Order date')
-                    ->form([
-                        DatePicker::make('from')->label('From'),
-                        DatePicker::make('until')->label('Until'),
-                    ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        return $query
-                            ->when($data['from'],  fn (Builder $q, $d) => $q->whereDate('order_date', '>=', $d))
-                            ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('order_date', '<=', $d));
-                    }),
+                // No default window: an old PO that is still outstanding must stay visible.
+                \App\Filament\Support\FactTable::dateRange('order_date_range', 'order_date', 'Order date'),
 
                 Filter::make('expected_date_range')
                     ->label('Expected date')

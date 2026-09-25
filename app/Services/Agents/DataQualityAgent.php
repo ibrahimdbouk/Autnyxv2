@@ -141,10 +141,12 @@ class DataQualityAgent extends AgentService
             ->where(fn ($q) => $q->whereNull('category')->orWhere('category', ''))->count();
 
         // Inventory — freshness of the snapshot detection reads.
-        $inventory   = InventoryLevel::where('tenant_id', $tenantId)->count();
+        $inventory   = \App\Models\InventoryCurrent::where('tenant_id', $tenantId)->count();
         $latestAsOf  = InventoryLevel::where('tenant_id', $tenantId)->max('as_of_date');
         $staleDays   = $latestAsOf ? Carbon::parse($latestAsOf)->diffInDays(Carbon::now()) : null;
-        $noReorder   = InventoryLevel::where('tenant_id', $tenantId)->whereNull('reorder_point')->count();
+        // WP6.2: of the CURRENT positions, how many have no reorder point.
+        $noReorder   = \App\Models\InventoryCurrent::where('tenant_id', $tenantId)
+            ->where(fn ($q) => $q->whereNull('reorder_point')->orWhere('reorder_point', '<=', 0))->count();
 
         // Suppliers — lead-time coverage (drives supply-risk rules).
         $suppliers        = Supplier::where('tenant_id', $tenantId)->count();
@@ -217,7 +219,7 @@ You are a data-onboarding analyst reviewing a retail tenant's data readiness bef
 
 DATA PROFILE:
   Products: {$c['products']} total; {$c['products_missing_cost']} missing unit cost ({$c['products_missing_cost_pct']}%), {$c['products_missing_price']} missing selling price, {$c['products_missing_category']} missing category.
-  Inventory: {$c['inventory_rows']} rows; {$stale}; {$c['inventory_no_reorder']} rows with no reorder point.
+  Inventory: {$c['inventory_rows']} current stock positions; {$stale}; {$c['inventory_no_reorder']} positions with no reorder point.
   Suppliers: {$c['suppliers']} total; {$c['suppliers_missing_lead_time']} missing lead time.
   Purchase orders: {$c['purchase_orders']} total; {$c['po_missing_expected_date']} missing expected date.
 RECENT IMPORTS:

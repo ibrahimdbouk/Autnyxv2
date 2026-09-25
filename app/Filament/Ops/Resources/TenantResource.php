@@ -163,7 +163,7 @@ class TenantResource extends Resource
                     ->modalSubmitActionLabel('Download')
                     ->action(function (Tenant $record) {
                         try {
-                            $path = app(\App\Services\Ops\TenantOffboardingService::class)->export($record);
+                            $path = app(\App\Services\Ops\TenantOffboardingService::class)->export($record, auth()->user());
                         } catch (\Throwable $e) {
                             \Filament\Notifications\Notification::make()
                                 ->title('Export failed')->body($e->getMessage())->danger()->send();
@@ -191,7 +191,7 @@ class TenantResource extends Resource
                             ->helperText(fn (Tenant $record) => 'Type the tenant name exactly to confirm: ' . $record->name),
                     ])
                     ->modalHeading(fn (Tenant $record) => 'Permanently erase ' . $record->name . '?')
-                    ->modalDescription('This deletes the tenant and ALL of its data — anomalies, investigations, imports, stores, users, everything. This cannot be undone. Export first if you may need the data.')
+                    ->modalDescription('The tenant is closed immediately (nobody can sign in or use the API), then ALL of its data and files are deleted in the background — anomalies, investigations, imports, stores, users, everything. This cannot be undone. Export first if you may need the data.')
                     ->modalSubmitActionLabel('Erase permanently')
                     ->action(function (Tenant $record, array $data) {
                         if (trim((string) ($data['confirm_name'] ?? '')) !== $record->name) {
@@ -201,14 +201,15 @@ class TenantResource extends Resource
                         }
 
                         try {
-                            app(\App\Services\Ops\TenantOffboardingService::class)->erase($record);
+                            // WP6.7: closed now, erased by a queued job in bounded slices.
+                            app(\App\Services\Ops\TenantOffboardingService::class)->requestErase($record, auth()->user());
                             \Filament\Notifications\Notification::make()
-                                ->title('Tenant erased')
-                                ->body($record->name . ' and all of its data have been permanently deleted.')
+                                ->title('Erasure started')
+                                ->body($record->name . ' is closed and its data is being deleted in the background. The platform audit log records when it completes.')
                                 ->success()->send();
                         } catch (\Throwable $e) {
                             \Filament\Notifications\Notification::make()
-                                ->title('Erase failed — nothing was deleted')->body($e->getMessage())->danger()->send();
+                                ->title('Erase not started')->body($e->getMessage())->danger()->send();
                         }
                     }),
             ])

@@ -139,7 +139,7 @@ class NightlyPipelineTest extends TestCase
                 parent::__construct(app(\App\Services\Anomaly\BaselineCalculatorService::class));
             }
 
-            public function runForTenant(int $tenantId, ?\App\Services\Detection\RunScope $scope = null, bool $aggregateOnly = false): void
+            public function runForTenant(int $tenantId, ?\App\Services\Detection\RunScope $scope = null, bool $aggregateOnly = false, bool $bucketed = false): void
             {
                 DetectionDirtyKey::create(['tenant_id' => $this->t, 'sku' => 'NEW', 'reason' => 'import', 'created_at' => now()]);
             }

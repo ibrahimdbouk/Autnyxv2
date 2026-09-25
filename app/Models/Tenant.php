@@ -19,6 +19,8 @@ class Tenant extends Model
 
     const STATUS_ACTIVE    = 'active';
     const STATUS_SUSPENDED = 'suspended';
+    /** WP6.7: erasure requested — nobody can sign in or call the API; a queued job is deleting the data. */
+    const STATUS_ERASING   = 'erasing';
 
     const PLAN_LABELS = [
         self::PLAN_TRIAL      => 'Trial',

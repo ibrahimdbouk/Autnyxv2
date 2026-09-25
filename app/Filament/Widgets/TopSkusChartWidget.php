@@ -31,11 +31,11 @@ class TopSkusChartWidget extends BaseChartWidget
 
         $from = Carbon::now()->subDays($days)->toDateString();
 
-        $rows = SalesTransaction::where('tenant_id', $tenantId)
+        // WP6.4: from the daily aggregate, not every receipt line.
+        $rows = DB::table('sales_daily')->where('tenant_id', $tenantId)
             ->where('date', '>=', $from)
-            ->whereNotNull('sku')
-            ->where('quantity', '>', 0)
-            ->select('sku', DB::raw('SUM(total_amount) as total'))
+            ->where('units_sold', '>', 0)
+            ->select('sku', DB::raw('SUM(revenue) as total'))
             ->groupBy('sku')
             ->orderByDesc('total')
             ->limit(10)

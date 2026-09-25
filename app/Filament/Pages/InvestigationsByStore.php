@@ -63,7 +63,8 @@ class InvestigationsByStore extends Page
             ->selectRaw('primary_store_id, count(*) as total')
             ->selectRaw("sum(case when status in ('open','in_progress') then 1 else 0 end) as open_count")
             ->selectRaw("sum(case when status in ('open','in_progress') and priority in ('critical','high') then 1 else 0 end) as urgent")
-            ->selectRaw('coalesce(sum(revenue_at_risk),0) as value')
+            // At risk = the open work only; a closed investigation no longer puts money at risk.
+            ->selectRaw("coalesce(sum(revenue_at_risk) filter (where status in ('open','in_progress')),0) as value")
             ->groupBy('primary_store_id')
             ->get();
 
@@ -74,11 +75,15 @@ class InvestigationsByStore extends Page
         $storeIds = $agg->pluck('primary_store_id')->filter()->all();
         $stores = Store::where('tenant_id', $tenantId)->whereIn('id', $storeIds)->get()->keyBy('id');
 
-        // Investigations to list under each store (bounded load, open first).
-        $invs = Investigation::where('tenant_id', $tenantId)
+        // WP6.4: the first 50 of EACH store (open first, newest first) in one
+        // window query — a global limit left later stores with empty lists.
+        $ranked = Investigation::where('tenant_id', $tenantId)
+            ->select('*')
+            ->selectRaw("row_number() over (partition by primary_store_id order by case when status in ('open','in_progress') then 0 else 1 end, opened_at desc nulls last, id desc) as rn");
+        $invs = Investigation::query()->fromSub($ranked, 'investigations')
+            ->where('rn', '<=', 50)
             ->orderByRaw("case when status in ('open','in_progress') then 0 else 1 end")
             ->orderByDesc('opened_at')
-            ->limit(1000)
             ->get()
             ->groupBy('primary_store_id');
 

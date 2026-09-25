@@ -43,7 +43,7 @@ class NotifyAnomaliesCommand extends Command
             return Command::SUCCESS;
         }
 
-        $tenants = Tenant::query()->where('status', '!=', Tenant::STATUS_SUSPENDED)
+        $tenants = Tenant::query()->where('status', Tenant::STATUS_ACTIVE)
             ->when($tenantId, fn ($q) => $q->whereKey($tenantId))->get();
 
         $sent = 0;

@@ -6,6 +6,7 @@ use App\Models\DetectionDirtyKey;
 use App\Models\Tenant;
 use App\Services\Anomaly\AnomalyDetectionService;
 use App\Services\Anomaly\InvestigationCorrelationService;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -55,6 +56,85 @@ class TenantDetectionRunner
         }
     }
 
+    /** @var array<string,array{ms:int,peak_mb:float,flags:int,ok:bool}> WP6.3: last full run, summed over its passes */
+    private array $stats = [];
+
+    /** WP6.3: per-rule time / memory / flags of this runner's last detection run. */
+    public function lastRuleStats(): array
+    {
+        return $this->stats ?: $this->detector->ruleStats();
+    }
+
+    /**
+     * WP6.3 (audit H31) — a full scan. A v2 tenant with more positions than
+     * detection.bucket_positions is scanned in SKU buckets: each bucket runs
+     * the per-SKU rules with every store of its SKUs loaded (so memory is
+     * bounded by the bucket, not the tenant), then one aggregate pass runs the
+     * tenant-wide rules, which work in SQL. Smaller tenants: one pass, as before.
+     */
+    public function runFull(int $tenantId): void
+    {
+        $this->stats = [];
+        $buckets = $this->buckets($tenantId);
+        if ($buckets === null) {
+            $this->detector->runForTenant($tenantId);
+            $this->stats = $this->detector->ruleStats();
+
+            return;
+        }
+
+        foreach ($buckets as $skus) {
+            $this->detector->runForTenant($tenantId, RunScope::ofSkus($skus), false, true);
+            $this->addStats($this->detector->ruleStats());
+            if ($this->detector->lastRunDeferred) {
+                return;
+            }
+        }
+        $this->detector->runForTenant($tenantId, null, true, true);
+        $this->addStats($this->detector->ruleStats());
+        Log::info('[detect] bucketed full run', ['tenant_id' => $tenantId, 'buckets' => count($buckets)]);
+    }
+
+    /** @return array<int,array<int,string>>|null SKU buckets, or null for a single pass */
+    public function buckets(int $tenantId): ?array
+    {
+        if (! AnomalyDetectionService::rulesV2For($tenantId)) {
+            return null;
+        }
+        $limit = max(1, (int) config('detection.bucket_positions', 250000));
+        $positions = (int) DB::table('inventory_current')->where('tenant_id', $tenantId)->count();
+        $stores = max(1, (int) DB::table('stores')->where('tenant_id', $tenantId)->count());
+        $positions = max($positions, (int) DB::table('sku_profiles')->where('tenant_id', $tenantId)->where('store_id', '>', 0)->count());
+        if ($positions <= $limit) {
+            return null;
+        }
+
+        // Every SKU a per-SKU rule could judge: the master, profiled sales
+        // (90 days), stock positions, and anything still open.
+        $skus = collect(DB::select(
+            "SELECT s FROM (
+                SELECT trim(sku) AS s FROM products WHERE tenant_id = ?
+                UNION SELECT trim(sku) FROM sku_profiles WHERE tenant_id = ? AND store_id = 0
+                UNION SELECT trim(sku) FROM inventory_current WHERE tenant_id = ?
+                UNION SELECT trim(sku) FROM anomalies WHERE tenant_id = ? AND dismissed_at IS NULL AND lifecycle_state <> 'resolved'
+             ) u WHERE s IS NOT NULL AND s <> '' ORDER BY s",
+            [$tenantId, $tenantId, $tenantId, $tenantId]
+        ))->pluck('s');
+
+        $per = max(1, intdiv($limit, $stores));
+
+        return $skus->chunk($per)->map(fn ($c) => $c->values()->all())->values()->all();
+    }
+
+    private function addStats(array $pass): void
+    {
+        foreach ($pass as $rule => $s) {
+            $cur = $this->stats[$rule] ?? ['ms' => 0, 'peak_mb' => 0.0, 'flags' => 0, 'ok' => true];
+            $this->stats[$rule] = ['ms' => $cur['ms'] + $s['ms'], 'peak_mb' => max($cur['peak_mb'], $s['peak_mb']),
+                'flags' => $cur['flags'] + $s['flags'], 'ok' => $cur['ok'] && $s['ok']];
+        }
+    }
+
     private function blockFor($lock, int $seconds): bool
     {
         try {
@@ -88,8 +168,8 @@ class TenantDetectionRunner
         $maxDirty = (int) DetectionDirtyKey::where('tenant_id', $tenantId)->max('id');
 
         if ($mode !== 'incremental') {
-            // Full scan.
-            $this->detector->runForTenant($tenantId);
+            // Full scan (WP6.3: split by SKU bucket for a big tenant).
+            $this->runFull($tenantId);
             $this->correlator->correlateForTenant($tenantId);
             $this->consume($tenantId, $maxDirty);
             $this->stampWatermark($tenantId);
@@ -101,7 +181,7 @@ class TenantDetectionRunner
 
         if ($scope === null) {
             // Change set too broad — a full scan is cheaper. Clear what it covered.
-            $this->detector->runForTenant($tenantId);
+            $this->runFull($tenantId);
             $this->correlator->correlateForTenant($tenantId);
             $this->consume($tenantId, $maxDirty);
             $this->stampWatermark($tenantId);

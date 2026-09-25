@@ -37,12 +37,29 @@ class InventoryLevel extends Model
         'as_of_date'      => 'date',
         'on_order_qty'    => 'decimal:4',
         'inventory_value' => 'decimal:4',
-        'safety_stock'    => 'decimal:2',
-        'allocated_qty'   => 'decimal:2',
-        'in_transit_qty'  => 'decimal:2',
+        'safety_stock'    => 'decimal:4',
+        'allocated_qty'   => 'decimal:4',
+        'in_transit_qty'  => 'decimal:4',
         'unit_cost'       => 'decimal:4',
         'expiry_date'     => 'date',
     ];
+
+    /**
+     * WP6.2: a row written one at a time (not by an import, which refreshes
+     * its positions in bulk) keeps inventory_current in step.
+     */
+    protected static function booted(): void
+    {
+        $refresh = function (InventoryLevel $level): void {
+            $keys = [['store_id' => $level->store_id, 'sku' => $level->sku]];
+            if ($level->wasChanged(['store_id', 'sku']) || $level->isDirty(['store_id', 'sku'])) {
+                $keys[] = ['store_id' => $level->getOriginal('store_id'), 'sku' => $level->getOriginal('sku')];
+            }
+            app(\App\Services\Inventory\InventoryCurrentService::class)->refreshKeys((int) $level->tenant_id, $keys);
+        };
+        static::saved($refresh);
+        static::deleted($refresh);
+    }
 
     public function tenant(): BelongsTo
     {

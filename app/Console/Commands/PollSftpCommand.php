@@ -32,7 +32,7 @@ class PollSftpCommand extends Command
 
         $tenantIds = $this->option('tenant')
             ? [(int) $this->option('tenant')]
-            : Tenant::pluck('id')->all();
+            : Tenant::where('status', Tenant::STATUS_ACTIVE)->pluck('id')->all();   // WP6.7: never feed a closed tenant
 
         $total = 0;
         foreach ($tenantIds as $tenantId) {

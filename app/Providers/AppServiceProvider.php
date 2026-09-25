@@ -90,6 +90,21 @@ class AppServiceProvider extends ServiceProvider
         // P2.2 — register the objectives + the Root-Cause rule→objective weights.
         $this->registerObjectives();
 
+        // WP6.1: migrations never queue behind a long transaction holding a lock
+        // on a hot table (and so never block every writer behind themselves):
+        // any lock wait over database.migration_lock_timeout fails the deploy
+        // instead. Index builds use App\Support\Database\ConcurrentIndex.
+        \Illuminate\Support\Facades\Event::listen(\Illuminate\Database\Events\MigrationsStarted::class, function (): void {
+            if (\Illuminate\Support\Facades\DB::getDriverName() === 'pgsql') {
+                \Illuminate\Support\Facades\DB::statement("SET lock_timeout = '" . config('database.migration_lock_timeout', '10s') . "'");
+            }
+        });
+        \Illuminate\Support\Facades\Event::listen(\Illuminate\Database\Events\MigrationsEnded::class, function (): void {
+            if (\Illuminate\Support\Facades\DB::getDriverName() === 'pgsql') {
+                \Illuminate\Support\Facades\DB::statement('RESET lock_timeout');
+            }
+        });
+
         // Ops observability — record scheduled-task runs + auth activity.
         \Illuminate\Support\Facades\Event::listen(
             \Illuminate\Console\Events\ScheduledTaskFinished::class,
@@ -157,6 +172,16 @@ class AppServiceProvider extends ServiceProvider
                 ->dailyAt('04:30')
                 ->onOneServer()
                 ->withoutOverlapping(120);
+
+            // WP6.6 — failed queue jobs kept a week; prunable models pruned.
+            $schedule->command('queue:prune-failed', ['--hours' => (int) config('retention.failed_jobs_hours', 168)])
+                ->dailyAt('04:10')
+                ->onOneServer()
+                ->withoutOverlapping(30);
+            $schedule->command('model:prune')
+                ->dailyAt('04:20')
+                ->onOneServer()
+                ->withoutOverlapping(30);
 
             // Hourly — health check: failed jobs, queue age, nightly chains (WP5.3).
             // It also pings HEARTBEAT_URL (an external cron monitor): if the

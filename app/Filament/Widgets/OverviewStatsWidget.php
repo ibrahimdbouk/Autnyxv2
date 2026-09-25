@@ -15,37 +15,46 @@ use Filament\Widgets\StatsOverviewWidget\Stat;
 
 class OverviewStatsWidget extends BaseWidget
 {
+    use \App\Filament\Widgets\Shared\CachesPerTenant;
+
     protected ?string $pollingInterval = '60s';
 
     protected function getStats(): array
     {
         $tenantId = Filament::getTenant()?->id;
 
-        $products = Product::where('tenant_id', $tenantId)->count();
-
-        $salesRows = SalesTransaction::where('tenant_id', $tenantId)->count();
-
-        $inventoryRecords = InventoryLevel::where('tenant_id', $tenantId)->count();
-
-        $lowStockCount = InventoryLevel::where('tenant_id', $tenantId)
-            ->whereNotNull('reorder_point')
-            ->whereColumn('on_hand_qty', '<=', 'reorder_point')
-            ->count();
-
-        $stores = Store::where('tenant_id', $tenantId)->count();
-
-        $purchaseOrders = PurchaseOrder::where('tenant_id', $tenantId)->count();
-
-        $pendingImports = Import::where('tenant_id', $tenantId)
-            ->whereIn('status', [Import::STATUS_UPLOADED, Import::STATUS_MAPPING_REVIEW, Import::STATUS_IMPORTING])
-            ->count();
-
-        $highAnomalies   = Anomaly::where('tenant_id', $tenantId)->active()->where('severity', 'high')->count();
-        $mediumAnomalies = Anomaly::where('tenant_id', $tenantId)->active()->where('severity', 'medium')->count();
-        $totalAnomalies  = Anomaly::where('tenant_id', $tenantId)->active()->count();
-
-        // B1: aggregate estimated value at risk across open anomalies, in the tenant's currency.
-        $valueAtRisk = $tenantId ? Anomaly::estimatedValueAtRiskForTenant($tenantId) : 0.0;
+        // WP6.4: one cached set of figures per tenant (2 minutes), not a
+        // COUNT(*) of every table on every render and every 60s poll.
+        $n = $this->cachedForTenant('figures', function () use ($tenantId) {
+            return [
+                'products'        => Product::where('tenant_id', $tenantId)->count(),
+                // Sales lines of the last 30 days (an index range) — not every line ever loaded.
+                'salesRows'       => SalesTransaction::where('tenant_id', $tenantId)->where('date', '>=', now()->subDays(30)->toDateString())->count(),
+                // WP6.2: current stock positions (store × SKU, lots summed), not history rows.
+                'inventory'       => \App\Models\InventoryCurrent::where('tenant_id', $tenantId)->count(),
+                'lowStock'        => \App\Models\InventoryCurrent::where('tenant_id', $tenantId)
+                    ->where('reorder_point', '>', 0)->whereColumn('on_hand_qty', '<=', 'reorder_point')->count(),
+                'stores'          => Store::where('tenant_id', $tenantId)->count(),
+                'purchaseOrders'  => PurchaseOrder::where('tenant_id', $tenantId)->count(),
+                'pendingImports'  => Import::where('tenant_id', $tenantId)
+                    ->whereIn('status', [Import::STATUS_UPLOADED, Import::STATUS_MAPPING_REVIEW, Import::STATUS_IMPORTING])->count(),
+                'high'            => Anomaly::where('tenant_id', $tenantId)->active()->where('severity', 'high')->count(),
+                'medium'          => Anomaly::where('tenant_id', $tenantId)->active()->where('severity', 'medium')->count(),
+                'total'           => Anomaly::where('tenant_id', $tenantId)->active()->count(),
+                'valueAtRisk'     => $tenantId ? Anomaly::estimatedValueAtRiskForTenant($tenantId) : 0.0,
+            ];
+        });
+        $products = $n['products'];
+        $salesRows = $n['salesRows'];
+        $inventoryRecords = $n['inventory'];
+        $lowStockCount = $n['lowStock'];
+        $stores = $n['stores'];
+        $purchaseOrders = $n['purchaseOrders'];
+        $pendingImports = $n['pendingImports'];
+        $highAnomalies = $n['high'];
+        $mediumAnomalies = $n['medium'];
+        $totalAnomalies = $n['total'];
+        $valueAtRisk = (float) $n['valueAtRisk'];
         $currency    = Filament::getTenant()?->currencyCode();
 
         $anomalyDesc = match (true) {
@@ -86,14 +95,14 @@ class OverviewStatsWidget extends BaseWidget
                 ->url($productsUrl)
                 ->extraAttributes(['class' => 'cursor-pointer']),
 
-            Stat::make('Sales Records', number_format($salesRows))
-                ->description('Transaction rows')
+            Stat::make('Sales Lines (30 days)', number_format($salesRows))
+                ->description('Receipt lines in the last 30 days')
                 ->descriptionIcon('heroicon-m-shopping-cart')
                 ->color('success')
                 ->url($salesUrl)
                 ->extraAttributes(['class' => 'cursor-pointer']),
 
-            Stat::make('Inventory Records', number_format($inventoryRecords))
+            Stat::make('Stock Positions', number_format($inventoryRecords))
                 ->description($lowStockCount > 0 ? "{$lowStockCount} below reorder point" : 'All levels healthy')
                 ->descriptionIcon($lowStockCount > 0 ? 'heroicon-m-exclamation-triangle' : 'heroicon-m-check-circle')
                 ->color($lowStockCount > 0 ? 'danger' : 'success')

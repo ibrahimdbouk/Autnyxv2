@@ -45,6 +45,29 @@ return [
         // Incremental-detection dirty queue — normally consumed nightly; this is
         // a safety net so a stalled consumer can't grow it without bound.
         'detection_dirty_keys' => ['days' => (int) env('RETAIN_DIRTY_KEYS_DAYS', 30),  'column' => 'created_at'],
+
+        // WP6.6 (audit M24) — tables that grew without bound.
+        'sales_returns'       => ['days' => (int) env('RETAIN_RETURNS_DAYS', 395),      'column' => 'date'],
+        // Received / closed purchase orders — an open PO is never purged, however old.
+        'purchase_orders'     => ['days' => (int) env('RETAIN_PO_DAYS', 730),           'column' => 'order_date',
+                                  'where' => "(received_date IS NOT NULL OR status IN ('closed', 'cancelled', 'received'))"],
+        'quarantined_rows'    => ['days' => (int) env('RETAIN_QUARANTINE_DAYS', 90),    'column' => 'created_at',
+                                  'where' => "status <> 'open'"],
+        'platform_events'     => ['days' => (int) env('RETAIN_EVENTS_DAYS', 395),       'column' => 'occurred_at'],
+        'agent_runs'          => ['days' => (int) env('RETAIN_AGENT_RUNS_DAYS', 180),   'column' => 'created_at'],
+        'feature_values'      => ['days' => (int) env('RETAIN_FEATURES_DAYS', 395),     'column' => 'as_of'],
+        // Notifications belong to users, not tenants (no tenant_id): purged platform-wide.
+        'notifications'       => ['days' => (int) env('RETAIN_NOTIFICATIONS_DAYS', 90), 'column' => 'created_at',
+                                  'where' => 'read_at IS NOT NULL', 'key' => 'id'],
     ],
+
+    /*
+    | WP6.6: import files (the uploaded / pulled originals) are deleted from
+    | storage this many days after the import finished; the rows stay.
+    */
+    'import_files_days' => (int) env('RETAIN_IMPORT_FILES_DAYS', 90),
+
+    /* WP6.6: failed queue jobs are kept this many hours (queue:prune-failed). */
+    'failed_jobs_hours' => (int) env('RETAIN_FAILED_JOBS_HOURS', 168),
 
 ];

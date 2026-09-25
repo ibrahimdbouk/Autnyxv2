@@ -47,6 +47,13 @@ class Product extends Model
         'volume_cm3'    => 'decimal:2',
     ];
 
+    /** WP6.5: the canonical hierarchy follows (once per tenant, at the end of the request). */
+    protected static function booted(): void
+    {
+        static::saved(fn (self $m) => \App\Services\Platform\HierarchySync::later((int) $m->tenant_id));
+        static::deleted(fn (self $m) => \App\Services\Platform\HierarchySync::later((int) $m->tenant_id));
+    }
+
     public function tenant(): BelongsTo
     {
         return $this->belongsTo(Tenant::class);

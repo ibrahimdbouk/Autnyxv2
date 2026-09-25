@@ -62,6 +62,7 @@ class DedupeStoresCommand extends Command
 
             // Rebuild the daily aggregate against the corrected store ids.
             $aggregator->rebuildForTenant($tenant->id);
+            app(\App\Services\Inventory\InventoryCurrentService::class)->rebuild($tenant->id);
 
             $this->info("Tenant {$tenant->id}: merged {$merged} duplicate store(s), moved {$rowsMoved} rows, rebuilt sales_daily.");
         }

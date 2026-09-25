@@ -38,7 +38,7 @@ class SalesReturnResource extends Resource
     {
         $currency = Filament::getTenant()?->currencyCode() ?? 'USD';
 
-        return $table
+        return \App\Filament\Support\FactTable::configure($table)   // WP6.4
             ->columns([
                 TextColumn::make('date')
                     ->date()
@@ -46,12 +46,12 @@ class SalesReturnResource extends Resource
 
                 TextColumn::make('sku')
                     ->label('SKU')
-                    ->searchable(),
+                    ->searchable(query: \App\Filament\Support\FactTable::searchExact('sku')),
 
                 TextColumn::make('location')
                     ->label('Store')
                     ->placeholder('—')
-                    ->searchable()
+                    ->searchable(query: fn (Builder $query, string $search) => \App\Filament\Support\FactTable::searchStore($query, $search))
                     ->badge()
                     ->color('gray'),
 
@@ -74,38 +74,23 @@ class SalesReturnResource extends Resource
                     ->wrap(),
             ])
             ->filters([
-                SelectFilter::make('location')
-                    ->options(fn () => SalesReturn::query()
-                        ->whereNotNull('location')
-                        ->distinct()
-                        ->orderBy('location')
-                        ->pluck('location', 'location')
-                        ->toArray()
-                    )
-                    ->label('Store')
-                    ->multiple(),
+                \App\Filament\Support\FactTable::storeFilter(),
 
                 SelectFilter::make('reason')
+                    // WP6.4: the reasons of the last year (bounded), not a DISTINCT over all returns.
                     ->options(fn () => SalesReturn::query()
+                        ->where('tenant_id', Filament::getTenant()?->id)
+                        ->where('date', '>=', now()->subYear()->toDateString())
                         ->whereNotNull('reason')
                         ->distinct()
                         ->orderBy('reason')
+                        ->limit(200)
                         ->pluck('reason', 'reason')
                         ->toArray()
                     )
                     ->label('Reason'),
 
-                Filter::make('date_range')
-                    ->label('Date Range')
-                    ->form([
-                        DatePicker::make('from')->label('From'),
-                        DatePicker::make('until')->label('Until'),
-                    ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        return $query
-                            ->when($data['from'],  fn (Builder $q, $d) => $q->whereDate('date', '>=', $d))
-                            ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('date', '<=', $d));
-                    }),
+                \App\Filament\Support\FactTable::dateRange('date_range', 'date', 'Date', 90),
             ])
             ->defaultSort('date', 'desc');
     }

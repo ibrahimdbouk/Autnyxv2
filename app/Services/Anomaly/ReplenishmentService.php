@@ -211,16 +211,15 @@ class ReplenishmentService
         return [$leadBySku, $supplierBySku, $tenantAvg];
     }
 
-    /** Latest on-hand per (store, sku) via DISTINCT ON. */
+    /** Current on-hand per (store, sku) — lots summed (WP6.2 inventory_current). */
     private function onHandSnapshot(int $tenantId): array
     {
         $map = [];
-        DB::table('inventory_levels')
+        app(\App\Services\Inventory\InventoryCurrentService::class)->ensure($tenantId);
+        DB::table('inventory_current')
             ->where('tenant_id', $tenantId)
-            ->whereNotNull('store_id')
-            ->select(['store_id', 'sku', 'on_hand_qty', 'as_of_date'])
-            ->orderByRaw('store_id, sku, as_of_date DESC NULLS LAST')
-            ->distinct(['store_id', 'sku'])
+            ->select(['store_id', 'sku', 'on_hand_qty'])
+            ->orderBy('id')
             ->cursor()
             ->each(function ($l) use (&$map) {
                 $map[$l->store_id . '|' . trim((string) $l->sku)] = (float) $l->on_hand_qty;

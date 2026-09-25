@@ -20,7 +20,7 @@ class AiBudget
         if (! $tenant) {
             return 'unknown_tenant';
         }
-        if ($tenant->status === Tenant::STATUS_SUSPENDED) {
+        if (in_array($tenant->status, [Tenant::STATUS_SUSPENDED, Tenant::STATUS_ERASING], true)) {
             return 'tenant_suspended';
         }
         if (! $tenant->hasApp(Tenant::APP_ROOT_CAUSE)) {

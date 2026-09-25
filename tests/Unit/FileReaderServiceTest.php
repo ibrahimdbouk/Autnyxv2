@@ -20,9 +20,9 @@ class FileReaderServiceTest extends TestCase
         // numeric-value handling path (isDateTimeValue on a non-existent method).
         $path = sys_get_temp_dir() . '/import_test_' . uniqid() . '.csv';
         $fh   = fopen($path, 'w');
-        fputcsv($fh, ['date', 'sku', 'qty', 'price']);
+        fputcsv($fh, ['date', 'sku', 'qty', 'price'], escape: '');
         for ($i = 1; $i <= $dataRows; $i++) {
-            fputcsv($fh, ['2026-08-01', "SKU{$i}", (string) $i, '9.99']);
+            fputcsv($fh, ['2026-08-01', "SKU{$i}", (string) $i, '9.99'], escape: '');
         }
         fclose($fh);
 

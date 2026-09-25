@@ -271,7 +271,8 @@ class DetectionRulesV2Test extends TestCase
         $this->detect();
         $this->assertCount(1, $this->flags('inventory_shrinkage'), 'no new row while it persists unchanged');
 
-        InventoryLevel::where('sku', 'LAMP')->where('as_of_date', $this->day(0))->update(['on_hand_qty' => 20]); // 80 units → 4,000
+        // Row by row (model events), as a load would: inventory_current follows (WP6.2).
+        InventoryLevel::where('sku', 'LAMP')->where('as_of_date', $this->day(0))->get()->each->update(['on_hand_qty' => 20]); // 80 units → 4,000
         $this->detect();
 
         $episodes = $this->flags('inventory_shrinkage')->sortBy('episode_seq')->values();

@@ -61,6 +61,7 @@ class LifecycleReconciler
         \Closure $evaluable,
         int|\Closure|null $confirmRuns = null,
         ?CarbonInterface $now = null,
+        ?\App\Services\Detection\RunScope $scope = null,
     ): void {
         $now = $now ? Carbon::instance($now) : Carbon::now();
         $touched = array_flip(array_map('intval', $touchedIds));
@@ -72,6 +73,10 @@ class LifecycleReconciler
             ->where('rule_type', $ruleType)
             ->whereNull('dismissed_at')
             ->where('lifecycle_state', '!=', Anomaly::LIFECYCLE_RESOLVED)
+            // WP6.3: a scoped run (incremental, or one SKU bucket of a full run)
+            // judges only the subjects it looked at — never "cleared" by not
+            // having been scanned. SKU-less anomalies are left to the unscoped pass.
+            ->when($scope !== null, fn ($q) => $scope->constrain($q))
             ->get()
             ->each(function (Anomaly $anomaly) use ($touched, $evaluable, $confirmRuns, $now): void {
                 if (isset($touched[$anomaly->id])) {

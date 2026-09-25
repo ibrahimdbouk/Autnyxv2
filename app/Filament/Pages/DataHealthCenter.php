@@ -49,8 +49,10 @@ class DataHealthCenter extends Page
                 ->action(function () {
                     $tenantId = Filament::getTenant()?->id;
                     if ($tenantId) {
-                        app(DataHealthService::class)->computeForTenant($tenantId);
-                        Notification::make()->title('Data health recomputed')->success()->send();
+                        // WP6.4: on the queue — never ~8 full scans per dataset in the request.
+                        \App\Jobs\DataHealth\ComputeDataHealthJob::dispatch($tenantId);
+                        Notification::make()->title('Recomputing data health')
+                            ->body('The figures refresh in a minute or two — reload the page to see them.')->success()->send();
                     }
                 }),
         ];
@@ -61,11 +63,7 @@ class DataHealthCenter extends Page
         // Compute on first visit if there are no snapshots yet.
         $tenantId = Filament::getTenant()?->id;
         if ($tenantId && DataHealthSnapshot::where('tenant_id', $tenantId)->doesntExist()) {
-            try {
-                app(DataHealthService::class)->computeForTenant($tenantId);
-            } catch (\Throwable $e) {
-                // Non-fatal — page still renders the (empty) state.
-            }
+            \App\Jobs\DataHealth\ComputeDataHealthJob::dispatch($tenantId);   // WP6.4: queued
         }
     }
 

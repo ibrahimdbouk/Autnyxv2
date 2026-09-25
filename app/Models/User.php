@@ -383,6 +383,11 @@ class User extends Authenticatable implements FilamentUser, HasTenants, HasAppAu
      */
     public function canAccessTenant(Model $tenant): bool
     {
+        // WP6.7: a tenant being erased is closed to everyone, super admins included.
+        if (($tenant->status ?? null) === Tenant::STATUS_ERASING) {
+            return false;
+        }
+
         if ($this->is_super_admin) {
             return true;
         }

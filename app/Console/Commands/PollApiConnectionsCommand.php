@@ -20,7 +20,7 @@ class PollApiConnectionsCommand extends Command
     {
         $tenants = $this->option('tenant')
             ? [Tenant::findOrFail((int) $this->option('tenant'))]
-            : Tenant::all()->all();
+            : Tenant::where('status', Tenant::STATUS_ACTIVE)->get()->all();   // WP6.7: never feed a closed tenant
 
         $total = 0;
         foreach ($tenants as $tenant) {

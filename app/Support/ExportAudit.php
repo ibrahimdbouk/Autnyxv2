@@ -36,7 +36,7 @@ class ExportAudit
     /** fputcsv with formula-injection protection. */
     public static function putcsv($handle, array $row): void
     {
-        fputcsv($handle, self::safeRow($row));
+        fputcsv($handle, self::safeRow($row), escape: '');
     }
 
     public static function log(int $tenantId, string $what, string $format): void

@@ -25,6 +25,17 @@ class SalesDailyAggregator
     {
         $now = now()->toDateTimeString();
 
+        // WP6.6 (audit M24): days older than the raw-sales retention window are
+        // final — their receipt lines are purged, so rebuilding them from raw
+        // would erase them. Never rebuild before the raw cutoff.
+        $rawFloor = self::rawFloor();
+        if ($rawFloor !== null && $from < $rawFloor) {
+            $from = $rawFloor;
+        }
+        if ($from > $to) {
+            return 0;
+        }
+
         // WP3.5 (audit H27): the range is REBUILT, not merely upserted — a
         // (store, SKU, day) whose raw rows were rolled back must disappear
         // instead of lingering as phantom demand.
@@ -70,6 +81,14 @@ class SalesDailyAggregator
             ->count();
     }
 
+    /** The first day whose raw sales lines are still retained (null: no raw retention). */
+    public static function rawFloor(): ?string
+    {
+        $days = (int) (config('retention.tables.sales_transactions.days') ?? 0);
+
+        return $days > 0 ? now()->subDays($days)->toDateString() : null;
+    }
+
     /**
      * Aggregate just the date range covered by a completed sales import, so the
      * daily layer stays current without ever rebuilding all history.
@@ -100,8 +119,8 @@ class SalesDailyAggregator
      */
     public function rebuildForTenant(int $tenantId): int
     {
-        DB::table('sales_daily')->where('tenant_id', $tenantId)->delete();
-
+        // WP6.6: only the days the raw lines still cover are rebuilt (aggregateRange
+        // replaces exactly that range); older aggregates outlive their purged lines.
         $range = SalesTransaction::where('tenant_id', $tenantId)
             ->selectRaw('MIN(date) as mn, MAX(date) as mx')
             ->first();

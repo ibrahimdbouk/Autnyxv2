@@ -31,14 +31,15 @@ class SalesTrendChartWidget extends BaseChartWidget
 
         $from = Carbon::now()->subDays($days)->toDateString();
 
-        $rows = SalesTransaction::where('tenant_id', $tenantId)
+        // WP6.4: from the daily aggregate, not every receipt line.
+        $rows = DB::table('sales_daily')->where('tenant_id', $tenantId)
             ->where('date', '>=', $from)
             ->select(
-                DB::raw("TO_CHAR(date::date, 'YYYY-MM-DD') as day"),
-                DB::raw('SUM(total_amount) as total'),
-                DB::raw('SUM(CASE WHEN quantity > 0 THEN quantity ELSE 0 END) as units'),
+                DB::raw("TO_CHAR(date, 'YYYY-MM-DD') as day"),
+                DB::raw('SUM(revenue) as total'),
+                DB::raw('SUM(GREATEST(units_sold, 0)) as units'),
             )
-            ->groupByRaw("TO_CHAR(date::date, 'YYYY-MM-DD')")
+            ->groupBy('date')
             ->orderBy('day')
             ->get()
             ->keyBy('day');

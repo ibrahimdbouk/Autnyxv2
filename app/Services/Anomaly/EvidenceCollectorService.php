@@ -297,15 +297,19 @@ class EvidenceCollectorService
     {
         $tenantId = $investigation->tenant_id;
 
-        // Current inventory level
-        $invQuery = InventoryLevel::where('tenant_id', $tenantId)
-            ->where('sku', $anomaly->sku);
-
-        if ($anomaly->store_id) {
-            $invQuery->where('store_id', $anomaly->store_id);
+        // WP6.2: the current position (lots summed) — the store's, or for a
+        // chain-level signal the chain total across stores.
+        $level = DB::table('inventory_current')
+            ->where('tenant_id', $tenantId)
+            ->where('sku', $anomaly->sku)
+            ->when($anomaly->store_id, fn ($q) => $q->where('store_id', $anomaly->store_id))
+            ->selectRaw('SUM(on_hand_qty) AS on_hand_qty, SUM(reorder_point) AS reorder_point, MAX(as_of_date) AS as_of_date, MAX(product_id) AS product_id, COUNT(*) AS n')
+            ->first();
+        $level = ($level && (int) $level->n > 0) ? $level : null;
+        if ($level) {
+            $level->on_hand_qty   = (float) $level->on_hand_qty;
+            $level->reorder_point = $level->reorder_point !== null ? (float) $level->reorder_point : null;
         }
-
-        $level = $invQuery->latest('as_of_date')->first();
 
         if ($level) {
             // Persist as a snapshot for historical tracking
@@ -327,7 +331,7 @@ class EvidenceCollectorService
 
             $this->record($investigation, $anomaly, [
                 'evidence_type' => InvestigationEvidence::TYPE_SNAPSHOT,
-                'source'        => 'inventory_levels',
+                'source'        => 'inventory_current',
                 'label'         => "Current on-hand quantity",
                 'value_numeric' => $level->on_hand_qty,
                 'unit'          => 'units',
@@ -339,7 +343,7 @@ class EvidenceCollectorService
             if ($level->reorder_point !== null) {
                 $this->record($investigation, $anomaly, [
                     'evidence_type' => InvestigationEvidence::TYPE_THRESHOLD_BREACH,
-                    'source'        => 'inventory_levels',
+                    'source'        => 'inventory_current',
                     'label'         => "Reorder point",
                     'value_numeric' => $level->reorder_point,
                     'unit'          => 'units',
@@ -349,18 +353,19 @@ class EvidenceCollectorService
                 ]);
 
                 // Cover ratio (days of stock at average daily sales)
-                $avgDailySales = SalesTransaction::where('tenant_id', $tenantId)
+                // Same scope as the stock figure: the store's sales, or the chain's.
+                $avgDailySales = DB::table('sales_daily')->where('tenant_id', $tenantId)
                     ->where('sku', $anomaly->sku)
+                    ->when($anomaly->store_id, fn ($q) => $q->where('store_id', $anomaly->store_id))
                     ->where('date', '>=', Carbon::today()->subDays(30)->format('Y-m-d'))
-                    ->where('quantity', '>', 0)
-                    ->selectRaw('SUM(quantity) / 30.0 as avg_daily')
+                    ->selectRaw('SUM(units_sold) / 30.0 as avg_daily')
                     ->value('avg_daily');
 
                 if ($avgDailySales && $avgDailySales > 0) {
                     $coverDays = round($level->on_hand_qty / $avgDailySales, 1);
                     $this->record($investigation, $anomaly, [
                         'evidence_type' => InvestigationEvidence::TYPE_CALCULATION,
-                        'source'        => 'inventory_levels + sales_transactions',
+                        'source'        => 'inventory_current + sales_daily',
                         'label'         => "Days of cover at current sales rate",
                         'value_numeric' => $coverDays,
                         'unit'          => 'days',

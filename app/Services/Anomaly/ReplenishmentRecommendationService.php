@@ -43,12 +43,10 @@ class ReplenishmentRecommendationService
         $needRep = $rep->get($needStore);
         if ($needRep === null) return []; // no derived target → nothing to size against
 
-        // Live on-hand per store for this SKU (freshest snapshot each).
+        // Live on-hand per store for this SKU (current position, lots summed).
         $onHand = [];
-        DB::table('inventory_levels')
-            ->where('tenant_id', $tenantId)->where('sku', $sku)->whereNotNull('store_id')
-            ->orderByRaw('store_id, as_of_date DESC NULLS LAST')
-            ->distinct(['store_id'])
+        DB::table('inventory_current')
+            ->where('tenant_id', $tenantId)->where('sku', $sku)
             ->get(['store_id', 'on_hand_qty'])
             ->each(function ($r) use (&$onHand) { $onHand[(int) $r->store_id] = (float) $r->on_hand_qty; });
 

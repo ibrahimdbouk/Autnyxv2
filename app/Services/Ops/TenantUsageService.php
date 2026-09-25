@@ -59,8 +59,9 @@ class TenantUsageService
 
         $users     = $this->countBy(User::query());
         $products  = $this->countBy(Product::query());
-        $sales     = $this->countBy(SalesTransaction::query());
-        $inventory = $this->countBy(InventoryLevel::query());
+        // WP6.4: the big fact tables from PostgreSQL statistics (exact below 1M rows).
+        $sales     = \App\Support\Database\TableStats::rowsByTenant('sales_transactions');
+        $inventory = \App\Support\Database\TableStats::rowsByTenant('inventory_levels');
 
         $activeAnomalies = $this->mapBy(
             Anomaly::query()->active()
@@ -122,8 +123,8 @@ class TenantUsageService
                 'admins'          => User::where('tenant_id', $id)->where('is_tenant_admin', true)->count(),
                 'stores'          => Store::where('tenant_id', $id)->count(),
                 'products'        => Product::where('tenant_id', $id)->count(),
-                'sales_rows'      => SalesTransaction::where('tenant_id', $id)->count(),
-                'inventory_rows'  => InventoryLevel::where('tenant_id', $id)->count(),
+                'sales_rows'      => \App\Support\Database\TableStats::rowsForTenant('sales_transactions', $id),
+                'inventory_rows'  => \App\Support\Database\TableStats::rowsForTenant('inventory_levels', $id),
                 'purchase_orders' => PurchaseOrder::where('tenant_id', $id)->count(),
                 'suppliers'       => Supplier::where('tenant_id', $id)->count(),
             ],

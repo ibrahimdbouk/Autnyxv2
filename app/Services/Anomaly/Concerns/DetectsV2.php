@@ -76,6 +76,9 @@ trait DetectsV2
         $po = DB::table('purchase_orders')->where('tenant_id', $tenantId)
             ->selectRaw('GREATEST(MAX(order_date), MAX(received_date), MAX(created_at)::date) AS d')->value('d');
 
+        // WP6.2: current positions exist before any rule asks for them.
+        app(\App\Services\Inventory\InventoryCurrentService::class)->ensure($tenantId);
+
         $this->clocks = [
             'sales'     => $cap(DB::table('sales_daily')->where('tenant_id', $tenantId)->max('date')),
             'inventory' => $cap(DB::table('inventory_levels')->where('tenant_id', $tenantId)->max('as_of_date')),
@@ -84,8 +87,8 @@ trait DetectsV2
     }
 
     /**
-     * Latest position per (store, SKU): the newest snapshot day, lots/bins on
-     * that day summed. A position whose newest day is more than
+     * Latest position per (store, SKU) from inventory_current (WP6.2: the
+     * newest snapshot day, lots/bins on that day summed). A position whose newest day is more than
      * detection.inventory_max_age_days older than the tenant's newest snapshot
      * has left the feed and is not judged.
      */
@@ -96,15 +99,9 @@ trait DetectsV2
         [$scopeSql, $scopeBind] = $this->scopeSql('sku');
 
         $rows = DB::cursor(
-            "SELECT DISTINCT ON (store_id, sku) store_id, sku, as_of_date, qty, rp, product_id, location
-             FROM (
-                SELECT store_id, sku, as_of_date, SUM(on_hand_qty) AS qty, MAX(reorder_point) AS rp,
-                       MAX(product_id) AS product_id, MAX(location) AS location
-                FROM inventory_levels
-                WHERE tenant_id = ? AND store_id IS NOT NULL AND as_of_date >= ?{$scopeSql}
-                GROUP BY store_id, sku, as_of_date
-             ) p
-             ORDER BY store_id, sku, as_of_date DESC",
+            "SELECT store_id, sku, as_of_date, on_hand_qty AS qty, reorder_point AS rp, product_id, location
+             FROM inventory_current
+             WHERE tenant_id = ? AND as_of_date >= ?{$scopeSql}",
             array_merge([$tenantId, $fresh], $scopeBind)
         );
 
@@ -476,70 +473,106 @@ trait DetectsV2
 
     // ── Inventory ────────────────────────────────────────────────────────────
 
-    /** Stock on hand (latest positions) for a SKU that sold nowhere in the window. */
+    /**
+     * Stock on hand (current positions) for a SKU that sold nowhere in the
+     * window. WP6.3: aggregated in SQL over inventory_current — only the dead
+     * SKUs come back, whatever the number of positions.
+     */
     private function detectDeadStockV2(int $tenantId, array $thresholds): void
     {
-        if ($this->storesWithSales === []) {
+        if (! $this->hasStoresWithSales($tenantId)) {
             return; // no sales feed in the window — silence is not evidence of dead stock
         }
         $w = Window::trailing($this->clock('sales'), (int) ($thresholds['days'] ?? 30));
-        $active = array_flip($w->apply(DB::table('sales_daily')->where('tenant_id', $tenantId))
-            ->where('units_sold', '>', 0)->distinct()->pluck('sku')->all());
 
-        $held = [];
-        foreach (($this->latestOnHand ?? []) as $k => $oh) {
-            if ($oh['qty'] <= 0) {
-                continue;
-            }
-            $sku = substr($k, strpos($k, '|') + 1);
-            $held[$sku]['qty']        = ($held[$sku]['qty'] ?? 0) + $oh['qty'];
-            $held[$sku]['stores']     = ($held[$sku]['stores'] ?? 0) + 1;
-            $held[$sku]['product_id'] = $held[$sku]['product_id'] ?? $oh['product_id'];
-        }
-
-        foreach ($held as $sku => $h) {
-            if (isset($active[$sku])) {
-                continue;
-            }
-            $value = $h['qty'] * $this->unitCost((string) $sku);
-            $this->flag($tenantId, 'dead_stock', 'low', (string) $sku, null, $h['product_id'],
-                "SKU {$sku} has " . round($h['qty']) . " units on hand across {$h['stores']} store(s)"
+        foreach ($this->unsoldHoldings($tenantId, $w) as $h) {
+            $value = (float) $h->qty * $this->unitCost((string) $h->sku);
+            $this->flag($tenantId, 'dead_stock', 'low', (string) $h->sku, null, $h->product_id,
+                "SKU {$h->sku} has " . round((float) $h->qty) . " units on hand across {$h->stores} store(s)"
                 . ($value > 0 ? ' (' . $this->money($value) . ')' : '') . " and no sales in the {$w->days()} days to {$w->lastDate()}.",
-                ['on_hand_qty' => $h['qty'], 'stores' => $h['stores'], 'days_without_sales' => $w->days(),
+                ['on_hand_qty' => (float) $h->qty, 'stores' => (int) $h->stores, 'days_without_sales' => $w->days(),
                  'inventory_value' => round($value, 2)]
             );
         }
     }
 
-    /** Out at one store, more than twice its reorder point at another — latest positions only. */
+    /**
+     * SKUs with stock on hand in fresh positions and no unit sold anywhere in
+     * the window: sku, qty, stores, product_id.
+     *
+     * @return iterable<object>
+     */
+    private function unsoldHoldings(int $tenantId, Window $w): iterable
+    {
+        [$scopeSql, $scopeBind] = $this->scopeSql('c.sku');
+
+        return DB::cursor(
+            "SELECT c.sku, SUM(c.on_hand_qty) AS qty, COUNT(*) AS stores, MAX(c.product_id) AS product_id
+               FROM inventory_current c
+              WHERE c.tenant_id = ? AND c.on_hand_qty > 0 AND c.as_of_date >= ?{$scopeSql}
+                AND NOT EXISTS (SELECT 1 FROM sales_daily s
+                                 WHERE s.tenant_id = c.tenant_id AND s.sku = c.sku
+                                   AND s.date >= ? AND s.date < ? AND s.units_sold > 0)
+              GROUP BY c.sku
+              ORDER BY c.sku",
+            array_merge([$tenantId, $this->inventoryFreshFrom()], $scopeBind, [$w->fromDate(), $w->untilDate()])
+        );
+    }
+
+    private function inventoryFreshFrom(): string
+    {
+        return $this->clock('inventory')->subDays((int) config('detection.inventory_max_age_days', 14))->format('Y-m-d');
+    }
+
+    /** Is any store in the sales feed over the demand window? (A cheap SQL check when the maps are not primed.) */
+    private function hasStoresWithSales(int $tenantId): bool
+    {
+        if ($this->storesWithSales !== []) {
+            return true;
+        }
+        $w = Window::trailing($this->clock('sales'), max(1, (int) ($this->demandWindowDays ?: 30)));
+
+        return $w->apply(DB::table('sales_daily')->where('tenant_id', $tenantId))->whereNotNull('store_id')->exists();
+    }
+
+    /**
+     * Out at one store, more than twice its reorder point at another — current
+     * positions only; a missing reorder point falls back to the derived one.
+     * WP6.3: one SQL pass over inventory_current, only imbalanced SKUs return.
+     */
     private function detectMultiLocationImbalanceV2(int $tenantId): void
     {
-        $acc = [];
-        foreach (($this->latestOnHand ?? []) as $k => $oh) {
-            $sku = substr($k, strpos($k, '|') + 1);
-            $rp  = $oh['reorder'];
-            $acc[$sku] ??= ['count' => 0, 'out' => null, 'over' => null, 'product_id' => $oh['product_id']];
-            $acc[$sku]['count']++;
+        [$scopeSql, $scopeBind] = $this->scopeSql('c.sku');
+        $hasRep = DB::getSchemaBuilder()->hasTable('sku_replenishment');
+        $rpSql  = $hasRep ? 'COALESCE(c.reorder_point, CASE WHEN r.reorder_point > 0 THEN r.reorder_point END)' : 'c.reorder_point';
+        $repJoin = $hasRep ? 'LEFT JOIN sku_replenishment r ON r.tenant_id = c.tenant_id AND r.store_id = c.store_id AND r.sku = c.sku' : '';
 
-            if (($oh['qty'] <= 0 || ($rp !== null && $oh['qty'] <= $rp))
-                && ($acc[$sku]['out'] === null || $oh['qty'] < $acc[$sku]['out']['qty'])) {
-                $acc[$sku]['out'] = ['loc' => $oh['location'], 'qty' => $oh['qty']];
-            }
-            if ($rp !== null && $rp > 0 && $oh['qty'] > $rp * 2
-                && ($acc[$sku]['over'] === null || $oh['qty'] > $acc[$sku]['over']['qty'])) {
-                $acc[$sku]['over'] = ['loc' => $oh['location'], 'qty' => $oh['qty']];
-            }
-        }
+        $rows = DB::cursor(
+            "WITH p AS (
+                SELECT c.sku, c.location, c.on_hand_qty AS q, c.product_id, {$rpSql} AS rp
+                  FROM inventory_current c {$repJoin}
+                 WHERE c.tenant_id = ? AND c.as_of_date >= ?{$scopeSql}
+             ), f AS (
+                SELECT p.*, (q <= 0 OR (rp IS NOT NULL AND q <= rp)) AS is_out, (rp > 0 AND q > rp * 2) AS is_over FROM p
+             )
+             SELECT sku, MAX(product_id) AS product_id,
+                    (ARRAY_AGG(location ORDER BY q ASC)  FILTER (WHERE is_out))[1]  AS out_loc,
+                    MIN(q) FILTER (WHERE is_out)  AS out_qty,
+                    (ARRAY_AGG(location ORDER BY q DESC) FILTER (WHERE is_over))[1] AS over_loc,
+                    MAX(q) FILTER (WHERE is_over) AS over_qty
+               FROM f
+              GROUP BY sku
+             HAVING COUNT(*) >= 2 AND BOOL_OR(is_out) AND BOOL_OR(is_over)
+              ORDER BY sku",
+            array_merge([$tenantId, $this->inventoryFreshFrom()], $scopeBind)
+        );
 
-        foreach ($acc as $sku => $a) {
-            if ($a['count'] < 2 || $a['out'] === null || $a['over'] === null) {
-                continue;
-            }
-            $this->flag($tenantId, 'multi_location_imbalance', 'medium', (string) $sku, null, $a['product_id'],
-                "SKU {$sku} is out at '{$a['out']['loc']}' while '{$a['over']['loc']}' holds " . round($a['over']['qty'])
+        foreach ($rows as $a) {
+            $this->flag($tenantId, 'multi_location_imbalance', 'medium', (string) $a->sku, null, $a->product_id,
+                "SKU {$a->sku} is out at '{$a->out_loc}' while '{$a->over_loc}' holds " . round((float) $a->over_qty)
                 . ' units — consider rebalancing.',
-                ['stocked_out_location' => $a['out']['loc'], 'overstocked_location' => $a['over']['loc'],
-                 'surplus_qty' => round($a['over']['qty']), 'stocked_out_qty' => $a['out']['qty']]
+                ['stocked_out_location' => $a->out_loc, 'overstocked_location' => $a->over_loc,
+                 'surplus_qty' => round((float) $a->over_qty), 'stocked_out_qty' => (float) $a->out_qty]
             );
         }
     }
@@ -553,61 +586,53 @@ trait DetectsV2
     {
         $days  = (int) ($thresholds['days'] ?? 90);
         $clock = $this->clock('inventory');
-        $fresh = $clock->copy()->subDays((int) config('detection.inventory_max_age_days', 14))->format('Y-m-d');
-        [$scopeSql, $scopeBind] = $this->scopeSql('sku');
-
-        $rows = DB::select(
-            "WITH s AS (
-                SELECT store_id, sku, as_of_date, MAX(reorder_point) AS rp
-                FROM inventory_levels
-                WHERE tenant_id = ? AND store_id IS NOT NULL AND as_of_date IS NOT NULL AND reorder_point > 0{$scopeSql}
-                GROUP BY store_id, sku, as_of_date
-             ), latest AS (
-                SELECT DISTINCT ON (store_id, sku) store_id, sku, as_of_date AS latest_date, rp
-                FROM s ORDER BY store_id, sku, as_of_date DESC
-             ), changed AS (
-                SELECT s.store_id, s.sku, MAX(s.as_of_date) AS last_other
-                FROM s JOIN latest l ON l.store_id = s.store_id AND l.sku = s.sku AND s.rp <> l.rp
-                GROUP BY s.store_id, s.sku
-             )
-             SELECT l.store_id, l.sku, l.rp, TO_CHAR(l.latest_date, 'YYYY-MM-DD') AS latest_date,
-                    TO_CHAR((SELECT MIN(s.as_of_date) FROM s
-                             WHERE s.store_id = l.store_id AND s.sku = l.sku
-                               AND s.as_of_date > COALESCE(c.last_other, DATE '1900-01-01')), 'YYYY-MM-DD') AS since
-             FROM latest l LEFT JOIN changed c ON c.store_id = l.store_id AND c.sku = l.sku
-             WHERE l.latest_date >= ?",
-            array_merge([$tenantId], $scopeBind, [$fresh])
-        );
-
         $staleBefore = $clock->copy()->subDays($days)->format('Y-m-d');
-        $stale = array_values(array_filter($rows, fn ($r) => $r->since !== null && $r->since <= $staleBefore
-            && ($this->recentDemand[$r->store_id . '|' . $r->sku] ?? 0) > 0)); // selling here → it matters now
+        [$scopeSql, $scopeBind] = $this->scopeSql('c.sku');
+        $demand = Window::trailing($this->clock('sales'), max(1, (int) ($this->demandWindowDays ?: 30)));
+
+        // WP6.3: from inventory_current (reorder_point_since is maintained per
+        // load), selling = sold at that store in the demand window — no history
+        // scan, no position map. Only stale positions come back.
+        $base = "FROM inventory_current c
+                 WHERE c.tenant_id = ? AND c.reorder_point > 0 AND c.as_of_date >= ?{$scopeSql}
+                   AND EXISTS (SELECT 1 FROM sales_daily s WHERE s.tenant_id = c.tenant_id AND s.store_id = c.store_id
+                                  AND s.sku = c.sku AND s.date >= ? AND s.date < ? AND s.units_sold > 0)";
+        $bind = array_merge([$tenantId, $this->inventoryFreshFrom()], $scopeBind, [$demand->fromDate(), $demand->untilDate()]);
+
+        $counts = DB::selectOne(
+            "SELECT COUNT(*) AS selling, COUNT(*) FILTER (WHERE c.reorder_point_since <= ?) AS stale {$base}",
+            array_merge([$staleBefore], $bind)
+        );
+        $selling = (int) $counts->selling;
+        $stale   = (int) $counts->stale;
+
+        $select = "SELECT c.store_id, c.sku, c.reorder_point AS rp, c.product_id, c.location,
+                          TO_CHAR(c.as_of_date, 'YYYY-MM-DD') AS latest_date, TO_CHAR(c.reorder_point_since, 'YYYY-MM-DD') AS since
+                   {$base} AND c.reorder_point_since <= ? ORDER BY c.store_id, c.sku";
 
         // When most reorder points are stale it is ONE process finding — reorder
         // points aren't being maintained — not thousands of items for the queue.
-        $selling = count(array_filter($rows, fn ($r) => ($this->recentDemand[$r->store_id . '|' . $r->sku] ?? 0) > 0));
         $maxItems = (int) ($thresholds['max_items'] ?? 50);
-        if (count($stale) > $maxItems && count($stale) >= 0.2 * max(1, $selling)) {
+        if ($stale > $maxItems && $stale >= 0.2 * max(1, $selling)) {
+            $examples = DB::select($select . ' LIMIT 10', array_merge($bind, [$staleBefore]));
             $this->flag($tenantId, 'reorder_point_staleness', 'medium', null, null, null,
-                count($stale) . " of {$selling} selling positions have kept the same reorder point for {$days}+ days — "
+                "{$stale} of {$selling} selling positions have kept the same reorder point for {$days}+ days — "
                 . 'reorder points look unmaintained. Review how they are set rather than item by item.',
-                ['positions_stale' => count($stale), 'positions_selling' => $selling, 'days' => $days,
-                 'examples' => array_map(fn ($r) => ['store_id' => (int) $r->store_id, 'sku' => $r->sku, 'since' => $r->since], array_slice($stale, 0, 10))],
+                ['positions_stale' => $stale, 'positions_selling' => $selling, 'days' => $days,
+                 'examples' => array_map(fn ($r) => ['store_id' => (int) $r->store_id, 'sku' => $r->sku, 'since' => $r->since], $examples)],
                 'reorder_points'
             );
 
             return;
         }
 
-        foreach ($stale as $r) {
-            $k = $r->store_id . '|' . $r->sku;
+        foreach (DB::cursor($select, array_merge($bind, [$staleBefore])) as $r) {
             $daysStale = (int) Carbon::parse($r->since)->diffInDays($clock, absolute: true);
-            $oh = $this->latestOnHand[$k] ?? null;
-            $this->flag($tenantId, 'reorder_point_staleness', 'low', $r->sku, (int) $r->store_id, $oh['product_id'] ?? null,
+            $this->flag($tenantId, 'reorder_point_staleness', 'low', $r->sku, (int) $r->store_id, $r->product_id,
                 "SKU {$r->sku} has kept a reorder point of " . round((float) $r->rp) . " since {$r->since} ({$daysStale} days) "
                 . 'while it keeps selling — check it still matches demand.',
                 ['reorder_point' => (float) $r->rp, 'unchanged_since' => $r->since, 'as_of_date' => $r->latest_date,
-                 'days_stale' => $daysStale, 'location' => $oh['location'] ?? null]
+                 'days_stale' => $daysStale, 'location' => $r->location]
             );
         }
     }
@@ -625,7 +650,7 @@ trait DetectsV2
                 SELECT store_id, sku, as_of_date, SUM(on_hand_qty) AS qty,
                        MAX(product_id) AS product_id, MAX(location) AS location
                 FROM inventory_levels
-                WHERE tenant_id = ? AND store_id IS NOT NULL AND as_of_date IS NOT NULL%s
+                WHERE tenant_id = ? AND store_id IS NOT NULL AND as_of_date >= ?%s
                 GROUP BY store_id, sku, as_of_date
             )";
     }
@@ -634,19 +659,19 @@ trait DetectsV2
     {
         $pct      = (float) ($thresholds['pct'] ?? 20);
         $minValue = (float) ($thresholds['min_value'] ?? self::DEFAULT_MIN_REVENUE);
-        $fresh    = $this->clock('inventory')->subDays((int) config('detection.inventory_max_age_days', 14))->format('Y-m-d');
+        $fresh    = $this->inventoryFreshFrom();
         $salesTo  = $this->clock('sales')->format('Y-m-d');
-        [$scopeSql, $scopeBind] = $this->scopeSql('sku');
+        [$scopeSql, $scopeBind] = $this->scopeSql('c.sku');
 
+        // WP6.3: the latest interval of each position is held on inventory_current
+        // (snapshot and the one before it) — no window over the whole history.
         $rows = DB::select(
-            'WITH ' . sprintf($this->shrinkPositionsCte(), $scopeSql) . ",
-             ranked AS (
-                SELECT pos.*, LEAD(qty) OVER w AS prev_qty, LEAD(as_of_date) OVER w AS prev_date, ROW_NUMBER() OVER w AS rn
-                FROM pos WINDOW w AS (PARTITION BY store_id, sku ORDER BY as_of_date DESC)
-             ),
-             drops AS (
-                SELECT * FROM ranked
-                WHERE rn = 1 AND prev_qty > 0 AND qty < prev_qty AND as_of_date >= ? AND as_of_date <= ?
+            "WITH drops AS (
+                SELECT c.store_id, c.sku, c.location, c.product_id, c.on_hand_qty AS qty, c.prev_on_hand_qty AS prev_qty,
+                       c.prev_as_of_date AS prev_date, c.as_of_date
+                  FROM inventory_current c
+                 WHERE c.tenant_id = ? AND c.prev_on_hand_qty > 0 AND c.on_hand_qty < c.prev_on_hand_qty
+                   AND c.as_of_date >= ? AND c.as_of_date <= ?{$scopeSql}
              )
              SELECT d.store_id, d.sku, d.location, d.product_id, d.qty AS latest_qty, d.prev_qty,
                     TO_CHAR(d.prev_date, 'YYYY-MM-DD') AS prev_date, TO_CHAR(d.as_of_date, 'YYYY-MM-DD') AS latest_date,
@@ -661,7 +686,7 @@ trait DetectsV2
                AND (d.prev_qty - COALESCE(sd.q, 0) - d.qty) / d.prev_qty * 100 >= ?
                AND EXISTS (SELECT 1 FROM sales_daily c WHERE c.tenant_id = ? AND c.store_id = d.store_id
                            AND c.date > d.prev_date AND c.date <= d.as_of_date)",
-            array_merge([$tenantId], $scopeBind, [$fresh, $salesTo, $tenantId, $pct, $tenantId])
+            array_merge([$tenantId, $fresh, $salesTo], $scopeBind, [$tenantId, $pct, $tenantId])
         );
 
         foreach ($rows as $row) {
@@ -715,7 +740,10 @@ trait DetectsV2
              ) s ON TRUE
              GROUP BY d.store_id, d.sku
              HAVING COUNT(*) FILTER (WHERE d.prev_qty - COALESCE(s.q, 0) - d.qty > 0) >= ?",
-            array_merge([$tenantId], $scopeBind, [$lookback->fromDate(), $lookback->untilDate(), $salesTo, $tenantId, $tenantId, $minIntervals])
+            // WP6.3: only snapshots from shortly before the lookback (the first
+            // interval needs the one before it), not the whole history.
+            array_merge([$tenantId, Carbon::parse($lookback->fromDate())->subDays(45)->format('Y-m-d')], $scopeBind,
+                [$lookback->fromDate(), $lookback->untilDate(), $salesTo, $tenantId, $tenantId, $minIntervals])
         );
 
         foreach ($rows as $r) {
@@ -1068,40 +1096,30 @@ trait DetectsV2
         }
     }
 
-    /** Stock value on hand now (latest positions) for SKUs with no sales in the window. */
+    /** Stock value on hand now (current positions) for SKUs with no sales in the window — WP6.3: in SQL. */
     private function detectSlowMovingCapitalV2(int $tenantId, array $thresholds): void
     {
-        if ($this->storesWithSales === []) {
+        if (! $this->hasStoresWithSales($tenantId)) {
             return;
         }
         $minValue = (float) ($thresholds['min_value'] ?? 1000);
         $w = Window::trailing($this->clock('sales'), (int) ($thresholds['days'] ?? 60));
-        $active = array_flip($w->apply(DB::table('sales_daily')->where('tenant_id', $tenantId))
-            ->where('units_sold', '>', 0)->distinct()->pluck('sku')->all());
 
-        $held = [];
-        foreach (($this->latestOnHand ?? []) as $k => $oh) {
-            if ($oh['qty'] > 0) {
-                $sku = substr($k, strpos($k, '|') + 1);
-                $held[$sku]['qty'] = ($held[$sku]['qty'] ?? 0) + $oh['qty'];
-                $held[$sku]['product_id'] = $held[$sku]['product_id'] ?? $oh['product_id'];
-            }
-        }
-
-        foreach ($held as $sku => $h) {
-            $sku = (string) $sku;
+        foreach ($this->unsoldHoldings($tenantId, $w) as $h) {
+            $sku  = (string) $h->sku;
+            $qty  = (float) $h->qty;
             $cost = $this->unitCost($sku);
-            if (isset($active[$sku]) || $cost <= 0) {
+            if ($cost <= 0) {
                 continue;
             }
-            $value = $h['qty'] * $cost;
+            $value = $qty * $cost;
             if ($value < $minValue) {
                 continue;
             }
-            $this->flag($tenantId, 'slow_moving_capital', 'medium', $sku, null, $h['product_id'],
-                "SKU {$sku} has " . $this->money($value) . ' tied up in stock on hand (' . round($h['qty']) . ' units × '
+            $this->flag($tenantId, 'slow_moving_capital', 'medium', $sku, null, $h->product_id,
+                "SKU {$sku} has " . $this->money($value) . ' tied up in stock on hand (' . round($qty) . ' units × '
                 . $this->money($cost) . ") with no sales in the {$w->days()} days to {$w->lastDate()}.",
-                ['on_hand_qty' => $h['qty'], 'unit_cost' => $cost, 'inventory_value' => round($value, 2), 'days_without_sales' => $w->days()]
+                ['on_hand_qty' => $qty, 'unit_cost' => $cost, 'inventory_value' => round($value, 2), 'days_without_sales' => $w->days()]
             );
         }
     }

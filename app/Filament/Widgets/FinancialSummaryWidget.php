@@ -8,6 +8,8 @@ use Filament\Widgets\Widget;
 
 class FinancialSummaryWidget extends Widget
 {
+    use \App\Filament\Widgets\Shared\CachesPerTenant;   // WP6.4
+
     protected string $view = 'filament.widgets.financial-summary-widget';
 
     protected int|string|array $columnSpan = 'full';
@@ -27,6 +29,6 @@ class FinancialSummaryWidget extends Widget
             ];
         }
 
-        return app(OutcomeService::class)->tenantSummary($tenantId);
+        return $this->cachedForTenant('summary', fn () => app(OutcomeService::class)->tenantSummary($tenantId));
     }
 }

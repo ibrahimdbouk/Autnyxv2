@@ -10,28 +10,28 @@ use Illuminate\Support\Carbon;
 
 class PoFulfillmentStatsWidget extends BaseStatsWidget
 {
+    use \App\Filament\Widgets\Shared\CachesPerTenant;
+
     protected function getStats(): array
     {
         $tenantId = Filament::getTenant()?->id;
 
-        $open = PurchaseOrder::where('tenant_id', $tenantId)
-            ->whereNull('received_date')
-            ->count();
+        // WP6.4: one pass over the tenant's POs (not five), cached for 2 minutes.
+        $f = $this->cachedForTenant('po', fn () => (array) PurchaseOrder::where('tenant_id', $tenantId)->selectRaw(
+            'COUNT(*) FILTER (WHERE received_date IS NULL) AS open,
+             COUNT(*) FILTER (WHERE received_date IS NULL AND expected_date < ?) AS overdue,
+             COUNT(*) FILTER (WHERE received_date >= ?) AS received_this_month,
+             COUNT(*) AS total,
+             COUNT(received_date) AS received',
+            [\App\Support\Tenancy\TenantClock::localDate($tenantId), \App\Support\Tenancy\TenantClock::localMonthStart($tenantId)]
+        )->toBase()->first());
 
-        $overdue = PurchaseOrder::where('tenant_id', $tenantId)
-            ->whereNull('received_date')
-            ->whereNotNull('expected_date')
-            ->where('expected_date', '<', \App\Support\Tenancy\TenantClock::localDate($tenantId))
-            ->count();
-
-        $receivedThisMonth = PurchaseOrder::where('tenant_id', $tenantId)
-            ->whereNotNull('received_date')
-            ->where('received_date', '>=', \App\Support\Tenancy\TenantClock::localMonthStart($tenantId))
-            ->count();
-
-        $total    = PurchaseOrder::where('tenant_id', $tenantId)->count();
-        $received = PurchaseOrder::where('tenant_id', $tenantId)->whereNotNull('received_date')->count();
-        $rate     = $total > 0 ? round(($received / $total) * 100) : 0;
+        $open              = (int) ($f['open'] ?? 0);
+        $overdue           = (int) ($f['overdue'] ?? 0);
+        $receivedThisMonth = (int) ($f['received_this_month'] ?? 0);
+        $total             = (int) ($f['total'] ?? 0);
+        $received          = (int) ($f['received'] ?? 0);
+        $rate              = $total > 0 ? round(($received / $total) * 100) : 0;
 
         return [
             Stat::make('Open Purchase Orders', number_format($open))

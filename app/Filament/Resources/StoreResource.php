@@ -50,6 +50,12 @@ class StoreResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            // WP6.4 (audit H30/H32): the newest sales day per store from the
+            // (tenant, store, date) index — not a count of every sales line.
+            ->modifyQueryUsing(fn (\Illuminate\Database\Eloquent\Builder $query) => $query->addSelect([
+                'last_sale_date' => \Illuminate\Support\Facades\DB::table('sales_daily')->selectRaw('MAX(date)')
+                    ->whereColumn('sales_daily.tenant_id', 'stores.tenant_id')->whereColumn('sales_daily.store_id', 'stores.id'),
+            ]))
             ->columns([
                 TextColumn::make('name')
                     ->searchable()
@@ -102,15 +108,15 @@ class StoreResource extends Resource
                     ->formatStateUsing(fn ($state) => static::money($state))
                     ->toggleable(isToggledHiddenByDefault: true),
 
-                TextColumn::make('sales_transactions_count')
-                    ->counts('salesTransactions')
-                    ->label('Sales Rows')
-                    ->alignCenter()
+                TextColumn::make('last_sale_date')
+                    ->label('Last sale')
+                    ->date()
+                    ->placeholder('—')
                     ->sortable(),
 
-                TextColumn::make('inventory_levels_count')
-                    ->counts('inventoryLevels')
-                    ->label('Inventory Rows')
+                TextColumn::make('current_positions_count')
+                    ->counts('currentPositions')
+                    ->label('Stock positions')
                     ->alignCenter()
                     ->sortable(),
             ])

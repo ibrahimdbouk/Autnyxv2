@@ -40,7 +40,7 @@ class NightlyChain
 
     /** Commands each step runs, with --tenant. */
     private const COMMANDS = [
-        'profiles' => ['sku:profile', 'stores:profile', 'replenishment:compute', 'clusters:rebuild'],
+        'profiles' => ['hierarchy:sync', 'sku:profile', 'stores:profile', 'replenishment:compute', 'clusters:rebuild'],
         'baselines' => ['baselines:compute'],
         'narrate'  => ['investigations:narrate'],
         'escalate' => ['investigations:escalate'],

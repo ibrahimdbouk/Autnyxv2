@@ -11,6 +11,7 @@ use App\Models\PurchaseOrder;
 use App\Models\SalesTransaction;
 use App\Models\SkuProfile;
 use App\Models\Store;
+use App\Services\Detection\Window;
 use App\Services\Recovery\LifecycleReconciler;
 use App\Support\Detection\ValueModel;
 use App\Support\Money;
@@ -341,6 +342,24 @@ class AnomalyDetectionService
      * @var array<string,int>
      */
     private array $emittedByRule = [];
+
+    /** @var array<string,array{ms:int,peak_mb:float,flags:int,ok:bool}> WP6.3: last run, per rule */
+    private array $ruleStats = [];
+
+    private static function bytes(string $v): int
+    {
+        $n = (int) $v;
+
+        return match (strtolower(substr(trim($v), -1))) {
+            'g' => $n * 1073741824, 'm' => $n * 1048576, 'k' => $n * 1024, default => $n,
+        };
+    }
+
+    /** @return array<string,array{ms:int,peak_mb:float,flags:int,ok:bool}> */
+    public function ruleStats(): array
+    {
+        return $this->ruleStats;
+    }
     private array $gatedByRule = [];
 
     /** Master switch for segment-based rule gating. */
@@ -529,6 +548,9 @@ class AnomalyDetectionService
         DB::table('sku_profiles')
             ->where('tenant_id', $tenantId)
             ->when($this->scope, fn ($q) => $this->scope->constrain($q))
+            // WP6.3: an unscoped v2 aggregate pass gates on the chain profiles
+            // only (store-level flags fall back to them) — not millions of rows.
+            ->when($this->v2 && $this->aggregateOnly, fn ($q) => $q->where('store_id', 0))
             ->select(['store_id', 'sku', 'segment'])
             ->cursor()
             ->each(function ($p) {
@@ -695,6 +717,60 @@ class AnomalyDetectionService
     }
 
     /**
+     * v2 evaluability (WP6.3): the same families and rules as evaluabilityFor(),
+     * but each family's "was its input present?" is answered in SQL for the
+     * rule's live anomalies only:
+     *   inventory / capital — a fresh current position (store-level anomaly: that
+     *     store's; SKU-level: any store's);
+     *   demand / financial-sales — the SKU sold (any store) in the demand window;
+     *   cost — the SKU has PO cost data.
+     */
+    private function evaluabilityV2(int $tenantId, string $ruleType, array $costSkus): \Closure
+    {
+        $isInventory = in_array($ruleType, self::INVENTORY_COVERAGE, true);
+        $isCapital   = in_array($ruleType, self::CAPITAL_COVERAGE, true);
+        $isDemand    = in_array($ruleType, self::DEMAND_COVERAGE, true) || in_array($ruleType, self::FIN_SALES_COVERAGE, true);
+        $isCost      = in_array($ruleType, self::COST_COVERAGE, true);
+
+        if (! $isInventory && ! $isCapital && ! $isDemand && ! $isCost) {
+            return fn (Anomaly $a): bool => true;
+        }
+        if ($isCost) {
+            return fn (Anomaly $a): bool => $a->sku === null || isset($costSkus[trim($a->sku)]);
+        }
+
+        $live = "a.tenant_id = ? AND a.rule_type = ? AND a.dismissed_at IS NULL AND a.lifecycle_state <> 'resolved' AND a.sku IS NOT NULL";
+        [$scopeSql, $scopeBind] = $this->scopeSql('a.sku');
+        $covered = [];
+
+        if ($isInventory || $isCapital) {
+            $fresh = $this->inventoryFreshFrom();
+            foreach (DB::select(
+                "SELECT a.store_id, a.sku FROM anomalies a
+                  WHERE {$live}{$scopeSql}
+                    AND EXISTS (SELECT 1 FROM inventory_current c WHERE c.tenant_id = a.tenant_id AND c.sku = a.sku
+                                   AND c.as_of_date >= ? AND (a.store_id IS NULL OR c.store_id = a.store_id))",
+                array_merge([$tenantId, $ruleType], $scopeBind, [$fresh])
+            ) as $r) {
+                $covered[($r->store_id ?? '') . '|' . $r->sku] = true;
+            }
+            return fn (Anomaly $a): bool => $a->sku === null || isset($covered[($a->store_id ?? '') . '|' . $a->sku]);
+        }
+
+        $w = Window::trailing($this->clock('sales'), max(1, $this->demandWindowDays));
+        foreach (DB::select(
+            "SELECT DISTINCT a.sku FROM anomalies a
+              WHERE {$live}{$scopeSql}
+                AND EXISTS (SELECT 1 FROM sales_daily s WHERE s.tenant_id = a.tenant_id AND s.sku = a.sku AND s.date >= ? AND s.date < ?)",
+            array_merge([$tenantId, $ruleType], $scopeBind, [$w->fromDate(), $w->untilDate()])
+        ) as $r) {
+            $covered[$r->sku] = true;
+        }
+
+        return fn (Anomaly $a): bool => $a->sku === null || isset($covered[$a->sku]);
+    }
+
+    /**
      * Recovery lifecycle (R2b): a per-subject confirmation resolver the reconciler
      * uses to decide how many consecutive healthy runs confirm recovery. Keys off
      * the SKU's demand segment (from the primed profiles) — intermittent/lumpy
@@ -723,12 +799,21 @@ class AnomalyDetectionService
      * Existing open anomalies are upserted (investigation fields preserved); a
      * subject that stops failing is advanced through the recovery lifecycle (R2).
      */
-    public function runForTenant(int $tenantId, ?\App\Services\Detection\RunScope $scope = null, bool $aggregateOnly = false): void
+    /**
+     * @param  bool  $bucketed  WP6.3: this pass is one part of a full run split
+     *                          by SKU bucket (scope = one bucket, or the final
+     *                          aggregate pass), not an incremental run — the
+     *                          aggregate pass then does not re-run the absence
+     *                          rules, which every bucket already ran.
+     */
+    public function runForTenant(int $tenantId, ?\App\Services\Detection\RunScope $scope = null, bool $aggregateOnly = false, bool $bucketed = false): void
     {
         // Set per call (each call overwrites), so a subsequent run on a reused
         // instance is never accidentally scoped. null scope = full scan.
         $this->scope         = $scope;
         $this->aggregateOnly = $aggregateOnly;
+        $this->ruleStats     = [];
+        $this->episodes      = [];
 
         AnomalySetting::seedForTenant($tenantId);
 
@@ -744,7 +829,11 @@ class AnomalyDetectionService
         }
         // Headroom for large tenants; the detectors below are written to stream,
         // so this is a safety margin, not a crutch.
-        @ini_set('memory_limit', '768M');
+        // (Only ever raised, never lowered below what the process was given.)
+        $limit = (string) ini_get('memory_limit');
+        if ($limit !== '-1' && self::bytes($limit) < 768 * 1048576) {
+            @ini_set('memory_limit', '768M');
+        }
         // Tenant currency (display-only): every money figure in a description is
         // labelled with it, so alerts read "AED 4,000 at risk" not "$4,000".
         $this->currency = Money::normalize(
@@ -779,14 +868,27 @@ class AnomalyDetectionService
             $t('phantom_inventory')['days']   ?? 30,
             $t('overstock')['lookback_days']  ?? 30,
         );
-        if ($this->v2) {
+        if ($this->v2 && $aggregateOnly) {
+            // WP6.3: no rule of an aggregate pass reads the per-position maps
+            // (the inventory rules that aggregate positions run in SQL), so a
+            // big tenant's millions of positions are never loaded here.
+            app(\App\Services\Inventory\InventoryCurrentService::class)->ensure($tenantId);
+            $this->latestOnHand = [];
+            $this->recentDemand = [];
+            $this->storesWithSales = [];
+            $this->demandWindowDays = max(1, $demandWindow);
+        } elseif ($this->v2) {
             $this->primeInventorySnapshotV2($tenantId);
             $this->primeRecentDemandV2($tenantId, $demandWindow);
         } else {
             $this->primeInventorySnapshot($tenantId);
             $this->primeRecentDemand($tenantId, $demandWindow);
         }
-        $this->primeReplenishment($tenantId); // B4: derived reorder points (after snapshot)
+        if (! ($this->v2 && $aggregateOnly)) {
+            $this->primeReplenishment($tenantId); // B4: derived reorder points (after snapshot)
+        } else {
+            $this->replenishment = [];
+        }
         $this->primeSkuSegments($tenantId);
         $this->primeCostCoverage($tenantId);  // R2c: cost_spike evaluability signal
 
@@ -848,7 +950,9 @@ class AnomalyDetectionService
         // stale-sweep. A subject that stops failing is now advanced through
         // clearing → resolved (so recovery can be MEASURED) instead of deleted.
         $reconciler = new LifecycleReconciler();
-        [$invPairs, $invSkus, $demPairs, $demSkus, $costSkus] = $this->buildCoverageSets();
+        // v2 (WP6.3): evaluability is asked of the database per rule, for that
+        // rule's live anomalies only — no tenant-wide position sets in memory.
+        [$invPairs, $invSkus, $demPairs, $demSkus, $costSkus] = $this->v2 ? [[], [], [], [], $this->poCostSkus ?? []] : $this->buildCoverageSets();
         $confirmRunsFor = $this->confirmRunsResolver();
 
         // Data-quality readiness contract: skip rules whose dataset's latest batch is
@@ -881,12 +985,18 @@ class AnomalyDetectionService
             // M20): rules that fire on ABSENCE (a SKU that stopped selling writes
             // no new rows, so it is never "dirty") also run here, on everything.
             if ($this->aggregateOnly && in_array($ruleType, self::INCREMENTAL_RULES, true)
-                && ! ($this->v2 && in_array($ruleType, self::ABSENCE_RULES, true))) {
+                && ($bucketed || ! ($this->v2 && in_array($ruleType, self::ABSENCE_RULES, true)))) {
                 continue;
             }
 
             $this->touchedAnomalyIds = [];
             $succeeded = false;
+            // WP6.3: per-rule cost, so a rule that does not scale is visible.
+            $t0 = hrtime(true);
+            $emittedBefore = $this->emittedByRule[$ruleType] ?? 0;
+            if (function_exists('memory_reset_peak_usage')) {
+                memory_reset_peak_usage();
+            }
 
             try {
                 $detector();
@@ -908,10 +1018,25 @@ class AnomalyDetectionService
                     $tenantId,
                     $ruleType,
                     $this->touchedAnomalyIds,
-                    $this->evaluabilityFor($ruleType, $invPairs, $invSkus, $demPairs, $demSkus, $costSkus),
+                    $this->v2
+                        ? $this->evaluabilityV2($tenantId, $ruleType, $costSkus)
+                        : $this->evaluabilityFor($ruleType, $invPairs, $invSkus, $demPairs, $demSkus, $costSkus),
                     $confirmRunsFor,
+                    null,
+                    $this->scope,
                 );
             }
+
+            $this->ruleStats[$ruleType] = [
+                'ms'      => (int) round((hrtime(true) - $t0) / 1e6),
+                'peak_mb' => round(memory_get_peak_usage(true) / 1048576, 1),
+                'flags'   => ($this->emittedByRule[$ruleType] ?? 0) - $emittedBefore,
+                'ok'      => $succeeded,
+            ];
+        }
+        $slow = array_filter($this->ruleStats, fn ($s) => $s['ms'] >= 30000);
+        if ($slow !== []) {
+            Log::warning('[detect] slow rules', ['tenant_id' => $tenantId, 'rules' => $slow]);
         }
 
         if ($this->gatingActive) {
@@ -2743,7 +2868,8 @@ class AnomalyDetectionService
             ->where('date', '>=', $recentDate)
             ->whereNotNull('unit_price')
             ->where('unit_price', '>', 0)
-            ->whereIn('sku', $products->keys())
+            // WP6.3 (audit H31): a subquery, not a bound list (65,535-parameter limit).
+            ->whereIn('sku', Product::where('tenant_id', $tenantId)->where('unit_cost', '>', 0)->select('sku'))
             ->select(['sku', 'unit_price', 'store_id', 'product_id'])
             ->cursor()
             ->each(function ($tx) use (&$state, $products) {
@@ -2846,7 +2972,8 @@ class AnomalyDetectionService
         // loading every inventory row into memory.
         $inventory = InventoryLevel::where('tenant_id', $tenantId)
             ->where('on_hand_qty', '>', 0)
-            ->whereIn('sku', $products->keys())
+            // WP6.3 (audit H31): a subquery, not a bound list (65,535-parameter limit).
+            ->whereIn('sku', Product::where('tenant_id', $tenantId)->where('unit_cost', '>', 0)->select('sku'))
             ->selectRaw('sku, SUM(on_hand_qty) as total_qty, MAX(product_id) as product_id')
             ->groupBy('sku')
             ->get();
@@ -3008,20 +3135,37 @@ class AnomalyDetectionService
         }
     }
 
+    /**
+     * SKUs in recent sales (90 days) or current stock that the product master
+     * does not know. WP6.3 (audit H31): answered in SQL — it used to pluck
+     * every sales line's SKU into memory (the biggest single allocation of a
+     * run). Sales come from the 90-day profiles when present, else sales_daily.
+     */
     private function detectSkuMasterDrift(int $tenantId): void
     {
-        $knownSkus = Product::where('tenant_id', $tenantId)->pluck('sku')->unique();
+        $since = $this->analysisDate()->subDays(90)->format('Y-m-d');
+        $profiled = DB::table('sku_profiles')->where('tenant_id', $tenantId)->where('store_id', 0)->exists();
+        $sales = $profiled
+            ? "SELECT DISTINCT trim(sku) AS sku, 'sales' AS src FROM sku_profiles WHERE tenant_id = ? AND store_id = 0 AND total_units <> 0"
+            : "SELECT DISTINCT trim(sku) AS sku, 'sales' AS src FROM sales_daily WHERE tenant_id = ? AND date >= '{$since}'";
+        $inventory = DB::getSchemaBuilder()->hasTable('inventory_current')
+            ? "SELECT DISTINCT trim(sku), 'inventory' FROM inventory_current WHERE tenant_id = ?"
+            : "SELECT DISTINCT trim(sku), 'inventory' FROM inventory_levels WHERE tenant_id = ?";
 
-        $salesSkus     = SalesTransaction::where('tenant_id', $tenantId)->pluck('sku')->unique();
-        $inventorySkus = InventoryLevel::where('tenant_id', $tenantId)->pluck('sku')->unique();
-        $allDataSkus   = $salesSkus->merge($inventorySkus)->unique();
+        $rows = DB::cursor(
+            "SELECT d.sku, BOOL_OR(d.src = 'sales') AS in_sales, BOOL_OR(d.src = 'inventory') AS in_inventory
+               FROM ({$sales} UNION ALL {$inventory}) d
+              WHERE d.sku IS NOT NULL AND d.sku <> ''
+                AND NOT EXISTS (SELECT 1 FROM products p WHERE p.tenant_id = ? AND p.sku = d.sku)
+              GROUP BY d.sku ORDER BY d.sku",
+            [$tenantId, $tenantId, $tenantId]
+        );
 
-        foreach ($allDataSkus->diff($knownSkus) as $sku) {
-            $inSales     = $salesSkus->contains($sku);
-            $inInventory = $inventorySkus->contains($sku);
-            $sources     = array_values(array_filter([
-                $inSales     ? 'sales' : null,
-                $inInventory ? 'inventory' : null,
+        foreach ($rows as $r) {
+            $sku     = (string) $r->sku;
+            $sources = array_values(array_filter([
+                $r->in_sales     ? 'sales' : null,
+                $r->in_inventory ? 'inventory' : null,
             ]));
 
             $this->flag($tenantId, 'sku_master_drift', 'low', $sku, null, null,
@@ -3286,11 +3430,7 @@ class AnomalyDetectionService
         }
         $key = \App\Services\Recovery\AnomalyIdentity::key($tenantId, $ruleType, $storeId, $sku, $context['subject'] ?? null);
 
-        $latest = Anomaly::where('tenant_id', $tenantId)
-            ->where('identity_key', $key)
-            ->orderByDesc('episode_seq')
-            ->orderByDesc('id')
-            ->first();
+        $latest = $this->latestEpisode($tenantId, $ruleType, $key);
 
         if ($latest && $latest->dismissed_at !== null
             && $latest->dismiss_reason !== AnomalyDismissal::REASON_SUPERSEDED
@@ -3322,6 +3462,9 @@ class AnomalyDetectionService
             $anomaly = $latest;
         } else {
             $anomaly = Anomaly::create([
+                // The prior episode is already known (WP6.3) — no second lookup at insert.
+                'previous_episode_id' => $latest?->id,
+                'episode_seq'  => $latest ? (int) $latest->episode_seq + 1 : 1,
                 'tenant_id'    => $tenantId,
                 'rule_type'    => $ruleType,
                 'severity'     => $severity,
@@ -3340,6 +3483,45 @@ class AnomalyDetectionService
         }
 
         $this->touchedAnomalyIds[] = $anomaly->id;
+        $this->episodes[$ruleType][$key] = $anomaly;
+    }
+
+    /** @var array<string,array<string,Anomaly>> rule => identity => latest episode (WP6.3, per run) */
+    private array $episodes = [];
+
+    /**
+     * The latest episode of an identity. The first flag of a rule loads that
+     * rule's latest episodes for the tenant (within the run's scope) in one
+     * query; every later flag of the rule reads the map. WP6.3 (audit H31):
+     * one query per rule, not one per flag.
+     */
+    private function latestEpisode(int $tenantId, string $ruleType, string $key): ?Anomaly
+    {
+        if (! isset($this->episodes[$ruleType])) {
+            $this->episodes[$ruleType] = [];
+            Anomaly::where('tenant_id', $tenantId)->where('rule_type', $ruleType)
+                ->when($this->scope, fn ($q) => $this->scope->constrain($q))
+                ->whereIn('id', function ($q) use ($tenantId, $ruleType) {
+                    $q->from('anomalies')->selectRaw('DISTINCT ON (identity_key) id')
+                        ->where('tenant_id', $tenantId)->where('rule_type', $ruleType)
+                        ->orderBy('identity_key')->orderByDesc('episode_seq')->orderByDesc('id');
+                })
+                // What flagV2() reads and writes — not the whole row.
+                ->select(['id', 'tenant_id', 'rule_type', 'sku', 'store_id', 'product_id', 'identity_key', 'episode_seq',
+                    'severity', 'context', 'dismissed_at', 'dismiss_reason', 'lifecycle_state'])
+                ->cursor()
+                ->each(function (Anomaly $a) use ($ruleType) {
+                    $this->episodes[$ruleType][$a->identity_key] = $a;
+                });
+        }
+        if (array_key_exists($key, $this->episodes[$ruleType])) {
+            return $this->episodes[$ruleType][$key];
+        }
+
+        // Not among this rule's episodes (e.g. a SKU-less subject outside the
+        // scope, or an identity another rule shares): ask directly.
+        return $this->episodes[$ruleType][$key] = Anomaly::where('tenant_id', $tenantId)
+            ->where('identity_key', $key)->orderByDesc('episode_seq')->orderByDesc('id')->first();
     }
 
     private const SEVERITY_RANK = [Anomaly::SEVERITY_LOW => 1, Anomaly::SEVERITY_MEDIUM => 2, Anomaly::SEVERITY_HIGH => 3];

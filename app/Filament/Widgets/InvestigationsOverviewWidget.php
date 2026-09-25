@@ -8,6 +8,8 @@ use Filament\Widgets\Widget;
 
 class InvestigationsOverviewWidget extends Widget
 {
+    use \App\Filament\Widgets\Shared\CachesPerTenant;   // WP6.4
+
     protected string $view = 'filament.widgets.investigations-overview-widget';
 
     protected int|string|array $columnSpan = 'full';
@@ -29,6 +31,11 @@ class InvestigationsOverviewWidget extends Widget
             ];
         }
 
+        return $this->cachedForTenant('overview', fn () => $this->figures($tenantId));
+    }
+
+    private function figures(int $tenantId): array
+    {
         $base = Investigation::where('tenant_id', $tenantId);
 
         $open       = (clone $base)->where('status', Investigation::STATUS_OPEN)->count();

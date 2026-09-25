@@ -58,17 +58,24 @@ class PurgeOldDataCommand extends Command
             }
 
             $cutoff = Carbon::now()->subDays($days);
+            $where  = $cfg['where'] ?? null;
 
             if ($dry) {
-                $count = DB::table($table)->whereNotNull($column)->where($column, '<', $cutoff)->count();
+                $count = DB::table($table)->whereNotNull($column)->where($column, '<', $cutoff)
+                    ->when($where, fn ($q) => $q->whereRaw($where))->count();
                 $this->line("• {$table}: would delete " . number_format($count) . " row(s) older than {$cutoff->toDateString()} ({$days}d)");
                 $grandTotal += $count;
                 continue;
             }
 
-            $deleted = $this->purge($table, $column, $cutoff, $chunk);
+            $deleted = $this->purge($table, $column, $cutoff, $chunk, $where);
             $grandTotal += $deleted;
             $this->info("• {$table}: deleted " . number_format($deleted) . " row(s) older than {$cutoff->toDateString()} ({$days}d)");
+        }
+
+        if ($only === null) {
+            $files = $this->purgeImportFiles($dry);
+            $this->line('• import files: ' . ($dry ? 'would delete ' : 'deleted ') . number_format($files));
         }
 
         $verb = $dry ? 'would delete' : 'deleted';
@@ -79,29 +86,69 @@ class PurgeOldDataCommand extends Command
     }
 
     /**
-     * Batch-delete via an id sub-select — portable (Postgres has no DELETE …
-     * LIMIT) and bounded so each statement is small.
+     * Batch-delete in bounded statements. WP6.6 (audit M24): tenant by tenant,
+     * so each batch walks a (tenant_id, date) index instead of the whole table;
+     * tables without a tenant (notifications) are purged platform-wide.
      */
-    private function purge(string $table, string $column, Carbon $cutoff, int $chunk): int
+    private function purge(string $table, string $column, Carbon $cutoff, int $chunk, ?string $where): int
     {
         $total = 0;
+        $extra = $where ? " AND ({$where})" : '';
+        $tenants = Schema::hasColumn($table, 'tenant_id')
+            ? DB::table('tenants')->orderBy('id')->pluck('id')->all()
+            : [null];
+        $pg = DB::getDriverName() === 'pgsql';
 
-        do {
-            $deleted = DB::delete(
-                "DELETE FROM {$table} WHERE id IN ("
-                . "SELECT id FROM {$table} WHERE {$column} IS NOT NULL AND {$column} < ? LIMIT {$chunk}"
-                . ')',
-                [$cutoff]
-            );
+        foreach ($tenants as $tenantId) {
+            $scope = $tenantId !== null ? 'tenant_id = ? AND ' : '';
+            $bind  = $tenantId !== null ? [$tenantId, $cutoff] : [$cutoff];
+            do {
+                $pick = "SELECT %s FROM {$table} WHERE {$scope}{$column} IS NOT NULL AND {$column} < ?{$extra} LIMIT {$chunk}";
+                $deleted = DB::delete($pg
+                    ? "DELETE FROM {$table} WHERE ctid = ANY(ARRAY(" . sprintf($pick, 'ctid') . '))'
+                    : "DELETE FROM {$table} WHERE id IN (" . sprintf($pick, 'id') . ')',
+                    $bind
+                );
+                $total += $deleted;
 
-            $total += $deleted;
-
-            // Breathe between large batches so we don't monopolise the DB.
-            if ($deleted > 0) {
-                usleep(50_000); // 50ms
-            }
-        } while ($deleted > 0);
+                // Breathe between large batches so we don't monopolise the DB.
+                if ($deleted > 0) {
+                    usleep(50_000); // 50ms
+                }
+            } while ($deleted > 0);
+        }
 
         return $total;
+    }
+
+    /** WP6.6: the stored file of a finished import, once it is older than the window (the rows stay). */
+    private function purgeImportFiles(bool $dry): int
+    {
+        $days = (int) config('retention.import_files_days', 90);
+        if ($days <= 0 || ! Schema::hasColumn('imports', 'file_purged_at')) {
+            return 0;
+        }
+        $q = DB::table('imports')->whereNotNull('path')->whereNull('file_purged_at')
+            ->where('created_at', '<', Carbon::now()->subDays($days))
+            ->whereIn('status', ['completed', 'completed_with_errors', 'failed', 'rolled_back', 'abandoned', 'duplicate']);
+        if ($dry) {
+            return $q->count();
+        }
+
+        $n = 0;
+        $q->orderBy('id')->select(['id', 'disk', 'path'])->chunkById(500, function ($rows) use (&$n) {
+            foreach ($rows as $i) {
+                try {
+                    \Illuminate\Support\Facades\Storage::disk($i->disk ?: 'local')->delete($i->path);
+                } catch (\Throwable $e) {
+                    report($e);
+                    continue;
+                }
+                DB::table('imports')->where('id', $i->id)->update(['file_purged_at' => now()]);
+                $n++;
+            }
+        });
+
+        return $n;
     }
 }

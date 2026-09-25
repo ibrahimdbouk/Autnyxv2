@@ -39,30 +39,31 @@ class RunScope
      */
     public static function forTenant(int $tenantId, int $maxSkus): ?self
     {
-        $dirty      = DetectionDirtyKey::where('tenant_id', $tenantId)->get(['id', 'sku']);
-        $maxDirtyId = (int) ($dirty->max('id') ?? 0);
+        $maxDirtyId = (int) (DetectionDirtyKey::where('tenant_id', $tenantId)->max('id') ?? 0);
 
-        $openSkus = Anomaly::where('tenant_id', $tenantId)
-            ->whereIn('lifecycle_state', [
-                Anomaly::LIFECYCLE_OPEN,
-                Anomaly::LIFECYCLE_PERSISTING,
-                Anomaly::LIFECYCLE_CLEARING,
-            ])
-            ->pluck('sku');
+        // WP6.3 (audit H31): the union is computed in SQL and read only up to
+        // the limit — a big import's millions of dirty keys never come to PHP.
+        $rows = \Illuminate\Support\Facades\DB::select(
+            "SELECT s FROM (
+                SELECT trim(sku) AS s FROM detection_dirty_keys WHERE tenant_id = ? AND id <= ?
+                UNION
+                SELECT trim(sku) AS s FROM anomalies WHERE tenant_id = ? AND lifecycle_state IN (?, ?, ?)
+             ) u WHERE s IS NOT NULL AND s <> '' LIMIT " . ($maxSkus + 1),
+            [$tenantId, $maxDirtyId, $tenantId, Anomaly::LIFECYCLE_OPEN, Anomaly::LIFECYCLE_PERSISTING, Anomaly::LIFECYCLE_CLEARING]
+        );
 
-        $skus = $dirty->pluck('sku')
-            ->merge($openSkus)
-            ->filter(fn ($s) => $s !== null && $s !== '')
-            ->map(fn ($s) => trim((string) $s))
-            ->unique()
-            ->values()
-            ->all();
-
-        if (count($skus) > $maxSkus) {
+        if (count($rows) > $maxSkus) {
             return null; // too broad — a full run is cheaper and safer
         }
+        $skus = array_map(fn ($r) => (string) $r->s, $rows);
 
         return new self($skus, $maxDirtyId);
+    }
+
+    /** WP6.3: one SKU bucket of a full run (no dirty keys consumed). */
+    public static function ofSkus(array $skus): self
+    {
+        return new self(array_values(array_unique(array_map(fn ($s) => trim((string) $s), $skus))), 0);
     }
 
     public function isEmpty(): bool
@@ -93,7 +94,8 @@ class RunScope
             return $query->whereRaw('1 = 0');
         }
 
-        return $query->whereIn($skuColumn, $this->skus);
+        // One array parameter, not one per SKU (65,535-parameter limit).
+        return $query->whereRaw("{$skuColumn} = ANY(?::text[])", [self::pgArray($this->skus)]);
     }
 
     /**
@@ -109,8 +111,15 @@ class RunScope
             return [' AND 1 = 0', []];
         }
 
-        $placeholders = implode(', ', array_fill(0, count($this->skus), '?'));
+        return [" AND {$skuColumn} = ANY(?::text[])", [self::pgArray($this->skus)]];
+    }
 
-        return [" AND {$skuColumn} IN ({$placeholders})", $this->skus];
+    /** A PostgreSQL text[] literal: every element quoted, quotes and backslashes escaped. */
+    public static function pgArray(array $values): string
+    {
+        return '{' . implode(',', array_map(
+            fn ($v) => '"' . str_replace(['\\', '"'], ['\\\\', '\\"'], (string) $v) . '"',
+            $values
+        )) . '}';
     }
 }

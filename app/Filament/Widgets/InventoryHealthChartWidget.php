@@ -27,45 +27,25 @@ class InventoryHealthChartWidget extends BaseChartWidget
     {
         $tenantId = Filament::getTenant()?->id;
 
-        // Try to group by location string first
-        $hasLocations = InventoryLevel::where('tenant_id', $tenantId)
-            ->whereNotNull('location')
-            ->exists();
+        // WP6.2: current positions per store (lots summed) — history rows would
+        // count every past snapshot as stock.
+        $rows = DB::table('inventory_current as c')
+            ->leftJoin('stores as s', 's.id', '=', 'c.store_id')
+            ->where('c.tenant_id', $tenantId)
+            ->select(
+                'c.store_id',
+                DB::raw('MAX(s.name) as store_name'),
+                DB::raw("SUM(CASE WHEN c.on_hand_qty <= 0 THEN 1 ELSE 0 END) as stockout"),
+                DB::raw("SUM(CASE WHEN c.on_hand_qty > 0 AND c.reorder_point > 0 AND c.on_hand_qty <= c.reorder_point THEN 1 ELSE 0 END) as at_risk"),
+                DB::raw("SUM(CASE WHEN c.on_hand_qty > 0 AND (c.reorder_point IS NULL OR c.reorder_point <= 0 OR c.on_hand_qty > c.reorder_point) THEN 1 ELSE 0 END) as healthy"),
+                DB::raw('COUNT(*) as total')
+            )
+            ->groupBy('c.store_id')
+            ->orderByDesc('total')
+            ->limit(10)
+            ->get();
 
-        if ($hasLocations) {
-            $rows = InventoryLevel::where('tenant_id', $tenantId)
-                ->whereNotNull('location')
-                ->select(
-                    'location',
-                    DB::raw("SUM(CASE WHEN on_hand_qty <= 0 THEN 1 ELSE 0 END) as stockout"),
-                    DB::raw("SUM(CASE WHEN on_hand_qty > 0 AND reorder_point IS NOT NULL AND on_hand_qty <= reorder_point THEN 1 ELSE 0 END) as at_risk"),
-                    DB::raw("SUM(CASE WHEN on_hand_qty > 0 AND (reorder_point IS NULL OR on_hand_qty > reorder_point) THEN 1 ELSE 0 END) as healthy"),
-                    DB::raw('COUNT(*) as total')
-                )
-                ->groupBy('location')
-                ->orderByDesc('total')
-                ->limit(10)
-                ->get();
-
-            $labels = $rows->pluck('location')->toArray();
-        } else {
-            // Fall back to store_id grouping
-            $rows = InventoryLevel::where('tenant_id', $tenantId)
-                ->whereNotNull('store_id')
-                ->select(
-                    'store_id',
-                    DB::raw("SUM(CASE WHEN on_hand_qty <= 0 THEN 1 ELSE 0 END) as stockout"),
-                    DB::raw("SUM(CASE WHEN on_hand_qty > 0 AND reorder_point IS NOT NULL AND on_hand_qty <= reorder_point THEN 1 ELSE 0 END) as at_risk"),
-                    DB::raw("SUM(CASE WHEN on_hand_qty > 0 AND (reorder_point IS NULL OR on_hand_qty > reorder_point) THEN 1 ELSE 0 END) as healthy"),
-                    DB::raw('COUNT(*) as total')
-                )
-                ->groupBy('store_id')
-                ->orderByDesc('total')
-                ->limit(10)
-                ->get();
-
-            $labels = $rows->pluck('store_id')->map(fn ($id) => "Store {$id}")->toArray();
-        }
+        $labels = $rows->map(fn ($r) => $r->store_name ?: "Store {$r->store_id}")->toArray();
 
         if ($rows->isEmpty()) {
             return [

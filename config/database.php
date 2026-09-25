@@ -94,6 +94,10 @@ return [
         'update_date_on_publish' => true,
     ],
 
+    // WP6.1: the longest a migration statement waits for a table lock before
+    // failing (see docs/migrations.md).
+    'migration_lock_timeout' => env('DB_MIGRATION_LOCK_TIMEOUT', '10s'),
+
     'redis' => [
 
         'client' => env('REDIS_CLIENT', 'phpredis'),

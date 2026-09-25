@@ -29,6 +29,17 @@ return [
     'max_union_skus' => (int) env('DETECTION_MAX_UNION_SKUS', 20000),
 
     /*
+    | WP6.3: a v2 tenant with more (store × SKU) positions than this is scanned
+    | in SKU buckets of about this many positions each, so a run's memory is
+    | bounded by the bucket, not the tenant.
+    */
+
+    'bucket_positions' => (int) env('DETECTION_BUCKET_POSITIONS', 250000),
+
+    /* WP6.3: seconds a run spends linking new anomalies to investigations before leaving the rest to the next run. */
+    'correlation_budget_seconds' => (int) env('DETECTION_CORRELATION_BUDGET', 1200),
+
+    /*
     |--------------------------------------------------------------------------
     | Import-triggered (async) detection mode
     |--------------------------------------------------------------------------

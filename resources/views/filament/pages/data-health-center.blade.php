@@ -77,6 +77,9 @@
                             <div class="dh-row"><span class="k">Last update</span><span class="v">{{ $snap->last_record_at ? $snap->last_record_at->diffForHumans() : '—' }}</span></div>
                             <div class="dh-row"><span class="k">Freshness</span><span class="v">{{ $snap->freshness_hours !== null ? $snap->freshness_hours.'h' : '—' }}</span></div>
                             <div class="dh-row"><span class="k">Received / Accepted / Rejected</span><span class="v">{{ number_format($snap->records_received) }} / {{ number_format($snap->records_accepted) }} / {{ number_format($snap->records_rejected) }}</span></div>
+                            @if (! empty($snap->metrics['scope']) && $snap->metrics['scope'] !== 'all rows')
+                                <div class="dh-row"><span class="k">Measured on</span><span class="v">{{ $snap->metrics['scope'] }}</span></div>
+                            @endif
 
                             <div>
                                 <div class="dh-row"><span class="k">Completeness</span><span class="v">{{ $snap->completeness_pct !== null ? $snap->completeness_pct.'%' : '—' }}</span></div>

@@ -31,6 +31,15 @@ class InvestigationCorrelationService
     /** Per-run cache of store id → name, so correlation doesn't Store::find per anomaly. */
     private array $storeNames = [];
 
+    /**
+     * WP6.3 (audit H31) — per-run caches for the batch path, so correlating N
+     * anomalies costs O(N) inserts, not O(N) lookups of the same tenant state.
+     * null = not in a batch (standalone callers query as before).
+     *
+     * @var array{v2:bool,team:?int,subject:array<string,int>,sku:array<string,array<int,array{id:int,store:?int}>>,models:array<int,Investigation>}|null
+     */
+    private ?array $run = null;
+
     // =========================================================================
     // PUBLIC API
     // =========================================================================
@@ -44,11 +53,13 @@ class InvestigationCorrelationService
         // Cache store names once — correlation would otherwise Store::find per
         // anomaly (title + entity recording), which dominates on large tenants.
         $this->storeNames = \App\Models\Store::where('tenant_id', $tenantId)->pluck('name', 'id')->all();
+        $this->run = $this->loadRunState($tenantId);
 
+        // Streamed in id order (a large first run can have tens of thousands).
         $unlinked = Anomaly::where('tenant_id', $tenantId)
             ->whereNull('investigation_id')
             ->active()
-            ->get();
+            ->lazyById(1000);
 
         // Feature 6 — suppression is enforced HERE, at surfacing time. Suppressed
         // anomalies remain detected/recorded (history + FP learning preserved) but
@@ -58,7 +69,17 @@ class InvestigationCorrelationService
         $correlated = 0;
         $suppressed = 0;
         $touched    = []; // investigation_id => Investigation, finalised once after the loop
+        // WP6.3: a first run on a big tenant can have tens of thousands of new
+        // anomalies. Correlation stops taking new ones after its time budget
+        // (the rest stay unlinked and the next run continues), so the nightly
+        // detection step always finishes inside its job timeout.
+        $deadline = microtime(true) + (int) config('detection.correlation_budget_seconds', 1200);
+        $deferred = false;
         foreach ($unlinked as $anomaly) {
+            if (microtime(true) > $deadline) {
+                $deferred = true;
+                break;
+            }
             try {
                 $match = $suppressionService->matchFor($anomaly);
                 if ($match) {
@@ -93,6 +114,10 @@ class InvestigationCorrelationService
         }
 
         $this->storeNames = [];
+        $this->run = null;
+        if ($deferred) {
+            Log::warning('[M16] correlation budget reached — the remaining anomalies are linked on the next run', ['tenant_id' => $tenantId]);
+        }
         Log::info("[M16] Correlated {$correlated} anomalies ({$suppressed} suppressed) for tenant {$tenantId}");
     }
 
@@ -107,9 +132,12 @@ class InvestigationCorrelationService
             return Investigation::find($anomaly->investigation_id);
         }
 
-        $v2 = AnomalyDetectionService::rulesV2For((int) $anomaly->tenant_id);
+        $v2 = $this->run['v2'] ?? AnomalyDetectionService::rulesV2For((int) $anomaly->tenant_id);
         $investigation = ($v2 ? $this->findActiveBySubject($anomaly) : $this->findOpenInvestigation($anomaly))
             ?? $this->createInvestigation($anomaly, $v2 ? self::subjectKey($anomaly) : null);
+        if ($this->run !== null) {
+            $this->remember($investigation);
+        }
 
         // Link the anomaly
         $anomaly->update(['investigation_id' => $investigation->id]);
@@ -213,6 +241,10 @@ class InvestigationCorrelationService
      */
     private function findActiveBySubject(Anomaly $anomaly): ?Investigation
     {
+        if ($this->run !== null) {
+            return $this->findActiveBySubjectCached($anomaly);
+        }
+
         $active = fn () => Investigation::where('tenant_id', $anomaly->tenant_id)
             ->whereIn('status', [Investigation::STATUS_OPEN, Investigation::STATUS_IN_PROGRESS]);
 
@@ -228,6 +260,69 @@ class InvestigationCorrelationService
             ->orderByRaw('primary_store_id IS NULL DESC')
             ->orderByDesc('opened_at')
             ->first();
+    }
+
+    /** Active investigations of the tenant, indexed the way findActiveBySubject() matches. */
+    private function loadRunState(int $tenantId): array
+    {
+        $state = [
+            'v2'     => AnomalyDetectionService::rulesV2For($tenantId),
+            'team'   => \App\Models\Team::where('tenant_id', $tenantId)->where('is_default', true)->value('id'),
+            'subject' => [], 'sku' => [], 'models' => [],
+        ];
+        Investigation::where('tenant_id', $tenantId)
+            ->whereIn('status', [Investigation::STATUS_OPEN, Investigation::STATUS_IN_PROGRESS])
+            ->orderBy('opened_at')->orderBy('id')   // later ones overwrite → the most recently opened wins
+            ->select(['id', 'subject_key', 'primary_sku', 'primary_store_id'])
+            ->cursor()
+            ->each(function ($i) use (&$state) {
+                if ($i->subject_key !== null) {
+                    $state['subject'][$i->subject_key] = (int) $i->id;
+                }
+                if ($i->primary_sku !== null) {
+                    $state['sku'][$i->primary_sku][] = ['id' => (int) $i->id, 'store' => $i->primary_store_id !== null ? (int) $i->primary_store_id : null];
+                }
+            });
+
+        return $state;
+    }
+
+    private function remember(Investigation $investigation): void
+    {
+        $id = (int) $investigation->id;
+        $this->run['models'][$id] = $investigation;
+        if ($investigation->subject_key !== null) {
+            $this->run['subject'][$investigation->subject_key] = $id;
+        }
+        if ($investigation->primary_sku !== null
+            && ! in_array($id, array_column($this->run['sku'][$investigation->primary_sku] ?? [], 'id'), true)) {
+            $this->run['sku'][$investigation->primary_sku][] = ['id' => $id, 'store' => $investigation->primary_store_id];
+        }
+    }
+
+    /** Same rules as findActiveBySubject(), answered from the per-run index. */
+    private function findActiveBySubjectCached(Anomaly $anomaly): ?Investigation
+    {
+        $id = $this->run['subject'][self::subjectKey($anomaly)] ?? null;
+        if ($id === null && $anomaly->sku !== null) {
+            $candidates = $this->run['sku'][$anomaly->sku] ?? [];
+            if ($anomaly->store_id !== null) {
+                $candidates = array_filter($candidates, fn ($c) => $c['store'] === null);   // a store signal joins the chain-level one
+            }
+            // chain-level investigations first, then the most recently opened (later in the list)
+            $best = null;
+            foreach ($candidates as $c) {
+                if ($best === null || ($c['store'] === null) >= ($best['store'] === null)) {
+                    $best = $c;
+                }
+            }
+            $id = $best['id'] ?? null;
+        }
+        if ($id === null) {
+            return null;
+        }
+
+        return $this->run['models'][$id] ??= Investigation::find($id);
     }
 
     /**
@@ -251,13 +346,12 @@ class InvestigationCorrelationService
         ]);
 
         // Auto-assign to the tenant's default team, if one exists
-        $defaultTeam = \App\Models\Team::where('tenant_id', $anomaly->tenant_id)
-            ->where('is_default', true)
-            ->first();
+        $defaultTeamId = $this->run !== null ? $this->run['team']
+            : \App\Models\Team::where('tenant_id', $anomaly->tenant_id)->where('is_default', true)->value('id');
 
-        if ($defaultTeam) {
+        if ($defaultTeamId) {
             $investigation->update([
-                'assigned_team_id' => $defaultTeam->id,
+                'assigned_team_id' => $defaultTeamId,
                 'assigned_at'      => now(),
             ]);
         }
@@ -329,18 +423,13 @@ class InvestigationCorrelationService
             ];
         }
 
-        foreach ($toInsert as $row) {
-            // Skip duplicates gracefully — unique key: (investigation_id, anomaly_id, entity_type, entity_key)
-            InvestigationEntity::firstOrCreate(
-                [
-                    'investigation_id' => $row['investigation_id'],
-                    'anomaly_id'       => $row['anomaly_id'],
-                    'entity_type'      => $row['entity_type'],
-                    'entity_key'       => $row['entity_key'],
-                ],
-                ['store_id' => $row['store_id']]
-            );
-        }
+        // One statement; duplicates skipped by the unique key
+        // (investigation_id, anomaly_id, entity_type, entity_key). WP6.3.
+        $now = now();
+        InvestigationEntity::insertOrIgnore(array_map(
+            fn ($row) => $row + ['created_at' => $now, 'updated_at' => $now],
+            $toInsert
+        ));
     }
 
     /**

@@ -94,10 +94,13 @@ class DataHealthService
         $warnings   = [];
 
         [$table, $dateColumn] = $this->tableFor($dataset);
+        // WP6.4 (audit H32): one aggregate pass over the dataset's recent window
+        // (sales: 90 days, POs: 365 days, stock: the current positions) instead
+        // of ~8 full scans of the whole history per dataset.
+        $window = $this->window($dataset, $tenantId);
+        $received = (int) $window()->count();
 
-        $received = DB::table($table)->where('tenant_id', $tenantId)->count();
-
-        if ($received === 0) {
+        if ($received === 0 && ! DB::table($table)->where('tenant_id', $tenantId)->exists()) {
             return [
                 'status'           => DataHealthSnapshot::STATUS_NO_DATA,
                 'score'            => null,
@@ -135,7 +138,7 @@ class DataHealthService
         }
 
         // ── Completeness ─────────────────────────────────────────────────────
-        [$completenessPct, $completenessDetail] = $this->completeness($table, $tenantId, $dataset, $received);
+        [$completenessPct, $completenessDetail] = $this->completeness($window, $dataset, $received);
         if ($completenessPct < $thresholds['completeness_min_pct']) {
             $warnings[] = [
                 'level'   => 'warning',
@@ -156,7 +159,7 @@ class DataHealthService
         }
 
         // ── Referential integrity ────────────────────────────────────────────
-        [$referentialScore, $orphanCount] = $this->referentialIntegrity($tenantId, $dataset, $received);
+        [$referentialScore, $orphanCount] = $this->referentialIntegrity($window, $tenantId, $dataset, $received);
         if ($orphanCount > 0) {
             $warnings[] = [
                 'level'   => $referentialScore < 90 ? 'critical' : 'warning',
@@ -197,6 +200,7 @@ class DataHealthService
                 'orphan_count'       => $orphanCount,
                 'rejection_pct'      => $rejectionPct,
                 'last_ingestion_run' => $lastRun?->id,
+                'scope'              => self::WINDOW_LABEL[$dataset] ?? 'all rows',
             ],
         ];
     }
@@ -326,6 +330,26 @@ class DataHealthService
 
     // ── Internal deterministic helpers ────────────────────────────────────────
 
+    /** What the counts cover (WP6.4). */
+    public const WINDOW_LABEL = [
+        DataHealthSnapshot::DATASET_SALES           => 'last 90 days',
+        DataHealthSnapshot::DATASET_INVENTORY       => 'current stock positions',
+        DataHealthSnapshot::DATASET_PURCHASE_ORDERS => 'orders of the last 365 days',
+    ];
+
+    /** A fresh query over the rows a dataset's health is judged on. */
+    private function window(string $dataset, int $tenantId): \Closure
+    {
+        return match ($dataset) {
+            DataHealthSnapshot::DATASET_SALES => fn () => DB::table('sales_transactions')->where('tenant_id', $tenantId)
+                ->where('date', '>=', now()->subDays(90)->toDateString()),
+            DataHealthSnapshot::DATASET_INVENTORY => fn () => DB::table('inventory_current')->where('tenant_id', $tenantId),
+            DataHealthSnapshot::DATASET_PURCHASE_ORDERS => fn () => DB::table('purchase_orders')->where('tenant_id', $tenantId)
+                ->where('order_date', '>=', now()->subDays(365)->toDateString()),
+            default => fn () => DB::table($this->tableFor($dataset)[0])->where('tenant_id', $tenantId),
+        };
+    }
+
     /** @return array{0:string,1:?string} [table, dateColumn] */
     private function tableFor(string $dataset): array
     {
@@ -378,7 +402,7 @@ class DataHealthService
     }
 
     /** @return array{0:float,1:array} [pct, detail] */
-    private function completeness(string $table, int $tenantId, string $dataset, int $received): array
+    private function completeness(\Closure $window, string $dataset, int $received): array
     {
         $criticalCols = match ($dataset) {
             DataHealthSnapshot::DATASET_SALES           => ['sku', 'quantity', 'total_amount', 'date'],
@@ -390,10 +414,13 @@ class DataHealthService
             default                                     => ['id'],
         };
 
+        // One pass: COUNT(col) counts the non-null values of each column.
+        $row = (array) $window()->selectRaw(implode(', ', array_map(fn ($c) => "COUNT({$c}) AS \"{$c}\"", $criticalCols)))->first();
+
         $detail = [];
         $ratios = [];
         foreach ($criticalCols as $col) {
-            $present = DB::table($table)->where('tenant_id', $tenantId)->whereNotNull($col)->count();
+            $present = (int) ($row[$col] ?? 0);
             $ratio = $received > 0 ? $present / $received : 1.0;
             $ratios[] = $ratio;
             $detail[$col] = round($ratio * 100, 1);
@@ -419,7 +446,7 @@ class DataHealthService
     }
 
     /** @return array{0:float,1:int} [score, orphanCount] */
-    private function referentialIntegrity(int $tenantId, string $dataset, int $received): array
+    private function referentialIntegrity(\Closure $window, int $tenantId, string $dataset, int $received): array
     {
         // Only SKU-bearing transactional datasets have referential dependency on products.
         if (! in_array($dataset, [
@@ -430,10 +457,7 @@ class DataHealthService
             return [100.0, 0];
         }
 
-        $table = $this->tableFor($dataset)[0];
-
-        $orphans = DB::table($table . ' as t')
-            ->where('t.tenant_id', $tenantId)
+        $orphans = DB::query()->fromSub($window()->select('sku'), 't')
             ->whereNotNull('t.sku')
             ->whereNotExists(function ($q) use ($tenantId) {
                 $q->select(DB::raw(1))

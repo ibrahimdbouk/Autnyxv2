@@ -197,6 +197,7 @@ class ImportProcessorService
         if ($retried > 0) {
             try {
                 app(\App\Services\Sales\SalesDailyAggregator::class)->aggregateForImport($import);
+                app(\App\Services\Inventory\InventoryCurrentService::class)->refreshForImport($import);
                 \App\Jobs\RunTenantDetectionJob::dispatch($import->tenant_id)->afterCommit();
             } catch (\Throwable $e) {
                 Log::error('Post-retry aggregation/detection dispatch failed', ['import_id' => $import->id, 'error' => $e->getMessage()]);
@@ -273,6 +274,11 @@ class ImportProcessorService
                 \Illuminate\Support\Carbon::parse($salesRange->mn)->toDateString(),
                 \Illuminate\Support\Carbon::parse($salesRange->mx)->toDateString(),
             );
+        }
+
+        // WP6.2: positions this import set fall back to their previous snapshot (or leave).
+        if ($import->data_type === Import::TYPE_INVENTORY && ! empty($dirtyKeys)) {
+            app(\App\Services\Inventory\InventoryCurrentService::class)->refreshKeys((int) $import->tenant_id, $dirtyKeys);
         }
 
         if (! empty($dirtyKeys)) {
@@ -679,6 +685,7 @@ class ImportProcessorService
                 ]);
                 try {
                     app(\App\Services\Sales\SalesDailyAggregator::class)->aggregateForImport($import);
+                    app(\App\Services\Inventory\InventoryCurrentService::class)->refreshForImport($import);
                     \App\Jobs\RunTenantDetectionJob::dispatch($import->tenant_id)->afterCommit();
                 } catch (\Throwable $e) {
                     Log::error('Post-quarantine aggregation/detection dispatch failed', ['import_id' => $import->id, 'error' => $e->getMessage()]);
@@ -841,6 +848,16 @@ class ImportProcessorService
             // Keep the sales_daily aggregate current for this import's date range
             // (memory-safe, incremental) so detection reads the aggregate, not raw POS.
             app(\App\Services\Sales\SalesDailyAggregator::class)->aggregateForImport($import);
+            // WP6.2: the current stock positions this inventory load moved.
+            app(\App\Services\Inventory\InventoryCurrentService::class)->refreshForImport($import);
+            // WP6.5: master data moves the canonical hierarchies with it.
+            if (in_array($import->data_type, [Import::TYPE_PRODUCTS, Import::TYPE_STORES, Import::TYPE_SUPPLIERS], true)) {
+                app(\App\Services\Platform\HierarchySync::class)->syncTenant((int) $import->tenant_id);
+            }
+            // WP6.4: that dataset's health, recomputed off the request.
+            if ($dataset = self::HEALTH_DATASET[$import->data_type] ?? null) {
+                \App\Jobs\DataHealth\ComputeDataHealthJob::dispatch($import->tenant_id, $dataset)->afterCommit();
+            }
 
             // Detection can take minutes on large data, so it runs off the web
             // request as a queued job (requires a queue worker). Incremental by
@@ -856,6 +873,16 @@ class ImportProcessorService
             Log::error('Post-import aggregation/detection dispatch failed', ['import_id' => $import->id, 'error' => $e->getMessage()]);
         }
     }
+
+    /** WP6.4: import type → Data Health dataset. */
+    private const HEALTH_DATASET = [
+        Import::TYPE_SALES           => \App\Models\DataHealthSnapshot::DATASET_SALES,
+        Import::TYPE_INVENTORY       => \App\Models\DataHealthSnapshot::DATASET_INVENTORY,
+        Import::TYPE_PURCHASE_ORDERS => \App\Models\DataHealthSnapshot::DATASET_PURCHASE_ORDERS,
+        Import::TYPE_PRODUCTS        => \App\Models\DataHealthSnapshot::DATASET_PRODUCTS,
+        Import::TYPE_STORES          => \App\Models\DataHealthSnapshot::DATASET_STORES,
+        Import::TYPE_SUPPLIERS       => \App\Models\DataHealthSnapshot::DATASET_SUPPLIERS,
+    ];
 
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -1842,8 +1869,14 @@ class ImportProcessorService
             return $this->supplierCache[$key];
         }
 
-        $supplier = Supplier::where('tenant_id', $tenantId)->whereRaw('lower(trim(name)) = ?', [mb_strtolower($name)])->orderBy('id')->first()
-            ?? Supplier::create(['tenant_id' => $tenantId, 'name' => $name]);
+        $find = fn () => Supplier::where('tenant_id', $tenantId)->whereRaw('lower(trim(name)) = ?', [mb_strtolower($name)])->orderBy('id')->first();
+        try {
+            // In its own savepoint, so a lost race doesn't abort the surrounding chunk.
+            $supplier = $find() ?? DB::transaction(fn () => Supplier::create(['tenant_id' => $tenantId, 'name' => $name]));
+        } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+            // WP6.5: (tenant, lower(name)) is unique — a concurrent import created it first.
+            $supplier = $find() ?? throw $e;
+        }
 
         if ($this->supplierCache !== null && $this->cachedTenantId === $tenantId) {
             $this->supplierCache[$key] = (int) $supplier->id;
