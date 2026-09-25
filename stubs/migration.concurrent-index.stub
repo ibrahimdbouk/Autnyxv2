@@ -1,0 +1,27 @@
+<?php
+
+use App\Support\Database\ConcurrentIndex;
+use Illuminate\Database\Migrations\Migration;
+
+/**
+ * <Why this index exists: the query it serves.>
+ * Built CONCURRENTLY with a lock timeout — see docs/migrations.md.
+ */
+return new class extends Migration
+{
+    // CREATE INDEX CONCURRENTLY cannot run inside a transaction.
+    public $withinTransaction = false;
+
+    public function up(): void
+    {
+        ConcurrentIndex::create('table_columns_idx', 'table', '(tenant_id, column)');
+        // Partial:  ConcurrentIndex::create('name', 'table', '(col)', 'col IS NOT NULL');
+        // Unique:   ConcurrentIndex::create('name', 'table', '(a, b)', unique: true);
+        // Trigram:  ConcurrentIndex::create('name', 'table', 'USING gin (col gin_trgm_ops)');
+    }
+
+    public function down(): void
+    {
+        ConcurrentIndex::drop('table_columns_idx');
+    }
+};
