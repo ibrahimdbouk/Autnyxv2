@@ -105,6 +105,7 @@ class InvestigationFlowTest extends TestCase
             'value_text'    => '45% drop vs 30-day avg',
         ]);
 
+        config(['services.anthropic.key' => 'test-key']);   // WP5.4: no key → no call
         $narrator = app(InvestigationNarratorService::class);
         $result   = $narrator->narrate($investigation, force: true);
 

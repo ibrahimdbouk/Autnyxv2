@@ -62,7 +62,7 @@
     </div>
     @endif
     <div class="stat">
-      <div class="num">{{ $anomalies->count() }}</div>
+      <div class="num">{{ $totalCount ?? $anomalies->count() }}</div>
       <div class="label">Total Anomalies</div>
     </div>
   </div>
@@ -95,6 +95,9 @@
         @endforeach
       </tbody>
     </table>
+    @if(($totalCount ?? 0) > $anomalies->count())
+      <p style="margin-top:12px;color:#6b7280;font-size:13px;">…and {{ $totalCount - $anomalies->count() }} more in Autnyx.</p>
+    @endif
   </div>
 
   {{-- CTA --}}
@@ -106,6 +109,9 @@
   <div class="footer">
     <p>You're receiving this because anomaly notifications are enabled for <strong>{{ $tenant->name }}</strong>.</p>
     <p style="margin-top:4px;">To adjust your alert preferences, visit <a href="{{ $panelUrl }}">Autnyx Settings</a>.</p>
+    @if(!empty($unsubscribeUrl))
+    <p style="margin-top:4px;"><a href="{{ $unsubscribeUrl }}">Unsubscribe from this digest</a></p>
+    @endif
   </div>
 
 </div>

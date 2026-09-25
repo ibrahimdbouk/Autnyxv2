@@ -70,17 +70,15 @@ class CampaignActionPlanAgent extends AgentService
      */
     public function propose(int $tenantId, string $campaignName, ?int $requestedBy = null): AgentRun
     {
+        $this->callTenant = $tenantId;
         $agg = $this->aggregate($tenantId, $campaignName);
-
-        // Retire earlier open proposals for this campaign — one live plan at a time.
-        AgentRun::where('tenant_id', $tenantId)
-            ->where('agent_key', $this->agentKey())
-            ->where('subject_type', 'campaign')
-            ->where('subject_id', $campaignName)
-            ->whereIn('status', [AgentRun::STATUS_PROPOSED, AgentRun::STATUS_ACCEPTED])
-            ->update(['status' => AgentRun::STATUS_DISMISSED]);
+        $openPlans = fn ($q) => $q->where('tenant_id', $tenantId)->where('subject_type', 'campaign')
+            ->where('subject_id', $campaignName)->whereIn('status', [AgentRun::STATUS_PROPOSED, AgentRun::STATUS_ACCEPTED]);
 
         if (($agg['case_count'] ?? 0) === 0) {
+            // Nothing open: earlier plans are moot.
+            $openPlans(AgentRun::query()->where('agent_key', $this->agentKey()))->update(['status' => AgentRun::STATUS_DISMISSED]);
+
             return $this->record([
                 'tenant_id'    => $tenantId,
                 'subject_type' => 'campaign',
@@ -114,6 +112,10 @@ class CampaignActionPlanAgent extends AgentService
             ]);
         }
 
+        // WP5.4: freeze WHAT the plan covers at proposal time — the investigations
+        // a person saw when accepting it — so execution can't drift onto new ones.
+        $agg['target_investigation_ids'] = array_keys($this->rankTargets($tenantId, ActionQueue::rulesForCampaign($campaignName)));
+
         $d = $result['data'];
         $output = [
             'objective'        => (string) ($d['objective'] ?? ''),
@@ -124,7 +126,8 @@ class CampaignActionPlanAgent extends AgentService
             'watchouts'        => $this->toList($d['watchouts'] ?? null),
         ];
 
-        return $this->record([
+        // One live plan at a time — earlier ones are retired only now it succeeded (WP5.4).
+        return $this->recordReplacing([
             'tenant_id'     => $tenantId,
             'subject_type'  => 'campaign',
             'subject_id'    => $campaignName,
@@ -137,7 +140,7 @@ class CampaignActionPlanAgent extends AgentService
             'tokens_input'  => $result['tokens_input'],
             'tokens_output' => $result['tokens_output'],
             'requested_by'  => $requestedBy,
-        ]);
+        ], $openPlans);
     }
 
     // =========================================================================
@@ -157,40 +160,34 @@ class CampaignActionPlanAgent extends AgentService
      */
     public function execute(AgentRun $run, ?int $userId = null): AgentRun
     {
-        if ($run->status === AgentRun::STATUS_EXECUTED) {
-            return $run; // idempotent — already done
+        // WP5.4: claim the run under a row lock — two clicks (or two people)
+        // can't execute the same plan twice.
+        $claimed = DB::transaction(function () use ($run, $userId) {
+            $locked = AgentRun::whereKey($run->id)->lockForUpdate()->first();
+            if (! $locked || ! in_array($locked->status, [AgentRun::STATUS_PROPOSED, AgentRun::STATUS_ACCEPTED], true)) {
+                return false; // executed already, or no longer an open proposal
+            }
+            // Mark accepted first, so a mid-way failure still records the human decision.
+            $locked->update(['status' => AgentRun::STATUS_ACCEPTED, 'acted_by' => $userId, 'acted_at' => now()]);
+
+            return true;
+        });
+        if (! $claimed) {
+            return $run->fresh();
         }
-        if (! in_array($run->status, [AgentRun::STATUS_PROPOSED, AgentRun::STATUS_ACCEPTED], true)) {
-            return $run; // only an open proposal can be executed
-        }
+        $run->refresh();
 
         $tenantId     = (int) $run->tenant_id;
         $campaignName = (string) $run->subject_id;
         $actionType   = self::CAMPAIGN_ACTION_TYPE[$campaignName] ?? Action::TYPE_INVESTIGATE_FURTHER;
         $rules        = ActionQueue::rulesForCampaign($campaignName);
 
-        // Mark accepted first, so a mid-way failure still records the human decision.
-        $run->update([
-            'status'   => AgentRun::STATUS_ACCEPTED,
-            'acted_by' => $userId,
-            'acted_at' => now(),
-        ]);
-
-        // Pull the campaign's active anomalies, grouped by investigation, ranked by value.
-        $anoms = Anomaly::where('tenant_id', $tenantId)->active()
-            ->whereIn('rule_type', $rules)
-            ->whereNotNull('investigation_id')
-            ->get(['id', 'investigation_id', 'rule_type', 'sku', 'store_id', 'severity', 'context']);
-
-        $byInv = [];
-        foreach ($anoms as $a) {
-            $id = $a->investigation_id;
-            $byInv[$id]['value'] = ($byInv[$id]['value'] ?? 0.0) + (float) ($a->context['revenue_impact'] ?? 0);
-            $byInv[$id]['skus'][$a->sku ?? '—'] = true;
-            $byInv[$id]['anoms'][] = $a;
-        }
-        uasort($byInv, fn ($x, $y) => $y['value'] <=> $x['value']);
-        $targetInvs = array_slice($byInv, 0, self::EXECUTE_CAP, true);
+        $byInv  = $this->rankTargets($tenantId, $rules, cap: false);
+        $frozen = $run->input['target_investigation_ids'] ?? null;
+        $targetInvs = is_array($frozen)
+            // Only what the accepted plan covered — and only if still live.
+            ? array_intersect_key($byInv, array_flip($frozen))
+            : array_slice($byInv, 0, self::EXECUTE_CAP, true);
 
         $investigations = Investigation::whereIn('id', array_keys($targetInvs))->get()->keyBy('id');
         $skuNames       = Product::where('tenant_id', $tenantId)->pluck('name', 'sku');
@@ -224,7 +221,10 @@ class CampaignActionPlanAgent extends AgentService
                         'investigation_id' => $invId,
                         'action_type'      => $actionType,
                         'title'            => $this->actionTitle($campaignName, $inv, $skuNames),
-                        'description'      => $objective !== '' ? $objective : "From accepted {$campaignName} plan.",
+                        // WP5.4: AI text is labelled as such wherever it lands.
+                        'description'      => $objective !== ''
+                            ? "AI-drafted plan (accepted by a person): {$objective}"
+                            : "From accepted {$campaignName} plan.",
                         'status'           => $inv->assigned_team_id ? Action::STATUS_ASSIGNED : Action::STATUS_UNASSIGNED,
                         'priority'         => $inv->priority ?? Action::PRIORITY_MEDIUM,
                         'assigned_team_id' => $inv->assigned_team_id,
@@ -306,6 +306,30 @@ class CampaignActionPlanAgent extends AgentService
         Log::info("[agent:campaign_plan] executed run #{$run->id} campaign='{$campaignName}' actions={$created} advanced={$advanced}");
 
         return $run->fresh();
+    }
+
+    /**
+     * The campaign's live anomalies grouped by investigation, ranked by value,
+     * capped at EXECUTE_CAP.
+     *
+     * @return array<int,array{value:float,skus:array,anoms:array}>
+     */
+    private function rankTargets(int $tenantId, array $rules, bool $cap = true): array
+    {
+        $byInv = [];
+        Anomaly::where('tenant_id', $tenantId)->active()
+            ->whereIn('rule_type', $rules)
+            ->whereNotNull('investigation_id')
+            ->get(['id', 'investigation_id', 'rule_type', 'sku', 'store_id', 'severity', 'context'])
+            ->each(function ($a) use (&$byInv) {
+                $id = $a->investigation_id;
+                $byInv[$id]['value'] = ($byInv[$id]['value'] ?? 0.0) + (float) ($a->context['revenue_impact'] ?? 0);
+                $byInv[$id]['skus'][$a->sku ?? '—'] = true;
+                $byInv[$id]['anoms'][] = $a;
+            });
+        uasort($byInv, fn ($x, $y) => $y['value'] <=> $x['value']);
+
+        return $cap ? array_slice($byInv, 0, self::EXECUTE_CAP, true) : $byInv;
     }
 
     /** Human-declined a proposal. */

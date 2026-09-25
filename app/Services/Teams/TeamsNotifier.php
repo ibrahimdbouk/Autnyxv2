@@ -43,7 +43,7 @@ class TeamsNotifier
      * @param  iterable<int,User>   $users
      * @param  array<string,string> $facts
      */
-    public function notify(int $tenantId, iterable $users, string $title, ?string $body = null, ?string $url = null, array $facts = []): void
+    public function notify(int $tenantId, iterable $users, string $title, ?string $body = null, ?string $url = null, array $facts = [], bool $toChannel = true): void
     {
         if (! config('services.teams.enabled')) {
             return;
@@ -58,8 +58,8 @@ class TeamsNotifier
         $anyOk       = false;
         $firstError = null;
 
-        // 1) Channel post (one per event).
-        if ($conn->post_to_channel) {
+        // 1) Channel post (one per event) — never for a personal notice (WP5.4).
+        if ($conn->post_to_channel && $toChannel) {
             try {
                 $this->postToChannel($conn, $card);
                 $anyOk = true;

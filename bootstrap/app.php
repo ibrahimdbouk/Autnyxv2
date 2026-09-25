@@ -27,5 +27,11 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        // WP5.3: every reported exception carries its tenant, so Nightwatch (and
+        // the log) show whose request or job failed. Nightwatch receives what the
+        // handler reports; swallowed failures in rules, nightly steps and agents
+        // are passed to report() so they are not lost.
+        $exceptions->context(fn () => array_filter([
+            'tenant_id' => rescue(fn () => \Filament\Facades\Filament::getTenant()?->getKey(), null, false),
+        ]));
     })->create();

@@ -91,6 +91,7 @@
         @if($inv->description)<div class="description">{{ $inv->description }}</div>@endif
         <table class="kv">
             @if($inv->revenue_at_risk)<tr><td class="k">Revenue at risk</td><td>{{ $cp }}{{ number_format((float) $inv->revenue_at_risk, 2) }} <span class="muted">(calculated from detected signals)</span></td></tr>@endif
+            @if((float) ($inv->capital_at_risk ?? 0) > 0)<tr><td class="k">Stock value involved</td><td>{{ $cp }}{{ number_format((float) $inv->capital_at_risk, 2) }} <span class="muted">(at cost — not added to revenue at risk)</span></td></tr>@endif
             @if($inv->ai_revenue_estimate)<tr><td class="k">AI estimate</td><td>{{ $cp }}{{ number_format((float) $inv->ai_revenue_estimate, 2) }} <span class="muted">(AI-generated, not used in calculations)</span></td></tr>@endif
             @if($inv->observed_recovery)<tr><td class="k">Observed recovery</td><td>{{ $cp }}{{ number_format((float) $inv->observed_recovery, 2) }}</td></tr>@endif
             <tr><td class="k">Opened</td><td>{{ optional($inv->opened_at)->format('d M Y, H:i') ?? '—' }}</td></tr>
@@ -134,11 +135,12 @@
 
     {{-- Signals --}}
     @if($inv->anomalies && $inv->anomalies->count() > 0)
-        <div class="section-title">Signals ({{ $inv->anomalies->count() }})</div>
+        {{-- WP5.4: at most 200 rows in a PDF --}}
+        <div class="section-title">Signals ({{ $inv->anomalies->count() }}){{ $inv->anomalies->count() > 200 ? ' — the 200 most recent shown' : '' }}</div>
         <table class="data">
             <thead><tr><th>Signal</th><th>Severity</th><th>SKU</th><th>Store</th><th>Detected</th></tr></thead>
             <tbody>
-                @foreach($inv->anomalies as $a)
+                @foreach($inv->anomalies->sortByDesc('detected_at')->take(200) as $a)
                     <tr>
                         <td>{{ \App\Models\AnomalySetting::RULES[$a->rule_type]['label'] ?? ucwords(str_replace('_', ' ', (string) $a->rule_type)) }}</td>
                         <td>{{ ucfirst((string) $a->severity) }}</td>
@@ -147,6 +149,9 @@
                         <td>{{ optional($a->detected_at)->format('d M Y') ?? '—' }}</td>
                     </tr>
                 @endforeach
+                @if($inv->anomalies->count() > 200)
+                    <tr><td colspan="5" class="muted">+{{ $inv->anomalies->count() - 200 }} more signals — see the investigation in Autnyx.</td></tr>
+                @endif
             </tbody>
         </table>
     @endif

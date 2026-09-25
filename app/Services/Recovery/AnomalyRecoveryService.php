@@ -59,15 +59,15 @@ class AnomalyRecoveryService
     /** OBSERVED recovery recorded this calendar month. */
     public function mtd(int $tenantId): array
     {
-        return $this->observedInWindow($tenantId, Carbon::now()->startOfMonth(), null);
+        return $this->observedInWindow($tenantId, \App\Support\Tenancy\TenantClock::startOfMonth($tenantId), null); // WP5.2: the tenant's month
     }
 
     /** OBSERVED recovery in the previous calendar month (for trend deltas). */
     public function prevMtd(int $tenantId): array
     {
-        $start = Carbon::now()->subMonthNoOverflow()->startOfMonth();
+        $start = \App\Support\Tenancy\TenantClock::now($tenantId)->subMonthNoOverflow()->startOfMonth();
 
-        return $this->observedInWindow($tenantId, $start, Carbon::now()->startOfMonth());
+        return $this->observedInWindow($tenantId, $start, \App\Support\Tenancy\TenantClock::startOfMonth($tenantId));
     }
 
     /**
@@ -97,7 +97,7 @@ class AnomalyRecoveryService
      */
     public function dailySeries(int $tenantId, int $days = 30): array
     {
-        $from = Carbon::now()->subDays($days - 1)->startOfDay();
+        $from = \App\Support\Tenancy\TenantClock::today($tenantId)->subDays($days - 1);
 
         if ($this->v2($tenantId)) {
             return DB::query()->fromSub($this->perSubject($this->resolvedBase($tenantId, $from, null), '(resolved_at)::date'), 'x')

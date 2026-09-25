@@ -302,7 +302,7 @@
         <div style="font-size:9px; color:#6b7280; margin-bottom:14px; font-style:italic;">
             Investigation #{{ $investigation->id }} · {{ $investigation->title }}
             @if($investigation->ai_generated_at)
-                · Narrative generated {{ $investigation->ai_generated_at->format('d M Y H:i') }}
+                · AI-generated narrative, written {{ $investigation->ai_generated_at->format('d M Y H:i') }} from the detected evidence
             @endif
         </div>
 
@@ -346,7 +346,7 @@
                 <div class="step">
                     <div class="step-num"><div class="step-circle sc-orange">4</div></div>
                     <div class="step-body">
-                        <div class="step-label">Revenue at Risk (AI Estimate)</div>
+                        <div class="step-label">Revenue at risk (calculated from detected signals)</div>
                         <div class="step-text">{{ $currencyPrefix }}{{ number_format($investigation->revenue_at_risk, 2) }}</div>
                     </div>
                 </div>

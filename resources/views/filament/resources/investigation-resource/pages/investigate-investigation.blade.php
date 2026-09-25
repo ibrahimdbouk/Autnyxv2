@@ -847,17 +847,17 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
          canonical 7-question view above and changes nothing about it. Every value
          is read from governed data (DeepInvestigationService); nothing is invented.
          ═══════════════════════════════════════════════════════════════════════ --}}
-    @php($deep = $this->deepInvestigation())
+    @php $deep = $this->deepInvestigation(); @endphp
     @if(!empty($deep))
-    @php($cm = $deep['cause_map'] ?? [])
-    @php($tr = $deep['trail'] ?? [])
-    @php($cf = $deep['confidence'] ?? [])
-    @php($ev = $deep['evidence'] ?? [])
-    @php($imp = $deep['impact'] ?? [])
-    @php($wc = $deep['what_changed'] ?? [])
-    @php($wr = $deep['why_rec'] ?? [])
-    @php($wi = $deep['what_if'] ?? [])
-    @php($si = $deep['similar'] ?? [])
+    @php $cm = $deep['cause_map'] ?? []; @endphp
+    @php $tr = $deep['trail'] ?? []; @endphp
+    @php $cf = $deep['confidence'] ?? []; @endphp
+    @php $ev = $deep['evidence'] ?? []; @endphp
+    @php $imp = $deep['impact'] ?? []; @endphp
+    @php $wc = $deep['what_changed'] ?? []; @endphp
+    @php $wr = $deep['why_rec'] ?? []; @endphp
+    @php $wi = $deep['what_if'] ?? []; @endphp
+    @php $si = $deep['similar'] ?? []; @endphp
     <style>
     .dinv-wrap { margin-top:1.75rem; }
     .dinv-head { display:flex; align-items:center; gap:.6rem; margin-bottom:.9rem; }
@@ -1007,11 +1007,11 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
          php-open with any later endphp token and swallows the wrapper directive,
          breaking compilation (a page 500). Do not write those tokens even in a
          comment: this pass runs before comments are stripped. --}}
-    @php($confTierClass = ['corroborated'=>'s-success','verified'=>'s-success','likely'=>'s-info','correlated'=>'s-warning','single'=>'s-gray'])
-    @php($sigClass = ['established'=>'s-success','probable'=>'s-info','suspected'=>'s-warning','unknown'=>'s-gray'])
-    @php($dirClass = ['supports'=>'s-danger','contradicts'=>'s-success','neutral'=>'s-gray'])
-    @php($cur = $imp['currency'] ?? '')
-    @php($money = fn($n) => $cur . number_format((float) $n, floor((float) $n) == (float) $n ? 0 : 2))
+    @php $confTierClass = ['corroborated'=>'s-success','verified'=>'s-success','likely'=>'s-info','correlated'=>'s-warning','single'=>'s-gray']; @endphp
+    @php $sigClass = ['established'=>'s-success','probable'=>'s-info','suspected'=>'s-warning','unknown'=>'s-gray']; @endphp
+    @php $dirClass = ['supports'=>'s-danger','contradicts'=>'s-success','neutral'=>'s-gray']; @endphp
+    @php $cur = $imp['currency'] ?? ''; @endphp
+    @php $money = fn($n) => $cur . number_format((float) $n, floor((float) $n) == (float) $n ? 0 : 2); @endphp
 
     <div class="dinv-wrap">
         <div class="dinv-head">
@@ -1036,8 +1036,8 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                 @if(!($cm['available'] ?? false))
                     <div class="dinv-empty">{{ $cm['empty_reason'] ?? 'Evidence unavailable.' }}</div>
                 @else
-                    @php($fb = $cm['fishbone'])
-                    @php($detailMap = collect($cm['nodes'])->keyBy('id')->map(fn ($n) => $n['detail'])->all())
+                    @php $fb = $cm['fishbone']; @endphp
+                    @php $detailMap = collect($cm['nodes'])->keyBy('id')->map(fn ($n) => $n['detail'])->all(); @endphp
                     <div class="dinv-fishwrap" wire:ignore>
                         <svg class="dinv-fish" viewBox="{{ $fb['viewbox'] }}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Fishbone cause-and-effect diagram">
                             <defs>
@@ -1157,7 +1157,7 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                 @if(!($wi['available'] ?? false))
                     <div class="dinv-empty">{{ $wi['empty_reason'] ?? 'Evidence unavailable.' }}</div>
                 @else
-                    @php($def = $wi['scenarios'][$wi['default_horizon']])
+                    @php $def = $wi['scenarios'][$wi['default_horizon']]; @endphp
                     <div class="dinv-sim-banner">▲ SIMULATED <span class="dinv-sim-sub">— a deterministic projection from governed inputs, not a measured outcome.</span></div>
                     <div class="dinv-hz" id="dinv-hz">
                         @foreach($wi['horizons'] as $h)
@@ -1180,7 +1180,7 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                     <div class="dinv-sim-assum">
                         @foreach($wi['assumptions'] as $as)<div>{{ $as }}</div>@endforeach
                     </div>
-                    @php($txf = $wi['transfer'] ?? null)
+                    @php $txf = $wi['transfer'] ?? null; @endphp
                     @if($txf && ($txf['available'] ?? false))
                         <div class="dinv-tr">
                             <div class="dinv-tr-head">🔁 Transfer alternative <span class="dinv-pill s-warning">Simulated</span></div>
@@ -1268,7 +1268,7 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                         <div class="dinv-conf-card">
                             <h4>Causal inference</h4>
                             @if(!empty($cf['causal']))
-                                @php($ct = $cf['causal'])
+                                @php $ct = $cf['causal']; @endphp
                                 <div class="dinv-kv"><span>Strength</span><b><span class="dinv-pill {{ $confTierClass[$ct['tier']] ?? 's-gray' }}">{{ ucfirst($ct['tier']) }}</span></b></div>
                                 <div class="dinv-score"><span style="width:{{ max(4,(int)$ct['score']) }}%;background:var(--ax-accent-strong,#7c3aed)"></span></div>
                                 <div class="dinv-kv"><span>Confidence score</span><b>{{ $ct['score'] }}%</b></div>
@@ -1294,7 +1294,7 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                             <div class="dinv-kv" style="border-top:1px solid var(--ax-line-2,#f1f5f9);margin-top:.3rem;padding-top:.4rem"><span>Strong / moderate / weak</span><b>{{ $cf['strength']['strong'] }} / {{ $cf['strength']['moderate'] }} / {{ $cf['strength']['weak'] }}</b></div>
                         </div>
                     </div>
-                    @php($caveats = $this->dataHealthCaveats())
+                    @php $caveats = $this->dataHealthCaveats(); @endphp
                     @if(!empty($caveats))
                         <div class="dinv-explain" style="margin-top:.85rem">
                             <b>Data-health caveats:</b>
@@ -1358,7 +1358,7 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                         <div class="dinv-impact-card meas">
                             <div class="lab">Measured recovery</div>
                             @if(!empty($imp['measured']))
-                                @php($ms = $imp['measured'])
+                                @php $ms = $imp['measured']; @endphp
                                 <div class="big">{{ !is_null($ms['observed_recovery']) ? $money($ms['observed_recovery']) : '—' }}</div>
                                 <div class="dinv-ev-src" style="margin-top:.25rem">
                                     <span class="dinv-pill s-success">{{ $ms['state_label'] }}</span>
@@ -1373,7 +1373,7 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                     </div>
 
                     @if(!empty($imp['breakdown']))
-                        @php($mx = max(array_column($imp['breakdown'], 'amount')) ?: 1)
+                        @php $mx = max(array_column($imp['breakdown'], 'amount')) ?: 1; @endphp
                         <div style="margin-top:1rem">
                             <h4 style="margin:0 0 .5rem;font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--ax-faint,#6b7280)">Value at risk by signal</h4>
                             @foreach($imp['breakdown'] as $b)

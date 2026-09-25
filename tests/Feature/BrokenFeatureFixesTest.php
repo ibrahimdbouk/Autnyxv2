@@ -67,7 +67,7 @@ class BrokenFeatureFixesTest extends TestCase
 
         config(['autnyx.digest_enabled' => true]);
         $this->artisan('anomalies:notify')->assertSuccessful();
-        Mail::assertSent(AnomalyDigestMail::class, fn ($m) => $m->hasTo('ops@example.com'));
+        Mail::assertQueued(AnomalyDigestMail::class, fn ($m) => $m->hasTo('ops@example.com')); // WP5.4: queued after marking
         $this->assertNotNull($a->fresh()->notified_at);
     }
 

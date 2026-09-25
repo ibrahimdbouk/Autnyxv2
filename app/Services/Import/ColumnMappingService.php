@@ -2,7 +2,6 @@
 
 namespace App\Services\Import;
 
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -13,8 +12,6 @@ use Illuminate\Support\Facades\Log;
  */
 class ColumnMappingService
 {
-    private const CLAUDE_MODEL = 'claude-sonnet-4-5';
-    private const API_URL      = 'https://api.anthropic.com/v1/messages';
 
     /**
      * Map source headers to canonical fields.
@@ -59,7 +56,7 @@ class ColumnMappingService
 
         if ($apiKey) {
             try {
-                return $this->finalise($this->mapWithClaude($headers, $sampleRows, $schema, $apiKey), $schema);
+                return $this->finalise($this->mapWithClaude($headers, $sampleRows, $schema, $tenantId), $schema);
             } catch (\Throwable $e) {
                 Log::warning('Claude column mapping failed, falling back to fuzzy match', [
                     'error' => $e->getMessage(),
@@ -147,7 +144,7 @@ class ColumnMappingService
     // Claude implementation
     // ─────────────────────────────────────────────────────────────────────────
 
-    private function mapWithClaude(array $headers, array $sampleRows, array $schema, string $apiKey): array
+    private function mapWithClaude(array $headers, array $sampleRows, array $schema, ?int $tenantId = null): array
     {
         $schemaDescription = collect($schema)->map(function ($field, $key) {
             $req = $field['required'] ? '(required)' : '(optional)';
@@ -188,27 +185,19 @@ Respond with a JSON array only — no markdown, no explanation outside the JSON:
 ]
 PROMPT;
 
-        $response = Http::withHeaders([
-            'x-api-key'         => $apiKey,
-            'anthropic-version' => '2023-06-01',
-            'content-type'      => 'application/json',
-        ])->timeout(30)->post(self::API_URL, [
-            'model'      => self::CLAUDE_MODEL,
-            // WP3.3: room for every column (was a flat 1024 → wide files truncated).
-            'max_tokens' => min(8000, 256 + 96 * count($headers)),
-            'messages'   => [
-                ['role' => 'user', 'content' => $prompt],
-            ],
-        ]);
+        // WP5.4: through AnthropicClient (budget, retries, circuit breaker, metering).
+        // WP3.3: room for every column (was a flat 1024 → wide files truncated).
+        $r = app(\App\Services\AI\AnthropicClient::class)
+            ->message($tenantId, 'mapping', $prompt, 'reasoning', min(8000, 256 + 96 * count($headers)), null, 30);
 
-        if ($response->failed()) {
-            throw new \RuntimeException('Anthropic API error: ' . $response->status());
+        if (! $r->ok) {
+            throw new \RuntimeException('AI mapping unavailable: ' . $r->error);
         }
-        if ($response->json('stop_reason') === 'max_tokens') {
+        if ($r->truncated()) {
             throw new \RuntimeException('AI mapping response was truncated');
         }
 
-        $mappings = self::decodeJsonArray((string) $response->json('content.0.text', ''));
+        $mappings = self::decodeJsonArray($r->text);
 
         // Ensure every source header is represented
         $mapped = collect($mappings)->filter(fn ($m) => is_array($m) && isset($m['source_header']))->keyBy('source_header');

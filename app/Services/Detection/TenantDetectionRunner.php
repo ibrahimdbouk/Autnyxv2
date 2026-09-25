@@ -37,10 +37,35 @@ class TenantDetectionRunner
      * @param  int          $tenantId
      * @param  string|null  $mode  full|aggregate|incremental; null → config('detection.mode').
      */
-    public function run(int $tenantId, ?string $mode = null): void
+    public function run(int $tenantId, ?string $mode = null, int $waitSeconds = 0): void
     {
         $mode = $mode ?: config('detection.mode', 'full');
 
+        // WP5.2 (audit H3): one detection writer per tenant — nightly, import,
+        // manual and recalibration runs share this lock (database cache store).
+        $lock = \App\Services\Pipeline\TenantDetectionLock::for($tenantId);
+        $got  = $waitSeconds > 0 ? $this->blockFor($lock, $waitSeconds) : $lock->get();
+        if (! $got) {
+            throw new \App\Services\Pipeline\DetectionBusy("Detection is already running for tenant {$tenantId}.");
+        }
+        try {
+            $this->runLocked($tenantId, $mode);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function blockFor($lock, int $seconds): bool
+    {
+        try {
+            return (bool) $lock->block($seconds);
+        } catch (\Illuminate\Contracts\Cache\LockTimeoutException) {
+            return false;
+        }
+    }
+
+    private function runLocked(int $tenantId, string $mode): void
+    {
         // WP1.2 (audit C3): if a live import means we must wait, do NOTHING —
         // keep the dirty-key queue and do not stamp the watermark, so the
         // deferred change set is picked up by the next run and "last detection"
@@ -58,11 +83,15 @@ class TenantDetectionRunner
             return;
         }
 
+        // WP5.2: only the dirty keys that existed when the scan STARTED are
+        // consumed — a key an import adds mid-run survives for the next run.
+        $maxDirty = (int) DetectionDirtyKey::where('tenant_id', $tenantId)->max('id');
+
         if ($mode !== 'incremental') {
             // Full scan.
             $this->detector->runForTenant($tenantId);
             $this->correlator->correlateForTenant($tenantId);
-            DetectionDirtyKey::where('tenant_id', $tenantId)->delete();
+            $this->consume($tenantId, $maxDirty);
             $this->stampWatermark($tenantId);
 
             return;
@@ -71,10 +100,10 @@ class TenantDetectionRunner
         $scope = RunScope::forTenant($tenantId, (int) config('detection.max_union_skus', 20000));
 
         if ($scope === null) {
-            // Change set too broad — a full scan is cheaper. Clear the whole queue.
+            // Change set too broad — a full scan is cheaper. Clear what it covered.
             $this->detector->runForTenant($tenantId);
             $this->correlator->correlateForTenant($tenantId);
-            DetectionDirtyKey::where('tenant_id', $tenantId)->delete();
+            $this->consume($tenantId, $maxDirty);
             $this->stampWatermark($tenantId);
 
             return;
@@ -96,6 +125,13 @@ class TenantDetectionRunner
             ->where('id', '<=', $scope->maxDirtyId())
             ->delete();
         $this->stampWatermark($tenantId);
+    }
+
+    private function consume(int $tenantId, int $maxId): void
+    {
+        if ($maxId > 0) {
+            DetectionDirtyKey::where('tenant_id', $tenantId)->where('id', '<=', $maxId)->delete();
+        }
     }
 
     /** Query-builder update bypasses model events (mirrors the auth-listener pattern). */

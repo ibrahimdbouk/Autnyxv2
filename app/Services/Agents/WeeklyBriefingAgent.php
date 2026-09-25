@@ -36,6 +36,7 @@ class WeeklyBriefingAgent extends AgentService
      */
     public function generate(int $tenantId, ?int $requestedBy = null): AgentRun
     {
+        $this->callTenant = $tenantId;
         $stats = $this->weeklyStats($tenantId);
 
         $result = $this->callClaude($this->buildPrompt($stats), $this->reasoningModel(), 1500);
@@ -65,11 +66,11 @@ class WeeklyBriefingAgent extends AgentService
             'stats'             => $stats,          // keep the deterministic facts alongside
         ];
 
-        return $this->record([
+        return $this->recordReplacing([
             'tenant_id'     => $tenantId,
             'subject_type'  => 'tenant',
             'subject_id'    => (string) $tenantId,
-            'title'         => 'Weekly briefing — ' . now()->format('d M Y'),
+            'title'         => 'Weekly briefing — ' . \App\Support\Tenancy\TenantClock::now($tenantId)->format('d M Y'),
             'status'        => AgentRun::STATUS_COMPLETE,
             'input'         => $stats,
             'output'        => $output,
@@ -78,7 +79,9 @@ class WeeklyBriefingAgent extends AgentService
             'tokens_input'  => $result['tokens_input'],
             'tokens_output' => $result['tokens_output'],
             'requested_by'  => $requestedBy,
-        ]);
+        ], fn ($q) => $q->where('tenant_id', $tenantId)->where('status', AgentRun::STATUS_COMPLETE)
+            // WP5.4: one briefing per tenant per LOCAL day — a regenerate replaces today's.
+            ->where('created_at', '>=', \App\Support\Tenancy\TenantClock::today($tenantId)));
     }
 
     // =========================================================================

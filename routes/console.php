@@ -8,49 +8,23 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-// ── AI agent schedules ───────────────────────────────────────────────────────
-// These fire only when the environment's scheduler (schedule:run each minute) is
-// enabled; every agent is also runnable on demand from its page / by command.
-
-// Agent #2 — Weekly Briefing: every Monday at 07:00.
-Schedule::command('agents:weekly-briefing')
-    ->weeklyOn(1, '07:00')
-    ->withoutOverlapping();
-
-// Daily Briefing: every morning at 06:15 (after detection/agents settle, before
-// the working day). Runnable on demand from the Daily Briefing page too.
-Schedule::command('agents:daily-briefing')
-    ->dailyAt('06:15')
-    ->withoutOverlapping();
-
-// Agent #3 — Data-Quality / readiness: every Monday at 06:30.
-Schedule::command('agents:data-quality')
-    ->weeklyOn(1, '06:30')
-    ->withoutOverlapping();
-
-// Agent #6 — Action Follow-Up: daily at 06:00.
-Schedule::command('agents:action-followup')
-    ->dailyAt('06:00')
-    ->withoutOverlapping();
-
-// Auto-tidy the low-value trend tail (conservative: only purely-trend, below the
-// materiality floor, open, no actions, not already snoozed) — daily at 05:45:
-// AFTER the nightly detection + correlation (02:00), so it judges tonight's
-// revenue at risk, and BEFORE the morning agents (06:00 / 06:15) and the
-// working day. Items that worsened past the floor are resurfaced in the same run.
-Schedule::command('queue:tidy-tail')
-    ->dailyAt('05:45')
-    ->withoutOverlapping();
+// The nightly analytics chain, queue:tidy-tail and the morning AI agents (daily
+// briefing, action follow-up; weekly briefing and data-quality on Mondays) are
+// started per tenant, in the tenant's timezone, by nightly:dispatch — see
+// AppServiceProvider and App\Services\Pipeline\NightlyChain (WP5.2). Tidy-tail
+// runs inside the chain after detection; the agents start once the chain is done.
 
 // Pull data from configured source-system APIs (SAP, Dynamics, Shopify, …) into
-// the import pipeline — the API sibling of sftp:poll (which is scheduled hourly in
-// AppServiceProvider). Only tenants with an active api_connection do any work.
+// the import pipeline — the API sibling of sftp:poll. Only tenants with an
+// active api_connection do any work.
 Schedule::command('api:poll')
     ->hourly()
-    ->withoutOverlapping();
+    ->onOneServer()
+    ->withoutOverlapping(55);
 
 // WP1.2 (audit C3) — retire uploads left awaiting review so they can never hold
 // detection back indefinitely (detection only waits for them for 24h anyway).
 Schedule::command('imports:expire-abandoned')
     ->hourly()
-    ->withoutOverlapping();
+    ->onOneServer()
+    ->withoutOverlapping(55);

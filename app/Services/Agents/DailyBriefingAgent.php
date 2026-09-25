@@ -39,6 +39,7 @@ class DailyBriefingAgent extends AgentService
      */
     public function generate(int $tenantId, ?int $requestedBy = null): AgentRun
     {
+        $this->callTenant = $tenantId;
         $stats = $this->dailyStats($tenantId);
 
         $result = $this->callClaude($this->buildPrompt($stats), $this->reasoningModel(), 1200);
@@ -67,11 +68,11 @@ class DailyBriefingAgent extends AgentService
             'stats'          => $stats,
         ];
 
-        return $this->record([
+        return $this->recordReplacing([
             'tenant_id'     => $tenantId,
             'subject_type'  => 'tenant',
             'subject_id'    => (string) $tenantId,
-            'title'         => 'Daily briefing — ' . now()->format('D, d M Y'),
+            'title'         => 'Daily briefing — ' . \App\Support\Tenancy\TenantClock::now($tenantId)->format('D, d M Y'),
             'status'        => AgentRun::STATUS_COMPLETE,
             'input'         => $stats,
             'output'        => $output,
@@ -80,7 +81,9 @@ class DailyBriefingAgent extends AgentService
             'tokens_input'  => $result['tokens_input'],
             'tokens_output' => $result['tokens_output'],
             'requested_by'  => $requestedBy,
-        ]);
+        ], fn ($q) => $q->where('tenant_id', $tenantId)->where('status', AgentRun::STATUS_COMPLETE)
+            // WP5.4: one briefing per tenant per LOCAL day — a regenerate replaces today's.
+            ->where('created_at', '>=', \App\Support\Tenancy\TenantClock::today($tenantId)));
     }
 
     // =========================================================================

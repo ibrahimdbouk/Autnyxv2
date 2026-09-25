@@ -23,14 +23,15 @@ cd "$ROOT"
 
 echo "==> Tier 1a: PHP syntax lint"
 # Lint every tracked .php file under the app source dirs.
-FAIL=0
-for dir in app routes database config tests; do
-  [ -d "$dir" ] || continue
-  find "$dir" -name '*.php' -print0 | while IFS= read -r -d '' f; do
-    php -l "$f" >/dev/null 2>&1 || { echo "  SYNTAX ERROR: $f"; php -l "$f"; exit 1; }
-  done || FAIL=1
-done
-[ "$FAIL" = "0" ] || { echo "PHP syntax lint failed."; exit 1; }
+# WP5.1: POSIX sh has no `read -d`, so the old find | while loop never linted
+# anything and its failure could not leave the pipe's subshell. Collect the
+# errors instead and fail on any.
+BAD=$(find app routes database config tests -name '*.php' -exec php -l {} \; 2>&1 | grep -v '^No syntax errors detected' || true)
+if [ -n "$BAD" ]; then
+  echo "$BAD"
+  echo "PHP syntax lint failed."
+  exit 1
+fi
 echo "    ok"
 
 echo "==> Tier 1b: Blade / Filament footgun scan"

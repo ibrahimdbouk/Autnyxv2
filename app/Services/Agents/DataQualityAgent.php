@@ -36,6 +36,7 @@ class DataQualityAgent extends AgentService
 
     public function checkTenant(int $tenantId, ?int $requestedBy = null): AgentRun
     {
+        $this->callTenant = $tenantId;
         $checks = $this->dataChecks($tenantId);
 
         $result = $this->callClaude($this->buildPrompt($checks), $this->fastModel(), 1400);
@@ -71,8 +72,8 @@ class DataQualityAgent extends AgentService
             }
         }
 
-        $readiness = in_array(($d['data_readiness'] ?? ''), ['good', 'fair', 'poor'], true)
-            ? $d['data_readiness'] : 'fair';
+        // WP5.4: readiness is computed from the checks, never taken from the model.
+        $readiness = self::readiness($checks);
 
         $output = [
             'headline'       => (string) ($d['headline'] ?? ''),
@@ -101,6 +102,29 @@ class DataQualityAgent extends AgentService
     // =========================================================================
     // DETERMINISTIC CHECKS
     // =========================================================================
+
+    /**
+     * WP5.4 — good / fair / poor from the checks themselves:
+     *   poor = no products, or a recent import missing a required field, or
+     *          more than half the products without a cost, or inventory stale;
+     *   fair = some products without a cost/price, failed rows in recent
+     *          imports, or POs without an expected date;
+     *   good = otherwise.
+     */
+    public static function readiness(array $c): string
+    {
+        $missingRequired = collect($c['recent_imports'] ?? [])->contains(fn ($i) => ! empty($i['unmapped_required']));
+        $failedRows      = collect($c['recent_imports'] ?? [])->sum('failed_rows');
+
+        if (($c['products'] ?? 0) === 0 || $missingRequired || ($c['products_missing_cost_pct'] ?? 0) > 50 || ! empty($c['inventory_is_stale'])) {
+            return 'poor';
+        }
+        if (($c['products_missing_cost'] ?? 0) > 0 || ($c['products_missing_price'] ?? 0) > 0 || $failedRows > 0 || ($c['po_missing_expected_date'] ?? 0) > 0) {
+            return 'fair';
+        }
+
+        return 'good';
+    }
 
     /**
      * @return array<string,mixed>
@@ -207,7 +231,6 @@ Respond with ONLY this JSON object (no markdown, no code fences):
 {
   "headline": "ONE sentence on overall data readiness.",
   "summary": "2-4 plain sentences: what's solid, what's weak, and why it matters for the results.",
-  "data_readiness": "one of: good | fair | poor",
   "issues": [
     {"severity": "high|medium|low", "area": "e.g. Product costs", "finding": "what is wrong, with the number", "impact": "which results it distorts", "fix": "the concrete step to fix it"}
   ],

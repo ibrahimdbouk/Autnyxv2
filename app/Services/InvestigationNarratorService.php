@@ -2,12 +2,13 @@
 
 namespace App\Services;
 
+use App\Services\AI\PromptData;
+
 use App\Models\AnomalySetting;
 use App\Models\Investigation;
 use App\Models\InvestigationEvidence;
 use App\Services\Anomaly\EvidenceCollectorService;
 use App\Services\AuditLogger;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -23,8 +24,6 @@ use Illuminate\Support\Facades\Log;
  */
 class InvestigationNarratorService
 {
-    private const HAIKU_MODEL = 'claude-haiku-4-5';
-    private const API_URL     = 'https://api.anthropic.com/v1/messages';
 
     // =========================================================================
     // PUBLIC API
@@ -58,29 +57,19 @@ class InvestigationNarratorService
         $prompt = $this->buildPrompt($investigation, $cause);
 
         try {
-            $response = Http::withHeaders([
-                'x-api-key'         => config('services.anthropic.key'),
-                'anthropic-version' => '2023-06-01',
-                'content-type'      => 'application/json',
-            ])->timeout(45)->post(self::API_URL, [
-                'model'      => self::HAIKU_MODEL,
-                'max_tokens' => 1024,
-                'messages'   => [
-                    ['role' => 'user', 'content' => $prompt],
-                ],
-            ]);
+            // WP5.4: through AnthropicClient — budget, retries, circuit breaker,
+            // metering, model from config, data-is-not-instructions system prompt.
+            $r = app(\App\Services\AI\AnthropicClient::class)
+                ->message((int) $investigation->tenant_id, 'narrator', $prompt, 'fast', 1024, null, 45);
 
-            if ($response->failed()) {
-                Log::error('[M19] Anthropic API error', [
-                    'status'         => $response->status(),
-                    'body'           => $response->body(),
-                    'investigation'  => $investigation->id,
-                ]);
-                $this->recordFailure("Anthropic API {$response->status()} (investigation #{$investigation->id})");
-                return $investigation;
+            if (! $r->ok || $r->truncated()) {
+                if ($r->ok) {
+                    $this->recordFailure("Narrative cut off at max_tokens (investigation #{$investigation->id})");
+                }
+                return $investigation; // budget / disabled / failure already recorded by the client
             }
 
-            $text = $response->json('content.0.text', '');
+            $text = $r->text;
             $data = $this->parseResponse($text);
 
             if (empty($data)) {
@@ -110,6 +99,7 @@ class InvestigationNarratorService
                 // ordering, KPIs and the API — AI must never write it.
                 'ai_revenue_estimate'     => $this->numericOrNull($data['revenue_estimate'] ?? ($data['revenue_at_risk'] ?? null)),
                 'ai_generated_at'         => now(),
+                'ai_model'                => $r->model,
             ]);
 
             AuditLogger::aiGenerated($investigation);
@@ -161,6 +151,8 @@ class InvestigationNarratorService
      */
     public function narrateForTenant(int $tenantId): void
     {
+        // WP5.4: a nightly run narrates at most ai.narrate_per_run investigations,
+        // the most money at risk first; the rest wait for the next night.
         $investigations = Investigation::where('tenant_id', $tenantId)
             ->whereIn('status', [Investigation::STATUS_OPEN, Investigation::STATUS_IN_PROGRESS])
             ->where(function ($q) {
@@ -168,9 +160,11 @@ class InvestigationNarratorService
                   ->orWhereExists(function ($sub) {
                       $sub->from('investigation_evidence')
                           ->whereColumn('investigation_evidence.investigation_id', 'investigations.id')
-                          ->whereColumn('investigation_evidence.created_at', '>', 'investigations.ai_generated_at');
+                          ->whereColumn('investigation_evidence.updated_at', '>', 'investigations.ai_generated_at');
                   });
             })
+            ->orderByRaw('revenue_at_risk DESC NULLS LAST')
+            ->limit(max(1, (int) config('ai.narrate_per_run', 50)))
             ->get();
 
         foreach ($investigations as $investigation) {
@@ -196,20 +190,22 @@ class InvestigationNarratorService
 
         // Human-readable names — never ship raw codes to the reader.
         $product     = $anomalies->map(fn ($a) => $a->product)->filter()->first();
-        $productName = $product?->name ?? $investigation->primary_sku ?? 'this product';
+        $productName = PromptData::name($product?->name ?? $investigation->primary_sku ?? 'this product');
         $storeNames  = $anomalies->map(fn ($a) => $a->store?->name ?? ($a->store_id ? "store {$a->store_id}" : null))
-            ->filter()->unique()->take(10)->implode(', ') ?: 'multiple stores';
+            ->filter()->unique()->take(10)->map(fn ($n) => PromptData::name($n))->implode(', ') ?: 'multiple stores';
 
-        // Rule lines — store names, not codes.
-        $ruleLines = $anomalies->map(function ($a) {
+        // Rule lines — store names, not codes. WP5.4: names come from customer
+        // files, so they are cleaned; the list is capped (+N more).
+        $ruleLines = PromptData::capped($anomalies->sortByDesc(fn ($a) => (float) ($a->context['revenue_impact'] ?? 0))->map(function ($a) {
             $label = AnomalySetting::RULES[$a->rule_type]['label'] ?? $a->rule_type;
             $desc  = AnomalySetting::RULES[$a->rule_type]['description'] ?? '';
-            $store = $a->store?->name ?? ($a->store_id ? "store {$a->store_id}" : 'chain-wide');
+            $store = PromptData::name($a->store?->name ?? ($a->store_id ? "store {$a->store_id}" : 'chain-wide'));
             return "  - [{$a->severity}] {$label} @ {$store}: {$desc}";
-        })->implode("\n");
+        })->values()->all(), (int) config('ai.prompt_max_anomalies', 25), 'more signals');
 
         // Evidence package — passed RAW; the model RESTATES it in plain language.
-        $evidence      = $investigation->evidence()->orderBy('evidence_type')->get();
+        $evidence      = $investigation->evidence()->orderBy('evidence_type')->limit((int) config('ai.prompt_max_evidence', 30))->get();
+        $moreEvidence  = max(0, $investigation->evidence()->count() - $evidence->count());
         $supporting    = $evidence->where('direction', InvestigationEvidence::DIRECTION_SUPPORTS);
         $contradicting = $evidence->where('direction', InvestigationEvidence::DIRECTION_CONTRADICTS);
         $neutral       = $evidence->where('direction', InvestigationEvidence::DIRECTION_NEUTRAL);
@@ -228,22 +224,21 @@ class InvestigationNarratorService
             foreach ($neutral as $e) { $evidenceText .= "  {$e->label}: {$e->getFormattedValue()}\n"; }
         }
 
+        if ($moreEvidence > 0) {
+            $evidenceText .= "\n(+{$moreEvidence} more evidence items not shown)\n";
+        }
         $priority = strtoupper($investigation->priority);
+        $title    = PromptData::name($investigation->title, 160);
+        $facts    = PromptData::block('investigation', "INVESTIGATION: {$title}\nPRODUCT: {$productName}\nSTORES INVOLVED: {$storeNames}\nPRIORITY: {$priority}\nCURRENCY: {$currency}\n\nDETECTED ANOMALIES ({$anomalies->count()}):\n{$ruleLines}");
+        $evidenceBlock = PromptData::block('evidence', trim($evidenceText));
 
         return <<<PROMPT
 You are a retail operations analyst writing for a busy store or category manager who is NOT technical and is often reading on a phone. Turn the deterministic findings below into a clear, honest narrative they can understand in seconds.
 
-INVESTIGATION: {$investigation->title}
-PRODUCT: {$productName}
-STORES INVOLVED: {$storeNames}
-PRIORITY: {$priority}
-CURRENCY: {$currency}
-
-DETECTED ANOMALIES ({$anomalies->count()}):
-{$ruleLines}
+{$facts}
 
 EVIDENCE:
-{$evidenceText}
+{$evidenceBlock}
 
 ROOT CAUSE — decided by Autnyx from the data. Restate it in plain language; do NOT replace it, add a different cause, or claim more certainty than it states:
 {$causeText}

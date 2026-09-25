@@ -36,6 +36,9 @@
         <env name="CACHE_DRIVER" value="array"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
+        <env name="CACHE_STORE" value="array"/>
+        <!-- Postgres aborts the test transaction on the database lock's insert race; locks use the array store in tests. -->
+        <env name="PIPELINE_LOCK_STORE" value="array"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <!-- WP2.2: test hosts are faked, so skip real DNS in the egress guard

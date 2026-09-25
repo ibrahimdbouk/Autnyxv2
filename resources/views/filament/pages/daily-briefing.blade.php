@@ -43,12 +43,11 @@
             @if(!empty($b['generated_ago']))<span class="db-meta">updated {{ $b['generated_ago'] }}</span>@endif
         </div>
         @if(!empty($b['failed']))
-            <div class="db-h">The briefing could not be generated</div>
-            <div class="db-sum">The AI service did not respond last time. Try generating it again.</div>
-        @else
-            @if(!empty($b['headline']))<div class="db-h">{{ $b['headline'] }}</div>@endif
-            @if(!empty($b['summary']))<div class="db-sum">{{ $b['summary'] }}</div>@endif
+            <div class="db-sum"><strong>The latest briefing could not be generated.</strong>
+                {{ !empty($b['last_good_ago']) ? 'Showing the last good one, from ' . $b['last_good_ago'] . '.' : 'The AI service did not respond. Try generating it again.' }}</div>
         @endif
+        @if(!empty($b['headline']))<div class="db-h">{{ $b['headline'] }}</div>@endif
+        @if(!empty($b['summary']))<div class="db-sum">{{ $b['summary'] }}</div>@endif
     </div>
 
     @if(!empty($b['stats']))

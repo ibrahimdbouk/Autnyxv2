@@ -79,6 +79,13 @@ foreach (rglob($root . '/resources/views', '.blade.php') as $file) {
     $src = file_get_contents($file);
     $r = rel($file, $root);
 
+    // BLD-001 (WP5.1): inline @php(...) and @php … @endphp blocks in one file.
+    // Blade's block regex can pair an inline @php( with a later @endphp and
+    // swallow the markup between them. Use one form per file (blocks).
+    if (preg_match('/(?<!@)@php\s*\(/', $src) && preg_match('/(?<!@)@php\b(?!\s*\()/', $src)) {
+        $problems[] = "[BLD-001] $r: mixes inline @php(...) with @php … @endphp blocks. Convert the inline ones to `@php …; @endphp`.";
+    }
+
     if (preg_match_all('/@php\b(?!\s*\()(.*?)@endphp/s', $src, $m, PREG_OFFSET_CAPTURE)) {
         foreach ($m[1] as $block) {
             [$code, $offset] = $block;

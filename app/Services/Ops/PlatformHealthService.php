@@ -80,10 +80,10 @@ class PlatformHealthService
     public function staleCommands(): array
     {
         // command => max hours since last success before it's considered stale.
+        // WP5.2/5.3: the nightly work runs per tenant inside nightly:dispatch's
+        // chains (see staleNights()); the dispatcher itself runs hourly.
         $expected = [
-            'baselines:compute' => 26,
-            'anomalies:detect'  => 26,
-            'anomalies:notify'  => 26,
+            'nightly:dispatch' => 3,
         ];
 
         // Only judge staleness once the pipeline has run at least once (avoids a
@@ -103,8 +103,11 @@ class PlatformHealthService
                 ->orderByDesc('ran_at')
                 ->value('ran_at');
 
+            // Never succeeded counts only once the platform has been recording
+            // longer than the SLA (a new command isn't "stale" on its first deploy).
             $isStale = $lastOk === null
-                || \Illuminate\Support\Carbon::parse($lastOk)->lt(now()->subHours($maxHours));
+                ? JobRun::where('ran_at', '<', now()->subHours($maxHours))->exists()
+                : \Illuminate\Support\Carbon::parse($lastOk)->lt(now()->subHours($maxHours));
 
             if ($isStale) {
                 $stale[] = [
@@ -118,13 +121,58 @@ class PlatformHealthService
         return $stale;
     }
 
-    /** Failed queue jobs (best-effort — the table may not exist on sync driver). */
-    public function failedQueueJobs(): int
+    /** Failed queue jobs in the last $hours (WP5.3 — old failures are history, not an alert). */
+    public function failedQueueJobs(int $hours = 24): int
     {
         try {
-            return Schema::hasTable('failed_jobs') ? (int) DB::table('failed_jobs')->count() : 0;
+            return Schema::hasTable('failed_jobs')
+                ? (int) DB::table('failed_jobs')->where('failed_at', '>=', now()->subHours($hours))->count()
+                : 0;
         } catch (Throwable $e) {
             return 0;
+        }
+    }
+
+    /** Minutes the oldest waiting queue job has been waiting (0 = none) — a stopped worker shows here first. */
+    public function oldestQueuedMinutes(): int
+    {
+        try {
+            $oldest = Schema::hasTable('jobs')
+                ? DB::table('jobs')->whereNull('reserved_at')->where('available_at', '<=', now()->timestamp)->min('available_at')
+                : null;
+        } catch (Throwable $e) {
+            return 0;
+        }
+
+        return $oldest ? (int) floor((now()->timestamp - (int) $oldest) / 60) : 0;
+    }
+
+    /**
+     * WP5.3 — active tenants whose last nightly chain did not finish cleanly in
+     * the last 26 hours (failed, stuck, or never ran once the dispatcher has).
+     *
+     * @return array<int,array{tenant_id:int,name:string,status:?string,finished_at:?string}>
+     */
+    public function staleNights(): array
+    {
+        try {
+            if (! Schema::hasTable('tenant_nightly_runs') || ! \App\Models\TenantNightlyRun::query()->exists()) {
+                return [];
+            }
+            $out = [];
+            foreach (\App\Models\Tenant::where('status', 'active')->get(['id', 'name']) as $t) {
+                $last = \App\Models\TenantNightlyRun::where('tenant_id', $t->id)->orderByDesc('local_date')->first();
+                $ok = $last && $last->status === \App\Models\TenantNightlyRun::STATUS_DONE
+                    && $last->finished_at && $last->finished_at->gte(now()->subHours(26));
+                if (! $ok) {
+                    $out[] = ['tenant_id' => $t->id, 'name' => $t->name, 'status' => $last?->status,
+                        'finished_at' => $last?->finished_at?->toDateTimeString()];
+                }
+            }
+
+            return $out;
+        } catch (Throwable $e) {
+            return [];
         }
     }
 
@@ -169,6 +217,8 @@ class PlatformHealthService
             'pipeline_ok'    => ! $recentFailure && empty($stale),
             'stale'          => $stale,
             'failed_jobs'    => $this->failedQueueJobs(),
+            'queue_wait_min' => $this->oldestQueuedMinutes(),
+            'stale_nights'   => $this->staleNights(),
             'stuck_imports'  => $imports['stuck'],
             'failed_imports' => $imports['failed'],
             'db_bytes'       => $this->database()['bytes'],

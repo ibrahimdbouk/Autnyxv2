@@ -892,6 +892,7 @@ class AnomalyDetectionService
                 $detector();
                 $succeeded = true;
             } catch (\Throwable $e) {
+                report($e);   // WP5.3: to Nightwatch — a failed rule must be seen
                 Log::error("Anomaly detection failed [{$ruleType}]", [
                     'tenant_id' => $tenantId,
                     'error'     => $e->getMessage(),

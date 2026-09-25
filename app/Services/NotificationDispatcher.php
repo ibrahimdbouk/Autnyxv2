@@ -34,7 +34,8 @@ class NotificationDispatcher
         ?string $url = null,
         string $icon = 'heroicon-o-bell',
         string $color = 'primary',
-        bool $alsoEmail = true
+        bool $alsoEmail = true,
+        bool $personal = true,
     ): void {
         $userIds = array_values(array_unique(array_filter($userIds)));
         if (empty($userIds)) {
@@ -83,7 +84,7 @@ class NotificationDispatcher
         // Teams counterpart — dormant until a tenant configures a connection
         // (TEAMS_ENABLED + an active teams_connections row). Best-effort.
         if ($alsoEmail && $users !== null && config('services.teams.enabled')) {
-            self::teamsUsers($users, $title, $body, $url);
+            self::teamsUsers($users, $title, $body, $url, $personal);
         }
     }
 
@@ -94,16 +95,17 @@ class NotificationDispatcher
      *
      * @param  \Illuminate\Support\Collection<int,User>  $users
      */
-    private static function teamsUsers($users, string $title, ?string $body, ?string $url): void
+    private static function teamsUsers($users, string $title, ?string $body, ?string $url, bool $personal = true): void
     {
         try {
-            $notifier = app(\App\Services\Teams\TeamsNotifier::class);
-
+            // WP5.4: queued after commit, de-duplicated, personal notices never to a channel.
             foreach ($users->groupBy('tenant_id') as $tenantId => $group) {
                 if (! $tenantId) {
                     continue;
                 }
-                $notifier->notify((int) $tenantId, $group, $title, $body, $url);
+                \App\Jobs\Notifications\SendTeamsNotificationJob::dispatch(
+                    (int) $tenantId, $group->pluck('id')->all(), $title, $body, $url, $personal
+                )->afterCommit();
             }
         } catch (\Throwable $e) {
             Log::error('[NotificationDispatcher] teams: ' . $e->getMessage());

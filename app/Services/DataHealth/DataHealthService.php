@@ -305,7 +305,8 @@ class DataHealthService
             'Critical data health for: ' . $labels . '. Investigations relying on these sources may be limited.',
             null,
             'heroicon-o-exclamation-triangle',
-            'danger'
+            'danger',
+            personal: false,   // WP5.4: an organisation-wide alert may go to the team channel
         );
     }
 

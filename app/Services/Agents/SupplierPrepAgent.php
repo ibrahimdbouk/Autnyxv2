@@ -37,6 +37,7 @@ class SupplierPrepAgent extends AgentService
 
     public function prepare(int $tenantId, int $supplierId, ?int $requestedBy = null): AgentRun
     {
+        $this->callTenant = $tenantId;
         $supplier = Supplier::where('tenant_id', $tenantId)->find($supplierId);
         if (! $supplier) {
             return $this->record([
@@ -52,13 +53,7 @@ class SupplierPrepAgent extends AgentService
 
         $pack = $this->evidencePack($tenantId, $supplier);
 
-        // Retire earlier packs for this supplier.
-        AgentRun::where('tenant_id', $tenantId)
-            ->where('agent_key', $this->agentKey())
-            ->where('subject_type', 'supplier')
-            ->where('subject_id', (string) $supplierId)
-            ->where('status', AgentRun::STATUS_COMPLETE)
-            ->update(['status' => AgentRun::STATUS_DISMISSED]);
+        // WP5.4: earlier packs for this supplier are retired only once this one succeeds.
 
         $result = $this->callClaude($this->buildPrompt($pack), $this->reasoningModel(), 1600);
 
@@ -87,7 +82,7 @@ class SupplierPrepAgent extends AgentService
             'pack'          => $pack,
         ];
 
-        return $this->record([
+        return $this->recordReplacing([
             'tenant_id'     => $tenantId,
             'subject_type'  => 'supplier',
             'subject_id'    => (string) $supplierId,
@@ -100,7 +95,8 @@ class SupplierPrepAgent extends AgentService
             'tokens_input'  => $result['tokens_input'],
             'tokens_output' => $result['tokens_output'],
             'requested_by'  => $requestedBy,
-        ]);
+        ], fn ($q) => $q->where('tenant_id', $tenantId)->where('subject_type', 'supplier')
+            ->where('subject_id', (string) $supplierId)->where('status', AgentRun::STATUS_COMPLETE));
     }
 
     /**

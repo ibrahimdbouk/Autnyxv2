@@ -25,6 +25,10 @@ Route::prefix('sso')->group(function () {
     Route::get('/{tenant}/callback', [SsoController::class, 'callback'])->name('sso.callback');
 });
 
+// WP5.4 — signed, login-free unsubscribe link in every anomaly digest.
+Route::get('/digest/unsubscribe/{kind}/{id}', \App\Http\Controllers\DigestUnsubscribeController::class)
+    ->middleware('signed')->whereIn('kind', ['user', 'tenant'])->whereNumber('id')->name('digest.unsubscribe');
+
 // Inbound email → investigation comment (secret-protected, CSRF-exempt).
 Route::post('/webhooks/inbound-email', [InboundEmailController::class, 'handle'])
     ->name('webhooks.inbound-email');

@@ -45,12 +45,11 @@
             @if(!empty($b['generated_ago']))<span class="wb-meta">updated {{ $b['generated_ago'] }}</span>@endif
         </div>
         @if(!empty($b['failed']))
-            <div class="wb-h">The briefing could not be generated</div>
-            <div class="wb-sum">The AI service did not respond last time. Try generating it again.</div>
-        @else
-            @if(!empty($b['headline']))<div class="wb-h">{{ $b['headline'] }}</div>@endif
-            @if(!empty($b['summary']))<div class="wb-sum">{{ $b['summary'] }}</div>@endif
+            <div class="wb-sum"><strong>The latest briefing could not be generated.</strong>
+                {{ !empty($b['last_good_ago']) ? 'Showing the last good one, from ' . $b['last_good_ago'] . '.' : 'The AI service did not respond. Try generating it again.' }}</div>
         @endif
+        @if(!empty($b['headline']))<div class="wb-h">{{ $b['headline'] }}</div>@endif
+        @if(!empty($b['summary']))<div class="wb-sum">{{ $b['summary'] }}</div>@endif
     </div>
 
     @if(!empty($b['stats']))

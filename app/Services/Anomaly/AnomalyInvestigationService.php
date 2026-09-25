@@ -3,7 +3,6 @@
 namespace App\Services\Anomaly;
 
 use App\Models\Anomaly;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -20,8 +19,6 @@ use Illuminate\Support\Facades\Log;
  */
 class AnomalyInvestigationService
 {
-    private const HAIKU_MODEL = 'claude-haiku-4-5';
-    private const API_URL     = 'https://api.anthropic.com/v1/messages';
 
     /**
      * Run the full 7-question investigation on an anomaly.
@@ -56,29 +53,16 @@ class AnomalyInvestigationService
         $prompt = $this->buildPrompt($anomaly, $related, $historicalCount);
 
         try {
-            $response = Http::withHeaders([
-                'x-api-key'         => config('services.anthropic.key'),
-                'anthropic-version' => '2023-06-01',
-                'content-type'      => 'application/json',
-            ])->timeout(30)->post(self::API_URL, [
-                'model'      => self::HAIKU_MODEL,
-                'max_tokens' => 2048,
-                'messages'   => [
-                    ['role' => 'user', 'content' => $prompt],
-                ],
-            ]);
+            // WP5.4: through AnthropicClient (budget, retries, circuit breaker, metering).
+            $r = app(\App\Services\AI\AnthropicClient::class)
+                ->message((int) $anomaly->tenant_id, 'anomaly_investigation', $prompt, 'fast', 2048, null, 30);
 
-            if ($response->failed()) {
-                Log::error('Anomaly investigation API error', [
-                    'anomaly_id' => $anomaly->id,
-                    'status'     => $response->status(),
-                    'body'       => $response->body(),
-                ]);
+            if (! $r->ok || $r->truncated()) {
                 $anomaly->update(['investigation_status' => Anomaly::STATUS_DETECTED]);
                 return $anomaly;
             }
 
-            $text = $response->json('content.0.text', '');
+            $text = $r->text;
             $data = $this->parseJson($text);
 
             if (!$data) {
