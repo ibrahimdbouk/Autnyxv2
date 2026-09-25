@@ -12,6 +12,7 @@ use App\Models\SalesTransaction;
 use App\Models\SkuProfile;
 use App\Models\Store;
 use App\Services\Recovery\LifecycleReconciler;
+use App\Support\Detection\ValueModel;
 use App\Support\Money;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -318,6 +319,9 @@ class AnomalyDetectionService
         // Planned-order vs receipts: raw-SQL, scoped by sku on both sources.
         'order_plan_variance',
     ];
+
+    /** Rules that fire when data STOPS arriving — never reachable from dirty keys alone. */
+    public const ABSENCE_RULES = ['sales_drop', 'demand_forecast_break', 'plan_variance'];
 
     /**
      * A guarded SQL fragment + bindings for raw DB::select() rules. Returns
@@ -873,8 +877,11 @@ class AnomalyDetectionService
             }
 
             // Aggregate mode (Slice 4) runs the complement — only the rules the
-            // per-key incremental run skips — on a full scan.
-            if ($this->aggregateOnly && in_array($ruleType, self::INCREMENTAL_RULES, true)) {
+            // per-key incremental run skips — on a full scan. v2 (WP4.5, audit
+            // M20): rules that fire on ABSENCE (a SKU that stopped selling writes
+            // no new rows, so it is never "dirty") also run here, on everything.
+            if ($this->aggregateOnly && in_array($ruleType, self::INCREMENTAL_RULES, true)
+                && ! ($this->v2 && in_array($ruleType, self::ABSENCE_RULES, true))) {
                 continue;
             }
 
@@ -3285,6 +3292,7 @@ class AnomalyDetectionService
             ->first();
 
         if ($latest && $latest->dismissed_at !== null
+            && $latest->dismiss_reason !== AnomalyDismissal::REASON_SUPERSEDED
             && $latest->lifecycle_state !== Anomaly::LIFECYCLE_RESOLVED
             && ! $this->worsenedSinceDismissal($latest, $severity, $context)) {
             $this->suppressedByRule[$ruleType] = ($this->suppressedByRule[$ruleType] ?? 0) + 1;
@@ -3308,6 +3316,7 @@ class AnomalyDetectionService
                 'description' => $description,
                 'context'     => $context,
                 'product_id'  => $productId ?? $latest->product_id,
+                'value_type'  => ValueModel::type($ruleType, $context),
             ]);
             $anomaly = $latest;
         } else {
@@ -3322,6 +3331,10 @@ class AnomalyDetectionService
                 'context'      => $context,
                 'detected_at'  => now(),
                 'identity_key' => $key,
+                // WP4.4: the figure at open is whatever money the rule reports
+                // (lost revenue, stock value, goods value…); value_type says which.
+                'value_type'    => ValueModel::type($ruleType, $context),
+                'value_at_open' => ValueModel::amount($context),
             ]);
         }
 
@@ -3349,13 +3362,7 @@ class AnomalyDetectionService
     /** The money figure a rule reports in its context (lost revenue, stock value, goods value…). */
     private static function contextValue(array $context): float
     {
-        foreach (['revenue_impact', 'inventory_value', 'goods_value', 'margin_lost'] as $k) {
-            if (isset($context[$k]) && is_numeric($context[$k])) {
-                return (float) $context[$k];
-            }
-        }
-
-        return 0.0;
+        return ValueModel::amount($context);
     }
 
     /** @return array<string,mixed> */
@@ -3369,6 +3376,7 @@ class AnomalyDetectionService
             'subject'  => $context['subject'] ?? null,
             'severity' => $severity,
             'value'    => self::contextValue($context),
+            'type'     => ValueModel::type($ruleType, $context),
         ];
     }
 }

@@ -84,6 +84,9 @@ class InvestigationCorrelationService
                 $investigation->syncAnomalyCount();
                 $this->syncRevenueAtRisk($investigation);
                 App::make(EvidenceCollectorService::class)->collectForInvestigation($investigation);
+                // WP4.5: the deterministic cause, recorded as the evidence changes.
+                App::make(RootCauseAnalysisService::class)->record($investigation);
+                \App\Services\Investigation\TidyTail::resurfaceIfWarranted($investigation->fresh());
             } catch (\Throwable $e) {
                 Log::error("[M16/finalise] investigation={$investigation->id}: {$e->getMessage()}");
             }
@@ -104,11 +107,15 @@ class InvestigationCorrelationService
             return Investigation::find($anomaly->investigation_id);
         }
 
-        $investigation = $this->findOpenInvestigation($anomaly)
-            ?? $this->createInvestigation($anomaly);
+        $v2 = AnomalyDetectionService::rulesV2For((int) $anomaly->tenant_id);
+        $investigation = ($v2 ? $this->findActiveBySubject($anomaly) : $this->findOpenInvestigation($anomaly))
+            ?? $this->createInvestigation($anomaly, $v2 ? self::subjectKey($anomaly) : null);
 
         // Link the anomaly
         $anomaly->update(['investigation_id' => $investigation->id]);
+
+        // WP4.5: an incident joining an auto-snoozed trend item brings it back.
+        \App\Services\Investigation\TidyTail::resurfaceIfWarranted($investigation, (string) $anomaly->rule_type);
 
         // Record entity facts + escalate priority (cheap, must run per anomaly)
         $this->recordEntities($investigation, $anomaly);
@@ -175,14 +182,64 @@ class InvestigationCorrelationService
     }
 
     /**
+     * WP4.5 (audit H22) — what an anomaly is about, as an investigation key:
+     * a shelf (SKU at a store), a SKU chain-wide, a PO / supplier / receipt
+     * (the rule's own subject), a store, or — for tenant-wide checks — the rule.
+     * Never one catch-all bucket for everything without a SKU.
+     */
+    public static function subjectKey(Anomaly $anomaly): string
+    {
+        $context = is_array($anomaly->context) ? $anomaly->context : [];
+        $store   = $anomaly->store_id !== null ? '|store:' . $anomaly->store_id : '';
+
+        if ($anomaly->sku !== null && trim($anomaly->sku) !== '') {
+            return 'sku:' . trim($anomaly->sku) . $store;
+        }
+        if (! empty($context['subject'])) {
+            return (string) $context['subject'] . $store;
+        }
+        if ($anomaly->store_id !== null) {
+            return 'store:' . $anomaly->store_id . '|rule:' . $anomaly->rule_type;
+        }
+
+        return 'rule:' . $anomaly->rule_type;
+    }
+
+    /**
+     * v2: the ACTIVE investigation (open / in progress, however long ago it
+     * opened — the window extends while it is being worked) for the same
+     * subject. A SKU's chain-level and store-level signals meet in one
+     * investigation, so the same loss isn't split (and counted) twice.
+     */
+    private function findActiveBySubject(Anomaly $anomaly): ?Investigation
+    {
+        $active = fn () => Investigation::where('tenant_id', $anomaly->tenant_id)
+            ->whereIn('status', [Investigation::STATUS_OPEN, Investigation::STATUS_IN_PROGRESS]);
+
+        $exact = $active()->where('subject_key', self::subjectKey($anomaly))->orderByDesc('opened_at')->first();
+        if ($exact || $anomaly->sku === null) {
+            return $exact;
+        }
+
+        return $active()->where('primary_sku', $anomaly->sku)
+            ->where(fn ($q) => $anomaly->store_id === null
+                ? $q->whereNotNull('id')                 // chain-level joins any active same-SKU investigation
+                : $q->whereNull('primary_store_id'))     // a store signal joins the chain-level one
+            ->orderByRaw('primary_store_id IS NULL DESC')
+            ->orderByDesc('opened_at')
+            ->first();
+    }
+
+    /**
      * Create a new Investigation for an anomaly.
      */
-    private function createInvestigation(Anomaly $anomaly): Investigation
+    private function createInvestigation(Anomaly $anomaly, ?string $subjectKey = null): Investigation
     {
         $title    = $this->buildTitle($anomaly);
         $priority = Investigation::priorityFromSeverity($anomaly->severity);
 
         $investigation = Investigation::create([
+            'subject_key'     => $subjectKey,
             'tenant_id'       => $anomaly->tenant_id,
             'title'           => $title,
             'status'          => Investigation::STATUS_OPEN,

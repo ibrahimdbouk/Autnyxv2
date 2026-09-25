@@ -110,7 +110,9 @@ class InvestigationFlowTest extends TestCase
 
         $this->assertEquals($fakePayload['summary'],            $result->ai_summary);
         $this->assertEquals($fakePayload['root_cause'],         $result->ai_root_cause);
-        $this->assertEquals($fakePayload['confidence'],         $result->ai_confidence);
+        // WP4.5: confidence is the deterministic cause tier, never the model's
+        // own claim — no anomalies here, so nothing is established.
+        $this->assertEquals(Investigation::CONFIDENCE_UNKNOWN,   $result->ai_confidence);
         $this->assertEquals($fakePayload['recommended_action'], $result->ai_recommended_action);
         $this->assertNotNull($result->ai_generated_at);
     }

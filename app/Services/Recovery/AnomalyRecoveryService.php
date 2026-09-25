@@ -4,8 +4,11 @@ namespace App\Services\Recovery;
 
 use App\Models\Anomaly;
 use App\Models\AnomalySetting;
+use App\Services\Anomaly\AnomalyDetectionService;
+use App\Support\Detection\ValueModel;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Recovery Measurement — R3: OBSERVED recovery, straight from the lifecycle.
@@ -40,9 +43,12 @@ class AnomalyRecoveryService
      */
     public function observedInWindow(int $tenantId, ?CarbonInterface $from = null, ?CarbonInterface $to = null): array
     {
-        $row = $this->resolvedBase($tenantId, $from, $to)
-            ->selectRaw('COALESCE(SUM(value_at_open), 0) AS amount, COUNT(*) AS cnt')
-            ->first();
+        $row = $this->v2($tenantId)
+            ? DB::query()->fromSub($this->perSubject($this->resolvedBase($tenantId, $from, $to), '(resolved_at)::date'), 'x')
+                ->selectRaw('COALESCE(SUM(v), 0) AS amount, COUNT(*) AS cnt')->first()
+            : $this->resolvedBase($tenantId, $from, $to)
+                ->selectRaw('COALESCE(SUM(value_at_open), 0) AS amount, COUNT(*) AS cnt')
+                ->first();
 
         return [
             'amount' => (float) ($row->amount ?? 0),
@@ -71,6 +77,12 @@ class AnomalyRecoveryService
      */
     public function activeValueAtRisk(int $tenantId): float
     {
+        if ($this->v2($tenantId)) {
+            $base = Anomaly::query()->where('tenant_id', $tenantId)->active()->where('value_type', ValueModel::LOST_REVENUE);
+
+            return (float) DB::query()->fromSub($this->perSubject($base, null), 'x')->sum('v');
+        }
+
         return (float) Anomaly::query()
             ->where('tenant_id', $tenantId)
             ->active()
@@ -86,6 +98,15 @@ class AnomalyRecoveryService
     public function dailySeries(int $tenantId, int $days = 30): array
     {
         $from = Carbon::now()->subDays($days - 1)->startOfDay();
+
+        if ($this->v2($tenantId)) {
+            return DB::query()->fromSub($this->perSubject($this->resolvedBase($tenantId, $from, null), '(resolved_at)::date'), 'x')
+                ->selectRaw("TO_CHAR(g, 'YYYY-MM-DD') AS d, SUM(v) AS total")
+                ->groupBy('g')
+                ->pluck('total', 'd')
+                ->map(fn ($v) => (float) $v)
+                ->all();
+        }
 
         return $this->resolvedBase($tenantId, $from, null)
             ->selectRaw("TO_CHAR(resolved_at::date, 'YYYY-MM-DD') AS d, COALESCE(SUM(value_at_open), 0) AS total")
@@ -177,6 +198,25 @@ class AnomalyRecoveryService
 
     // ── Internal ────────────────────────────────────────────────────────────
 
+    /** v2 value model (WP4.4) for tenants on the corrected rules. */
+    private function v2(int $tenantId): bool
+    {
+        return AnomalyDetectionService::rulesV2For($tenantId);
+    }
+
+    /**
+     * v2: one figure per subject (store + SKU, optionally per day) — the
+     * largest of the overlapping episodes, so a stockout and a sales drop on
+     * the same shelf are one loss, not two.
+     */
+    private function perSubject($query, ?string $groupExpr)
+    {
+        $g = $groupExpr !== null ? ", {$groupExpr}" : '';
+
+        return $query->selectRaw('MAX(value_at_open) AS v' . ($groupExpr !== null ? ", {$groupExpr} AS g" : ''))
+            ->groupByRaw("COALESCE(sku, rule_type), store_id{$g}");
+    }
+
     /**
      * Base query for OBSERVED recovery: resolved, genuinely observed (not
      * backfilled), with a resolved_at timestamp, optionally windowed.
@@ -185,6 +225,8 @@ class AnomalyRecoveryService
     {
         $q = Anomaly::query()
             ->where('tenant_id', $tenantId)
+            // v2: recovery is measured on the same basis as revenue at risk.
+            ->when($this->v2($tenantId), fn ($w) => $w->where('value_type', ValueModel::LOST_REVENUE))
             ->where('lifecycle_state', Anomaly::LIFECYCLE_RESOLVED)
             ->where(function ($w) {
                 $w->where('backfilled', false)->orWhereNull('backfilled');

@@ -91,6 +91,7 @@ class Anomaly extends Model
         'previous_episode_id',
         'value_at_open',
         'backfilled',
+        'value_type',
     ];
 
     protected $casts = [
@@ -154,6 +155,10 @@ class Anomaly extends Model
                 $ctx = $anomaly->context;
                 $impact = is_array($ctx) ? ($ctx['revenue_impact'] ?? null) : null;
                 $anomaly->value_at_open = $impact !== null ? (float) $impact : null;
+            }
+            if (empty($anomaly->value_type) && ! empty($anomaly->rule_type)) {
+                $anomaly->value_type = \App\Support\Detection\ValueModel::type(
+                    (string) $anomaly->rule_type, is_array($anomaly->context) ? $anomaly->context : []);
             }
             if (empty($anomaly->lifecycle_state)) {
                 $anomaly->lifecycle_state = self::LIFECYCLE_OPEN;

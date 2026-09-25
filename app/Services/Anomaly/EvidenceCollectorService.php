@@ -39,8 +39,9 @@ class EvidenceCollectorService
 
     /**
      * Collect and persist all evidence for an investigation.
-     * Idempotent: re-running replaces nothing — evidence rows accumulate;
-     * duplicates are avoided via firstOrCreate on (investigation_id, anomaly_id, label).
+     * Idempotent: one row per (investigation_id, anomaly_id, label), REFRESHED
+     * on every run (WP4.5 — it used to be frozen at the first collection, so
+     * the narrator read stale numbers).
      */
     public function collectForInvestigation(Investigation $investigation): void
     {
@@ -91,6 +92,9 @@ class EvidenceCollectorService
             in_array($anomaly->rule_type, ['import_frequency_gap', 'duplicate_transaction_ids',
                                             'sku_master_drift', 'location_proliferation'])
                 => $this->collectDataQualityEvidence($investigation, $anomaly),
+
+            in_array($anomaly->rule_type, ['plan_variance', 'order_plan_variance'])
+                => $this->collectPlanEvidence($investigation, $anomaly),
 
             default => null,
         };
@@ -555,12 +559,75 @@ class EvidenceCollectorService
     // =========================================================================
 
     /**
-     * Persist one evidence row. Skips duplicates via firstOrCreate on
-     * (investigation_id, anomaly_id, label) — same label = same fact.
+     * WP4.5 — plan variance: the tenant's own plan against what happened, as
+     * the rule measured it, plus the daily actuals over the window.
+     */
+    private function collectPlanEvidence(Investigation $investigation, Anomaly $anomaly): void
+    {
+        $c = is_array($anomaly->context) ? $anomaly->context : [];
+        $isOrder = $anomaly->rule_type === 'order_plan_variance';
+        $planned = (float) ($c['forecast_units'] ?? $c['planned_units'] ?? 0);
+        $actual  = (float) ($c['actual_units'] ?? $c['received_units'] ?? 0);
+        $days    = (int) ($c['window_days'] ?? 14);
+
+        $this->record($investigation, $anomaly, [
+            'evidence_type' => InvestigationEvidence::TYPE_STAT,
+            'source'        => 'plan_forecasts',
+            'label'         => $isOrder ? "Planned order quantity (last {$days} days)" : "Planned demand (last {$days} days)",
+            'value_numeric' => $planned,
+            'unit'          => 'units',
+            'direction'     => InvestigationEvidence::DIRECTION_NEUTRAL,
+            'strength'      => InvestigationEvidence::STRENGTH_STRONG,
+            'observed_at'   => now(),
+        ]);
+        $this->record($investigation, $anomaly, [
+            'evidence_type' => InvestigationEvidence::TYPE_STAT,
+            'source'        => $isOrder ? 'purchase_orders' : 'sales_daily',
+            'label'         => $isOrder ? "Units received (last {$days} days)" : "Units sold (last {$days} days)",
+            'value_numeric' => $actual,
+            'unit'          => 'units',
+            'direction'     => InvestigationEvidence::DIRECTION_SUPPORTS,
+            'strength'      => InvestigationEvidence::STRENGTH_STRONG,
+            'observed_at'   => now(),
+        ]);
+        if (isset($c['deviation_pct'])) {
+            $this->record($investigation, $anomaly, [
+                'evidence_type' => InvestigationEvidence::TYPE_STAT,
+                'source'        => 'plan_forecasts',
+                'label'         => 'Deviation from plan',
+                'value_numeric' => (float) $c['deviation_pct'],
+                'unit'          => '%',
+                'direction'     => InvestigationEvidence::DIRECTION_SUPPORTS,
+                'strength'      => abs((float) $c['deviation_pct']) >= 50 ? InvestigationEvidence::STRENGTH_STRONG : InvestigationEvidence::STRENGTH_MODERATE,
+                'observed_at'   => now(),
+            ]);
+        }
+        if (! $isOrder && $anomaly->sku) {
+            $daily = DB::table('sales_daily')->where('tenant_id', $investigation->tenant_id)->where('sku', $anomaly->sku)
+                ->when($anomaly->store_id, fn ($q) => $q->where('store_id', $anomaly->store_id))
+                ->where('date', '>=', Carbon::today()->subDays(max(1, $days))->format('Y-m-d'))
+                ->selectRaw("TO_CHAR(date, 'YYYY-MM-DD') AS d, SUM(units_sold) AS u")->groupBy('date')->orderBy('date')
+                ->pluck('u', 'd')->map(fn ($v) => (float) $v)->all();
+            $this->record($investigation, $anomaly, [
+                'evidence_type' => InvestigationEvidence::TYPE_DATA_POINT,
+                'source'        => 'sales_daily',
+                'label'         => 'Daily units sold against the plan window',
+                'value_json'    => $daily,
+                'unit'          => 'units/day',
+                'direction'     => InvestigationEvidence::DIRECTION_NEUTRAL,
+                'strength'      => InvestigationEvidence::STRENGTH_MODERATE,
+                'observed_at'   => now(),
+            ]);
+        }
+    }
+
+    /**
+     * Persist one evidence row — (investigation_id, anomaly_id, label) is the
+     * fact; its value is refreshed on every collection (WP4.5).
      */
     private function record(Investigation $investigation, Anomaly $anomaly, array $attrs): void
     {
-        InvestigationEvidence::firstOrCreate(
+        InvestigationEvidence::updateOrCreate(
             [
                 'investigation_id' => $investigation->id,
                 'anomaly_id'       => $anomaly->id,

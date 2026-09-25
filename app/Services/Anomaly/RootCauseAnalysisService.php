@@ -13,15 +13,51 @@ use App\Models\Investigation;
  * the retail causal graph and asserts the most likely ROOT CAUSE, the causal
  * CHAIN from it, and a CONFIDENCE tier:
  *
- *   correlated → the signals co-occur but form no known cause→effect chain.
- *   likely     → a direct cause→effect link is present.
- *   verified   → a full multi-step chain is present (cause → intermediate → effect).
+ *   correlated   → the signals co-occur but form no known cause→effect chain.
+ *   likely       → a direct cause→effect link is present.
+ *   corroborated → a full multi-step chain is present (cause → intermediate →
+ *                  effect). (Was "verified" — WP4.5: the data corroborates the
+ *                  chain; nothing has been verified in the field.)
+ *
+ * WP4.5 (audit H23): only LIVE anomalies are analysed (a dismissed or resolved
+ * signal is not part of today's cause), and a link that needs the same store
+ * holds when one side is chain-level — it is then matched on the SKU.
  *
  * Everything is deterministic and explainable: the AI does not choose the cause,
  * the graph does. (Narration can later phrase this conclusion; it never invents it.)
  */
 class RootCauseAnalysisService
 {
+    public const TIER_CORROBORATED = 'corroborated';
+
+    /** Tier → the investigation confidence scale the UI and API already use. */
+    public const CONFIDENCE_FOR_TIER = [
+        self::TIER_CORROBORATED => 'established',
+        'likely'                => 'probable',
+        'correlated'            => 'suspected',
+    ];
+
+    /**
+     * WP4.5: store the deterministic cause on the investigation — the narrator
+     * phrases it, the KPIs count it, the AI never chooses it.
+     *
+     * @return array<string,mixed>|null the analysis
+     */
+    public function record(Investigation $investigation): ?array
+    {
+        $analysis = $this->analyze($investigation);
+        $tier = $analysis['tier'] ?? ($investigation->anomalies()->active()->exists() ? 'single' : null);
+
+        $investigation->update([
+            'root_cause_tier' => $tier,
+            'root_cause_rule' => $analysis['root_rule']
+                ?? $investigation->anomalies()->active()->orderByDesc('id')->value('rule_type'),
+            'ai_confidence'   => self::CONFIDENCE_FOR_TIER[$tier] ?? 'unknown',
+        ]);
+
+        return $analysis;
+    }
+
     /**
      * @return array{
      *   root_anomaly_id:int, root_rule:string, root_label:string,
@@ -31,7 +67,7 @@ class RootCauseAnalysisService
      */
     public function analyze(Investigation $investigation): ?array
     {
-        $anomalies = $investigation->anomalies()->get();
+        $anomalies = $investigation->anomalies()->active()->get();
         if ($anomalies->count() < 2) return null;
 
         // Node info per anomaly.
@@ -101,9 +137,9 @@ class RootCauseAnalysisService
         $path  = $this->longestPath($best, $out);           // list of node ids
         $depth = count($path) - 1;                           // number of causal links along it
 
-        $tier = $depth >= 2 ? 'verified' : 'likely';
+        $tier = $depth >= 2 ? self::TIER_CORROBORATED : 'likely';
         $confidence = match ($tier) {
-            'verified' => min(95, 75 + 5 * ($depth - 2) + ($nodes[$best]['sev'] * 3)),
+            self::TIER_CORROBORATED => min(95, 75 + 5 * ($depth - 2) + ($nodes[$best]['sev'] * 3)),
             default    => min(70, 55 + $nodes[$best]['sev'] * 3),
         };
 
@@ -130,7 +166,9 @@ class RootCauseAnalysisService
     {
         return match ($scope) {
             CausalGraph::SCOPE_SKU       => $a['sku'] !== null && $a['sku'] === $b['sku'],
-            CausalGraph::SCOPE_SKU_STORE => $a['sku'] !== null && $a['sku'] === $b['sku'] && $a['store'] !== null && $a['store'] === $b['store'],
+            // Same shelf — or the same SKU when either side is chain-level (no store).
+            CausalGraph::SCOPE_SKU_STORE => $a['sku'] !== null && $a['sku'] === $b['sku']
+                && ($a['store'] === null || $b['store'] === null || $a['store'] === $b['store']),
             CausalGraph::SCOPE_STORE     => $a['store'] !== null && $a['store'] === $b['store'],
             CausalGraph::SCOPE_SUPPLIER  => ! empty($a['supplier']) && $a['supplier'] === $b['supplier'],
             default                      => false,
@@ -200,7 +238,7 @@ class RootCauseAnalysisService
     {
         $steps = implode(' → ', array_map(fn ($c) => $c['label'], $chain));
         $subject = $chain[0]['sku'] !== null ? " on SKU {$chain[0]['sku']}" : '';
-        $lead = $tier === 'verified'
+        $lead = $tier === self::TIER_CORROBORATED
             ? 'A full causal chain is present'
             : 'A direct cause→effect link is present';
 

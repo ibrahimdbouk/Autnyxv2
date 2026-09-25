@@ -34,7 +34,7 @@ use App\Services\Anomaly\RootCauseAnalysisService;
  *   3. Read-only. This service performs no writes.
  *
  * Confidence vocabulary is reused verbatim, never invented:
- *   - causal inference : correlated | likely | verified   (RootCauseAnalysisService)
+ *   - causal inference : correlated | likely | corroborated   (RootCauseAnalysisService)
  *   - per-signal       : established | probable | suspected | unknown (Anomaly)
  *
  * See claude/deep-investigation.md and claude/narration-quality-standard.md.
@@ -268,7 +268,7 @@ class DeepInvestigationService
 
         // Narrative honesty: signals present but no causal chain → correlated only.
         $structure = match (true) {
-            $analysis !== null && ! empty($edges) => $analysis['tier'], // likely | verified
+            $analysis !== null && ! empty($edges) => $analysis['tier'], // likely | corroborated
             count($nodes) >= 2                    => 'correlated',
             default                               => 'single',
         };
@@ -727,7 +727,7 @@ class DeepInvestigationService
      */
     private function confidence(Investigation $investigation): array
     {
-        // Track A — causal inference (correlated | likely | verified).
+        // Track A — causal inference (correlated | likely | corroborated).
         $analysis = null;
         try {
             $analysis = $this->rootCause->analyze($investigation);

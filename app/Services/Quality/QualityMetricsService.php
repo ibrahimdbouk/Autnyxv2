@@ -79,8 +79,11 @@ class QualityMetricsService
         $totalInv   = Investigation::where('tenant_id', $tenantId)->count();
         $snoozed    = Investigation::where('tenant_id', $tenantId)->whereNotNull('snoozed_until')->where('snoozed_until', '>', now())->count();
         $resolvedInv= Investigation::where('tenant_id', $tenantId)->whereIn('status', [Investigation::STATUS_RESOLVED, Investigation::STATUS_CLOSED])->count();
-        $narrated   = Investigation::where('tenant_id', $tenantId)->whereNotNull('ai_generated_at')->count();
-        $established = Investigation::where('tenant_id', $tenantId)->where('ai_confidence', Investigation::CONFIDENCE_ESTABLISHED)->count();
+        // WP4.5: the cause rate counts the DETERMINISTIC tier (a corroborated
+        // causal chain) over investigations the cause analysis has examined —
+        // never the model's own confidence.
+        $established = Investigation::where('tenant_id', $tenantId)->where('root_cause_tier', \App\Services\Anomaly\RootCauseAnalysisService::TIER_CORROBORATED)->count();
+        $analysed    = Investigation::where('tenant_id', $tenantId)->whereNotNull('root_cause_tier')->count();
 
         $activeSuppressions = Suppression::currentlyActive()->where('tenant_id', $tenantId)->count();
         $suppressedMatches  = (int) Suppression::where('tenant_id', $tenantId)->sum('match_count');
@@ -96,7 +99,7 @@ class QualityMetricsService
             'snooze_rate'            => $this->pct($snoozed, $totalInv),
             'active_suppressions'    => $activeSuppressions,
             'suppressed_matches'     => $suppressedMatches,
-            'established_cause_rate' => $this->pct($established, $narrated),
+            'established_cause_rate' => $this->pct($established, $analysed),
             'action_completion_rate' => $this->pct($completedActions, $totalActions),
             'resolution_rate'        => $this->pct($resolvedInv, $totalInv),
             'counts'                 => [

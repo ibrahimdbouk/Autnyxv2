@@ -53,6 +53,10 @@ class Investigation extends Model
         'root_cause_notes',
         'resolution_notes',
         'revenue_at_risk',
+        'capital_at_risk',
+        'subject_key',
+        'root_cause_tier',
+        'root_cause_rule',
         'ai_revenue_estimate',   // WP1.1 — AI guess, labelled; never drives logic
         'observed_recovery',
         'opened_at',
@@ -70,6 +74,7 @@ class Investigation extends Model
 
     protected $casts = [
         'revenue_at_risk'         => 'float',
+        'capital_at_risk'         => 'float',
         'ai_revenue_estimate'     => 'float',
         'observed_recovery'       => 'float',
         'anomaly_count'           => 'integer',

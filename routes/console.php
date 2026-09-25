@@ -34,8 +34,10 @@ Schedule::command('agents:action-followup')
     ->withoutOverlapping();
 
 // Auto-tidy the low-value trend tail (conservative: only purely-trend, below the
-// materiality floor, open, no actions, not already snoozed) — daily at 05:45,
-// before detection/agents run, so the active queue reflects what's worth working.
+// materiality floor, open, no actions, not already snoozed) — daily at 05:45:
+// AFTER the nightly detection + correlation (02:00), so it judges tonight's
+// revenue at risk, and BEFORE the morning agents (06:00 / 06:15) and the
+// working day. Items that worsened past the floor are resurfaced in the same run.
 Schedule::command('queue:tidy-tail')
     ->dailyAt('05:45')
     ->withoutOverlapping();

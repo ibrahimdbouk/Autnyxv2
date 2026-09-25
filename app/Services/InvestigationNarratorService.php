@@ -44,14 +44,18 @@ class InvestigationNarratorService
 
         // Skip if already narrated recently and not forced
         if (!$force && $investigation->ai_generated_at) {
-            $latestEvidence = $investigation->evidence()->latest('created_at')->value('created_at');
+            // WP4.5: evidence is refreshed in place, so "changed" means updated.
+            $latestEvidence = $investigation->evidence()->latest('updated_at')->value('updated_at');
             if (!$latestEvidence || $investigation->ai_generated_at->gte($latestEvidence)) {
                 Log::info("[M19] Investigation #{$investigation->id} narrative is current — skipping.");
                 return $investigation;
             }
         }
 
-        $prompt = $this->buildPrompt($investigation);
+        // WP4.5 (audit H23): the cause is decided deterministically and handed
+        // to the model as a fixed fact; its tier sets the confidence shown.
+        $cause  = app(\App\Services\Anomaly\RootCauseAnalysisService::class)->record($investigation);
+        $prompt = $this->buildPrompt($investigation, $cause);
 
         try {
             $response = Http::withHeaders([
@@ -95,7 +99,6 @@ class InvestigationNarratorService
                 'ai_headline'             => $data['headline']             ?? ($data['summary'] ?? null),
                 'ai_summary'              => $data['summary']              ?? ($data['headline'] ?? null),
                 'ai_root_cause'           => $data['root_cause']           ?? null,
-                'ai_confidence'           => $data['confidence']           ?? Investigation::CONFIDENCE_UNKNOWN,
                 'ai_evidence'             => $toList($data['evidence']             ?? null),
                 'ai_contributing_factors' => $toList($data['contributing_factors'] ?? null),
                 'ai_business_impact'      => $data['business_impact']      ?? null,
@@ -181,8 +184,13 @@ class InvestigationNarratorService
     // PROMPT BUILDER
     // =========================================================================
 
-    private function buildPrompt(Investigation $investigation): string
+    private function buildPrompt(Investigation $investigation, ?array $cause = null): string
     {
+        $causeText = $cause
+            ? "{$cause['root_label']} (" . ($cause['tier'] === 'corroborated' ? 'a full cause-and-effect chain in the data' : ($cause['tier'] === 'likely' ? 'a direct cause-and-effect link in the data' : 'signals that occur together but show no known cause-and-effect link')) . ").\n"
+                . 'Chain: ' . implode(' → ', array_map(fn ($c) => $c['label'], $cause['chain'])) . "\n" . $cause['explanation']
+            : 'A single signal — there is no cause-and-effect chain to report. Describe what was detected; do not speculate about a cause.';
+
         $anomalies = $investigation->anomalies()->with(['product', 'store'])->get();
         $currency  = $investigation->tenant?->currencyCode() ?? 'AED';
 
@@ -237,6 +245,9 @@ DETECTED ANOMALIES ({$anomalies->count()}):
 EVIDENCE:
 {$evidenceText}
 
+ROOT CAUSE — decided by Autnyx from the data. Restate it in plain language; do NOT replace it, add a different cause, or claim more certainty than it states:
+{$causeText}
+
 WRITING RULES — follow every one:
 1. Use PRODUCT and STORE NAMES, never codes (never "SKU00236" or "ST005").
 2. Whole units only — write "45 units", never "45.00 units".
@@ -252,8 +263,7 @@ Respond with ONLY this JSON object (no markdown, no code fences):
 {
   "headline": "ONE plain sentence: what is happening, to which product, and where. The 5-second version.",
   "summary": "2-3 plain sentences: what happened, why it matters, and how big it is. Do not repeat the headline word for word.",
-  "root_cause": "The most likely underlying cause in plain language, matching the evidence. Use 'Unknown' if evidence is insufficient.",
-  "confidence": "one of: established | probable | suspected | unknown",
+  "root_cause": "The ROOT CAUSE above, restated in plain language. Never a different cause.",
   "evidence": ["3-5 short plain-language facts that support the conclusion, each a complete phrase"],
   "contributing_factors": ["0-4 short plain bullets for what amplified it; group repeats; no recommendations"],
   "business_impact": "One sentence: the money at stake in {$currency}, whether it is large or small, and what worsens if ignored.",
@@ -262,11 +272,6 @@ Respond with ONLY this JSON object (no markdown, no code fences):
   "revenue_estimate": null
 }
 
-Confidence guidance:
-- established: multiple strong corroborating evidence points leave little doubt
-- probable: evidence points one way but some gaps remain
-- suspected: limited evidence; plausible but unconfirmed
-- unknown: contradicting signals or insufficient data
 For revenue_estimate: your own rough estimate as a number if the evidence supports one (e.g. days_of_cover x daily_revenue), otherwise null. It is shown to users labelled as an AI estimate and never replaces the system's calculated value. Keep every field tight.
 PROMPT;
     }

@@ -49,7 +49,7 @@ class DeepInvestigationTest extends TestCase
         $this->assertCount(2, $cm['nodes']);
         $this->assertNotEmpty($cm['edges'], 'the supplier_fill_rate → stockout_risk edge must hold on the same SKU');
         // Confidence vocabulary is reused verbatim — never a fabricated term.
-        $this->assertContains($cm['structure'], ['likely', 'verified', 'correlated', 'single']);
+        $this->assertContains($cm['structure'], ['likely', 'corroborated', 'correlated', 'single']);
         $this->assertTrue(collect($cm['nodes'])->contains('is_root', true), 'a deterministic root must be marked');
 
         // Fishbone geometry is produced server-side and never empty when signals exist.

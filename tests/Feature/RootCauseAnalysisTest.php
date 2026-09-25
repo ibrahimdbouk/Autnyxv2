@@ -19,7 +19,7 @@ class RootCauseAnalysisTest extends TestCase
         return app(RootCauseAnalysisService::class);
     }
 
-    public function test_full_supply_chain_is_verified(): void
+    public function test_full_supply_chain_is_corroborated(): void
     {
         $tenant = $this->createTenant();
         $store  = Store::create(['tenant_id' => $tenant->id, 'name' => 'S7', 'code' => 'ST07']);
@@ -34,7 +34,7 @@ class RootCauseAnalysisTest extends TestCase
 
         $this->assertNotNull($r);
         $this->assertSame('supplier_fill_rate', $r['root_rule']);
-        $this->assertSame('verified', $r['tier']);
+        $this->assertSame('corroborated', $r['tier']);
         $this->assertCount(3, $r['chain']);
         $this->assertSame('supplier_fill_rate', $r['chain'][0]['rule']);
         $this->assertGreaterThanOrEqual(75, $r['confidence']);

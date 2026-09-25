@@ -22,6 +22,9 @@ class AnomalyDismissal
     public const REASON_NOT_ACTIONABLE = 'not_actionable';
     public const REASON_DUPLICATE      = 'duplicate';
 
+    /** D5 — closed by detection:recalibrate, not by a person; never suppresses the subject. */
+    public const REASON_SUPERSEDED     = 'superseded_by_recalibration';
+
     public const REASONS = [
         self::REASON_FALSE_POSITIVE => 'False positive — the data doesn\'t show a real problem',
         self::REASON_KNOWN_CAUSE    => 'Known cause — expected (promotion, range change, …)',

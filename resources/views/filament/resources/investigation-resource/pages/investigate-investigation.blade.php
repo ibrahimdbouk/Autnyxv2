@@ -307,6 +307,10 @@ $curr = \App\Support\Money::symbol(\Filament\Facades\Filament::getTenant()?->cur
 $impactText = $record->revenue_at_risk
     ? 'Estimated revenue at risk: ' . $curr . number_format($record->revenue_at_risk, 2) . '.'
     : 'Revenue impact not yet quantified.';
+// WP4.4: stock value at cost is reported beside revenue at risk, never added to it.
+if ((float) ($record->capital_at_risk ?? 0) > 0) {
+    $impactText .= ' Stock value involved (at cost): ' . $curr . number_format($record->capital_at_risk, 2) . '.';
+}
 
 /* ── Step 6: long-term fix ────────────────────────────────────────────── */
 $ltFix = $record->root_cause_notes
@@ -444,7 +448,7 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
      ════════════════════════════════════════════════════════════════════════ --}}
 @php
     $causal = $this->causalInference();
-    $causalTier = ['verified' => 'success', 'likely' => 'warning', 'correlated' => null];
+    $causalTier = ['corroborated' => 'success', 'verified' => 'success', 'likely' => 'warning', 'correlated' => null];
 @endphp
 @if($causal)
     <x-ui.card variant="accent" class="ax-mb-5">
@@ -745,10 +749,10 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                 <span class="inv2-action-label">Financial</span>
                 <span class="inv2-action-value" style="display:flex;gap:1rem;flex-wrap:wrap">
                     @if($outcome->revenue_at_risk)
-                    <span style="color:var(--ax-danger)">At Risk: ${{ number_format($outcome->revenue_at_risk,0) }}</span>
+                    <span style="color:var(--ax-danger)">At Risk: {{ $curr }}{{ number_format($outcome->revenue_at_risk,0) }}</span>
                     @endif
                     @if($outcome->observed_recovery)
-                    <span style="color:var(--ax-success)">Recovered: ${{ number_format($outcome->observed_recovery,0) }}</span>
+                    <span style="color:var(--ax-success)">Recovered: {{ $curr }}{{ number_format($outcome->observed_recovery,0) }}</span>
                     @endif
                     @if($outcome->getRecoveryRate() !== null)
                     <span style="color:var(--ax-info)">Rate: {{ $outcome->getRecoveryRate() }}%</span>
@@ -1003,7 +1007,7 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
          php-open with any later endphp token and swallows the wrapper directive,
          breaking compilation (a page 500). Do not write those tokens even in a
          comment: this pass runs before comments are stripped. --}}
-    @php($confTierClass = ['verified'=>'s-success','likely'=>'s-info','correlated'=>'s-warning','single'=>'s-gray'])
+    @php($confTierClass = ['corroborated'=>'s-success','verified'=>'s-success','likely'=>'s-info','correlated'=>'s-warning','single'=>'s-gray'])
     @php($sigClass = ['established'=>'s-success','probable'=>'s-info','suspected'=>'s-warning','unknown'=>'s-gray'])
     @php($dirClass = ['supports'=>'s-danger','contradicts'=>'s-success','neutral'=>'s-gray'])
     @php($cur = $imp['currency'] ?? '')
@@ -1023,7 +1027,7 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                 <span>🕸️ Cause Map</span>
                 @if(($cm['available'] ?? false))
                     <span class="dinv-pill {{ $confTierClass[$cm['structure'] ?? 'single'] ?? 's-gray' }}">
-                        {{ ['verified'=>'Verified chain','likely'=>'Likely chain','correlated'=>'Correlated only','single'=>'Single signal'][$cm['structure'] ?? 'single'] ?? ucfirst($cm['structure'] ?? '') }}
+                        {{ ['corroborated'=>'Corroborated chain','verified'=>'Corroborated chain','likely'=>'Likely chain','correlated'=>'Correlated only','single'=>'Single signal'][$cm['structure'] ?? 'single'] ?? ucfirst($cm['structure'] ?? '') }}
                     </span>
                 @endif
                 <span class="dinv-chev">▶</span>

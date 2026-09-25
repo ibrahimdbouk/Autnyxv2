@@ -30,7 +30,9 @@ class AnomalySetting extends Model
             'description'        => 'A SKU\'s demand departs from what the calendar predicts — year-over-year when a year of data exists, otherwise a seasonal (day-of-week) adjusted expectation.',
             'severity'           => 'medium',
             'tier'               => 'core',   // Requires: sales_transactions / sales_daily
-            'default_thresholds' => ['pct' => 40, 'min_revenue' => 1000],
+            // WP4.5: trend floors sit at the tidy-tail floor (detection.trend_min_revenue),
+            // so nothing is flagged only to be auto-snoozed the next morning.
+            'default_thresholds' => ['pct' => 40, 'min_revenue' => 2000],
         ],
         'cannibalization_signal' => [
             'label'              => 'Cannibalization Signal',
@@ -86,7 +88,7 @@ class AnomalySetting extends Model
             'description'        => 'A SKU\'s demand is on a sustained downward trend (a gradual slide, not a sharp break) — the kind of erosion that recent-vs-window rules miss because both windows fall together.',
             'severity'           => 'medium',
             'tier'               => 'core',   // Requires: sales_daily
-            'default_thresholds' => ['days' => 90, 'pct' => 40, 'min_units' => 20, 'min_r2' => 0.3, 'min_revenue' => 500],
+            'default_thresholds' => ['days' => 90, 'pct' => 40, 'min_units' => 20, 'min_r2' => 0.3, 'min_revenue' => 2000],
         ],
 
         // ── Inventory & Supply ───────────────────────────────────────────────
