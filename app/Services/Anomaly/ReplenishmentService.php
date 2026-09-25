@@ -45,7 +45,8 @@ class ReplenishmentService
     public function computeForTenant(int $tenantId): int
     {
         [$leadBySku, $supplierBySku, $tenantAvgLead] = $this->leadTimes($tenantId);
-        $onHand   = $this->onHandSnapshot($tenantId);
+        // WP6.3: on-hand comes with each profile row (joined), not as a map of every position.
+        app(\App\Services\Inventory\InventoryCurrentService::class)->ensure($tenantId);
         $costBySku = $this->costs($tenantId);
 
         // Rows the tenant supplied from an F&R params feed are authoritative — the
@@ -57,16 +58,18 @@ class ReplenishmentService
         $written  = 0;
 
         // Store-level profiles only (store_id != 0): replenishment is per location.
-        DB::table('sku_profiles')
-            ->where('tenant_id', $tenantId)
-            ->where('store_id', '!=', 0)
-            ->whereNotNull('adi')
-            ->select(['sku', 'store_id', 'segment', 'mean_nonzero', 'adi', 'cv2'])
-            ->orderBy('id')
+        DB::table('sku_profiles as p')
+            ->leftJoin('inventory_current as c', fn ($j) => $j->on('c.tenant_id', '=', 'p.tenant_id')
+                ->on('c.store_id', '=', 'p.store_id')->on('c.sku', '=', 'p.sku'))
+            ->where('p.tenant_id', $tenantId)
+            ->where('p.store_id', '!=', 0)
+            ->whereNotNull('p.adi')
+            ->select(['p.sku', 'p.store_id', 'p.segment', 'p.mean_nonzero', 'p.adi', 'p.cv2', 'c.on_hand_qty as on_hand'])
+            ->orderBy('p.id')
             ->cursor()
             ->each(function ($p) use (
                 &$rows, &$written, $tenantId, $now,
-                $leadBySku, $supplierBySku, $tenantAvgLead, $onHand, $costBySku, $ingested
+                $leadBySku, $supplierBySku, $tenantAvgLead, $costBySku, $ingested
             ) {
                 if (in_array($p->segment, self::SKIP_SEGMENTS, true)) return;
 
@@ -91,7 +94,7 @@ class ReplenishmentService
                 $rop      = $rate * $lead + $safety;
                 $orderUp  = $rate * ($lead + self::REVIEW_DAYS) + $safety;
 
-                $oh       = $onHand[$p->store_id . '|' . $sku] ?? null;
+                $oh       = $p->on_hand !== null ? (float) $p->on_hand : null;
                 $suggest  = max(0.0, $orderUp - (float) ($oh ?? 0.0));
                 $cost     = $costBySku[$sku] ?? null;
 
@@ -209,23 +212,6 @@ class ReplenishmentService
             });
 
         return [$leadBySku, $supplierBySku, $tenantAvg];
-    }
-
-    /** Current on-hand per (store, sku) — lots summed (WP6.2 inventory_current). */
-    private function onHandSnapshot(int $tenantId): array
-    {
-        $map = [];
-        app(\App\Services\Inventory\InventoryCurrentService::class)->ensure($tenantId);
-        DB::table('inventory_current')
-            ->where('tenant_id', $tenantId)
-            ->select(['store_id', 'sku', 'on_hand_qty'])
-            ->orderBy('id')
-            ->cursor()
-            ->each(function ($l) use (&$map) {
-                $map[$l->store_id . '|' . trim((string) $l->sku)] = (float) $l->on_hand_qty;
-            });
-
-        return $map;
     }
 
     /** sku => unit cost (unit_cost ?? selling_price). */

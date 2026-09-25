@@ -1140,56 +1140,71 @@ trait DetectsV2
         $minZ      = (float) ($thresholds['z'] ?? self::V2_MIN_Z);
         $minStores = (int) ($thresholds['min_stores'] ?? 4);
         $minUnits  = (float) ($thresholds['min_units'] ?? 10);
-        [$recent, $hist, $recentW, $histW] = $this->salesWindowsV2($tenantId, (int) ($thresholds['days'] ?? 7), true);
+        $recentW   = Window::trailing($this->clock('sales'), (int) ($thresholds['days'] ?? 7));
+        $histW     = $recentW->before(28);
+        [$scopeSql, $scopeBind] = $this->scopeSql('sku');
 
-        $bySku = [];
-        foreach ($hist as $key => $h) {
-            [$storeId, $sku] = explode('|', $key, 2);
-            $priorRate = $h / $histW->days();
-            if ($priorRate * $recentW->days() < $minUnits) {
-                continue; // too little normal volume here to read a shortfall
-            }
-            $bySku[$sku][(int) $storeId] = ['prior' => $priorRate, 'recent' => ($recent[$key] ?? 0.0) / $recentW->days()];
-        }
+        // WP6.3 (audit H31): peers, medians and robust z in SQL — only the
+        // outlying (store, SKU) pairs come back, never every position's windows.
+        // Same maths as before: ratio = this window's daily rate / the prior
+        // 28 days' rate; median and MAD over the SKU's qualifying stores.
+        $rows = DB::cursor(
+            "WITH w AS (
+                SELECT store_id, sku,
+                       SUM(units_sold) FILTER (WHERE date >= ?) AS recent,
+                       SUM(units_sold) FILTER (WHERE date <  ?) AS hist
+                  FROM sales_daily
+                 WHERE tenant_id = ? AND store_id IS NOT NULL AND date >= ? AND date < ?{$scopeSql}
+                 GROUP BY store_id, sku
+             ), r AS (
+                SELECT store_id, sku, hist / ?::numeric AS prior, COALESCE(recent, 0) / ?::numeric AS rec
+                  FROM w WHERE hist > 0
+             ), q AS (
+                SELECT r.*, rec / prior AS ratio FROM r WHERE prior * ? >= ?
+             ), med AS (
+                SELECT sku, COUNT(*) AS n, percentile_cont(0.5) WITHIN GROUP (ORDER BY ratio) AS median
+                  FROM q GROUP BY sku HAVING COUNT(*) >= ?
+             ), mad AS (
+                SELECT q.sku, percentile_cont(0.5) WITHIN GROUP (ORDER BY abs(q.ratio - m.median)) AS mad
+                  FROM q JOIN med m ON m.sku = q.sku GROUP BY q.sku
+             )
+             SELECT q.store_id, q.sku, q.prior, q.rec, q.ratio, m.median, m.n,
+                    GREATEST(1.4826 * d.mad, 0.05 * m.median) AS spread
+               FROM q JOIN med m ON m.sku = q.sku JOIN mad d ON d.sku = q.sku
+              WHERE m.median > 0 AND (m.median - q.ratio) / GREATEST(1.4826 * d.mad, 0.05 * m.median) >= ?
+              ORDER BY q.sku, q.store_id",
+            array_merge(
+                [$recentW->fromDate(), $recentW->fromDate(), $tenantId, $histW->fromDate(), $recentW->untilDate()], $scopeBind,
+                [$histW->days(), $recentW->days(), $recentW->days(), $minUnits, $minStores, $minZ]
+            )
+        );
 
-        foreach ($bySku as $sku => $stores) {
-            if (count($stores) < $minStores) {
+        foreach ($rows as $row) {
+            $sku      = (string) $row->sku;
+            $storeId  = (int) $row->store_id;
+            $median   = (float) $row->median;
+            $ratio    = (float) $row->ratio;
+            $z        = ($median - $ratio) / (float) $row->spread;
+            $peers    = (int) $row->n - 1;
+            $expected = (float) $row->prior * $median * $recentW->days();
+            $actual   = (float) $row->rec * $recentW->days();
+            $shortPct = ($expected - $actual) / $expected * 100;
+            if ($shortPct < $pct) {
                 continue;
             }
-            $ratios = array_map(fn ($s) => $s['recent'] / $s['prior'], $stores);
-            $median = self::median(array_values($ratios));
-            if ($median <= 0) {
+            $price = $this->unitPrice($sku);
+            $value = ($expected - $actual) * $price;
+            if ($price > 0 && $value < $minValue) {
                 continue;
             }
-            $mad    = self::median(array_map(fn ($r) => abs($r - $median), array_values($ratios)));
-            $spread = max(1.4826 * $mad, 0.05 * $median);
-            $price  = $this->unitPrice((string) $sku);
-
-            foreach ($stores as $storeId => $s) {
-                $z = ($median - $ratios[$storeId]) / $spread;
-                if ($z < $minZ) {
-                    continue;
-                }
-                $expected = $s['prior'] * $median * $recentW->days();
-                $actual   = $s['recent'] * $recentW->days();
-                $shortPct = ($expected - $actual) / $expected * 100;
-                if ($shortPct < $pct) {
-                    continue;
-                }
-                $value = ($expected - $actual) * $price;
-                if ($price > 0 && $value < $minValue) {
-                    continue;
-                }
-                $this->flag($tenantId, 'store_outlier', $price > 0 ? $this->severityFromImpact($value) : Anomaly::SEVERITY_MEDIUM,
-                    (string) $sku, $storeId, null,
-                    "SKU {$sku} sold " . round($actual) . " units at store {$storeId} in the {$recentW->days()} days to {$recentW->lastDate()} — "
-                    . round($shortPct) . '% below the ' . round($expected) . ' its own history and its ' . (count($stores) - 1)
-                    . ' peer stores predict.',
-                    ['location_qty' => round($actual, 1), 'expected_qty' => round($expected, 1), 'shortfall_pct' => round($shortPct, 1),
-                     'store_ratio' => round($ratios[$storeId], 3), 'peer_median_ratio' => round($median, 3), 'z_score' => round($z, 2),
-                     'peer_stores' => count($stores) - 1, 'days' => $recentW->days(), 'revenue_impact' => round($value, 2)]
-                );
-            }
+            $this->flag($tenantId, 'store_outlier', $price > 0 ? $this->severityFromImpact($value) : Anomaly::SEVERITY_MEDIUM,
+                $sku, $storeId, null,
+                "SKU {$sku} sold " . round($actual) . " units at store {$storeId} in the {$recentW->days()} days to {$recentW->lastDate()} — "
+                . round($shortPct) . '% below the ' . round($expected) . " its own history and its {$peers} peer stores predict.",
+                ['location_qty' => round($actual, 1), 'expected_qty' => round($expected, 1), 'shortfall_pct' => round($shortPct, 1),
+                 'store_ratio' => round($ratio, 3), 'peer_median_ratio' => round($median, 3), 'z_score' => round($z, 2),
+                 'peer_stores' => $peers, 'days' => $recentW->days(), 'revenue_impact' => round($value, 2)]
+            );
         }
     }
 
