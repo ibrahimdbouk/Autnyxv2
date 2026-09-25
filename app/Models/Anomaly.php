@@ -57,6 +57,7 @@ class Anomaly extends Model
         'detected_at',
         'dismissed_at',
         'dismissed_by',
+        'dismiss_reason',
         'is_false_positive',
         'notified_at',
         // Investigation fields

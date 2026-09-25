@@ -102,11 +102,12 @@ class OutcomeService
     private function sendFalsePositiveFeedback(Investigation $investigation, InvestigationOutcome $outcome): void
     {
         try {
-            // Mark all linked anomalies as false positives
-            $investigation->anomalies()->update([
-                'is_false_positive' => true,
-                'dismissed_at'      => now(),
-            ]);
+            // Mark all linked anomalies as false positives — an explicit
+            // false-positive outcome, so it is feedback for the detector (WP4.3).
+            $dismissal = app(\App\Services\Anomaly\AnomalyDismissal::class);
+            $investigation->anomalies()->whereNull('dismissed_at')->get()
+                ->each(fn ($a) => $dismissal->dismiss($a, \App\Services\Anomaly\AnomalyDismissal::REASON_FALSE_POSITIVE, auth()->user()));
+            $investigation->anomalies()->update(['is_false_positive' => true]);
 
             $outcome->update(['rule_feedback_sent' => true]);
         } catch (\Throwable) {

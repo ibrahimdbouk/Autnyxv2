@@ -6,7 +6,7 @@ use App\Filament\Concerns\GatesResourceByScreen;
 use App\Filament\Resources\AnomalyResource\Pages;
 use App\Models\Anomaly;
 use App\Models\AnomalySetting;
-use App\Services\Anomaly\BaselineCalculatorService;
+use App\Services\Anomaly\AnomalyDismissal;
 use Filament\Actions\Action;
 use Filament\Resources\Resource;
 use Filament\Actions\BulkAction;
@@ -190,21 +190,18 @@ class AnomalyResource extends Resource
                     ->icon('heroicon-o-x-mark')
                     ->color('gray')
                     ->requiresConfirmation()
+                    ->form([
+                        \Filament\Forms\Components\Select::make('reason')
+                            ->label('Why dismiss it?')
+                            ->options(AnomalyDismissal::REASONS)
+                            ->helperText('Only "False positive" teaches the detector to be less sensitive for this item.')
+                            ->required(),
+                    ])
                     ->visible(fn (Anomaly $record) => !$record->isDismissed() && auth()->user()?->canDismissAnomalies())
-                    ->action(function (Anomaly $record) {
-                        $dismissedAt = now();
-
-                        // False-positive feedback: dismiss within 10 min of detection
-                        // WP1.4: Carbon 3 diffs are signed — measure detected → dismissed.
-                        if ($record->detected_at && $record->detected_at->diffInMinutes($dismissedAt, true) < 10) {
-                            app(BaselineCalculatorService::class)
-                                ->recordFalsePositive($record->tenant_id, $record->rule_type, $record->sku);
-                        }
-
-                        $record->update([
-                            'dismissed_at' => $dismissedAt,
-                            'dismissed_by' => auth()->id(),
-                        ]);
+                    ->action(function (Anomaly $record, array $data) {
+                        // WP4.3 (audit H14): the person says why; only a false
+                        // positive feeds back into the baselines.
+                        app(AnomalyDismissal::class)->dismiss($record, (string) $data['reason'], auth()->user());
                     }),
             ])
             ->bulkActions([

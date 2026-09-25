@@ -19,6 +19,8 @@ use Illuminate\Support\Facades\Log;
 
 class AnomalyDetectionService
 {
+    use Concerns\DetectsV2;
+
     public function __construct(
         private readonly BaselineCalculatorService $baselines
     ) {}
@@ -202,6 +204,62 @@ class AnomalyDetectionService
 
     /** True when the most recent runForTenant() call deferred instead of scanning (WP1.2). */
     public bool $lastRunDeferred = false;
+
+    /** WP4.1: the corrected rule set is active for the current run. */
+    private bool $v2 = false;
+
+    /** Forces v1/v2 for the next run (detection:diff); null = the tenant's setting. */
+    private ?bool $forcedV2 = null;
+
+    /**
+     * Dry-run capture (detection:diff): when an array, flag() records what it
+     * would write here and writes nothing, and nothing is reconciled.
+     * @var array<int,array<string,mixed>>|null
+     */
+    private ?array $capture = null;
+
+    /** v2: flags held back because the subject's last episode was dismissed and hasn't worsened (WP4.3). */
+    private array $suppressedByRule = [];
+
+    /** v2: rules that run whatever the item's demand segment (in addition to SkuProfile::ALWAYS_ON). */
+    private const V2_ALWAYS_ON = ['reorder_point_staleness'];
+
+    /** Is the corrected rule set on for this tenant? Its own setting wins over the platform default. */
+    public static function rulesV2For(int $tenantId): bool
+    {
+        $settings = DB::table('tenants')->where('id', $tenantId)->value('settings');
+        $settings = is_string($settings) ? (json_decode($settings, true) ?: []) : (array) $settings;
+
+        return array_key_exists('detection_rules_v2', $settings)
+            ? (bool) $settings['detection_rules_v2']
+            : (bool) config('detection.rules_v2', false);
+    }
+
+    /**
+     * Run detection without writing anything and return what it would flag:
+     * one entry per anomaly (rule, identity, sku, store, subject, severity,
+     * value). Used by detection:diff to compare v1 and v2 before a switch.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public function dryRun(int $tenantId, bool $v2): array
+    {
+        $this->forcedV2 = $v2;
+        $this->capture  = [];
+        try {
+            $this->runForTenant($tenantId);
+
+            return $this->capture;
+        } finally {
+            $this->forcedV2 = null;
+            $this->capture  = null;
+        }
+    }
+
+    /** @return array<string,int> */
+    public function suppressedByRule(): array { return $this->suppressedByRule; }
+
+    public function rulesV2Active(): bool { return $this->v2; }
 
     /**
      * Why detection must wait for this tenant right now, or null if it may run.
@@ -484,6 +542,7 @@ class AnomalyDetectionService
     private function ruleAppliesTo(string $ruleType, ?string $sku, ?int $storeId): bool
     {
         if (! $this->gatingActive || $sku === null) return true;
+        if ($this->v2 && in_array($ruleType, self::V2_ALWAYS_ON, true)) return true;
 
         $sku = trim($sku);
         $segment = $storeId !== null
@@ -687,9 +746,17 @@ class AnomalyDetectionService
         $this->currency = Money::normalize(
             DB::table('tenants')->where('id', $tenantId)->value('currency')
         );
+        $this->v2 = $this->forcedV2 ?? self::rulesV2For($tenantId);
+        $this->suppressedByRule = [];
         // Set the analysis clock BEFORE any priming — every window below measures
         // "recent" relative to the latest data date, not wall-clock today.
-        $this->resolveAsOf($tenantId);
+        // v2 (audit H18): one clock per dataset; the shared clock is the sales one.
+        if ($this->v2) {
+            $this->resolveClocks($tenantId);
+            $this->asOf = $this->clock('sales');
+        } else {
+            $this->resolveAsOf($tenantId);
+        }
         $this->primePriceMap($tenantId);
 
         $settings = AnomalySetting::where('tenant_id', $tenantId)
@@ -703,13 +770,18 @@ class AnomalyDetectionService
         // safety stock) reads these instead of re-scanning the full inventory
         // history and re-aggregating sales_daily itself — the single biggest win
         // for run time on large tenants.
-        $this->primeInventorySnapshot($tenantId);
         $demandWindow = (int) max(
             $t('stockout_risk')['days']       ?? 30,
             $t('phantom_inventory')['days']   ?? 30,
             $t('overstock')['lookback_days']  ?? 30,
         );
-        $this->primeRecentDemand($tenantId, $demandWindow);
+        if ($this->v2) {
+            $this->primeInventorySnapshotV2($tenantId);
+            $this->primeRecentDemandV2($tenantId, $demandWindow);
+        } else {
+            $this->primeInventorySnapshot($tenantId);
+            $this->primeRecentDemand($tenantId, $demandWindow);
+        }
         $this->primeReplenishment($tenantId); // B4: derived reorder points (after snapshot)
         $this->primeSkuSegments($tenantId);
         $this->primeCostCoverage($tenantId);  // R2c: cost_spike evaluability signal
@@ -763,6 +835,10 @@ class AnomalyDetectionService
             'sku_master_drift'           => fn () => $this->detectSkuMasterDrift($tenantId),
             'location_proliferation'     => fn () => $this->detectLocationProliferation($tenantId, $t('location_proliferation')),
         ];
+
+        if ($this->v2) {
+            $rules = array_merge($rules, $this->v2Rules($tenantId, $t)); // same keys → same order, v2 detectors
+        }
 
         // Recovery lifecycle (R2): the reconciler replaces the old destructive
         // stale-sweep. A subject that stops failing is now advanced through
@@ -818,7 +894,8 @@ class AnomalyDetectionService
 
             // Only reconcile if the rule ran without errors — a thrown detector
             // must never let its open anomalies drift toward false recovery.
-            if ($succeeded) {
+            // A dry run (capture) writes nothing, so it reconciles nothing.
+            if ($succeeded && $this->capture === null) {
                 $reconciler->reconcileRule(
                     $tenantId,
                     $ruleType,
@@ -1399,7 +1476,8 @@ class AnomalyDetectionService
             if ($price > 0 && $impact < $minValue) continue;
             $severity  = $price > 0 ? $this->severityFromImpact($impact) : Anomaly::SEVERITY_MEDIUM;
 
-            $this->flag($tenantId, 'demand_erosion', $severity, $r->sku, (int) $r->store_id, null,
+            // A chain-level sales_daily row has no store — never store 0 (FK).
+            $this->flag($tenantId, 'demand_erosion', $severity, $r->sku, $r->store_id !== null ? (int) $r->store_id : null, null,
                 "SKU {$r->sku} is in a sustained demand decline — down ~" . round($declinePct)
                 . "% across the last {$days} days on a consistent downward trend (R²=" . round($r2, 2)
                 . "). If it continues, roughly " . $this->money($impact) . " of sales is at risk over the next month.",
@@ -1839,7 +1917,11 @@ class AnomalyDetectionService
             [$storeId, $sku] = explode('|', $k, 2);
 
             $dailyDemand = $units / max(1, $days);
-            $lostUnits   = $dailyDemand * $horizon;
+            // v2 (audit M): only the demand the stock on hand can't cover is lost.
+            $lostUnits   = $this->v2
+                ? max(0.0, $dailyDemand * $horizon - max(0.0, $oh['qty']))
+                : $dailyDemand * $horizon;
+            if ($this->v2 && $lostUnits <= 0) continue;
             $price       = $this->unitPrice($sku);
             $impact      = $lostUnits * $price;
             if ($price > 0 && $impact < $minValue) continue;
@@ -1936,6 +2018,8 @@ class AnomalyDetectionService
             if ($cover <= $daysCover) continue;
 
             [$storeId, $sku] = explode('|', $k, 2);
+            // v2: a store missing from the sales feed has unknown, not low, demand.
+            if ($this->v2 && ! isset($this->storesWithSales[(int) $storeId])) continue;
             $cost  = $this->unitCost($sku);
             $value = $oh['qty'] * $cost;
             if ($cost > 0 && $value < $minValue) continue;
@@ -2024,6 +2108,8 @@ class AnomalyDetectionService
             if ($recent > $maxDemand) continue; // it sells here → not phantom
 
             [$storeId, $sku] = explode('|', $k, 2);
+            // v2: a store missing from the sales feed has unknown, not zero, demand.
+            if ($this->v2 && ! isset($this->storesWithSales[(int) $storeId])) continue;
             $cost  = $this->unitCost($sku);
             $value = $oh['qty'] * $cost;        // capital tied up in non-moving stock
             if ($cost > 0 && $value < $minValue) continue;
@@ -2531,8 +2617,8 @@ class AnomalyDetectionService
 
             $product = Product::where('tenant_id', $tenantId)->where('sku', $sku)->first();
             $this->flag($tenantId, 'cost_spike', 'high', $sku, null, $product?->id,
-                "PO #{$latest->po_number} from {$latest->supplier} shows SKU {$sku} unit cost at \$" . round($latestCost, 2)
-                . " — " . round($spikePct) . "% above {$baselineKind} of \$" . round($baseline, 2) . ".",
+                "PO #{$latest->po_number} from {$latest->supplier} shows SKU {$sku} unit cost at " . $this->money($latestCost)
+                . " — " . round($spikePct) . "% above {$baselineKind} of " . $this->money($baseline) . ".",
                 ['supplier' => $latest->supplier, 'po_number' => $latest->po_number, 'latest_cost' => $latestCost,
                  'baseline' => round($baseline, 2), 'baseline_kind' => $baselineKind, 'spike_pct' => round($spikePct, 1)]
             );
@@ -2615,16 +2701,16 @@ class AnomalyDetectionService
 
             if ($baseline) {
                 $this->flag($tenantId, 'price_anomaly', 'low', $sku, $w['store_id'], $w['product_id'],
-                    "SKU {$sku} has {$s['count']} recent price anomaly(ies) — worst: \$"
-                    . round($w['price'], 2) . " (" . round($w['z'], 1) . "σ "
-                    . $direction . " baseline mean \$" . round($baseline->baseline_mean, 2) . ").",
+                    "SKU {$sku} has {$s['count']} recent price anomaly(ies) — worst: "
+                    . $this->money($w['price']) . " (" . round($w['z'], 1) . "σ "
+                    . $direction . " baseline mean " . $this->money($baseline->baseline_mean) . ").",
                     ['baseline_mean' => round($baseline->baseline_mean, 4), 'worst_price' => $w['price'],
                      'z_score' => round($w['z'], 2), 'count' => $s['count'], 'sensitivity' => $baseline->sensitivity_multiplier]
                 );
             } else {
                 $this->flag($tenantId, 'price_anomaly', 'low', $sku, $w['store_id'], $w['product_id'],
                     "SKU {$sku} has {$s['count']} recent transaction(s) with price anomalies — worst: "
-                    . round($w['price'], 2) . " is " . round($w['dev']) . "% {$direction} the avg of " . round($avg, 2) . ".",
+                    . $this->money($w['price']) . " is " . round($w['dev']) . "% {$direction} the avg of " . $this->money($avg) . ".",
                     ['avg_price' => round($avg, 4), 'worst_price' => $w['price'], 'deviation_pct' => round($w['dev'], 1), 'count' => $s['count']]
                 );
             }
@@ -2674,7 +2760,7 @@ class AnomalyDetectionService
             $w    = $s['worst'];
             $this->flag($tenantId, 'margin_erosion', 'high', $sku, $w['store_id'], $w['product_id'],
                 "SKU {$sku} has {$s['count']} recent transaction(s) sold below cost — "
-                . "worst: sold at \$" . round($w['price'], 2) . " vs unit cost of \$" . round($cost, 2) . ".",
+                . "worst: sold at " . $this->money($w['price']) . " vs unit cost of " . $this->money($cost) . ".",
                 ['unit_cost' => $cost, 'worst_sale_price' => $w['price'], 'count' => $s['count']]
             );
         }
@@ -2693,8 +2779,8 @@ class AnomalyDetectionService
         foreach ($products as $product) {
             $lossPct = abs(((float) $product->selling_price - (float) $product->unit_cost) / (float) $product->unit_cost) * 100;
             $this->flag($tenantId, 'discount_signal', 'medium', $product->sku, null, $product->id,
-                "SKU {$product->sku} list price \$" . round($product->selling_price, 2)
-                . " is below unit cost \$" . round($product->unit_cost, 2)
+                "SKU {$product->sku} list price " . $this->money((float) $product->selling_price)
+                . " is below unit cost " . $this->money((float) $product->unit_cost)
                 . " — a built-in loss of " . round($lossPct, 1) . "% per unit sold.",
                 ['selling_price' => $product->selling_price, 'unit_cost' => $product->unit_cost, 'loss_pct' => round($lossPct, 1)]
             );
@@ -2776,7 +2862,7 @@ class AnomalyDetectionService
 
             $this->flag($tenantId, 'slow_moving_capital', 'medium', $sku, null, $row->product_id,
                 "SKU {$sku} has " . $this->money($totalValue) . " tied up in inventory "
-                . "(" . round($totalQty) . " units × \$" . round($unitCost, 2) . ") with no sales in the last {$days} days.",
+                . "(" . round($totalQty) . " units × " . $this->money($unitCost) . ") with no sales in the last {$days} days.",
                 ['on_hand_qty' => $totalQty, 'unit_cost' => $unitCost, 'inventory_value' => round($totalValue, 2), 'days_without_sales' => $days]
             );
         }
@@ -3085,7 +3171,8 @@ class AnomalyDetectionService
         ?int $storeId,
         ?int $productId,
         string $description,
-        array $context = []
+        array $context = [],
+        ?string $subject = null,
     ): void {
         // Best-fit gate (Phase 3): skip rules that don't fit this item's demand
         // segment. Not "touching" the anomaly here means a pre-existing one is
@@ -3097,7 +3184,19 @@ class AnomalyDetectionService
             return;
         }
 
+        if ($this->v2) {
+            $this->flagV2($tenantId, $ruleType, $severity, $sku, $storeId, $productId, $description, $context, $subject);
+
+            return;
+        }
+
         $this->emittedByRule[$ruleType] = ($this->emittedByRule[$ruleType] ?? 0) + 1;
+
+        if ($this->capture !== null) {
+            $this->capture[] = $this->captureRow($tenantId, $ruleType, $severity, $sku, $storeId, $context, null);
+
+            return;
+        }
 
         $anomaly = null;
 
@@ -3150,5 +3249,126 @@ class AnomalyDetectionService
         }
 
         $this->touchedAnomalyIds[] = $anomaly->id;
+    }
+
+    /**
+     * WP4.1 / WP4.3 (audit C10, H14) — v2 upsert by identity.
+     *
+     * The subject's identity (tenant, rule, store, SKU and — for rules whose
+     * subject is a PO, supplier or receipt — that discriminator) finds its
+     * latest episode, so SKU-less rules update one row instead of adding one
+     * each night. A dismissed episode stays quiet while the condition
+     * persists, unless it materially worsens (value × dismissal_worsen_factor,
+     * or a higher severity) or detection.dismissal_max_days have passed; then
+     * a new episode opens. A resolved episode is never reopened.
+     */
+    private function flagV2(
+        int $tenantId,
+        string $ruleType,
+        string $severity,
+        ?string $sku,
+        ?int $storeId,
+        ?int $productId,
+        string $description,
+        array $context,
+        ?string $subject,
+    ): void {
+        if ($subject !== null && trim($subject) !== '') {
+            $context['subject'] = trim($subject);
+        }
+        $key = \App\Services\Recovery\AnomalyIdentity::key($tenantId, $ruleType, $storeId, $sku, $context['subject'] ?? null);
+
+        $latest = Anomaly::where('tenant_id', $tenantId)
+            ->where('identity_key', $key)
+            ->orderByDesc('episode_seq')
+            ->orderByDesc('id')
+            ->first();
+
+        if ($latest && $latest->dismissed_at !== null
+            && $latest->lifecycle_state !== Anomaly::LIFECYCLE_RESOLVED
+            && ! $this->worsenedSinceDismissal($latest, $severity, $context)) {
+            $this->suppressedByRule[$ruleType] = ($this->suppressedByRule[$ruleType] ?? 0) + 1;
+
+            return;
+        }
+
+        $this->emittedByRule[$ruleType] = ($this->emittedByRule[$ruleType] ?? 0) + 1;
+
+        if ($this->capture !== null) {
+            $this->capture[] = $this->captureRow($tenantId, $ruleType, $severity, $sku, $storeId, $context, $key);
+
+            return;
+        }
+
+        $open = $latest && $latest->dismissed_at === null && $latest->lifecycle_state !== Anomaly::LIFECYCLE_RESOLVED;
+
+        if ($open) {
+            $latest->update([
+                'severity'    => $severity,
+                'description' => $description,
+                'context'     => $context,
+                'product_id'  => $productId ?? $latest->product_id,
+            ]);
+            $anomaly = $latest;
+        } else {
+            $anomaly = Anomaly::create([
+                'tenant_id'    => $tenantId,
+                'rule_type'    => $ruleType,
+                'severity'     => $severity,
+                'sku'          => $sku,
+                'store_id'     => $storeId,
+                'product_id'   => $productId,
+                'description'  => $description,
+                'context'      => $context,
+                'detected_at'  => now(),
+                'identity_key' => $key,
+            ]);
+        }
+
+        $this->touchedAnomalyIds[] = $anomaly->id;
+    }
+
+    private const SEVERITY_RANK = [Anomaly::SEVERITY_LOW => 1, Anomaly::SEVERITY_MEDIUM => 2, Anomaly::SEVERITY_HIGH => 3];
+
+    /** Has a dismissed subject become materially worse (or has the dismissal expired)? */
+    private function worsenedSinceDismissal(Anomaly $dismissed, string $severity, array $context): bool
+    {
+        $maxDays = (int) config('detection.dismissal_max_days', 90);
+        if ($dismissed->dismissed_at->lt(now()->subDays($maxDays))) {
+            return true;
+        }
+        if ((self::SEVERITY_RANK[$severity] ?? 0) > (self::SEVERITY_RANK[$dismissed->severity] ?? 0)) {
+            return true;
+        }
+        $before = self::contextValue(is_array($dismissed->context) ? $dismissed->context : []);
+        $now    = self::contextValue($context);
+
+        return $before > 0 && $now >= $before * (float) config('detection.dismissal_worsen_factor', 1.5);
+    }
+
+    /** The money figure a rule reports in its context (lost revenue, stock value, goods value…). */
+    private static function contextValue(array $context): float
+    {
+        foreach (['revenue_impact', 'inventory_value', 'goods_value', 'margin_lost'] as $k) {
+            if (isset($context[$k]) && is_numeric($context[$k])) {
+                return (float) $context[$k];
+            }
+        }
+
+        return 0.0;
+    }
+
+    /** @return array<string,mixed> */
+    private function captureRow(int $tenantId, string $ruleType, string $severity, ?string $sku, ?int $storeId, array $context, ?string $key): array
+    {
+        return [
+            'rule'     => $ruleType,
+            'identity' => $key ?? \App\Services\Recovery\AnomalyIdentity::key($tenantId, $ruleType, $storeId, $sku, $context['subject'] ?? null),
+            'sku'      => $sku,
+            'store_id' => $storeId,
+            'subject'  => $context['subject'] ?? null,
+            'severity' => $severity,
+            'value'    => self::contextValue($context),
+        ];
     }
 }
