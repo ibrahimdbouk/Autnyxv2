@@ -43,6 +43,10 @@ class DetectAnomaliesCommand extends Command
                 $tenant = Tenant::findOrFail((int) $tenantId);
                 $runner->run($tenant->id, $mode);
                 $this->info('Done.');
+            } catch (\App\Services\Pipeline\DetectionBusy $e) {
+                $this->error($e->getMessage() . ' Try again when it finishes.');
+
+                return Command::FAILURE;
             } catch (\Throwable $e) {
                 $this->error("Failed: {$e->getMessage()}");
                 Log::error('[anomalies:detect] ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);

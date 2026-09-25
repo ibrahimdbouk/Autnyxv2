@@ -12,6 +12,9 @@ use Illuminate\Support\Facades\Log;
  */
 class EvaluateWatchesCommand extends Command
 {
+    /** Tenants that failed this run (WP5.2 — reported through the exit code). */
+    private int $failures = 0;
+
     protected $signature = 'investigations:evaluate-watches {--tenant= : Specific tenant ID}';
 
     protected $description = 'Evaluate investigation watches and dispatch notifications for meaningful changes';
@@ -31,10 +34,11 @@ class EvaluateWatchesCommand extends Command
             } catch (\Throwable $e) {
                 $this->error("Tenant {$tenantId} failed: {$e->getMessage()}");
                 Log::error('[evaluate-watches] tenant ' . $tenantId . ': ' . $e->getMessage());
+                $this->failures++; // WP5.2: a tenant that failed fails the command
             }
         }
 
         $this->info("Done. {$total} notifications dispatched.");
-        return Command::SUCCESS;
+        return $this->failures > 0 ? self::FAILURE : self::SUCCESS;
     }
 }

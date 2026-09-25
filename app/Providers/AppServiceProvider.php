@@ -2,20 +2,8 @@
 
 namespace App\Providers;
 
-use App\Console\Commands\ComputeBaselinesCommand;
-use App\Console\Commands\ComputeDataHealthCommand;
-use App\Console\Commands\DetectAnomaliesCommand;
-use App\Console\Commands\EscalateInvestigationsCommand;
-use App\Console\Commands\EvaluateWatchesCommand;
 use App\Console\Commands\ExpireNoiseCommand;
-use App\Console\Commands\MeasureOutcomesCommand;
-use App\Console\Commands\NarrateInvestigationsCommand;
-use App\Console\Commands\NotifyAnomaliesCommand;
 use App\Console\Commands\PollSftpCommand;
-use App\Console\Commands\ComputeReplenishmentCommand;
-use App\Console\Commands\ProfileSkusCommand;
-use App\Console\Commands\ProfileStoresCommand;
-use App\Console\Commands\RebuildClustersCommand;
 use App\Services\Import\ImportProcessorService;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\ServiceProvider;
@@ -112,6 +100,10 @@ class AppServiceProvider extends ServiceProvider
             [\App\Listeners\RecordScheduledTaskRun::class, 'failed'],
         );
         \Illuminate\Support\Facades\Event::listen(
+            \Illuminate\Console\Events\BackgroundScheduledTaskFinished::class,
+            [\App\Listeners\RecordScheduledTaskRun::class, 'backgroundFinished'],
+        );
+        \Illuminate\Support\Facades\Event::listen(
             \Illuminate\Auth\Events\Login::class,
             [\App\Listeners\RecordAuthActivity::class, 'login'],
         );
@@ -120,162 +112,61 @@ class AppServiceProvider extends ServiceProvider
             [\App\Listeners\RecordAuthActivity::class, 'failed'],
         );
 
-        // Nightly automation pipeline (M9 + M10 + M11 + M15 corrected order)
+        // Scheduling (WP5.2, audit H3). The nightly analytics no longer run as
+        // separate commands at fixed UTC minutes for every tenant: nightly:dispatch
+        // (hourly) starts each tenant's chain at its LOCAL night — aggregate →
+        // profiles → baselines → detection → narrate → escalate → tidy → notify →
+        // watches → data health → outcomes, each step after the previous one —
+        // and its morning agents once that night has finished. See NightlyChain
+        // and config/pipeline.php (deploy freeze window).
         //
-        // IMPORTANT: baselines must run BEFORE detection so that detection
-        // consumes the latest z-score thresholds, not yesterday's.
+        // Every entry is onOneServer() with a bounded withoutOverlapping(), and
+        // the scheduler's mutexes live in the database cache store so they hold
+        // across machines (the default file store is per machine).
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
+            $schedule->useCache(config('pipeline.lock_store', 'database'));
+
+            // Hourly — start due tenant nights and mornings (needs the queue worker).
+            $schedule->command(\App\Console\Commands\DispatchNightlyCommand::class)
+                ->hourlyAt(5)
+                ->onOneServer()
+                ->withoutOverlapping(30);
+
             // Every 5 min — recover imports stuck in "importing" status for > 10 min
             $schedule->call(fn () => ImportProcessorService::recoverStuckImports(10))
                 ->everyFiveMinutes()
                 ->name('recover-stuck-imports')
-                ->withoutOverlapping();
+                ->onOneServer()
+                ->withoutOverlapping(10);
 
-            // 00:45 — Classify each (SKU, store) into sku_profiles (best-fit layer).
-            //          Runs before baselines/detection so those can consult it.
-            $schedule->command(ProfileSkusCommand::class)
-                ->dailyAt('00:45')
-                ->withoutOverlapping()
-                ->runInBackground()
-                ->appendOutputTo(storage_path('logs/sku-profile.log'));
-
-            // 00:47 — Recompute the store feature layer (Platform\Intelligence).
-            //          After sku:profile so it can aggregate the fresh demand shape;
-            //          the durable behavioural asset clustering + assortment read.
-            $schedule->command(ProfileStoresCommand::class)
-                ->dailyAt('00:47')
-                ->withoutOverlapping()
-                ->runInBackground()
-                ->appendOutputTo(storage_path('logs/store-profile.log'));
-
-            // 00:52 — Rebuild store clusters (Platform\Intelligence\Clustering).
-            //          After the store feature layer so behavioural (demand) clustering,
-            //          when enabled, reads fresh features. Attribute clustering (default)
-            //          only needs the store master, so ordering is harmless for it.
-            $schedule->command(RebuildClustersCommand::class)
-                ->dailyAt('00:52')
-                ->withoutOverlapping()
-                ->runInBackground()
-                ->appendOutputTo(storage_path('logs/clusters-rebuild.log'));
-
-            // 00:50 — Derive reorder points / safety stock / suggested order qty
-            //          (B4) from the fresh profiles, before detection consumes them.
-            $schedule->command(ComputeReplenishmentCommand::class)
-                ->dailyAt('00:50')
-                ->withoutOverlapping()
-                ->runInBackground()
-                ->appendOutputTo(storage_path('logs/replenishment.log'));
-
-            // 01:00 — Recompute adaptive baselines (z-score thresholds) — MUST be first
-            $schedule->command(ComputeBaselinesCommand::class)
-                ->dailyAt('01:00')
-                ->withoutOverlapping()
-                ->runInBackground()
-                ->appendOutputTo(storage_path('logs/baselines.log'));
-
-            // 02:00 — Run detection for every tenant (consumes fresh baselines).
-            // Mode from config: 'full' scans everything; 'incremental' scans only
-            // the changed + still-open SKUs (detection_dirty_keys). See
-            // claude/incremental-detection-design.md.
-            $schedule->command(DetectAnomaliesCommand::class)
-                ->dailyAt('02:00')
-                ->withoutOverlapping()
-                ->runInBackground()
-                ->appendOutputTo(storage_path('logs/anomaly-detect.log'));
-
-            if (config('detection.mode', 'full') === 'incremental') {
-                // 02:20 — Aggregate pass: the cross-SKU / absence / supplier-&-PO
-                // rules the per-key incremental run skips, on a full scan (cheap
-                // aggregates), so they still run every night.
-                $schedule->command(DetectAnomaliesCommand::class, ['--mode' => 'aggregate'])
-                    ->dailyAt('02:20')
-                    ->withoutOverlapping()
-                    ->runInBackground()
-                    ->appendOutputTo(storage_path('logs/anomaly-detect-agg.log'));
-
-                // Sun 01:15 — Weekly full-sweep backstop: catches baseline/profile
-                // drift and absence-based first detections the incremental path
-                // can miss. The only O(catalogue) detection job left.
-                $schedule->command(DetectAnomaliesCommand::class, ['--mode' => 'full'])
-                    ->weeklyOn(0, '01:15')
-                    ->withoutOverlapping()
-                    ->runInBackground()
-                    ->appendOutputTo(storage_path('logs/anomaly-detect-full.log'));
-            }
-
-            // 02:30 — Send digest emails for new anomalies
-            $schedule->command(NotifyAnomaliesCommand::class)
-                ->dailyAt('02:30')
-                ->withoutOverlapping()
-                ->runInBackground()
-                ->appendOutputTo(storage_path('logs/anomaly-notify.log'));
-
-            // 03:00 — Evaluate escalation rules against all open investigations
-            $schedule->command(EscalateInvestigationsCommand::class)
-                ->dailyAt('03:00')
-                ->withoutOverlapping()
-                ->runInBackground()
-                ->appendOutputTo(storage_path('logs/escalation.log'));
-
-            // 03:30 — Generate AI narratives for investigations with new/missing evidence
-            $schedule->command(NarrateInvestigationsCommand::class)
-                ->dailyAt('03:30')
-                ->withoutOverlapping()
-                ->runInBackground()
-                ->appendOutputTo(storage_path('logs/narrate.log'));
-
-            // ── M23 (Features 4–10) additions ──────────────────────────────
-
-            // 00:30 — Return expired snoozes + expire due suppressions (Feature 6)
+            // 00:30 UTC — return expired snoozes + expire due suppressions (all tenants;
+            // time-based, so it doesn't depend on a tenant's night).
             $schedule->command(ExpireNoiseCommand::class)
                 ->dailyAt('00:30')
-                ->withoutOverlapping()
-                ->runInBackground()
-                ->appendOutputTo(storage_path('logs/noise-expire.log'));
-
-            // 03:45 — Evaluate investigation watches (Feature 5) — after narrate
-            $schedule->command(EvaluateWatchesCommand::class)
-                ->dailyAt('03:45')
-                ->withoutOverlapping()
-                ->runInBackground()
-                ->appendOutputTo(storage_path('logs/watch-eval.log'));
-
-            // 04:00 — Recompute Data Health snapshots + critical alerts (Feature 4)
-            $schedule->command(ComputeDataHealthCommand::class)
-                ->dailyAt('04:00')
-                ->withoutOverlapping()
-                ->runInBackground()
-                ->appendOutputTo(storage_path('logs/data-health.log'));
-
-            // 04:15 — Measure post-action outcomes (Feature 8)
-            $schedule->command(MeasureOutcomesCommand::class)
-                ->dailyAt('04:15')
-                ->withoutOverlapping()
-                ->runInBackground()
-                ->appendOutputTo(storage_path('logs/outcome-measure.log'));
+                ->onOneServer()
+                ->withoutOverlapping(60);
 
             // Hourly — poll SFTP connections for new flat files (M14)
             $schedule->command(PollSftpCommand::class)
                 ->hourly()
-                ->withoutOverlapping()
-                ->runInBackground()
-                ->appendOutputTo(storage_path('logs/sftp-poll.log'));
+                ->onOneServer()
+                ->withoutOverlapping(55);
 
-            // 04:30 — Enforce data retention (2e). Runs after the full analytics
-            // pipeline so nothing purges data the night's jobs still need.
+            // 04:30 UTC — data retention (2e), platform-wide.
             $schedule->command(\App\Console\Commands\PurgeOldDataCommand::class)
                 ->dailyAt('04:30')
-                ->withoutOverlapping()
-                ->runInBackground()
-                ->appendOutputTo(storage_path('logs/data-purge.log'));
+                ->onOneServer()
+                ->withoutOverlapping(120);
 
-            // 05:00 — Proactive health check: alert on failed/stale nightly jobs
-            // (runs last, after the whole pipeline has had its chance to run).
+            // Hourly — health check: failed jobs, queue age, nightly chains (WP5.3).
+            // It also pings HEARTBEAT_URL (an external cron monitor): if the
+            // pings stop, the scheduler itself is down — a dead-man's switch.
+            $heartbeat = (string) config('observability.heartbeat_url');
             $schedule->command(\App\Console\Commands\SystemHealthCheckCommand::class)
-                ->dailyAt('05:00')
-                ->withoutOverlapping()
-                ->runInBackground()
-                ->appendOutputTo(storage_path('logs/health-check.log'));
+                ->hourlyAt(40)
+                ->onOneServer()
+                ->withoutOverlapping(30)
+                ->pingOnSuccessIf($heartbeat !== '', $heartbeat);
         });
     }
 

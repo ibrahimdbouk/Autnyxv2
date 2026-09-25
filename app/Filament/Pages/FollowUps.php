@@ -103,10 +103,16 @@ class FollowUps extends Page
             return;
         }
 
-        $runs = app(ActionFollowUpAgent::class)->followForTenant($tenantId);
+        // WP5.4: rate-limited per person, and run on the queue.
+        if (! \Illuminate\Support\Facades\RateLimiter::attempt('ai-button:' . auth()->id(), (int) config('ai.per_user_per_minute', 10), fn () => true, 60)) {
+            Notification::make()->title('Too many AI requests — try again in a minute')->warning()->send();
+
+            return;
+        }
+        \App\Jobs\AI\RunFollowUpsJob::dispatch($tenantId);
 
         Notification::make()
-            ->title(count($runs) > 0 ? count($runs) . ' follow-up(s) drafted' : 'No actioned investigations to follow up')
+            ->title('Drafting follow-ups — they appear here in a minute or two')
             ->success()->send();
     }
 }

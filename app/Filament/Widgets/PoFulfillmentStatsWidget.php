@@ -21,12 +21,12 @@ class PoFulfillmentStatsWidget extends BaseStatsWidget
         $overdue = PurchaseOrder::where('tenant_id', $tenantId)
             ->whereNull('received_date')
             ->whereNotNull('expected_date')
-            ->where('expected_date', '<', today()->toDateString())
+            ->where('expected_date', '<', \App\Support\Tenancy\TenantClock::localDate($tenantId))
             ->count();
 
         $receivedThisMonth = PurchaseOrder::where('tenant_id', $tenantId)
             ->whereNotNull('received_date')
-            ->where('received_date', '>=', Carbon::now()->startOfMonth()->toDateString())
+            ->where('received_date', '>=', \App\Support\Tenancy\TenantClock::localMonthStart($tenantId))
             ->count();
 
         $total    = PurchaseOrder::where('tenant_id', $tenantId)->count();

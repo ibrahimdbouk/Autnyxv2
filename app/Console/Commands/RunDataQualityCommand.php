@@ -12,6 +12,9 @@ use Illuminate\Support\Facades\Log;
  */
 class RunDataQualityCommand extends Command
 {
+    /** Tenants that failed this run (WP5.2 — reported through the exit code). */
+    private int $failures = 0;
+
     protected $signature = 'agents:data-quality {--tenant= : Only this tenant ID}';
 
     protected $description = 'Run the AI data-quality / readiness check for each tenant';
@@ -35,9 +38,10 @@ class RunDataQualityCommand extends Command
             } catch (\Throwable $e) {
                 $this->error("Tenant {$tenant->id}: {$e->getMessage()}");
                 Log::error('[agents:data-quality] ' . $e->getMessage());
+                $this->failures++; // WP5.2: a tenant that failed fails the command
             }
         }
 
-        return self::SUCCESS;
+        return $this->failures > 0 ? self::FAILURE : self::SUCCESS;
     }
 }

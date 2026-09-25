@@ -49,20 +49,28 @@ class WeeklyBriefing extends Page
             return ['ready' => false];
         }
 
-        $run = AgentRun::where('tenant_id', $tenantId)
+        $latest = AgentRun::where('tenant_id', $tenantId)
             ->where('agent_key', AgentRun::KEY_WEEKLY_BRIEFING)
             ->whereIn('status', [AgentRun::STATUS_COMPLETE, AgentRun::STATUS_FAILED])
             ->latest('id')
             ->first();
 
-        if (! $run) {
+        if (! $latest) {
             return ['ready' => true, 'has' => false];
         }
+
+        // WP5.4: a failed attempt never hides the last good briefing — show it,
+        // with a note that the newest attempt failed.
+        $run = $latest->isFailed()
+            ? (AgentRun::where('tenant_id', $tenantId)->where('agent_key', AgentRun::KEY_WEEKLY_BRIEFING)
+                ->where('status', AgentRun::STATUS_COMPLETE)->latest('id')->first() ?? $latest)
+            : $latest;
 
         return [
             'ready'             => true,
             'has'               => true,
-            'failed'            => $run->isFailed(),
+            'failed'        => $latest->isFailed(),
+            'last_good_ago' => $latest->isFailed() && ! $run->isFailed() ? optional($run->created_at)->diffForHumans() : null,
             'headline'          => $run->out('headline'),
             'summary'           => $run->out('summary'),
             'whats_new'         => $run->out('whats_new', []),

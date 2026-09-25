@@ -68,6 +68,21 @@ class Account extends Page
                     Notification::make()->title('Profile updated')->success()->send();
                 }),
 
+            // WP5.4: each person chooses whether they get the daily anomaly digest.
+            Action::make('digest')
+                ->label(fn () => auth()->user()?->digest_opt_in ? 'Stop the daily digest' : 'Get the daily digest')
+                ->icon('heroicon-o-envelope')
+                ->color('gray')
+                ->requiresConfirmation()
+                ->modalDescription(fn () => auth()->user()?->digest_opt_in
+                    ? 'You will no longer receive the anomaly digest email.'
+                    : 'Each morning, after the overnight analysis, you get one email with the new anomalies at the severities your organisation alerts on.')
+                ->action(function (): void {
+                    $user = auth()->user();
+                    $user->update(['digest_opt_in' => ! $user->digest_opt_in]);
+                    Notification::make()->title($user->digest_opt_in ? 'Daily digest on' : 'Daily digest off')->success()->send();
+                }),
+
             Action::make('change_password')
                 ->label('Change password')
                 ->icon('heroicon-o-key')

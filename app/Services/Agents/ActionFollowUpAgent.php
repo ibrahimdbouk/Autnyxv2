@@ -65,15 +65,9 @@ class ActionFollowUpAgent extends AgentService
 
     public function followInvestigation(Investigation $inv, ?int $requestedBy = null): AgentRun
     {
+        $this->callTenant = (int) $inv->tenant_id;
         $signal = $this->signalFor($inv);
-
-        // Supersede any earlier follow-up for this investigation so the page shows one.
-        AgentRun::where('tenant_id', $inv->tenant_id)
-            ->where('agent_key', $this->agentKey())
-            ->where('subject_type', 'investigation')
-            ->where('subject_id', (string) $inv->id)
-            ->where('status', AgentRun::STATUS_COMPLETE)
-            ->update(['status' => AgentRun::STATUS_DISMISSED]);
+        // WP5.4: the earlier follow-up is superseded only once this one succeeds.
 
         $result = $this->callClaude($this->buildPrompt($signal), $this->fastModel(), 700);
 
@@ -92,18 +86,18 @@ class ActionFollowUpAgent extends AgentService
         }
 
         $d = $result['data'];
-        $status = in_array(($d['status'] ?? ''), ['working', 'stalled', 'no_signal', 'recovered'], true)
-            ? $d['status'] : 'no_signal';
+        // WP5.4: the status is decided from the signal, never by the model.
+        $status = self::followStatus($signal);
 
         $output = [
             'follow_status'     => $status,
             'note'              => (string) ($d['note'] ?? ''),
-            'recommend_escalate'=> (bool) ($d['recommend_escalate'] ?? false),
+            'recommend_escalate'=> $status === 'stalled',
             'next_check_days'   => is_numeric($d['next_check_days'] ?? null) ? (int) $d['next_check_days'] : 7,
             'signal'            => $signal,
         ];
 
-        return $this->record([
+        return $this->recordReplacing([
             'tenant_id'     => $inv->tenant_id,
             'subject_type'  => 'investigation',
             'subject_id'    => (string) $inv->id,
@@ -116,7 +110,34 @@ class ActionFollowUpAgent extends AgentService
             'tokens_input'  => $result['tokens_input'],
             'tokens_output' => $result['tokens_output'],
             'requested_by'  => $requestedBy,
-        ]);
+        ], fn ($q) => $q->where('tenant_id', $inv->tenant_id)->where('subject_type', 'investigation')
+            ->where('subject_id', (string) $inv->id)->where('status', AgentRun::STATUS_COMPLETE));
+    }
+
+    /**
+     * WP5.4 — the follow-up status from the signal:
+     *   recovered — recovery observed, or actions done and nothing flagging;
+     *   stalled   — an action is 14+ days old and the item still flags with no recovery;
+     *   working   — partial recovery / monitoring, or an action under 14 days old;
+     *   no_signal — otherwise.
+     */
+    public static function followStatus(array $s): string
+    {
+        $state = $s['outcome_state'] ?? null;
+        $age   = $s['action_age_days'];
+        $flag  = $s['still_flagging'];
+
+        if ($state === 'observed_recovery' || (($s['actions_completed'] ?? 0) > 0 && $flag === 0)) {
+            return 'recovered';
+        }
+        if ($age !== null && $age >= 14 && ($flag ?? 0) > 0 && ! in_array($state, ['partial_recovery', 'observed_recovery'], true)) {
+            return 'stalled';
+        }
+        if (in_array($state, ['partial_recovery', 'monitoring'], true) || ($age !== null && $age < 14)) {
+            return 'working';
+        }
+
+        return 'no_signal';
     }
 
     /**
@@ -164,6 +185,7 @@ class ActionFollowUpAgent extends AgentService
 
     private function buildPrompt(array $s): string
     {
+        $status = self::followStatus($s);
         $recovery = $s['observed_recovery'] !== null
             ? "observed recovery {$s['observed_recovery']}, outcome state '{$s['outcome_state']}'"
             : 'no recovery measured yet';
@@ -181,17 +203,11 @@ ACTION: {$s['action_type']} — status '{$s['action_status']}', taken {$age}; {$
 RECOVERY: {$recovery}
 CURRENT DETECTION: {$flagging}
 
-HOW TO JUDGE:
-- recovered: recovery is observed and the item is no longer flagging.
-- working: signs of improvement, or too early but on track.
-- stalled: action was taken a while ago and the item is still flagging with no recovery — recommend escalation.
-- no_signal: not enough time or data to tell yet.
+STATUS (decided by Autnyx from the signal — explain it, do not change it): {$status}
 
 Respond with ONLY this JSON object (no markdown, no code fences):
 {
-  "status": "one of: working | stalled | no_signal | recovered",
-  "note": "ONE or two plain sentences: is it working, and what to do next.",
-  "recommend_escalate": true or false,
+  "note": "ONE or two plain sentences: what the status means here, and what to do next.",
   "next_check_days": a number of days until the next check,
   "confidence": "one of: established | probable | suspected | unknown"
 }

@@ -4,7 +4,6 @@ namespace App\Services\Agents;
 
 use App\Models\AgentRun;
 use App\Models\JobRun;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -27,7 +26,6 @@ use Illuminate\Support\Str;
  */
 abstract class AgentService
 {
-    protected const API_URL = 'https://api.anthropic.com/v1/messages';
 
     /** The key this agent stamps on its AgentRun rows. */
     abstract protected function agentKey(): string;
@@ -48,13 +46,16 @@ abstract class AgentService
 
     // ── Anthropic call ───────────────────────────────────────────────────────────
 
+    /** The tenant the current call is for (budget, metering). Set by each agent's entry point. */
+    protected ?int $callTenant = null;
+
     /**
-     * One Claude call. Returns a normalised envelope:
+     * One Claude call through AnthropicClient (WP5.4: budget, retries, circuit
+     * breaker, metering, data-is-not-instructions system prompt). Returns:
      *   ['ok' => bool, 'data' => array, 'text' => string,
      *    'tokens_input' => ?int, 'tokens_output' => ?int, 'error' => ?string]
-     *
-     * `data` is the parsed JSON object (empty array if the model returned prose
-     * we could not parse). Never throws — failures come back as ok=false.
+     * A reply cut off at max_tokens is a failure ('truncated') — its JSON is
+     * incomplete. Never throws.
      */
     protected function callClaude(
         string $prompt,
@@ -63,61 +64,41 @@ abstract class AgentService
         ?string $system = null,
         int $timeout = 60
     ): array {
-        $key = config('services.anthropic.key');
-        if (empty($key)) {
-            $this->recordFailure('Anthropic API key not configured');
-            return ['ok' => false, 'data' => [], 'text' => '', 'tokens_input' => null, 'tokens_output' => null, 'error' => 'no_api_key'];
+        $tier = $model === $this->reasoningModel() ? 'reasoning' : 'fast';
+        $r = app(\App\Services\AI\AnthropicClient::class)
+            ->message($this->callTenant, 'agent:' . $this->agentKey(), $prompt, $tier, $maxTokens, $system, $timeout);
+
+        if ($r->ok && $r->truncated()) {
+            $this->recordFailure("Reply cut off at max_tokens ({$this->agentKey()})");
+            $r = \App\Services\AI\AiResult::fail('truncated', $r->model);
         }
 
-        $payload = [
-            'model'      => $model,
-            'max_tokens' => $maxTokens,
-            'messages'   => [
-                ['role' => 'user', 'content' => $prompt],
-            ],
+        return [
+            'ok'            => $r->ok,
+            'data'          => $r->ok ? $r->json() : [],
+            'text'          => $r->text,
+            'tokens_input'  => $r->ok ? $r->inputTokens : null,
+            'tokens_output' => $r->ok ? $r->outputTokens : null,
+            'error'         => $r->error,
         ];
-        if ($system !== null) {
-            $payload['system'] = $system;
-        }
+    }
 
-        try {
-            $response = Http::withHeaders([
-                'x-api-key'         => $key,
-                'anthropic-version' => '2023-06-01',
-                'content-type'      => 'application/json',
-            ])->timeout($timeout)->post(self::API_URL, $payload);
+    /**
+     * WP5.4 — record a SUCCESSFUL run and retire the runs it replaces in one
+     * transaction, so a failed call never leaves the page with nothing: the
+     * previous good run is only retired once there is a new one.
+     *
+     * @param  \Closure(\Illuminate\Database\Eloquent\Builder): mixed  $previous  narrows AgentRun::query() to the runs replaced
+     */
+    protected function recordReplacing(array $attrs, \Closure $previous, string $retireTo = AgentRun::STATUS_DISMISSED): AgentRun
+    {
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($attrs, $previous, $retireTo) {
+            $q = AgentRun::query()->where('agent_key', $this->agentKey());
+            $previous($q);
+            $q->lockForUpdate()->update(['status' => $retireTo]);
 
-            if ($response->failed()) {
-                Log::error('[agent:' . $this->agentKey() . '] Anthropic API error', [
-                    'status' => $response->status(),
-                    'body'   => Str::limit($response->body(), 500),
-                ]);
-                $this->recordFailure("Anthropic API {$response->status()} ({$this->agentKey()})");
-                return [
-                    'ok' => false, 'data' => [], 'text' => '',
-                    'tokens_input' => null, 'tokens_output' => null,
-                    'error' => 'api_' . $response->status(),
-                ];
-            }
-
-            $text = $response->json('content.0.text', '');
-            $data = $this->parseJson($text);
-
-            return [
-                'ok'            => true,
-                'data'          => $data,
-                'text'          => $text,
-                'tokens_input'  => $response->json('usage.input_tokens'),
-                'tokens_output' => $response->json('usage.output_tokens'),
-                'error'         => null,
-            ];
-        } catch (\Throwable $e) {
-            Log::error('[agent:' . $this->agentKey() . '] exception: ' . $e->getMessage(), [
-                'trace' => $e->getTraceAsString(),
-            ]);
-            $this->recordFailure("Agent exception ({$this->agentKey()}): " . $e->getMessage());
-            return ['ok' => false, 'data' => [], 'text' => '', 'tokens_input' => null, 'tokens_output' => null, 'error' => 'exception'];
-        }
+            return $this->record($attrs);
+        });
     }
 
     /**

@@ -51,6 +51,7 @@ class Tenant extends Model
         'notification_email',
         'notify_on_high',
         'notify_on_medium',
+        'timezone',
     ];
 
     protected $casts = [

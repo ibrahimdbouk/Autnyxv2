@@ -49,8 +49,14 @@ class RunTenantDetectionJob implements ShouldQueue, ShouldBeUnique
     /** Detection over large datasets can take a while; give it room. */
     public int $timeout = 1800;
 
-    /** Heavy + idempotent — do not auto-retry a failed multi-minute run. */
-    public int $tries = 1;
+    /**
+     * Heavy + idempotent — a FAILED run is never retried (maxExceptions = 1),
+     * but a run that found the tenant's detection lock taken is released and
+     * tried again later (WP5.2), up to this many times.
+     */
+    public int $tries = 12;
+
+    public int $maxExceptions = 1;
 
     /** A queued+running unique lock is released after at most this many seconds. */
     public int $uniqueFor = 1800;
@@ -67,7 +73,13 @@ class RunTenantDetectionJob implements ShouldQueue, ShouldBeUnique
 
     public function handle(TenantDetectionRunner $runner): void
     {
-        $runner->run($this->tenantId, $this->mode);
+        try {
+            $runner->run($this->tenantId, $this->mode);
+        } catch (\App\Services\Pipeline\DetectionBusy) {
+            // The nightly chain (or another run) is scanning this tenant; the
+            // dirty keys wait, so try again in a few minutes.
+            $this->release(300);
+        }
     }
 
     public function failed(Throwable $e): void

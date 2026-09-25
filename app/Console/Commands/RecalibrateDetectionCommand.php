@@ -92,8 +92,14 @@ class RecalibrateDetectionCommand extends Command
         }
 
         app(BaselineCalculatorService::class)->computeForTenant($tenant->id);
-        $detector->runForTenant($tenant->id);
-        app(InvestigationCorrelationService::class)->correlateForTenant($tenant->id);
+        $lock = \App\Services\Pipeline\TenantDetectionLock::for($tenant->id);   // WP5.2: one writer per tenant
+        try {
+            $lock->block((int) config('pipeline.lock_wait', 900));
+            $detector->runForTenant($tenant->id);
+            app(InvestigationCorrelationService::class)->correlateForTenant($tenant->id);
+        } finally {
+            $lock->release();
+        }
 
         // Active investigations only — a closed one keeps the figure it closed with.
         $calc = app(DeterministicRevenueAtRisk::class);

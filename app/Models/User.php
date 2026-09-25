@@ -19,6 +19,7 @@ class User extends Authenticatable implements FilamentUser, HasTenants, HasAppAu
     use HasFactory, Notifiable;
 
     protected $fillable = [
+        'digest_opt_in',
         'name',
         'email',
         'password',

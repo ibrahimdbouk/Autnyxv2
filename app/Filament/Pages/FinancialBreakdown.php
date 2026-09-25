@@ -242,7 +242,7 @@ class FinancialBreakdown extends Page
      */
     private function recoveredMtd(int $tenantId): array
     {
-        $monthStart = now()->startOfMonth();
+        $monthStart = \App\Support\Tenancy\TenantClock::startOfMonth($tenantId);
 
         $base = InvestigationOutcome::where('tenant_id', $tenantId)
             ->where('created_at', '>=', $monthStart)
@@ -287,8 +287,8 @@ class FinancialBreakdown extends Page
         $svc     = app(AnomalyRecoveryService::class);
         $summary = $svc->summary($tenantId);
         $mtd     = $svc->mtd($tenantId);
-        $byRule  = $svc->byRuleFamily($tenantId, now()->startOfMonth(), null);
-        $rows    = $svc->resolvedRows($tenantId, now()->startOfMonth(), null);
+        $byRule  = $svc->byRuleFamily($tenantId, \App\Support\Tenancy\TenantClock::startOfMonth($tenantId), null);
+        $rows    = $svc->resolvedRows($tenantId, \App\Support\Tenancy\TenantClock::startOfMonth($tenantId), null);
 
         $components = [
             ['label' => 'Episodes cleared this month',            'value' => number_format((int) $mtd['count'])],
@@ -308,7 +308,7 @@ class FinancialBreakdown extends Page
             'metric'      => $this->metric,
             'label'       => 'Observed Cleared (Data-Only)',
             'value'       => $this->money((float) $mtd['amount']),
-            'formula'     => 'Σ value_at_open for every anomaly episode the lifecycle confirmed `resolved` since ' . now()->startOfMonth()->format('M j, Y') . ', excluding backfilled history. Observed recovery: the condition cleared and stayed clear across evaluated runs — no cause is claimed, and this is never added to attributed Recovered MTD.',
+            'formula'     => 'Σ value_at_open for every anomaly episode the lifecycle confirmed `resolved` since ' . \App\Support\Tenancy\TenantClock::now($tenantId)->startOfMonth()->format('M j, Y') . ', excluding backfilled history. Observed recovery: the condition cleared and stayed clear across evaluated runs — no cause is claimed, and this is never added to attributed Recovered MTD.',
             'components'  => $components,
             'amountLabel' => 'Value Cleared',
             'rowsHeader'  => ['Anomaly', 'SKU / Store', 'Cleared', 'Value Cleared'],

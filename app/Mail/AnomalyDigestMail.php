@@ -23,6 +23,8 @@ class AnomalyDigestMail extends Mailable
     public function __construct(
         public readonly Tenant $tenant,
         public readonly Collection $anomalies,
+        public readonly ?int $totalCount = null,
+        public readonly ?string $unsubscribeUrl = null,
     ) {
         $this->highCount   = $anomalies->where('severity', 'high')->count();
         $this->mediumCount = $anomalies->where('severity', 'medium')->count();

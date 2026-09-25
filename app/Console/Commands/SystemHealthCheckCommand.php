@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Services\Ops\PlatformHealthService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
@@ -42,19 +43,38 @@ class SystemHealthCheckCommand extends Command
             $problems[] = "{$stale['command']} has not succeeded in over {$stale['max_hours']}h (last success: {$last})";
         }
 
-        // Failed queue jobs.
+        // Failed queue jobs (last 24h).
         if (($failedJobs = $health->failedQueueJobs()) > 0) {
-            $problems[] = "{$failedJobs} failed queue job(s) in the failed_jobs table";
+            $problems[] = "{$failedJobs} queue job(s) failed in the last 24h";
+        }
+
+        // WP5.3: a waiting job nobody picks up = the queue worker is down.
+        if (($wait = $health->oldestQueuedMinutes()) >= 30) {
+            $problems[] = "the oldest queued job has waited {$wait} min — is the queue worker running?";
+        }
+
+        // WP5.3: each tenant's last nightly chain.
+        foreach ($health->staleNights() as $n) {
+            $problems[] = "{$n['name']}: last nightly run " . ($n['status'] ?? 'never ran') . ($n['finished_at'] ? " (finished {$n['finished_at']} UTC)" : '');
         }
 
         if (empty($problems)) {
             $this->info('System health: OK — no failures or stale jobs.');
+            Cache::store(config('pipeline.lock_store', 'database'))->forget('health-check:last-alert');
             return self::SUCCESS;
         }
 
         $body = "Autnyx detected " . count($problems) . " platform issue(s):\n\n- " . implode("\n- ", $problems);
         $this->warn($body);
-        $this->sendAlerts($body, count($problems));
+
+        // Hourly check, but the same set of problems alerts at most every 6 hours.
+        $cache = Cache::store(config('pipeline.lock_store', 'database'));
+        $sig   = sha1(implode('|', $problems));
+        $last  = $cache->get('health-check:last-alert');
+        if (! $last || $last['sig'] !== $sig || now()->timestamp - $last['at'] >= 6 * 3600) {
+            $this->sendAlerts($body, count($problems));
+            $cache->put('health-check:last-alert', ['sig' => $sig, 'at' => now()->timestamp], now()->addDay());
+        }
 
         // Return SUCCESS so the health check itself is not logged as a failed run.
         return self::SUCCESS;

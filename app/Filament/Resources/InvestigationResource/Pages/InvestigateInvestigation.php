@@ -162,13 +162,14 @@ class InvestigateInvestigation extends Page
                 ->modalHeading('Refresh AI Narrative?')
                 ->modalDescription('This will regenerate the AI narrative using the latest evidence.')
                 ->action(function () {
-                    app(InvestigationNarratorService::class)->narrate($this->record, force: true);
-                    $this->record = $this->record->fresh([
-                        'anomalies', 'evidence', 'actions.assignedTo',
-                        'actions.assignedTeam', 'auditLogs.user',
-                        'assignedTeam', 'assignedUser',
-                    ]);
-                    Notification::make()->title('Narrative generated')->success()->send();
+                    // WP5.4: rate-limited per person, and written on the queue.
+                    if (! \Illuminate\Support\Facades\RateLimiter::attempt('ai-button:' . auth()->id(), (int) config('ai.per_user_per_minute', 10), fn () => true, 60)) {
+                        Notification::make()->title('Too many AI requests — try again in a minute')->warning()->send();
+
+                        return;
+                    }
+                    \App\Jobs\AI\NarrateInvestigationJob::dispatch($this->record->id);
+                    Notification::make()->title('Writing the narrative — refresh the page in a minute')->success()->send();
                 }),
 
             // Add Action

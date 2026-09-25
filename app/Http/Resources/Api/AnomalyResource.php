@@ -21,7 +21,15 @@ class AnomalyResource extends JsonResource
             'description'          => $this->description,
             'lifecycle_state'      => $this->lifecycle_state,
             'investigation_status' => $this->investigation_status,
-            'recommendation_gate'  => $this->ai_recommendation_gate,
+            'value_type'           => $this->value_type,
+            // WP5.4: model-written fields nested and labelled.
+            'ai'                   => $this->ai_generated_at ? [
+                'recommendation_gate' => $this->ai_recommendation_gate,
+                'what'                => $this->ai_what,
+                'why'                 => $this->ai_why,
+                'confidence'          => $this->ai_confidence,
+                'generated_at'        => optional($this->ai_generated_at)->toIso8601String(),
+            ] : null,
             'is_false_positive'    => (bool) $this->is_false_positive,
             'detected_at'          => optional($this->detected_at)->toIso8601String(),
             'first_seen_at'        => optional($this->first_seen_at)->toIso8601String(),

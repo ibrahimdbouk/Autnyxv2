@@ -13,6 +13,9 @@ use Illuminate\Support\Facades\Log;
  */
 class RunActionFollowUpCommand extends Command
 {
+    /** Tenants that failed this run (WP5.2 — reported through the exit code). */
+    private int $failures = 0;
+
     protected $signature = 'agents:action-followup {--tenant= : Only this tenant ID} {--limit=20 : Max investigations per tenant}';
 
     protected $description = 'Follow up on actioned investigations and draft "did it work?" notes';
@@ -38,9 +41,10 @@ class RunActionFollowUpCommand extends Command
             } catch (\Throwable $e) {
                 $this->error("Tenant {$tenant->id}: {$e->getMessage()}");
                 Log::error('[agents:action-followup] ' . $e->getMessage());
+                $this->failures++; // WP5.2: a tenant that failed fails the command
             }
         }
 
-        return self::SUCCESS;
+        return $this->failures > 0 ? self::FAILURE : self::SUCCESS;
     }
 }

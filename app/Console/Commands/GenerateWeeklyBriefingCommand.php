@@ -13,6 +13,9 @@ use Illuminate\Support\Facades\Log;
  */
 class GenerateWeeklyBriefingCommand extends Command
 {
+    /** Tenants that failed this run (WP5.2 — reported through the exit code). */
+    private int $failures = 0;
+
     protected $signature = 'agents:weekly-briefing {--tenant= : Only this tenant ID}';
 
     protected $description = 'Generate the AI weekly business briefing for each tenant';
@@ -36,9 +39,10 @@ class GenerateWeeklyBriefingCommand extends Command
             } catch (\Throwable $e) {
                 $this->error("Tenant {$tenant->id}: {$e->getMessage()}");
                 Log::error('[agents:weekly-briefing] ' . $e->getMessage());
+                $this->failures++; // WP5.2: a tenant that failed fails the command
             }
         }
 
-        return self::SUCCESS;
+        return $this->failures > 0 ? self::FAILURE : self::SUCCESS;
     }
 }

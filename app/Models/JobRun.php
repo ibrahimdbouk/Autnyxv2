@@ -13,6 +13,7 @@ class JobRun extends Model
     const STATUS_FAILED  = 'failed';
 
     protected $fillable = [
+        'tenant_id',
         'command',
         'status',
         'duration_ms',

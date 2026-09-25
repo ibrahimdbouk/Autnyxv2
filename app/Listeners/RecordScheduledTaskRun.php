@@ -3,6 +3,7 @@
 namespace App\Listeners;
 
 use App\Models\JobRun;
+use Illuminate\Console\Events\BackgroundScheduledTaskFinished;
 use Illuminate\Console\Events\ScheduledTaskFailed;
 use Illuminate\Console\Events\ScheduledTaskFinished;
 use Illuminate\Support\Str;
@@ -15,10 +16,24 @@ use Throwable;
  */
 class RecordScheduledTaskRun
 {
+    /**
+     * WP5.2: a task "finishes" whatever its exit code — the status comes from
+     * the exit code, so a command that reports a failed tenant is a failure.
+     */
     public function finished(ScheduledTaskFinished $event): void
     {
         $runtime = property_exists($event, 'runtime') ? $event->runtime : null;
-        $this->record($event->task, JobRun::STATUS_SUCCESS, $runtime, null);
+        $code = $event->task->exitCode ?? 0;
+        $this->record($event->task, (int) $code === 0 ? JobRun::STATUS_SUCCESS : JobRun::STATUS_FAILED, $runtime,
+            (int) $code === 0 ? null : "exit code {$code}");
+    }
+
+    /** A runInBackground() task reports back through schedule:finish with its exit code. */
+    public function backgroundFinished(BackgroundScheduledTaskFinished $event): void
+    {
+        $code = $event->task->exitCode ?? 0;
+        $this->record($event->task, (int) $code === 0 ? JobRun::STATUS_SUCCESS : JobRun::STATUS_FAILED, null,
+            (int) $code === 0 ? null : "exit code {$code}");
     }
 
     public function failed(ScheduledTaskFailed $event): void

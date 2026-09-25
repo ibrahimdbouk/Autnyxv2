@@ -12,6 +12,9 @@ use Illuminate\Support\Facades\Log;
  */
 class MeasureOutcomesCommand extends Command
 {
+    /** Tenants that failed this run (WP5.2 — reported through the exit code). */
+    private int $failures = 0;
+
     protected $signature = 'outcomes:measure {--tenant= : Specific tenant ID}';
 
     protected $description = 'Measure post-action business outcomes (deterministic) for resolved/actioned investigations';
@@ -31,10 +34,11 @@ class MeasureOutcomesCommand extends Command
             } catch (\Throwable $e) {
                 $this->error("Tenant {$tenantId} failed: {$e->getMessage()}");
                 Log::error('[outcomes:measure] tenant ' . $tenantId . ': ' . $e->getMessage());
+                $this->failures++; // WP5.2: a tenant that failed fails the command
             }
         }
 
         $this->info("Done. {$total} measurements.");
-        return Command::SUCCESS;
+        return $this->failures > 0 ? self::FAILURE : self::SUCCESS;
     }
 }

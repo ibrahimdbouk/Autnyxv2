@@ -305,9 +305,9 @@ class ActionCenter extends Page
             'overdue'    => $query->whereNotIn('status', [Action::STATUS_COMPLETED, Action::STATUS_CANCELLED])
                                   ->where('due_at', '<', now()),
             'due_today'  => $query->whereNotIn('status', [Action::STATUS_COMPLETED, Action::STATUS_CANCELLED])
-                                  ->whereBetween('due_at', [now()->startOfDay(), now()->endOfDay()]),
+                                  ->whereBetween('due_at', \App\Support\Tenancy\TenantClock::dayRange($tenantId)),
             'due_week'   => $query->whereNotIn('status', [Action::STATUS_COMPLETED, Action::STATUS_CANCELLED])
-                                  ->whereBetween('due_at', [now()->startOfDay(), now()->endOfWeek()]),
+                                  ->whereBetween('due_at', \App\Support\Tenancy\TenantClock::weekRange($tenantId)),
             'in_progress'=> $query->where('status', Action::STATUS_IN_PROGRESS),
             'completed'  => $query->where('status', Action::STATUS_COMPLETED),
             default      => null, // all
@@ -387,9 +387,9 @@ class ActionCenter extends Page
             'overdue' => (clone $base)->whereNotIn('status', [Action::STATUS_COMPLETED, Action::STATUS_CANCELLED])
                 ->where('due_at', '<', now())->count(),
             'due_today' => (clone $base)->whereNotIn('status', [Action::STATUS_COMPLETED, Action::STATUS_CANCELLED])
-                ->whereBetween('due_at', [now()->startOfDay(), now()->endOfDay()])->count(),
+                ->whereBetween('due_at', \App\Support\Tenancy\TenantClock::dayRange($tenantId))->count(),
             'due_week' => (clone $base)->whereNotIn('status', [Action::STATUS_COMPLETED, Action::STATUS_CANCELLED])
-                ->whereBetween('due_at', [now()->startOfDay(), now()->endOfWeek()])->count(),
+                ->whereBetween('due_at', \App\Support\Tenancy\TenantClock::weekRange($tenantId))->count(),
             'completed_mtd' => (clone $base)->where('status', Action::STATUS_COMPLETED)
                 ->whereMonth('completed_at', now()->month)
                 ->whereYear('completed_at', now()->year)->count(),
@@ -407,8 +407,8 @@ class ActionCenter extends Page
         return [
             'all'         => (clone $base)->whereNotIn('status', [Action::STATUS_COMPLETED, Action::STATUS_CANCELLED])->count(),
             'overdue'     => (clone $active)->where('due_at', '<', now())->count(),
-            'due_today'   => (clone $active)->whereBetween('due_at', [now()->startOfDay(), now()->endOfDay()])->count(),
-            'due_week'    => (clone $active)->whereBetween('due_at', [now()->startOfDay(), now()->endOfWeek()])->count(),
+            'due_today'   => (clone $active)->whereBetween('due_at', \App\Support\Tenancy\TenantClock::dayRange($tenantId))->count(),
+            'due_week'    => (clone $active)->whereBetween('due_at', \App\Support\Tenancy\TenantClock::weekRange($tenantId))->count(),
             'in_progress' => (clone $base)->where('status', Action::STATUS_IN_PROGRESS)->count(),
             'completed'   => (clone $base)->where('status', Action::STATUS_COMPLETED)->count(),
         ];

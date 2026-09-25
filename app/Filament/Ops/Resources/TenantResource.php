@@ -73,6 +73,14 @@ class TenantResource extends Resource
                     ->default('USD')
                     ->helperText('ISO code, e.g. USD, AED, EUR.')
                     ->maxLength(3),
+
+                // WP5.2 (D3): the tenant's day — its nightly run, "today", overdue and MTD.
+                Select::make('timezone')
+                    ->options(fn () => array_combine(\DateTimeZone::listIdentifiers(), \DateTimeZone::listIdentifiers()))
+                    ->searchable()
+                    ->default(\App\Support\Tenancy\TenantClock::DEFAULT_TZ)
+                    ->helperText('Its nightly analysis runs at 01:00 here, and "today" and month-to-date follow it.')
+                    ->required(),
             ])->columns(2),
 
             Section::make('Apps')

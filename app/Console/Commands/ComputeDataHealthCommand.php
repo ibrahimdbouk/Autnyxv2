@@ -13,6 +13,9 @@ use Illuminate\Support\Facades\Log;
  */
 class ComputeDataHealthCommand extends Command
 {
+    /** Tenants that failed this run (WP5.2 — reported through the exit code). */
+    private int $failures = 0;
+
     protected $signature = 'data:health {--tenant= : Specific tenant ID}';
 
     protected $description = 'Recompute Data Health snapshots and notify on critical data conditions';
@@ -31,9 +34,10 @@ class ComputeDataHealthCommand extends Command
             } catch (\Throwable $e) {
                 $this->error("Tenant {$tenantId} failed: {$e->getMessage()}");
                 Log::error('[data:health] tenant ' . $tenantId . ': ' . $e->getMessage());
+                $this->failures++; // WP5.2: a tenant that failed fails the command
             }
         }
 
-        return Command::SUCCESS;
+        return $this->failures > 0 ? self::FAILURE : self::SUCCESS;
     }
 }
