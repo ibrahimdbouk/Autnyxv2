@@ -288,12 +288,66 @@ class AnomalySetting extends Model
         ],
     ];
 
-    protected $fillable = ['tenant_id', 'rule_type', 'enabled', 'thresholds'];
+    protected $fillable = ['tenant_id', 'rule_type', 'enabled', 'thresholds', 'settings_version'];
 
     protected $casts = [
-        'enabled'    => 'boolean',
-        'thresholds' => 'array',
+        'enabled'          => 'boolean',
+        'thresholds'       => 'array',
+        'settings_version' => 'integer',
     ];
+
+    /**
+     * WP7.4 (audit L9) — settings versioning. `thresholds` stores only what a
+     * tenant chose; everything else follows the code defaults above, so a
+     * default changed in code reaches every tenant that never overrode it.
+     *
+     * To change a default: edit RULES, add the old value to
+     * SUPERSEDED_DEFAULTS (a stored copy of it was never a choice) and bump
+     * SETTINGS_VERSION. Rows reconcile on read, and `anomaly-settings:sync
+     * --apply` rewrites them.
+     */
+    public const SETTINGS_VERSION = 1;
+
+    /** Earlier code defaults, per rule and key (from the file's history). */
+    public const SUPERSEDED_DEFAULTS = [
+        'demand_seasonality_breach' => ['min_revenue' => [1000]],
+        'demand_erosion'            => ['min_revenue' => [500]],
+    ];
+
+    protected static function booted(): void
+    {
+        static::saving(function (self $s) {
+            $s->thresholds       = self::overridesOnly($s->rule_type, $s->thresholds);
+            $s->settings_version = self::SETTINGS_VERSION;
+        });
+    }
+
+    /**
+     * The tenant's real choices: drop blanks, the current default and any
+     * superseded default (seeded copies, not decisions).
+     */
+    public static function overridesOnly(string $ruleType, ?array $thresholds): ?array
+    {
+        $defaults = self::RULES[$ruleType]['default_thresholds'] ?? [];
+        $old      = self::SUPERSEDED_DEFAULTS[$ruleType] ?? [];
+        $same     = fn ($a, $b) => is_numeric($a) && is_numeric($b) ? (float) $a === (float) $b : $a === $b;
+
+        $out = [];
+        foreach ((array) $thresholds as $key => $value) {
+            if ($value === null || $value === '') {
+                continue;
+            }
+            if (array_key_exists($key, $defaults) && $same($value, $defaults[$key])) {
+                continue;
+            }
+            if (collect($old[$key] ?? [])->contains(fn ($v) => $same($value, $v))) {
+                continue;
+            }
+            $out[$key] = $value;
+        }
+
+        return $out === [] ? null : $out;
+    }
 
     // ── Relationships ─────────────────────────────────────────────────────────
 
@@ -310,12 +364,10 @@ class AnomalySetting extends Model
     public static function seedForTenant(int $tenantId): void
     {
         foreach (self::RULES as $ruleType => $config) {
+            // WP7.4: no copy of the defaults — the row holds overrides only.
             self::firstOrCreate(
                 ['tenant_id' => $tenantId, 'rule_type' => $ruleType],
-                [
-                    'enabled'    => true,
-                    'thresholds' => !empty($config['default_thresholds']) ? $config['default_thresholds'] : null,
-                ]
+                ['enabled' => true, 'thresholds' => null]
             );
         }
     }
@@ -339,7 +391,10 @@ class AnomalySetting extends Model
     {
         return array_merge(
             self::RULES[$this->rule_type]['default_thresholds'] ?? [],
-            $this->thresholds ?? []
+            // A row not yet reconciled may still hold seeded copies of old defaults.
+            (int) $this->settings_version < self::SETTINGS_VERSION
+                ? (self::overridesOnly($this->rule_type, $this->thresholds) ?? [])
+                : ($this->thresholds ?? [])
         );
     }
 

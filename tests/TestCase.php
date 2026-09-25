@@ -39,6 +39,16 @@ abstract class TestCase extends BaseTestCase
     /**
      * Creates a tenant-admin user for the given tenant and sets it as the acting user.
      */
+    /**
+     * WP7.4: let a tenant's actions leave Autnyx (explicit opt-in + an
+     * autonomy level above advise), for tests of the outbound connectors.
+     */
+    protected function allowExecution(Tenant $tenant): void
+    {
+        $tenant->update(['settings' => array_merge((array) $tenant->settings, ['autonomy' => ['execution_opt_in' => true]])]);
+        app(\App\Platform\Orchestration\AutonomyRegistry::class)->define($tenant->id, \App\Models\AutonomyPolicy::LEVEL_APPROVE);
+    }
+
     protected function actingAsTenantAdmin(Tenant $tenant): User
     {
         $user = $this->createUser($tenant, admin: true);

@@ -16,6 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // session CSRF token, so exempt it from CSRF verification.
         $middleware->validateCsrfTokens(except: [
             'webhooks/*',
+            'csp-report',   // WP7.3: sent by the browser, carries no token
         ]);
 
         // 3b — baseline security response headers on every response.
@@ -34,4 +35,15 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->context(fn () => array_filter([
             'tenant_id' => rescue(fn () => \Filament\Facades\Filament::getTenant()?->getKey(), null, false),
         ]));
+
+        // WP7.2 (audit M8): a Livewire call with a crafted argument or property
+        // (an array where a typed parameter expects an int) is a bad request,
+        // not a server error. Still reported, so a genuine bug stays visible.
+        $exceptions->render(function (\TypeError $e, \Illuminate\Http\Request $request) {
+            if ($request->hasHeader('X-Livewire') || $request->is('livewire*/update')) {
+                return response()->json(['message' => 'Invalid input.'], 400);
+            }
+
+            return null;
+        });
     })->create();

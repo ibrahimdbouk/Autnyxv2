@@ -1,40 +1,11 @@
-{{-- Dashboard "operations pulse": stat tiles that reflect the newer capabilities —
-     autonomy/detection status, intra-network transfer capacity (Deep Investigation),
-     AI-narration coverage, and recovery this month. Cheap tenant-scoped queries. --}}
+{{-- Dashboard "operations pulse": detection status, transfer capacity, AI-narration
+     coverage and recovery this month. Figures come from DashboardMetrics ($m) and
+     RecoveryMetrics, the same numbers as the KPI cards (WP7.1). --}}
 @php
-    $opTenant = \Filament\Facades\Filament::getTenant();
-    $opT = $opTenant?->id;
-    $opCurrency = $opTenant?->currencyCode() ?? 'AED';
-
-    $opLastDetection = $opTenant?->last_detection_at;
-
-    $opTransferStores = 0;
-    $opTransferUnits = 0;
-    $opNarratedPct = null;
-    $opRecoveryMtd = 0.0;
-
-    if ($opT) {
-        try {
-            $capBase = \App\Models\SkuReplenishment::where('tenant_id', $opT)
-                ->where('order_up_to', '>', 0)
-                ->whereColumn('on_hand', '>', 'order_up_to');
-            $opTransferStores = (clone $capBase)->distinct()->count('store_id');
-            $opTransferUnits = (int) (clone $capBase)->selectRaw('COALESCE(SUM(on_hand - order_up_to),0) as s')->value('s');
-        } catch (\Throwable $e) { /* leave zeros */ }
-
-        try {
-            $openBase = \App\Models\Investigation::where('tenant_id', $opT)->whereIn('status', ['open', 'in_progress']);
-            $openCount = (clone $openBase)->count();
-            $narrated = (clone $openBase)->whereNotNull('ai_generated_at')->count();
-            $opNarratedPct = $openCount > 0 ? (int) round($narrated / $openCount * 100) : null;
-        } catch (\Throwable $e) { /* leave null */ }
-
-        try {
-            $opRecoveryMtd = (float) \App\Models\InvestigationOutcome::where('tenant_id', $opT)
-                ->where('recorded_at', '>=', now()->startOfMonth())
-                ->sum('observed_recovery');
-        } catch (\Throwable $e) { /* leave zero */ }
-    }
+    $opLastDetection   = \Filament\Facades\Filament::getTenant()?->last_detection_at;
+    $opTransfer        = $m['pulse']['transfer'];
+    $opNarratedPct     = $m['pulse']['narrated_pct'];
+    $opRecoveryMtd     = (float) $m['kpi']['recovered_mtd'];
 @endphp
 
 <style>
@@ -45,7 +16,7 @@
 .opp-val{font-size:1.3rem; font-weight:800; color:var(--ax-ink); margin-top:.3rem; line-height:1.1;}
 .opp-sub{font-size:.72rem; color:var(--ax-muted); margin-top:.2rem;}
 .opp-dot{width:.5rem; height:.5rem; border-radius:9999px; display:inline-block;}
-.opp-dot.ok{background:#16a34a;} .opp-dot.warn{background:#d97706;} .opp-dot.idle{background:#9ca3af;}
+.opp-dot.ok{background:var(--ax-success);} .opp-dot.warn{background:var(--ax-warning);} .opp-dot.idle{background:var(--ax-faint);}
 </style>
 
 <div class="opp-grid">
@@ -58,10 +29,17 @@
         <div class="opp-sub">{{ $opLastDetection ? 'since last run' : 'no run recorded yet' }}</div>
     </div>
 
-    <div class="opp-tile">
+    <div class="opp-tile" title="Units above order-up-to at some stores that other stores below their reorder point need, per SKU">
         <div class="opp-lab">🔁 Transfer capacity</div>
-        <div class="opp-val">{{ number_format($opTransferUnits) }}</div>
-        <div class="opp-sub">releasable units across {{ number_format($opTransferStores) }} store{{ $opTransferStores === 1 ? '' : 's' }}</div>
+        <div class="opp-val">{{ number_format($opTransfer['units']) }}</div>
+        <div class="opp-sub">
+            @if($opTransfer['units'] > 0)
+                units across {{ number_format($opTransfer['skus']) }} SKU{{ $opTransfer['skus'] === 1 ? '' : 's' }},
+                {{ number_format($opTransfer['donors']) }} donor store{{ $opTransfer['donors'] === 1 ? '' : 's' }} → {{ number_format($opTransfer['receivers']) }} short
+            @else
+                no surplus that another store needs
+            @endif
+        </div>
     </div>
 
     <div class="opp-tile">
@@ -72,7 +50,7 @@
 
     <div class="opp-tile">
         <div class="opp-lab">↩ Recovery (MTD)</div>
-        <div class="opp-val">{{ \App\Support\Money::compact($opRecoveryMtd, $opCurrency) }}</div>
-        <div class="opp-sub">recorded this month</div>
+        <div class="opp-val">{{ \App\Support\Money::compact($opRecoveryMtd, $currency) }}</div>
+        <div class="opp-sub">attributed, recorded this month</div>
     </div>
 </div>

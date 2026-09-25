@@ -62,12 +62,17 @@ class AnomalyRecoveryService
         return $this->observedInWindow($tenantId, \App\Support\Tenancy\TenantClock::startOfMonth($tenantId), null); // WP5.2: the tenant's month
     }
 
-    /** OBSERVED recovery in the previous calendar month (for trend deltas). */
+    /**
+     * OBSERVED recovery over the same stretch of last month (WP7.1): from its
+     * first day to the same point in it as now, so a month-to-date trend
+     * compares like with like (the 5th against the 5th, not against the
+     * whole of last month).
+     */
     public function prevMtd(int $tenantId): array
     {
-        $start = \App\Support\Tenancy\TenantClock::now($tenantId)->subMonthNoOverflow()->startOfMonth();
+        [$from, $to] = \App\Support\Tenancy\TenantClock::samePeriodLastMonth($tenantId);
 
-        return $this->observedInWindow($tenantId, $start, \App\Support\Tenancy\TenantClock::startOfMonth($tenantId));
+        return $this->observedInWindow($tenantId, $from, $to);
     }
 
     /**
@@ -98,9 +103,10 @@ class AnomalyRecoveryService
     public function dailySeries(int $tenantId, int $days = 30): array
     {
         $from = \App\Support\Tenancy\TenantClock::today($tenantId)->subDays($days - 1);
+        $day  = \App\Support\Tenancy\TenantClock::localDateSql('resolved_at', $tenantId);   // WP7.3: the tenant's day
 
         if ($this->v2($tenantId)) {
-            return DB::query()->fromSub($this->perSubject($this->resolvedBase($tenantId, $from, null), '(resolved_at)::date'), 'x')
+            return DB::query()->fromSub($this->perSubject($this->resolvedBase($tenantId, $from, null), $day), 'x')
                 ->selectRaw("TO_CHAR(g, 'YYYY-MM-DD') AS d, SUM(v) AS total")
                 ->groupBy('g')
                 ->pluck('total', 'd')
@@ -109,8 +115,8 @@ class AnomalyRecoveryService
         }
 
         return $this->resolvedBase($tenantId, $from, null)
-            ->selectRaw("TO_CHAR(resolved_at::date, 'YYYY-MM-DD') AS d, COALESCE(SUM(value_at_open), 0) AS total")
-            ->groupByRaw("TO_CHAR(resolved_at::date, 'YYYY-MM-DD')")
+            ->selectRaw("TO_CHAR({$day}, 'YYYY-MM-DD') AS d, COALESCE(SUM(value_at_open), 0) AS total")
+            ->groupByRaw("TO_CHAR({$day}, 'YYYY-MM-DD')")
             ->pluck('total', 'd')
             ->map(fn ($v) => (float) $v)
             ->all();
@@ -233,11 +239,14 @@ class AnomalyRecoveryService
             })
             ->whereNotNull('resolved_at');
 
+        // Bindings carry no zone: express the instants in the zone the
+        // column is stored in, whatever zone the caller's Carbon is in.
+        $appTz = config('app.timezone', 'UTC');
         if ($from !== null) {
-            $q->where('resolved_at', '>=', Carbon::instance($from));
+            $q->where('resolved_at', '>=', Carbon::instance($from)->setTimezone($appTz));
         }
         if ($to !== null) {
-            $q->where('resolved_at', '<', Carbon::instance($to));
+            $q->where('resolved_at', '<', Carbon::instance($to)->setTimezone($appTz));
         }
 
         return $q;

@@ -68,6 +68,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // WP7.3: every <script> written in a template carries the request's
+        // CSP nonce (compile time, template source only — never data).
+        \Illuminate\Support\Facades\Blade::precompiler(fn (string $t) => \App\Support\Security\Csp::precompile($t));
+
+        // WP7.3: Filament date columns, entries and pickers show (and read)
+        // times on the tenant's clock.
+        \Filament\Support\Facades\FilamentTimezone::set(fn (): string => \App\Support\Tenancy\TenantClock::displayTimezone());
+
         // WP2.4 (audit L3): audit changes to security-relevant configuration.
         foreach ([
             \App\Models\SsoConnection::class, \App\Models\ApiKey::class, \App\Models\ApiConnection::class,

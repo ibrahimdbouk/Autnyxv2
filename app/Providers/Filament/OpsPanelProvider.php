@@ -46,9 +46,9 @@ class OpsPanelProvider extends PanelProvider
             ->brandName('Autnyx Ops')
             ->renderHook(
                 'panels::head.end',
-                fn (): string => '<link rel="stylesheet" href="'
-                    . asset('css/autnyx-ui.css') . '?v=' . \App\Support\Branding::cssVersion() . '">'
+                fn (): string => \App\Support\Branding::headAssets()
             )
+            ->defaultAvatarProvider(\App\Filament\Support\InitialsAvatarProvider::class)
             ->maxContentWidth('full')
             ->discoverResources(in: app_path('Filament/Ops/Resources'), for: 'App\\Filament\\Ops\\Resources')
             ->discoverPages(in: app_path('Filament/Ops/Pages'), for: 'App\\Filament\\Ops\\Pages')

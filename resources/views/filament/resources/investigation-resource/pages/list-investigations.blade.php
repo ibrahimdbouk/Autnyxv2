@@ -1208,7 +1208,7 @@ if ($selected) {
 
             {{-- Meta --}}
             <div class="invs-panel-meta">
-                First detected: {{ $selected->opened_at?->format('M d, Y g:i A') }}
+                First detected: {{ \App\Support\Tenancy\TenantClock::display($selected->opened_at)?->format('M d, Y g:i A') }}
                 @if($selected->assignedTeam) &middot; Team: {{ $selected->assignedTeam->name }} @endif
             </div>
 

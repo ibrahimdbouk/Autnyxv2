@@ -22,7 +22,7 @@
         table.ph-tbl th { text-align:left; color:var(--ax-muted,#6b7280); font-size:.68rem; text-transform:uppercase; padding:.55rem .9rem; border-bottom:1px solid var(--ax-line,#e5e7eb); }
         table.ph-tbl td { padding:.55rem .9rem; border-bottom:1px solid var(--ax-line-2,#f3f4f6); color:var(--ax-text,#374151); }
         .ph-pill { display:inline-block; padding:.12rem .55rem; border-radius:9999px; font-size:.68rem; font-weight:700; }
-        .ph-ok { background:#dcfce7; color:#166534; } .ph-bad { background:#fee2e2; color:#991b1b; }
+        .ph-ok { background:var(--ax-success-soft); color:var(--ax-success-fg); } .ph-bad { background:var(--ax-danger-soft); color:var(--ax-danger-fg); }
         .ph-num { font-variant-numeric:tabular-nums; }
         .ph-muted { color:var(--ax-muted,#6b7280); }
     </style>

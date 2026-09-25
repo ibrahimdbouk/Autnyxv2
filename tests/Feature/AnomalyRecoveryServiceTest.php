@@ -105,11 +105,13 @@ class AnomalyRecoveryServiceTest extends TestCase
 
     public function test_mtd_respects_the_calendar_window(): void
     {
-        $this->resolved(500, now()->subMonthNoOverflow()->startOfMonth()->addDay()); // last month
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-09-15 12:00', 'Asia/Dubai'));
+        $this->resolved(500, now()->subMonthNoOverflow()->startOfMonth()->addDay()); // last month, before the 15th
+        $this->resolved(900, now()->subMonthNoOverflow()->addDays(3));               // last month, after the same point
         $this->resolved(120, now()->startOfMonth()->addDay());                        // this month
 
         $this->assertSame(120.0, $this->svc->mtd($this->tenant->id)['amount']);
-        $this->assertSame(500.0, $this->svc->prevMtd($this->tenant->id)['amount']);
+        $this->assertSame(500.0, $this->svc->prevMtd($this->tenant->id)['amount'], 'WP7.1: the same stretch of last month');
     }
 
     public function test_by_rule_family_groups_and_orders(): void

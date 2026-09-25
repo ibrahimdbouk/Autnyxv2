@@ -3,16 +3,6 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Pages\Dashboard;
-use App\Filament\Widgets\FinancialSummaryWidget;
-use App\Filament\Widgets\InventoryHealthChartWidget;
-use App\Filament\Widgets\InvestigationsOverviewWidget;
-use App\Filament\Widgets\OverviewStatsWidget;
-use App\Filament\Widgets\PoFulfillmentStatsWidget;
-use App\Filament\Widgets\RecentAnomaliesWidget;
-use App\Filament\Widgets\SalesTrendChartWidget;
-use App\Filament\Widgets\AnomalyTrendChartWidget;
-use App\Filament\Widgets\StoreComparisonWidget;
-use App\Filament\Widgets\TopSkusChartWidget;
 use App\Models\Tenant;
 use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Http\Middleware\Authenticate;
@@ -21,7 +11,6 @@ use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
-use Filament\Widgets;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
@@ -58,9 +47,9 @@ class AdminPanelProvider extends PanelProvider
             // Global design tokens + primitives (Track U) — no build step.
             ->renderHook(
                 'panels::head.end',
-                fn (): string => '<link rel="stylesheet" href="'
-                    . asset('css/autnyx-ui.css') . '?v=' . \App\Support\Branding::cssVersion() . '">'
+                fn (): string => \App\Support\Branding::headAssets()
             )
+            ->defaultAvatarProvider(\App\Filament\Support\InitialsAvatarProvider::class)
             // 1b — offer SSO from the password login page (break-glass stays here).
             ->renderHook(
                 'panels::auth.login.form.after',
@@ -92,19 +81,10 @@ class AdminPanelProvider extends PanelProvider
             ->pages([
                 Dashboard::class,
             ])
-            ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
-            ->widgets([
-                InvestigationsOverviewWidget::class,
-                FinancialSummaryWidget::class,
-                OverviewStatsWidget::class,
-                SalesTrendChartWidget::class,
-                TopSkusChartWidget::class,
-                InventoryHealthChartWidget::class,
-                PoFulfillmentStatsWidget::class,
-                RecentAnomaliesWidget::class,
-                AnomalyTrendChartWidget::class,
-                StoreComparisonWidget::class,
-            ])
+            // WP7.4 (L6): the dashboard renders its own view; the ten unused
+            // widgets (never shown) were removed.
+            // WP7.4 (L11): entitlements gate access on every request and update.
+            ->tenantMiddleware([\App\Http\Middleware\EnsureAppEntitlement::class], isPersistent: true)
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,

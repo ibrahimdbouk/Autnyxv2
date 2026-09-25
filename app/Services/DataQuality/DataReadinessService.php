@@ -102,4 +102,66 @@ class DataReadinessService
     {
         return ($this->datasetStates($tenantId)[$dataType] ?? ImportQuality::STATE_GREEN) !== ImportQuality::STATE_RED;
     }
+
+    /**
+     * WP7.4 (D12): the per-dataset readiness shown on the Data Health page —
+     * the latest batch of each dataset, what it decided, and which detection
+     * rules it holds back. (Moved from the retired Data Readiness page.)
+     *
+     * @return array{overall:string, datasets:array<int,array<string,mixed>>}
+     */
+    public function summary(int $tenantId): array
+    {
+
+        $rows = \Illuminate\Support\Facades\DB::select(
+            "SELECT DISTINCT ON (data_type) data_type, state, decision, rows_promoted, rows_quarantined,
+                    reason_counts, created_at
+             FROM import_quality WHERE tenant_id = ? AND state IS DISTINCT FROM 'duplicate'
+             ORDER BY data_type, created_at DESC",
+            [$tenantId],
+        );
+
+        $datasets = [];
+        $anyRed = false;
+        $anyAmber = false;
+
+        foreach ($rows as $r) {
+            $rules = array_keys(array_filter(
+                self::RULE_DATASET,
+                fn ($ds) => $ds === $r->data_type,
+            ));
+
+            $r->state === 'red' ? $anyRed = true : ($r->state === 'amber' ? $anyAmber = true : null);
+
+            $datasets[] = [
+                'data_type'   => $r->data_type,
+                'state'       => $r->state,
+                'decision'    => $r->decision,
+                'promoted'    => (int) $r->rows_promoted,
+                'quarantined' => (int) $r->rows_quarantined,
+                'top_reason'  => $this->topReason($r->reason_counts),
+                'rules'       => $rules,
+                'ready'       => $r->state !== 'red',
+            ];
+        }
+
+        usort($datasets, fn ($a, $b) => $a['ready'] <=> $b['ready']); // blocked first
+
+        return [
+            'overall'  => $anyRed ? 'red' : ($anyAmber ? 'amber' : 'green'),
+            'datasets' => $datasets,
+        ];
+    }
+
+    private function topReason($json): ?string
+    {
+        $counts = is_string($json) ? (json_decode($json, true) ?: []) : (is_array($json) ? $json : []);
+        if ($counts === []) {
+            return null;
+        }
+        arsort($counts);
+        $key = array_key_first($counts);
+
+        return \App\Services\DataQuality\Reasons::label((string) $key) . " ({$counts[$key]})";
+    }
 }

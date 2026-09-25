@@ -80,10 +80,19 @@ class ReportDataService
     /** Tenant currency (ISO code) for money formatting within the current report. */
     private string $currency = \App\Support\Money::DEFAULT;
 
+    private string $tz = 'UTC';
+
+    /** A stored timestamp as the tenant's local 'Y-m-d H:i' (blank when unset). */
+    private function ts(?\DateTimeInterface $at): string
+    {
+        return $at ? \Illuminate\Support\Carbon::instance($at)->setTimezone($this->tz)->format('Y-m-d H:i') : '';
+    }
+
     public function build(string $type, int $tenantId, Carbon $from, Carbon $to): array
     {
         $tenant = \App\Models\Tenant::find($tenantId);
         $this->currency = \App\Support\Money::normalize($tenant?->currency);
+        $this->tz       = \App\Support\Tenancy\TenantClock::timezone($tenantId);   // WP7.3: times on the tenant's clock
 
         $base = [
             'type'         => $type,
@@ -185,7 +194,7 @@ class ReportDataService
                         (float) $o->observed_recovery,
                         (float) $o->cost_to_resolve,
                         $o->getRecoveryMethodLabel(),
-                        optional($o->recorded_at ?? $o->created_at)->format('Y-m-d H:i'),
+                        $this->ts($o->recorded_at ?? $o->created_at),
                     ])->all(),
                 ],
             ],
@@ -252,8 +261,8 @@ class ReportDataService
                         (int) $i->anomaly_count,
                         (float) $i->revenue_at_risk,
                         (float) $i->observed_recovery,
-                        optional($i->opened_at)->format('Y-m-d H:i'),
-                        optional($i->resolved_at)->format('Y-m-d H:i'),
+                        $this->ts($i->opened_at),
+                        $this->ts($i->resolved_at),
                     ])->all(),
                 ],
             ],
@@ -330,7 +339,7 @@ class ReportDataService
                         ucfirst((string) $a->severity),
                         $a->sku ?? '',
                         $a->store?->name ?? '',
-                        optional($a->detected_at)->format('Y-m-d H:i'),
+                        $this->ts($a->detected_at),
                         $a->investigation_id ?? '',
                         $a->dismissed_at ? 'Yes' : 'No',
                         $a->is_false_positive ? 'Yes' : 'No',
@@ -410,7 +419,7 @@ class ReportDataService
                         $s->records_received,
                         $s->records_accepted,
                         $s->records_rejected,
-                        optional($s->last_record_at)->format('Y-m-d H:i'),
+                        $this->ts($s->last_record_at),
                     ])->all(),
                 ],
                 [

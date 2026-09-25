@@ -43,6 +43,9 @@
   --ax-danger:       #dc2626;  --ax-danger-soft: #fee2e2;  --ax-danger-fg: #991b1b;
   --ax-info:         #2563eb;  --ax-info-soft:   #dbeafe;  --ax-info-fg:   #1e40af;
   --ax-neutral-soft: #f3f4f6;  --ax-neutral-fg:  #374151;
+  /* WP7.3 — borders for soft status surfaces, and a teal for "observed". */
+  --ax-success-line: #bbf7d0;  --ax-warning-line: #fde68a;  --ax-danger-line: #fecaca;  --ax-info-line: #bfdbfe;
+  --ax-teal:         #0d9488;
 
   /* ---- Radius / shadow / focus ---- */
   --ax-radius-sm: .375rem;
@@ -94,6 +97,9 @@
   --ax-danger-soft: #3f1212; --ax-danger-fg: #f87171;
   --ax-info-soft:   #10233f; --ax-info-fg:   #60a5fa;
   --ax-neutral-soft:#1f2937; --ax-neutral-fg:#d1d5db;
+  --ax-success: #22c55e; --ax-warning: #f59e0b; --ax-danger: #ef4444; --ax-info: #3b82f6;
+  --ax-success-line:#14532d; --ax-warning-line:#78350f; --ax-danger-line:#7f1d1d; --ax-info-line:#1e3a8a;
+  --ax-teal: #2dd4bf;
 
   --ax-shadow-sm: 0 1px 2px rgba(0,0,0,.4);
   --ax-shadow:    0 1px 4px rgba(0,0,0,.45);

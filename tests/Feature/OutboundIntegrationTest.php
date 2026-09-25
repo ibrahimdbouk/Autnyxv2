@@ -21,6 +21,7 @@ class OutboundIntegrationTest extends TestCase
         Http::fake(['*' => Http::response(['ok' => true], 200)]);
 
         $tenant = $this->createTenant();
+        $this->allowExecution($tenant);
         OutboundTarget::create([
             'tenant_id' => $tenant->id,
             'kind'      => OutboundTarget::KIND_WEBHOOK,
@@ -64,6 +65,7 @@ class OutboundIntegrationTest extends TestCase
         Http::fake(['*' => Http::response('upstream boom', 500)]);
 
         $tenant = $this->createTenant();
+        $this->allowExecution($tenant);
         OutboundTarget::create([
             'tenant_id' => $tenant->id,
             'kind'      => OutboundTarget::KIND_WEBHOOK,

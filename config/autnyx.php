@@ -39,20 +39,19 @@ return [
     | Content-Security-Policy (3b)
     |--------------------------------------------------------------------------
     |
-    | 'report'  → send Content-Security-Policy-Report-Only (browsers evaluate and
-    |             log violations to the console but never block — safe default;
-    |             use it to validate the policy against every page).
-    | 'enforce' → send Content-Security-Policy (blocks violations).
+    | 'enforce' → send Content-Security-Policy (blocks violations). Default.
+    | 'report'  → send Content-Security-Policy-Report-Only (never blocks — the
+    |             kill switch if a page breaks).
     | 'off'     → no CSP header.
     |
-    | The policy allows what a Filament/Livewire/Alpine app needs: same-origin
-    | assets, inline scripts/styles (Filament injects these), and Chart.js from
-    | cdnjs — while locking down framing, base-uri, form-action, and objects.
-    | 'unsafe-inline'/'unsafe-eval' are unavoidable with Alpine and can't be
-    | tightened without CSP nonces (a larger change).
+    | WP7.3: scripts need the request's nonce (added to every template script
+    | tag at compile time; Livewire adds it to its own), inline event handlers
+    | are refused, everything else is same-origin. 'unsafe-eval' stays for
+    | Alpine. Violations are POSTed to /csp-report and logged. See
+    | App\Support\Security\Csp.
     |
     */
-    'csp_mode' => env('CSP_MODE', 'report'),
+    'csp_mode' => env('CSP_MODE', 'enforce'),
 
     /*
     |--------------------------------------------------------------------------

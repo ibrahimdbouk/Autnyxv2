@@ -106,9 +106,15 @@ class OrchestrationPipeline
         ) {
             $dispatch = $this->dispatcher->dispatch($intent);
             $dispatchId = $dispatch->id;
-            $mode = OrchestrationOutcome::MODE_EXECUTED;
-            $caseDecision = DecisionCase::DECISION_ADOPTED;
-            $reasons[] = "auto-executed: confidence {$effective} ≥ threshold {$minConfidence}";
+            if ($dispatch->status === \App\Models\OutboundDispatch::STATUS_HELD) {
+                // WP7.4: the ExecutionGate held it (no tenant opt-in) — recommend only.
+                $mode = OrchestrationOutcome::MODE_ADVISED;
+                $reasons[] = 'held: ' . $dispatch->response_body;
+            } else {
+                $mode = OrchestrationOutcome::MODE_EXECUTED;
+                $caseDecision = DecisionCase::DECISION_ADOPTED;
+                $reasons[] = "auto-executed: confidence {$effective} ≥ threshold {$minConfidence}";
+            }
         } else {
             // approve level, or auto falling back to a human.
             $approvalId = $this->queue($intent, $rec, $reasons)->id;

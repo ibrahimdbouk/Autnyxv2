@@ -48,9 +48,9 @@
         table.ops-tbl tr:last-child td { border-bottom:0; }
         .ops-name { font-weight:700; color:var(--ax-ink,#111827); }
         .ops-badge { display:inline-block; padding:.12rem .5rem; border-radius:9999px; font-size:.68rem; font-weight:700; }
-        .ops-badge.active { background:#dcfce7; color:#166534; }
-        .ops-badge.suspended { background:#fee2e2; color:#991b1b; }
-        .ops-badge.plan { background:#fef3c7; color:#92400e; }
+        .ops-badge.active { background:var(--ax-success-soft); color:var(--ax-success-fg); }
+        .ops-badge.suspended { background:var(--ax-danger-soft); color:var(--ax-danger-fg); }
+        .ops-badge.plan { background:var(--ax-warning-soft); color:var(--ax-warning-fg); }
         .ops-actions a { color:var(--ax-accent-600,#b45309); font-weight:600; text-decoration:none; margin-right:.7rem; }
         .ops-scroll { overflow-x:auto; }
         .ops-num { font-variant-numeric:tabular-nums; }
@@ -168,7 +168,7 @@
                                 <a href="{{ \App\Filament\Ops\Pages\TenantProfile::urlFor($t['id']) }}">View</a>
                                 <a href="{{ \App\Filament\Ops\Resources\TenantResource::getUrl('edit', ['record' => $t['id']]) }}">Manage</a>
                                 <a href="{{ route('ops.impersonate', ['tenant' => $t['id']]) }}"
-                                   onclick="return confirm('Enter {{ $t['name'] }} as its admin? Your actions will be recorded.');">Enter</a>
+                                   data-confirm="Enter {{ $t['name'] }} as its admin? Your actions will be recorded.">Enter</a>
                             </td>
                         </tr>
                     @empty

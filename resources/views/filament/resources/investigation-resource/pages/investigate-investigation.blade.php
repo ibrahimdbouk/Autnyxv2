@@ -410,11 +410,11 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
     <div class="inv2-infobar-right">
         <div class="inv2-infobar-right-row">
             <span class="inv2-infobar-right-label">Detected At</span>
-            <span class="inv2-infobar-right-value">{{ $record->opened_at?->format('M j, Y g:i A') ?? '—' }}</span>
+            <span class="inv2-infobar-right-value">{{ \App\Support\Tenancy\TenantClock::display($record->opened_at)?->format('M j, Y g:i A') ?? '—' }}</span>
         </div>
         <div class="inv2-infobar-right-row">
             <span class="inv2-infobar-right-label">Investigated At</span>
-            <span class="inv2-infobar-right-value">{{ $record->ai_generated_at?->format('M j, Y g:i A') ?? '—' }}</span>
+            <span class="inv2-infobar-right-value">{{ \App\Support\Tenancy\TenantClock::display($record->ai_generated_at)?->format('M j, Y g:i A') ?? '—' }}</span>
         </div>
         <div class="inv2-infobar-divider"></div>
         <div class="inv2-infobar-right-row">
@@ -668,7 +668,7 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
             @endif
             <div class="inv2-action-row">
                 <span class="inv2-action-label">Action Taken At</span>
-                <span class="inv2-action-value">{{ $completedAction->updated_at?->format('M j, Y g:i A') ?? '—' }}</span>
+                <span class="inv2-action-value">{{ \App\Support\Tenancy\TenantClock::display($completedAction->updated_at)?->format('M j, Y g:i A') ?? '—' }}</span>
             </div>
             @if($completedAction->assignedTo)
             <div class="inv2-action-row">
@@ -732,7 +732,7 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
             @if($record->resolved_at)
             <div class="inv2-action-row">
                 <span class="inv2-action-label">Resolved At</span>
-                <span class="inv2-action-value">{{ $record->resolved_at->format('M j, Y g:i A') }}</span>
+                <span class="inv2-action-value">{{ \App\Support\Tenancy\TenantClock::display($record->resolved_at)->format('M j, Y g:i A') }}</span>
             </div>
             @endif
 
@@ -806,7 +806,7 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
     <div class="col-status-row">
         @if($record->isSnoozed())
             <span class="col-chip snooze">
-                Snoozed until {{ $record->snoozed_until->format('M j, Y') }}
+                Snoozed until {{ \App\Support\Tenancy\TenantClock::display($record->snoozed_until)->format('M j, Y') }}
                 @if($record->snooze_reason)· {{ \App\Models\Suppression::REASON_LABELS[$record->snooze_reason] ?? $record->snooze_reason }}@endif
             </span>
         @endif
@@ -969,16 +969,16 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
     .dinv-wr-deriv { display:flex; flex-wrap:wrap; gap:.35rem .9rem; margin-top:.55rem; font-size:.76rem; color:var(--ax-muted,#4b5563); }
     .dinv-wr-deriv b { color:var(--ax-ink,#111827); }
     /* What-If simulator */
-    .dinv-sim-banner { display:flex; align-items:center; gap:.5rem; font-size:.72rem; font-weight:800; letter-spacing:.05em; color:#8a5a00; background:#fdf3e0; border:1px solid #f6d998; border-radius:.5rem; padding:.4rem .7rem; margin-bottom:.85rem; }
-    .dinv-sim-sub { font-weight:600; letter-spacing:0; color:#8a5a00; }
+    .dinv-sim-banner { display:flex; align-items:center; gap:.5rem; font-size:.72rem; font-weight:800; letter-spacing:.05em; color:var(--ax-warning-fg); background:var(--ax-warning-soft); border:1px solid var(--ax-warning-line); border-radius:.5rem; padding:.4rem .7rem; margin-bottom:.85rem; }
+    .dinv-sim-sub { font-weight:600; letter-spacing:0; color:var(--ax-warning-fg); }
     .dinv-hz { display:inline-flex; gap:.3rem; margin-bottom:.9rem; }
     .dinv-hz button { border:1px solid var(--ax-line,#e5e7eb); background:var(--ax-bg,#fff); border-radius:9999px; padding:.2rem .7rem; font-size:.74rem; font-weight:700; color:var(--ax-text,#374151); cursor:pointer; }
     .dinv-hz button.on { background:var(--ax-accent-strong,#7c3aed); color:#fff; border-color:var(--ax-accent-strong,#7c3aed); }
     .dinv-sim-grid { display:grid; grid-template-columns:1fr; gap:.75rem; }
     @media(min-width:640px){ .dinv-sim-grid { grid-template-columns:1fr 1fr; } }
     .dinv-sim-card { border:1px solid var(--ax-line,#e5e7eb); border-radius:.6rem; padding:.85rem 1rem; }
-    .dinv-sim-card.no { background:#fdeceb; border-color:#f6c9c4; }
-    .dinv-sim-card.act { background:#e7f6ee; border-color:#bfe6cf; }
+    .dinv-sim-card.no { background:var(--ax-danger-soft); border-color:var(--ax-danger-line); }
+    .dinv-sim-card.act { background:var(--ax-success-soft); border-color:var(--ax-success-line); }
     .dinv-sim-card .lab { font-size:.68rem; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:var(--ax-faint,#6b7280); }
     .dinv-sim-card .big { font-size:1.4rem; font-weight:800; color:var(--ax-ink,#111827); margin-top:.15rem; }
     .dinv-sim-card .sub { font-size:.76rem; color:var(--ax-muted,#4b5563); margin-top:.2rem; }
@@ -995,8 +995,8 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
     .dinv-sim-inc .pb { margin-top:.5rem; padding:.4rem .6rem; border-radius:.45rem; background:var(--ax-accent-soft,#f5f3ff); font-size:.78rem; color:var(--ax-text,#374151); line-height:1.45; }
     .dinv-sim-inc .pb b { color:var(--ax-accent-strong,#7c3aed); }
     /* What-If transfer alternative */
-    .dinv-tr { margin-top:.9rem; border:1px solid #bfe6cf; background:#f2fbf6; border-radius:.6rem; padding:.8rem 1rem; }
-    .dinv-tr-head { display:flex; align-items:center; gap:.5rem; font-size:.82rem; font-weight:800; color:#15803d; }
+    .dinv-tr { margin-top:.9rem; border:1px solid var(--ax-success-line); background:var(--ax-success-soft); border-radius:.6rem; padding:.8rem 1rem; }
+    .dinv-tr-head { display:flex; align-items:center; gap:.5rem; font-size:.82rem; font-weight:800; color:var(--ax-success-fg); }
     .dinv-tr-lead { margin:.5rem 0 0; font-size:.84rem; line-height:1.55; color:var(--ax-ink,#111827); }
     .dinv-tr-lead b { color:var(--ax-ink,#111827); }
     .dinv-tr-body .dinv-sim-assum { margin-top:.55rem; }
@@ -1057,7 +1057,7 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                                 @if($fb['head']['sku'])<text x="{{ $fb['head_x'] + 108 }}" y="{{ $fb['cy'] + 24 }}" text-anchor="middle" class="dinv-fish-head-sku">{{ $fb['head']['sku'] }}</text>@endif
                             </g>
                             @foreach($fb['signals'] as $s)
-                                <g class="dinv-fish-node {{ $s['is_root'] ? 'is-root' : '' }}" data-id="{{ $s['id'] }}" onclick="dinvNode({{ $s['id'] }})" tabindex="0" role="button" aria-label="{{ $s['label'] }}">
+                                <g class="dinv-fish-node {{ $s['is_root'] ? 'is-root' : '' }}" data-id="{{ $s['id'] }}" x-on:click="dinvNode({{ (int) $s['id'] }})" x-on:keydown.enter="dinvNode({{ (int) $s['id'] }})" tabindex="0" role="button" aria-label="{{ $s['label'] }}">
                                     <circle cx="{{ $s['cx'] }}" cy="{{ $s['cy'] }}" r="{{ $s['is_root'] ? 8 : 5 }}" class="dinv-sev-{{ $s['severity'] }}"></circle>
                                     <text x="{{ $s['label_x'] }}" y="{{ $s['label_y'] }}" text-anchor="end" class="dinv-fish-sig">{{ $s['label'] }}</text>
                                 </g>
@@ -1066,7 +1066,7 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                     </div>
 
                     <div id="dinv-fish-drawer" class="dinv-drawer" hidden>
-                        <div class="dinv-drawer-head"><span id="dinv-drawer-title"></span><button type="button" class="dinv-drawer-x" onclick="dinvNodeClose()" aria-label="Close">✕</button></div>
+                        <div class="dinv-drawer-head"><span id="dinv-drawer-title"></span><button type="button" class="dinv-drawer-x" x-on:click="dinvNodeClose()" aria-label="Close">✕</button></div>
                         <div id="dinv-drawer-body"></div>
                     </div>
                     <script type="application/json" id="dinv-fish-detail">@json($detailMap)</script>
@@ -1161,7 +1161,7 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                     <div class="dinv-sim-banner">▲ SIMULATED <span class="dinv-sim-sub">— a deterministic projection from governed inputs, not a measured outcome.</span></div>
                     <div class="dinv-hz" id="dinv-hz">
                         @foreach($wi['horizons'] as $h)
-                            <button type="button" class="{{ $h == $wi['default_horizon'] ? 'on' : '' }}" onclick="dinvHz({{ $h }})">{{ $h }}-day</button>
+                            <button type="button" class="{{ $h == $wi['default_horizon'] ? 'on' : '' }}" x-on:click="dinvHz({{ (int) $h }})">{{ $h }}-day</button>
                         @endforeach
                     </div>
                     <div class="dinv-sim-grid">
@@ -1317,9 +1317,9 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                     <div class="dinv-empty">{{ $ev['empty_reason'] ?? 'Evidence unavailable.' }}</div>
                 @else
                     <div class="dinv-chips">
-                        <button type="button" class="dinv-chip dinv-chip-on" onclick="dinvFilter('direction','all',this)">All</button>
+                        <button type="button" class="dinv-chip dinv-chip-on" x-on:click="dinvFilter('direction','all',$el)">All</button>
                         @foreach($ev['facets']['directions'] as $d)
-                            <button type="button" class="dinv-chip" onclick="dinvFilter('direction','{{ $d }}',this)">{{ ucfirst($d) }}</button>
+                            <button type="button" class="dinv-chip" x-on:click="dinvFilter('direction',{{ \Illuminate\Support\Js::from($d) }},$el)">{{ ucfirst($d) }}</button>
                         @endforeach
                     </div>
                     <table class="dinv-ev-table"><tbody id="dinv-evidence-rows">

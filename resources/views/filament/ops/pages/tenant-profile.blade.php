@@ -10,8 +10,8 @@
     <style>
         .tp-head { display:flex; flex-wrap:wrap; gap:.6rem; align-items:center; margin-bottom:1rem; }
         .tp-badge { display:inline-block; padding:.15rem .6rem; border-radius:9999px; font-size:.72rem; font-weight:700; }
-        .tp-active { background:#dcfce7; color:#166534; } .tp-suspended { background:#fee2e2; color:#991b1b; }
-        .tp-plan { background:#fef3c7; color:#92400e; }
+        .tp-active { background:var(--ax-success-soft); color:var(--ax-success-fg); } .tp-suspended { background:var(--ax-danger-soft); color:var(--ax-danger-fg); }
+        .tp-plan { background:var(--ax-warning-soft); color:var(--ax-warning-fg); }
         .tp-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:.9rem; }
         @media(min-width:900px){ .tp-grid{ grid-template-columns:repeat(4,1fr); } }
         .tp-tile { background:var(--ax-bg,#fff); border:1px solid var(--ax-line,#e5e7eb); border-radius:.85rem; padding:.9rem 1rem; box-shadow:var(--ax-shadow,0 1px 2px rgba(0,0,0,.04)); }
@@ -32,7 +32,7 @@
         <span class="tp-badge tp-plan">{{ $t->planLabel() }}</span>
         <span class="tp-badge {{ $t->isActive() ? 'tp-active' : 'tp-suspended' }}">{{ ucfirst($t->status ?? 'active') }}</span>
         <span class="tp-muted">· {{ $ccy }} · created {{ $t->created_at?->format('M j, Y') }} · slug <code>{{ $t->slug }}</code></span>
-        @if($p['sso']['enabled'])<span class="tp-badge" style="background:#dbeafe;color:#1e40af;">SSO: {{ $p['sso']['label'] }}</span>@endif
+        @if($p['sso']['enabled'])<span class="tp-badge" style="background:var(--ax-info-soft);color:var(--ax-info-fg);">SSO: {{ $p['sso']['label'] }}</span>@endif
     </div>
 
     <div class="tp-grid">

@@ -32,10 +32,17 @@
         .dh-warn { font-size:.75rem; padding:.4rem .6rem; border-radius:.5rem; margin-top:.15rem; }
         .dh-warn.warning { background:var(--ax-warning-soft); color:var(--ax-warning-fg); }
         .dh-warn.critical { background:var(--ax-danger-soft); color:var(--ax-danger-fg); }
+        .dh-section-title { font-size:1rem; font-weight:700; color:var(--ax-ink); margin:.5rem 0 0; }
         .dh-affected { font-size:.72rem; color:var(--ax-muted); border-top:1px dashed var(--ax-line); padding-top:.6rem; }
     </style>
 
     <div class="dh-wrap">
+        @if($this->canSeeReadiness())
+            @include('filament.pages.partials.data-health-readiness')
+        @endif
+
+        @if($this->canSeeDatasets())
+        <h2 class="dh-section-title" id="datasets">Dataset health</h2>
         {{-- Overall summary --}}
         <div class="dh-summary">
             <div style="display:flex; flex-direction:column; gap:.35rem;">
@@ -107,6 +114,11 @@
                     </div>
                 @endforeach
             </div>
+        @endif
+        @endif
+
+        @if($this->canRunAiCheck())
+            @include('filament.pages.partials.data-health-ai')
         @endif
     </div>
 </x-filament-panels::page>

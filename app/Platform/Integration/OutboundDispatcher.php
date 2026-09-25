@@ -14,8 +14,10 @@ use App\Models\OutboundTarget;
  */
 class OutboundDispatcher
 {
-    public function __construct(private readonly ConnectorFactory $factory)
-    {
+    public function __construct(
+        private readonly ConnectorFactory $factory,
+        private readonly ?ExecutionGate $gate = null,
+    ) {
     }
 
     public function dispatch(ActionIntent $intent): OutboundDispatch
@@ -40,6 +42,21 @@ class OutboundDispatcher
             'tenant_id' => $intent->tenantId,
             'kind'      => OutboundTarget::KIND_LOG,
         ]);
+
+        // WP7.4: only the log connector (records, sends nothing) runs without
+        // the execution gate; a real target needs opt-in + autonomy + guardrails.
+        if ($effectiveTarget->kind !== OutboundTarget::KIND_LOG) {
+            $check = ($this->gate ?? app(ExecutionGate::class))->check($intent);
+            if (! $check['allowed']) {
+                $dispatch->update([
+                    'status'        => OutboundDispatch::STATUS_HELD,
+                    'response_body' => $check['reason'],
+                    'completed_at'  => now(),
+                ]);
+
+                return $dispatch->refresh();
+            }
+        }
 
         $result = $this->factory->for($effectiveTarget->kind)->dispatch($intent, $effectiveTarget);
 

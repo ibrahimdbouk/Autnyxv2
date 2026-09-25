@@ -109,6 +109,17 @@ class Tenant extends Model
         return in_array($app, $this->enabledApps(), true);
     }
 
+    /**
+     * WP7.4: has this tenant explicitly allowed Autnyx to send actions to its
+     * systems of record? Off unless set in Ops (recommend-only by default).
+     */
+    public function executionOptedIn(): bool
+    {
+        $settings = is_array($this->settings) ? $this->settings : [];
+
+        return ($settings['autonomy']['execution_opt_in'] ?? false) === true;
+    }
+
     public function planLabel(): string
     {
         return self::PLAN_LABELS[$this->plan] ?? ucfirst((string) ($this->plan ?: 'trial'));

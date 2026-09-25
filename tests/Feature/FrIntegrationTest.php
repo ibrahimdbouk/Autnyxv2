@@ -37,6 +37,7 @@ class FrIntegrationTest extends TestCase
         Http::fake(['relex.test/*' => Http::response(['ok' => true], 200)]);
 
         $tenant = $this->createTenant();
+        $this->allowExecution($tenant);
         OutboundTarget::create([
             'tenant_id' => $tenant->id,
             'kind'      => OutboundTarget::KIND_RELEX,

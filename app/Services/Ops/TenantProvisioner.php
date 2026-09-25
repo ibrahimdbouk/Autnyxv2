@@ -29,6 +29,11 @@ class TenantProvisioner
                 'status'   => $tenantData['status'] ?? Tenant::STATUS_ACTIVE,
                 'apps'     => ! empty($tenantData['apps']) ? array_values($tenantData['apps']) : Tenant::DEFAULT_APPS,
                 'currency' => $tenantData['currency'] ?? 'USD',
+                'timezone' => \App\Support\Tenancy\TenantClock::valid($tenantData['timezone'] ?? null)
+                    ? $tenantData['timezone'] : \App\Support\Tenancy\TenantClock::DEFAULT_TZ,
+                // WP7.4: new tenants start on the corrected (v2) detection rules;
+                // v1 remains only for tenants that have not been switched.
+                'settings' => ['detection_rules_v2' => true],
             ]);
 
             if (! empty($adminData['email'])) {

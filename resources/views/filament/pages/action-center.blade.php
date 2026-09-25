@@ -53,7 +53,7 @@ $acStatusClass = static function(?string $s): string {
 $acDueLabel = static function(?string $due): string {
     if (!$due) return '—';
     try {
-        $dt = \Carbon\Carbon::parse($due);
+        $dt = \App\Support\Tenancy\TenantClock::display(\Carbon\Carbon::parse($due));   // WP7.3: the tenant's today
         if ($dt->isToday()) return 'Today ' . $dt->format('H:i');
         if ($dt->isTomorrow()) return 'Tomorrow ' . $dt->format('H:i');
         if ($dt->isPast()) return $dt->format('M j') . ' (overdue)';
@@ -564,7 +564,7 @@ $acDueLabel = static function(?string $due): string {
                     <td>
                         @if($act->assignedTo)
                         <div class="ac-assignee">
-                            <span class="ac-avatar">{{ strtoupper(substr($act->assignedTo->name, 0, 1)) }}</span>
+                            <span class="ac-avatar">{{ mb_strtoupper(mb_substr($act->assignedTo->name, 0, 1)) }}</span>
                             {{ $act->assignedTo->name }}
                         </div>
                         @elseif($act->assignedTeam)
@@ -664,7 +664,7 @@ $acDueLabel = static function(?string $due): string {
                         @if($selectedAct->investigation)
                         <a href="{{ \App\Filament\Resources\InvestigationResource::getUrl('investigate', ['record' => $selectedAct->investigation_id]) }}"
                            class="ac-detail-val" style="color:var(--ax-accent-strong);text-decoration:none"
-                           onclick="event.stopPropagation()">
+                           x-on:click.stop>
                             {{ \Illuminate\Support\Str::limit($selectedAct->investigation->title ?? '#'.$selectedAct->investigation_id, 45) }} →
                         </a>
                         @else
@@ -684,24 +684,24 @@ $acDueLabel = static function(?string $due): string {
                     <div class="ac-detail-row">
                         <span class="ac-detail-key">Due</span>
                         <span class="ac-detail-val" style="{{ $selectedAct->isOverdue() ? 'color:var(--ax-danger)' : '' }}">
-                            {{ $selectedAct->due_at ? $selectedAct->due_at->format('D M j, Y H:i') : '—' }}
+                            {{ $selectedAct->due_at ? \App\Support\Tenancy\TenantClock::display($selectedAct->due_at)->format('D M j, Y H:i') : '—' }}
                             @if($selectedAct->isOverdue()) <span style="font-size:.7rem;font-weight:700">(OVERDUE)</span> @endif
                         </span>
                     </div>
                     <div class="ac-detail-row">
                         <span class="ac-detail-key">Created</span>
-                        <span class="ac-detail-val">{{ $selectedAct->created_at?->format('M j, Y') }}</span>
+                        <span class="ac-detail-val">{{ \App\Support\Tenancy\TenantClock::display($selectedAct->created_at)?->format('M j, Y') }}</span>
                     </div>
                     @if($selectedAct->acknowledged_at)
                     <div class="ac-detail-row">
                         <span class="ac-detail-key">Acknowledged</span>
-                        <span class="ac-detail-val">{{ $selectedAct->acknowledged_at->format('M j, Y H:i') }}</span>
+                        <span class="ac-detail-val">{{ \App\Support\Tenancy\TenantClock::display($selectedAct->acknowledged_at)->format('M j, Y H:i') }}</span>
                     </div>
                     @endif
                     @if($selectedAct->completed_at)
                     <div class="ac-detail-row">
                         <span class="ac-detail-key">Completed</span>
-                        <span class="ac-detail-val">{{ $selectedAct->completed_at->format('M j, Y H:i') }}</span>
+                        <span class="ac-detail-val">{{ \App\Support\Tenancy\TenantClock::display($selectedAct->completed_at)->format('M j, Y H:i') }}</span>
                     </div>
                     @endif
                 </div>
@@ -869,7 +869,7 @@ $acDueLabel = static function(?string $due): string {
                 <div class="ac-deadline-list">
                     @foreach($deadlines as $dl)
                     @php
-                        $dlDue  = $dl['due_at'] ? \Carbon\Carbon::parse($dl['due_at']) : null;
+                        $dlDue  = $dl['due_at'] ? \App\Support\Tenancy\TenantClock::display(\Carbon\Carbon::parse($dl['due_at'])) : null;
                         $isOv   = $dlDue && $dlDue->isPast();
                         $dlDot  = $isOv ? '#dc2626' : ($dlDue && now()->diffInHours($dlDue) < 4 ? '#f59e0b' : '#16a34a');
                     @endphp

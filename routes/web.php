@@ -29,6 +29,17 @@ Route::prefix('sso')->group(function () {
 Route::get('/digest/unsubscribe/{kind}/{id}', \App\Http\Controllers\DigestUnsubscribeController::class)
     ->middleware('signed')->whereIn('kind', ['user', 'tenant'])->whereNumber('id')->name('digest.unsubscribe');
 
+// WP7.4 (D12) — Data Readiness and the AI "Data Quality" page are sections of
+// Data Health now; old links and bookmarks land on the right section.
+Route::get('/admin/{tenant}/data-readiness', fn (string $tenant) => redirect('/admin/' . $tenant . '/data-health#readiness', 301))
+    ->where('tenant', '[A-Za-z0-9_-]+');
+Route::get('/admin/{tenant}/data-quality', fn (string $tenant) => redirect('/admin/' . $tenant . '/data-health#ai-check', 301))
+    ->where('tenant', '[A-Za-z0-9_-]+');
+
+// WP7.3 — Content-Security-Policy violation reports (browser-sent; CSRF-exempt, throttled).
+Route::post('/csp-report', \App\Http\Controllers\CspReportController::class)
+    ->middleware('throttle:60,1')->name('csp.report');
+
 // Inbound email → investigation comment (secret-protected, CSRF-exempt).
 Route::post('/webhooks/inbound-email', [InboundEmailController::class, 'handle'])
     ->name('webhooks.inbound-email');

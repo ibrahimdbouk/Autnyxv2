@@ -33,7 +33,7 @@ final class ScreenRegistry
         'weekly_briefing' => ['label' => 'Weekly Briefing',  'group' => 'Intelligence'],
         'follow_ups'      => ['label' => 'Follow-Ups',       'group' => 'Intelligence'],
         'supplier_prep'   => ['label' => 'Supplier Prep',    'group' => 'Intelligence'],
-        'data_quality'    => ['label' => 'Data Quality',     'group' => 'Intelligence'],
+        'data_quality'    => ['label' => 'AI data-quality check (on Data Health)', 'group' => 'Data'],
         'watched'         => ['label' => 'Watched',          'group' => 'Intelligence'],
         'replenishment'   => ['label' => 'Replenishment',    'group' => 'Intelligence'],
         'reports'         => ['label' => 'Reports',          'group' => 'Intelligence'],

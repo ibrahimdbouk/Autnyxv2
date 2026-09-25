@@ -16,7 +16,7 @@
         if ($dfhState === 'red') { $dfhBlocked++; }
         elseif ($dfhState === 'amber') { $dfhAmber++; }
     }
-    try { $dfhReadinessUrl = \App\Filament\Pages\DataReadiness::getUrl(); } catch (\Throwable $e) { $dfhReadinessUrl = '#'; }
+    try { $dfhReadinessUrl = \App\Filament\Pages\DataHealthCenter::getUrl() . '#readiness'; } catch (\Throwable $e) { $dfhReadinessUrl = '#'; }
 @endphp
 
 @if(! empty($dfhStates))
@@ -25,9 +25,9 @@
 .dfh-title{font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--ax-faint);}
 .dfh-chips{display:flex; gap:.45rem; flex-wrap:wrap; flex:1;}
 .dfh-chip{font-size:.75rem; font-weight:700; padding:.28rem .6rem; border-radius:9999px; display:inline-flex; align-items:center; gap:.35rem; border:1px solid transparent;}
-.dfh-chip.ok{background:#e7f6ee; color:#15803d; border-color:#bfe6cf;}
-.dfh-chip.amber{background:#fdf3e0; color:#8a5a00; border-color:#f6d998;}
-.dfh-chip.red{background:#fdeceb; color:#b91c1c; border-color:#f6c9c4;}
+.dfh-chip.ok{background:var(--ax-success-soft); color:var(--ax-success-fg); border-color:var(--ax-success-line);}
+.dfh-chip.amber{background:var(--ax-warning-soft); color:var(--ax-warning-fg); border-color:var(--ax-warning-line);}
+.dfh-chip.red{background:var(--ax-danger-soft); color:var(--ax-danger-fg); border-color:var(--ax-danger-line);}
 .dfh-dot{width:.5rem; height:.5rem; border-radius:9999px; background:currentColor;}
 .dfh-link{font-size:.78rem; font-weight:700; color:var(--ax-accent-strong); text-decoration:none; margin-left:auto; white-space:nowrap;}
 </style>

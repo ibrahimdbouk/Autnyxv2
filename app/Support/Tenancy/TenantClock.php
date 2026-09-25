@@ -83,9 +83,56 @@ final class TenantClock
         return self::now($tenantId)->startOfMonth()->toDateString();
     }
 
+    /**
+     * WP7.1 — "month to date" compared like with like: the start of the
+     * tenant's previous month and the same point in it as now (31 March →
+     * 28/29 February, never 3 March). Both as instants in the app timezone.
+     *
+     * @return array{0:Carbon,1:Carbon}
+     */
+    public static function samePeriodLastMonth(?int $tenantId): array
+    {
+        $prev = self::now($tenantId)->subMonthNoOverflow();
+
+        return [self::app($prev->copy()->startOfMonth()), self::app($prev)];
+    }
+
+    /**
+     * WP7.3 — SQL for the tenant-local calendar date of a TIMESTAMP column
+     * (stored in the app timezone), for grouping by the tenant's day. Both
+     * zones are validated identifiers, so inlining them is safe.
+     */
+    public static function localDateSql(string $column, ?int $tenantId): string
+    {
+        $app = config('app.timezone', 'UTC');
+        $app = self::valid($app) ? $app : 'UTC';
+
+        return "(({$column} AT TIME ZONE '{$app}') AT TIME ZONE '" . self::timezone($tenantId) . "')::date";
+    }
+
     private static function app(Carbon $c): Carbon
     {
         return $c->setTimezone(config('app.timezone', 'UTC'));
+    }
+
+    /**
+     * WP7.3 — a stored timestamp shown on the current tenant's wall clock
+     * (the Filament tenant; app timezone outside a tenant panel).
+     */
+    public static function display(?\DateTimeInterface $at): ?Carbon
+    {
+        if ($at === null) {
+            return null;
+        }
+
+        return Carbon::instance($at)->setTimezone(self::displayTimezone());
+    }
+
+    public static function displayTimezone(): string
+    {
+        $tenantId = rescue(fn () => \Filament\Facades\Filament::getTenant()?->getKey(), null, false);
+
+        return $tenantId ? self::timezone((int) $tenantId) : (self::valid(config('app.timezone')) ? config('app.timezone') : 'UTC');
     }
 
     public static function valid(?string $tz): bool

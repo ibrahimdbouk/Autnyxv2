@@ -98,7 +98,7 @@ class ReportExcelWriter
 
     private function buildDetailSheet($sheet, array $spec): void
     {
-        $sheet->setTitle(substr($spec['name'] ?? 'Detail', 0, 31));
+        $sheet->setTitle(mb_substr(str_replace(['\\', '/', '?', '*', '[', ']', ':'], ' ', $spec['name'] ?? 'Detail'), 0, 31));
 
         $sheet->fromArray($spec['columns'] ?? [], null, 'A1');
         $this->styleHeaderRow($sheet, 1, count($spec['columns'] ?? []));

@@ -77,10 +77,10 @@ class UiQueryPerformanceTest extends TestCase
 
     public function test_dashboard_figures_are_cached_per_tenant(): void
     {
-        $widget = new \App\Filament\Widgets\PoFulfillmentStatsWidget();
-        (fn () => $this->getStats())->call($widget);
+        // WP7.4: the unused widgets are gone; the dashboard caches DashboardMetrics.
+        app(\App\Services\Metrics\DashboardMetrics::class)->forTenant($this->tenant->id);
 
-        $this->assertTrue(Cache::has('dash:' . $this->tenant->id . ':PoFulfillmentStatsWidget:po'));
+        $this->assertTrue(Cache::has(\App\Services\Metrics\DashboardMetrics::cacheKey($this->tenant->id)));
     }
 
     public function test_data_health_is_recomputed_on_the_queue_and_measured_on_the_recent_window(): void

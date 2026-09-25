@@ -15,6 +15,8 @@ class OutboundDispatch extends Model
     public const STATUS_SENT         = 'sent';
     public const STATUS_ACKNOWLEDGED = 'acknowledged';
     public const STATUS_FAILED       = 'failed';
+    /** WP7.4: refused by the ExecutionGate (recommend-only); nothing was sent. */
+    public const STATUS_HELD         = 'held';
 
     protected $fillable = [
         'tenant_id',

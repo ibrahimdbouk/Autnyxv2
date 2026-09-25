@@ -1,230 +1,44 @@
 <x-filament-panels::page>
 
 @php
-/* ── Tenant & time anchors ─────────────────────────────────────────────── */
-$tenantId    = \Filament\Facades\Filament::getTenant()?->id;
-$now         = now();
-$monthStart  = $now->copy()->startOfMonth();
-$weekAgo     = $now->copy()->subDays(7);
-$twoWeeksAgo = $now->copy()->subDays(14);
+/* WP7.1 — every figure comes from App\Services\Metrics\DashboardMetrics via
+   Dashboard::getViewData() ($m, $links, $recentHighPriority, $pendingActions).
+   This block only formats. */
+$k = $m['kpi'];
+$revenueAtRisk      = $k['revenue_at_risk'];
+$openCount          = $k['open'];
+$highPriorityCount  = $k['high'];
+$overdueCount       = $k['overdue'];
+$recoveredMTD       = $k['recovered_mtd'];
+$observedClearedMTD = $k['cleared_mtd'];
+$statusBreakdown    = $m['status'];
+$chartLabels        = $m['chart']['labels'];
+$chartAtRisk        = $m['chart']['atRisk'];
+$chartRecovered     = $m['chart']['recovered'];
+$chartObsCleared    = $m['chart']['cleared'];
+$topDrivers         = $m['drivers'];
+$totalDriverAnomalies = array_sum(array_column($topDrivers, 'cnt')) ?: 1;
+$recurringTop       = $m['insights']['recurring'];
+$storeAlertData     = $m['insights']['store'];
+$categoryTop        = $m['insights']['month_top'];
 
-/* ── KPI: Revenue at Risk ──────────────────────────────────────────────── */
-$revenueAtRisk = $tenantId
-    ? (\App\Models\Investigation::where('tenant_id',$tenantId)
-        ->whereIn('status',['open','in_progress'])
-        ->sum('revenue_at_risk') ?? 0)
-    : 0;
-$prevRevenueAtRisk = $tenantId
-    ? (\App\Models\Investigation::where('tenant_id',$tenantId)
-        ->where('opened_at','>=',$twoWeeksAgo)
-        ->where('opened_at','<',$weekAgo)
-        ->sum('revenue_at_risk') ?? 0)
-    : 0;
+$dbFormatMoney = static fn (float $val): string => \App\Support\Money::compact($val, $currency);
 
-/* ── KPI: Open Investigations ──────────────────────────────────────────── */
-$openCount = $tenantId
-    ? \App\Models\Investigation::where('tenant_id',$tenantId)
-        ->whereIn('status',['open','in_progress'])->count()
-    : 0;
-$prevOpenCount = $tenantId
-    ? \App\Models\Investigation::where('tenant_id',$tenantId)
-        ->where('opened_at','>=',$twoWeeksAgo)
-        ->where('opened_at','<',$weekAgo)->count()
-    : 0;
-
-/* ── KPI: High Priority ────────────────────────────────────────────────── */
-$highPriorityCount = $tenantId
-    ? \App\Models\Investigation::where('tenant_id',$tenantId)
-        ->whereIn('status',['open','in_progress'])
-        ->whereIn('priority',['high','critical'])->count()
-    : 0;
-$prevHighCount = $tenantId
-    ? \App\Models\Investigation::where('tenant_id',$tenantId)
-        ->where('opened_at','>=',$twoWeeksAgo)
-        ->where('opened_at','<',$weekAgo)
-        ->whereIn('priority',['high','critical'])->count()
-    : 0;
-
-/* ── KPI: Overdue Actions ──────────────────────────────────────────────── */
-// WP1.4: same definition as Action Center — active and past its due date.
-// (Was status='pending', a status no action has, so this was always 0.)
-$overdueCount = $tenantId
-    ? \App\Models\Action::whereHas('investigation', fn($q) =>
-        $q->where('tenant_id',$tenantId)->whereIn('status',['open','in_progress']))
-        ->whereNotIn('status', [\App\Models\Action::STATUS_COMPLETED, \App\Models\Action::STATUS_CANCELLED])
-        ->where('due_at','<', $now)->count()
-    : 0;
-
-/* ── KPI: Recovered MTD ────────────────────────────────────────────────── */
-$recoveredMTD = $tenantId
-    ? (\App\Models\InvestigationOutcome::whereHas('investigation', fn($q) =>
-        $q->where('tenant_id',$tenantId))
-        ->where('created_at','>=',$monthStart)
-        ->sum('observed_recovery') ?? 0)
-    : 0;
-$prevRecoveredMTD = $tenantId
-    ? (\App\Models\InvestigationOutcome::whereHas('investigation', fn($q) =>
-        $q->where('tenant_id',$tenantId))
-        ->where('created_at','>=',$now->copy()->subMonth()->startOfMonth())
-        ->where('created_at','<',$monthStart)
-        ->sum('observed_recovery') ?? 0)
-    : 0;
-
-/* ── KPI: Observed Cleared MTD (R3 — data-only, from the anomaly lifecycle) ──
-   Value that stopped being at risk because the condition cleared and stayed
-   clear across evaluated runs. OBSERVED, no cause claimed — deliberately
-   separate from the attributed "Recovered MTD" above; the two are never summed. */
-$recoverySvc = app(\App\Services\Recovery\AnomalyRecoveryService::class);
-$observedClearedMTD     = $tenantId ? (float) $recoverySvc->mtd($tenantId)['amount'] : 0;
-$prevObservedClearedMTD = $tenantId ? (float) $recoverySvc->prevMtd($tenantId)['amount'] : 0;
-$observedClearedDaily   = $tenantId ? $recoverySvc->dailySeries($tenantId, 30) : [];
-
-/* ── Status breakdown (for donut chart) ───────────────────────────────── */
-$statusBreakdown = $tenantId
-    ? \App\Models\Investigation::where('tenant_id',$tenantId)
-        ->selectRaw('status, count(*) as cnt')
-        ->groupBy('status')
-        ->pluck('cnt','status')
-        ->toArray()
-    : [];
-
-/* ── Revenue daily for 30-day chart ───────────────────────────────────── */
-$revenueDailyRaw = $tenantId
-    ? \App\Models\Investigation::where('tenant_id',$tenantId)
-        ->where('opened_at','>=', $now->copy()->subDays(29)->startOfDay())
-        ->whereNotNull('revenue_at_risk')
-        ->selectRaw("TO_CHAR(opened_at::date,'YYYY-MM-DD') as date, SUM(revenue_at_risk) as total")
-        ->groupByRaw("TO_CHAR(opened_at::date,'YYYY-MM-DD')")
-        ->pluck('total','date')
-        ->toArray()
-    : [];
-
-$recoveryDailyRaw = $tenantId
-    ? \App\Models\InvestigationOutcome::whereHas('investigation', fn($q) =>
-        $q->where('tenant_id',$tenantId))
-        ->where('created_at','>=',$now->copy()->subDays(29)->startOfDay())
-        ->whereNotNull('observed_recovery')
-        ->selectRaw("TO_CHAR(created_at::date,'YYYY-MM-DD') as date, SUM(observed_recovery) as total")
-        ->groupByRaw("TO_CHAR(created_at::date,'YYYY-MM-DD')")
-        ->pluck('total','date')
-        ->toArray()
-    : [];
-
-$chartLabels = [];
-$chartAtRisk = [];
-$chartRecovered = [];
-$chartObsCleared = [];
-for ($i = 29; $i >= 0; $i--) {
-    $d = $now->copy()->subDays($i)->format('Y-m-d');
-    $chartLabels[]     = $now->copy()->subDays($i)->format('M j');
-    $chartAtRisk[]     = round($revenueDailyRaw[$d] ?? 0, 2);
-    $chartRecovered[]  = round($recoveryDailyRaw[$d] ?? 0, 2);
-    $chartObsCleared[] = round($observedClearedDaily[$d] ?? 0, 2);
-}
-
-/* ── Top drivers ───────────────────────────────────────────────────────── */
-$topDrivers = $tenantId
-    ? \App\Models\Anomaly::where('tenant_id',$tenantId)
-        ->whereNull('dismissed_at')
-        ->selectRaw('rule_type, count(*) as cnt')
-        ->groupBy('rule_type')
-        ->orderByDesc('cnt')
-        ->limit(5)
-        ->get()
-    : collect();
-$totalDriverAnomalies = $topDrivers->sum('cnt') ?: 1;
-
-/* ── Recent high-priority investigations ───────────────────────────────── */
-$recentHighPriority = $tenantId
-    ? \App\Models\Investigation::where('tenant_id',$tenantId)
-        ->whereIn('priority',['critical','high'])
-        ->whereIn('status',['open','in_progress'])
-        ->with(['assignedTeam','anomalies'])
-        ->orderByDesc('opened_at')
-        ->limit(6)
-        ->get()
-    : collect();
-
-/* ── Pending actions ───────────────────────────────────────────────────── */
-$pendingActions = $tenantId
-    ? \App\Models\Action::whereHas('investigation', fn($q) =>
-        $q->where('tenant_id',$tenantId)->whereIn('status',['open','in_progress']))
-        ->whereNotIn('status', [\App\Models\Action::STATUS_COMPLETED, \App\Models\Action::STATUS_CANCELLED])
-        ->with(['investigation'])
-        ->orderByRaw('due_at IS NULL, due_at')
-        ->orderBy('created_at')
-        ->limit(6)
-        ->get()
-    : collect();
-
-/* ── Insights ──────────────────────────────────────────────────────────── */
-$recurringTop = $tenantId
-    ? \App\Models\Anomaly::where('tenant_id',$tenantId)
-        ->where('ai_is_recurring', true)
-        ->whereNull('dismissed_at')
-        ->selectRaw('rule_type, count(*) as cnt')
-        ->groupBy('rule_type')
-        ->orderByDesc('cnt')
-        ->first()
-    : null;
-
-$storeAlertData = null;
-if ($tenantId) {
-    $storeAgg = \App\Models\Anomaly::where('tenant_id',$tenantId)
-        ->whereNull('dismissed_at')
-        ->whereNotNull('store_id')
-        ->where('detected_at','>=',$twoWeeksAgo)
-        ->selectRaw('store_id, count(*) as cnt')
-        ->groupBy('store_id')
-        ->orderByDesc('cnt')
-        ->first();
-    if ($storeAgg) {
-        $storeAlertData = ['store' => \App\Models\Store::find($storeAgg->store_id), 'cnt' => $storeAgg->cnt];
-    }
-}
-
-$categoryTop = $tenantId
-    ? \App\Models\Anomaly::where('tenant_id',$tenantId)
-        ->whereNull('dismissed_at')
-        ->where('detected_at','>=',$monthStart)
-        ->selectRaw('rule_type, count(*) as cnt')
-        ->groupBy('rule_type')
-        ->orderByDesc('cnt')
-        ->first()
-    : null;
-
-/* ── Format helpers (closures — safe for multi-render Livewire cycles) ── */
-$dbCurrency = \App\Support\Money::normalize(\Filament\Facades\Filament::getTenant()?->currency);
-$dbFormatMoney = static function(float $val) use ($dbCurrency): string {
-    return \App\Support\Money::compact($val, $dbCurrency);
+// Stock cards trend on their inflow (new this week vs the week before);
+// recovery cards on month to date vs the same stretch of last month.
+$T = \App\Services\Metrics\DashboardMetrics::class;
+$riskTrend = $T::trend($m['flow']['risk'][0], $m['flow']['risk'][1], false);
+$openTrend = $T::trend($m['flow']['open'][0], $m['flow']['open'][1], false);
+$highTrend = $T::trend($m['flow']['high'][0], $m['flow']['high'][1], false);
+$recTrend  = $T::trend($recoveredMTD, $m['prev']['recovered_mtd'], true);
+$obsTrend  = $T::trend($observedClearedMTD, $m['prev']['cleared_mtd'], true);
+$dbTrendClass = static fn (array $t): string => match ($t['good']) {
+    true => 'db-trend-up', false => 'db-trend-down', default => 'db-trend-flat',
 };
+$dbArrow = static fn (array $t): string => $t['dir'] === 'up' ? '↑' : ($t['dir'] === 'down' ? '↓' : '—');
 
-$dbTrend = static function(float $current, float $prev): array {
-    if ($prev == 0) return ['pct' => null, 'dir' => 'flat'];
-    $pct = round((($current - $prev) / abs($prev)) * 100, 1);
-    return ['pct' => abs($pct), 'dir' => $pct > 0 ? 'up' : ($pct < 0 ? 'down' : 'flat')];
-};
-
-$riskTrend   = $dbTrend((float)$revenueAtRisk, (float)$prevRevenueAtRisk);
-$openTrend   = $dbTrend((float)$openCount, (float)$prevOpenCount);
-$highTrend   = $dbTrend((float)$highPriorityCount, (float)$prevHighCount);
-$recTrend    = $dbTrend((float)$recoveredMTD, (float)$prevRecoveredMTD);
-$obsTrend    = $dbTrend((float)$observedClearedMTD, (float)$prevObservedClearedMTD);
-
-$dbRuleLabel = static function(string $ruleType): string {
-    $map = [
-        'sales_velocity_drop'       => 'Sales Velocity Drop',
-        'stockout_risk'             => 'Stockout Risk',
-        'overstock_risk'            => 'Overstock Risk',
-        'po_delay'                  => 'PO Delay',
-        'return_spike'              => 'Return Spike',
-        'low_margin_sku'            => 'Low Margin SKU',
-        'inventory_shrinkage'       => 'Inventory Shrinkage',
-        'demand_spike'              => 'Demand Spike',
-        'price_anomaly'             => 'Price Anomaly',
-        'replenishment_miss'        => 'Replenishment Miss',
-    ];
-    return $map[$ruleType] ?? ucwords(str_replace('_',' ',$ruleType));
+$dbRuleLabel = static function (string $ruleType): string {
+    return \App\Models\AnomalySetting::RULES[$ruleType]['label'] ?? ucwords(str_replace('_', ' ', $ruleType));
 };
 
 $dbStatusLabel = static function(string $s): string {
@@ -263,19 +77,9 @@ $dbSparkline = static function(array $values, string $color = '#6d28d9', int $w 
     </svg>";
 };
 
-// Simple sparklines: status distribution values
-$statusValues = array_values($statusBreakdown ?: [0]);
 $riskSparkData  = array_slice($chartAtRisk, -7);
 $recSparkData   = array_slice($chartRecovered, -7);
 $obsSparkData   = array_slice($chartObsCleared, -7);
-
-/* ── Drill-down URLs for the KPI cards ─────────────────────────────────── */
-$urlRevenueAtRisk = \App\Filament\Pages\FinancialBreakdown::getUrl(['metric' => 'revenue_at_risk']);
-$urlRecoveredMtd  = \App\Filament\Pages\FinancialBreakdown::getUrl(['metric' => 'recovered_mtd']);
-$urlObservedCleared = \App\Filament\Pages\FinancialBreakdown::getUrl(['metric' => 'observed_cleared']);
-$urlOpenInv       = \App\Filament\Resources\InvestigationResource::getUrl('index', ['status' => 'open']);
-$urlHighPriority  = \App\Filament\Resources\InvestigationResource::getUrl('index', ['status' => 'open', 'priority' => 'high_critical']);
-$urlOverdue       = \App\Filament\Pages\ActionCenter::getUrl(['tab' => 'overdue']);
 @endphp
 
 <style>
@@ -291,13 +95,21 @@ $urlOverdue       = \App\Filament\Pages\ActionCenter::getUrl(['tab' => 'overdue'
     margin-bottom:1.5rem;
 }
 @media(min-width:640px)  { .db-kpi-grid { grid-template-columns:repeat(3,1fr); } }
-@media(min-width:1024px) { .db-kpi-grid { grid-template-columns:repeat(5,1fr); } }
+@media(min-width:1280px) { .db-kpi-grid { grid-template-columns:repeat(6,1fr); } }
 /* ── Clickable KPI card (anchor) ──────────────────────────────────────── */
 a.db-kpi {
     text-decoration:none; color:inherit; position:relative;
     cursor:pointer;
     transition:box-shadow .15s ease, transform .15s ease, border-color .15s ease;
 }
+a.db-kpi:not([href]) { cursor:default; }
+a.db-kpi:not([href]):hover { transform:none; box-shadow:var(--ax-shadow); border-color:var(--ax-line); }
+a.db-kpi:not([href])::after { display:none; }
+.db-kpi-spark:empty { min-height:28px; }
+.db-amber { color:var(--ax-warning, #d97706); }
+.db-red   { color:var(--ax-danger, #dc2626); }
+.db-green { color:var(--ax-success, #16a34a); }
+.db-teal  { color:var(--ax-teal, #0d9488); }
 a.db-kpi:hover {
     box-shadow:var(--ax-shadow-md);
     transform:translateY(-2px);
@@ -498,65 +310,65 @@ a.db-kpi:hover::after { opacity:1; }
      ════════════════════════════════════════════════════════════════════════ --}}
 <div class="db-kpi-grid">
 
-    {{-- Revenue at Risk --}}
-    <a href="{{ $urlRevenueAtRisk }}" class="db-kpi" title="See how Revenue at Risk is derived">
+    {{-- Revenue at Risk: open now; trend = new at risk this week vs the week before --}}
+    <a @if($links['revenue_at_risk']) href="{{ $links['revenue_at_risk'] }}" @endif class="db-kpi" title="Revenue at risk on open investigations">
         <div class="db-kpi-label">Revenue at Risk</div>
         <div class="db-kpi-value">{{ $dbFormatMoney((float)$revenueAtRisk) }}</div>
-        <div class="db-kpi-trend {{ $riskTrend['dir'] === 'up' ? 'db-trend-up' : ($riskTrend['dir'] === 'down' ? 'db-trend-down' : 'db-trend-flat') }}">
-            @if($riskTrend['dir'] === 'up') ↑ @elseif($riskTrend['dir'] === 'down') ↓ @else — @endif
-            @if($riskTrend['pct'] !== null) {{ $riskTrend['pct'] }}% vs prev period @else New metric @endif
+        <div class="db-kpi-trend {{ $dbTrendClass($riskTrend) }}" title="New at risk in the last 7 days against the 7 days before">
+            {{ $dbArrow($riskTrend) }}
+            @if($riskTrend['pct'] !== null) {{ $riskTrend['pct'] }}% new vs last week @else {{ $dbFormatMoney($m['flow']['risk'][0]) }} new this week @endif
         </div>
         <div class="db-kpi-spark">{!! $dbSparkline($riskSparkData, '#dc2626') !!}</div>
     </a>
 
-    {{-- Open Investigations --}}
-    <a href="{{ $urlOpenInv }}" class="db-kpi" title="View open investigations">
+    {{-- Open Investigations: trend = opened this week vs the week before --}}
+    <a @if($links['open']) href="{{ $links['open'] }}" @endif class="db-kpi" title="Open and in-progress investigations">
         <div class="db-kpi-label">Open Investigations</div>
-        <div class="db-kpi-value">{{ $openCount }}</div>
-        <div class="db-kpi-trend {{ $openTrend['dir'] === 'up' ? 'db-trend-up' : ($openTrend['dir'] === 'down' ? 'db-trend-down' : 'db-trend-flat') }}">
-            @if($openTrend['dir'] === 'up') ↑ @elseif($openTrend['dir'] === 'down') ↓ @else — @endif
-            @if($openTrend['pct'] !== null) {{ $openTrend['pct'] }}% vs prev period @else No prior data @endif
+        <div class="db-kpi-value">{{ number_format($openCount) }}</div>
+        <div class="db-kpi-trend {{ $dbTrendClass($openTrend) }}" title="Opened in the last 7 days against the 7 days before">
+            {{ $dbArrow($openTrend) }}
+            @if($openTrend['pct'] !== null) {{ $openTrend['pct'] }}% opened vs last week @else {{ $m['flow']['open'][0] }} opened this week @endif
         </div>
-        <div class="db-kpi-spark">{!! $dbSparkline(array_values(array_slice($statusBreakdown ?: [0], 0, 7)), '#3b82f6') !!}</div>
+        <div class="db-kpi-spark"></div>
     </a>
 
     {{-- High Priority --}}
-    <a href="{{ $urlHighPriority }}" class="db-kpi" title="View high &amp; critical priority investigations">
+    <a @if($links['high']) href="{{ $links['high'] }}" @endif class="db-kpi" title="Open high and critical priority investigations">
         <div class="db-kpi-label">High Priority</div>
-        <div class="db-kpi-value" style="color:#f59e0b">{{ $highPriorityCount }}</div>
-        <div class="db-kpi-trend {{ $highTrend['dir'] === 'up' ? 'db-trend-up' : ($highTrend['dir'] === 'down' ? 'db-trend-down' : 'db-trend-flat') }}">
-            @if($highTrend['dir'] === 'up') ↑ @elseif($highTrend['dir'] === 'down') ↓ @else — @endif
-            @if($highTrend['pct'] !== null) {{ $highTrend['pct'] }}% vs prev period @else No prior data @endif
+        <div class="db-kpi-value db-amber">{{ number_format($highPriorityCount) }}</div>
+        <div class="db-kpi-trend {{ $dbTrendClass($highTrend) }}" title="High / critical opened in the last 7 days against the 7 days before">
+            {{ $dbArrow($highTrend) }}
+            @if($highTrend['pct'] !== null) {{ $highTrend['pct'] }}% opened vs last week @else {{ $m['flow']['high'][0] }} opened this week @endif
         </div>
-        <div class="db-kpi-spark">{!! $dbSparkline(array_values(array_slice($chartAtRisk, -7)), '#f59e0b') !!}</div>
+        <div class="db-kpi-spark"></div>
     </a>
 
-    {{-- Overdue Actions --}}
-    <a href="{{ $urlOverdue }}" class="db-kpi" title="View overdue actions in the Action Center">
+    {{-- Overdue Actions: active and past their due date (same definition as the Action Center) --}}
+    <a @if($links['overdue']) href="{{ $links['overdue'] }}" @endif class="db-kpi" title="Open actions past their due date">
         <div class="db-kpi-label">Overdue Actions</div>
-        <div class="db-kpi-value" style="{{ $overdueCount > 0 ? 'color:#dc2626' : '' }}">{{ $overdueCount }}</div>
-        <div class="db-kpi-trend db-trend-flat">Actions pending &gt;48h</div>
-        <div class="db-kpi-spark">{!! $dbSparkline([$overdueCount, $overdueCount], '#dc2626') !!}</div>
+        <div class="db-kpi-value {{ $overdueCount > 0 ? 'db-red' : '' }}">{{ number_format($overdueCount) }}</div>
+        <div class="db-kpi-trend db-trend-flat">Past their due date</div>
+        <div class="db-kpi-spark"></div>
     </a>
 
     {{-- Recovered MTD (attributed — analyst/action confirmed) --}}
-    <a href="{{ $urlRecoveredMtd }}" class="db-kpi" title="See how Recovered MTD is derived">
+    <a @if($links['recovered_mtd']) href="{{ $links['recovered_mtd'] }}" @endif class="db-kpi" title="Attributed recovery recorded this month">
         <div class="db-kpi-label">Recovered MTD</div>
-        <div class="db-kpi-value" style="color:#16a34a">{{ $dbFormatMoney((float)$recoveredMTD) }}</div>
-        <div class="db-kpi-trend {{ $recTrend['dir'] === 'up' ? 'db-trend-up' : ($recTrend['dir'] === 'down' ? 'db-trend-down' : 'db-trend-flat') }}">
-            @if($recTrend['dir'] === 'up') ↑ @elseif($recTrend['dir'] === 'down') ↓ @else — @endif
-            @if($recTrend['pct'] !== null) {{ $recTrend['pct'] }}% vs prev month @else Attributed · month to date @endif
+        <div class="db-kpi-value db-green">{{ $dbFormatMoney((float)$recoveredMTD) }}</div>
+        <div class="db-kpi-trend {{ $dbTrendClass($recTrend) }}" title="Month to date against the same days of last month">
+            {{ $dbArrow($recTrend) }}
+            @if($recTrend['pct'] !== null) {{ $recTrend['pct'] }}% vs same point last month @else Attributed · month to date @endif
         </div>
         <div class="db-kpi-spark">{!! $dbSparkline($recSparkData, '#16a34a') !!}</div>
     </a>
 
     {{-- Observed Cleared MTD (R3 — data-only lifecycle recovery, no cause claimed) --}}
-    <a href="{{ $urlObservedCleared }}" class="db-kpi" title="Value no longer at risk because anomalies cleared and stayed clear — observed, not attributed to any action">
+    <a @if($links['cleared_mtd']) href="{{ $links['cleared_mtd'] }}" @endif class="db-kpi" title="Value no longer at risk because anomalies cleared and stayed clear — observed, not attributed to any action">
         <div class="db-kpi-label">Observed Cleared MTD</div>
-        <div class="db-kpi-value" style="color:#0d9488">{{ $dbFormatMoney((float)$observedClearedMTD) }}</div>
-        <div class="db-kpi-trend {{ $obsTrend['dir'] === 'up' ? 'db-trend-up' : ($obsTrend['dir'] === 'down' ? 'db-trend-down' : 'db-trend-flat') }}">
-            @if($obsTrend['dir'] === 'up') ↑ @elseif($obsTrend['dir'] === 'down') ↓ @else — @endif
-            @if($obsTrend['pct'] !== null) {{ $obsTrend['pct'] }}% vs prev month @else Data-only · month to date @endif
+        <div class="db-kpi-value db-teal">{{ $dbFormatMoney((float)$observedClearedMTD) }}</div>
+        <div class="db-kpi-trend {{ $dbTrendClass($obsTrend) }}" title="Month to date against the same days of last month">
+            {{ $dbArrow($obsTrend) }}
+            @if($obsTrend['pct'] !== null) {{ $obsTrend['pct'] }}% vs same point last month @else Data-only · month to date @endif
         </div>
         <div class="db-kpi-spark">{!! $dbSparkline($obsSparkData, '#0d9488') !!}</div>
     </a>
@@ -608,17 +420,17 @@ a.db-kpi:hover::after { opacity:1; }
             Top Drivers
         </div>
         <div class="db-card-body" style="padding-top:.625rem;padding-bottom:.625rem">
-            @if($topDrivers->count())
+            @if(count($topDrivers))
             <table class="db-driver-table">
                 <tbody>
                 @foreach($topDrivers as $driver)
                 @php
-                    $pct = round(($driver->cnt / $totalDriverAnomalies) * 100);
-                    $driverUrl = \App\Filament\Resources\AnomalyResource::getUrl('index', ['tableFilters' => ['rule_type' => ['value' => $driver->rule_type]]]);
+                    $pct = round(($driver['cnt'] / $totalDriverAnomalies) * 100);
+                    $driverUrl = $links['drivers'][$driver['rule_type']] ?? null;
                 @endphp
-                <tr class="db-driver-link" onclick="window.location.href='{{ $driverUrl }}'" onkeydown="if(event.key==='Enter'){window.location.href='{{ $driverUrl }}'}" tabindex="0" role="link" aria-label="View {{ $dbRuleLabel($driver->rule_type) }} anomalies" title="View {{ $dbRuleLabel($driver->rule_type) }} anomalies">
+                <tr @if($driverUrl) class="db-driver-link" data-href="{{ $driverUrl }}" tabindex="0" role="link" aria-label="View {{ $dbRuleLabel($driver['rule_type']) }} anomalies" title="View {{ $dbRuleLabel($driver['rule_type']) }} anomalies" @endif>
                     <td style="width:40%">
-                        <span class="db-driver-name">{{ $dbRuleLabel($driver->rule_type) }}</span>
+                        <span class="db-driver-name">{{ $dbRuleLabel($driver['rule_type']) }}</span>
                     </td>
                     <td style="width:40%">
                         <div class="db-driver-bar-wrap">
@@ -666,7 +478,7 @@ a.db-kpi:hover::after { opacity:1; }
                 <tbody>
                 @foreach($recentHighPriority as $inv)
                 @php
-                    $invUrl = \App\Filament\Resources\InvestigationResource::getUrl('investigate', ['record' => $inv->id]);
+                    $invUrl = $canInvestigate ? \App\Filament\Resources\InvestigationResource::getUrl('investigate', ['record' => $inv->id]) : null;
                     $priClass = match($inv->priority) {
                         'critical' => 'db-dot-critical',
                         'high'     => 'db-dot-high',
@@ -681,23 +493,23 @@ a.db-kpi:hover::after { opacity:1; }
                     };
                     $primaryAnomaly = $inv->anomalies->sortByDesc(fn($a) => ['critical'=>4,'high'=>3,'medium'=>2,'low'=>1][$a->severity] ?? 0)->first();
                 @endphp
-                <tr onclick="window.location.href='{{ $invUrl }}'" style="cursor:pointer">
+                <tr @if($invUrl) data-href="{{ $invUrl }}" style="cursor:pointer" @endif>
                     <td>
                         <span class="db-dot {{ $priClass }}"></span>
-                        <a href="{{ $invUrl }}" class="db-inv-id" onclick="event.stopPropagation()">#{{ $inv->id }}</a>
+                        @if($invUrl)<a href="{{ $invUrl }}" class="db-inv-id" wire:navigate>#{{ $inv->id }}</a>@else<span class="db-inv-id">#{{ $inv->id }}</span>@endif
                     </td>
                     <td>
-                        <div style="font-size:.8rem;font-weight:500;color:#111827">
+                        <div style="font-size:.8rem;font-weight:500;color:var(--ax-ink)">
                             {{ $inv->primaryStore?->name ?? ($inv->primary_sku ?? '—') }}
                         </div>
                         @if($inv->primaryStore && $inv->primary_sku)
                         <div class="db-inv-sub">{{ $inv->primary_sku }}</div>
                         @endif
                     </td>
-                    <td style="font-size:.775rem;color:#6b7280">
+                    <td style="font-size:.775rem;color:var(--ax-muted)">
                         {{ $primaryAnomaly ? $dbRuleLabel($primaryAnomaly->rule_type) : '—' }}
                     </td>
-                    <td style="font-weight:700;color:#dc2626;white-space:nowrap;font-size:.8rem">
+                    <td style="font-weight:700;color:var(--ax-danger);white-space:nowrap;font-size:.8rem">
                         {{ $inv->revenue_at_risk ? $dbFormatMoney((float)$inv->revenue_at_risk) : '—' }}
                     </td>
                     <td><span class="db-badge {{ $stBadge }}">{{ $dbStatusLabel($inv->status) }}</span></td>
@@ -719,13 +531,15 @@ a.db-kpi:hover::after { opacity:1; }
             </svg>
             Action Center
             @if($pendingActions->count())
-            <span class="db-badge db-badge-warning" style="margin-left:auto">{{ $pendingActions->count() }} pending</span>
+            <span class="db-badge db-badge-warning" style="margin-left:auto">{{ $pendingActions->count() >= 6 ? 'next 6' : $pendingActions->count() . ' pending' }}</span>
             @endif
         </div>
         @forelse($pendingActions as $action)
         @php
-            $ageHours = $action->created_at ? (int) $action->created_at->diffInHours(now(), true) : 0;
-            $isOverdue = $action->due_at ? $action->due_at->isPast() : $ageHours >= 48;
+            // Overdue = past its due date, as the KPI and the Action Center count it.
+            $isOverdue = $action->due_at && $action->due_at->isPast();
+            $overdueFor = $isOverdue ? $action->due_at->diffForHumans(null, \Carbon\CarbonInterface::DIFF_ABSOLUTE, true) : null;
+            $dueIn = $action->due_at && ! $isOverdue ? $action->due_at->diffForHumans(null, \Carbon\CarbonInterface::DIFF_ABSOLUTE, true) : null;
             $invPriority = $action->investigation?->priority ?? 'medium';
             $dotCls = match($invPriority) {
                 'critical' => 'db-dot-critical',
@@ -733,9 +547,9 @@ a.db-kpi:hover::after { opacity:1; }
                 'medium'   => 'db-dot-medium',
                 default    => 'db-dot-low',
             };
-            $actionUrl = $action->investigation
+            $actionUrl = $action->investigation && $canInvestigate
                 ? \App\Filament\Resources\InvestigationResource::getUrl('investigate', ['record' => $action->investigation_id])
-                : '#';
+                : null;
         @endphp
         <div class="db-action-item">
             <span class="db-dot {{ $dotCls }}" style="margin-top:.3rem"></span>
@@ -744,15 +558,19 @@ a.db-kpi:hover::after { opacity:1; }
                 <div class="db-action-sub">
                     Investigation #{{ $action->investigation_id }}
                     @if($isOverdue)
-                    · <span class="db-sla db-sla-overdue">⚠ {{ round($ageHours) }}h overdue</span>
+                    · <span class="db-sla db-sla-overdue">⚠ overdue by {{ $overdueFor }}</span>
+                    @elseif($dueIn)
+                    · <span class="db-sla db-sla-ok">due in {{ $dueIn }}</span>
                     @else
-                    · <span class="db-sla db-sla-ok">{{ round($ageHours) }}h ago</span>
+                    · <span class="db-sla db-sla-ok">no due date</span>
                     @endif
                 </div>
             </div>
+            @if($actionUrl)
             <div class="db-action-btns">
-                <a href="{{ $actionUrl }}" class="db-btn-sm db-btn-outline-purple">View</a>
+                <a href="{{ $actionUrl }}" class="db-btn-sm db-btn-outline-purple" wire:navigate>View</a>
             </div>
+            @endif
         </div>
         @empty
         <div class="db-empty">No pending actions — all clear! ✓</div>
@@ -780,26 +598,26 @@ a.db-kpi:hover::after { opacity:1; }
                 <div class="db-insight-body">
                     <div class="db-insight-icon">🔁</div>
                     <div class="db-insight-label">Recurring Pattern</div>
-                    <div class="db-insight-title">{{ $dbRuleLabel($recurringTop->rule_type) }}</div>
+                    <div class="db-insight-title">{{ $dbRuleLabel($recurringTop['rule_type']) }}</div>
                     <div class="db-insight-desc">
-                        This issue has recurred <strong>{{ $recurringTop->cnt }}</strong> time(s). Consider a systemic fix rather than one-off actions.
+                        <strong>{{ number_format($recurringTop['cnt']) }}</strong> active {{ \Illuminate\Support\Str::plural('anomaly', $recurringTop['cnt']) }} of this kind keep coming back. Consider a systemic fix rather than one-off actions.
                     </div>
-                    <a href="{{ \App\Filament\Resources\InvestigationResource::getUrl('index') }}" class="db-insight-link">View investigations →</a>
+                    @if($links['recurring'])<a href="{{ $links['recurring'] }}" class="db-insight-link" wire:navigate>View these anomalies →</a>@endif
                 </div>
             </div>
             @endif
 
-            @if($storeAlertData && $storeAlertData['store'])
+            @if($storeAlertData)
             <div class="db-insight-card">
                 <div class="db-insight-top db-insight-top-orange"></div>
                 <div class="db-insight-body">
                     <div class="db-insight-icon">🏪</div>
                     <div class="db-insight-label">Store Alert</div>
-                    <div class="db-insight-title">{{ $storeAlertData['store']->name }}</div>
+                    <div class="db-insight-title">{{ $storeAlertData['name'] }}</div>
                     <div class="db-insight-desc">
-                        This store has generated <strong>{{ $storeAlertData['cnt'] }}</strong> anomalies in the last 2 weeks — the highest of any location.
+                        <strong>{{ number_format($storeAlertData['cnt']) }}</strong> active anomalies detected here in the last 2 weeks — the most of any location.
                     </div>
-                    <a href="{{ \App\Filament\Resources\InvestigationResource::getUrl('index') }}" class="db-insight-link">View store investigations →</a>
+                    @if($links['store'])<a href="{{ $links['store'] }}" class="db-insight-link" wire:navigate>View this store's open investigations →</a>@endif
                 </div>
             </div>
             @endif
@@ -810,33 +628,33 @@ a.db-kpi:hover::after { opacity:1; }
                 <div class="db-insight-body">
                     <div class="db-insight-icon">📈</div>
                     <div class="db-insight-label">Top Category This Month</div>
-                    <div class="db-insight-title">{{ $dbRuleLabel($categoryTop->rule_type) }}</div>
+                    <div class="db-insight-title">{{ $dbRuleLabel($categoryTop['rule_type']) }}</div>
                     <div class="db-insight-desc">
-                        The most common anomaly this month with <strong>{{ $categoryTop->cnt }}</strong> occurrences. Review thresholds if this is expected behaviour.
+                        The most common active anomaly detected this month, with <strong>{{ number_format($categoryTop['cnt']) }}</strong> occurrences. Review thresholds if this is expected behaviour.
                     </div>
-                    <a href="{{ \App\Filament\Resources\InvestigationResource::getUrl('index') }}" class="db-insight-link">View anomalies →</a>
+                    @if($links['month_top'])<a href="{{ $links['month_top'] }}" class="db-insight-link" wire:navigate>View these anomalies →</a>@endif
                 </div>
             </div>
             @endif
 
             {{-- Always-present summary card --}}
             <div class="db-insight-card">
-                <div class="db-insight-top" style="background:#6d28d9"></div>
+                <div class="db-insight-top" style="background:var(--ax-accent)"></div>
                 <div class="db-insight-body">
                     <div class="db-insight-icon">📊</div>
                     <div class="db-insight-label">Period Summary</div>
-                    <div class="db-insight-title">{{ $openCount }} open · {{ $highPriorityCount }} high priority</div>
+                    <div class="db-insight-title">{{ number_format($openCount) }} open · {{ number_format($highPriorityCount) }} high priority</div>
                     <div class="db-insight-desc">
                         {{ $dbFormatMoney((float)$revenueAtRisk) }} revenue currently at risk.
                         @if($recoveredMTD > 0) {{ $dbFormatMoney((float)$recoveredMTD) }} recovered this month. @endif
                     </div>
-                    <a href="{{ \App\Filament\Resources\InvestigationResource::getUrl('index') }}" class="db-insight-link">Open investigations →</a>
+                    @if($links['open_all'])<a href="{{ $links['open_all'] }}" class="db-insight-link" wire:navigate>Open investigations →</a>@endif
                 </div>
             </div>
 
             @if(!$recurringTop && !$storeAlertData && !$categoryTop)
             <div class="db-insight-card">
-                <div class="db-insight-top" style="background:#d1d5db"></div>
+                <div class="db-insight-top" style="background:var(--ax-line)"></div>
                 <div class="db-insight-body">
                     <div class="db-insight-icon">✅</div>
                     <div class="db-insight-label">All Clear</div>
@@ -853,26 +671,29 @@ a.db-kpi:hover::after { opacity:1; }
 {{-- ════════════════════════════════════════════════════════════════════════
      CHART.JS SCRIPTS
      ════════════════════════════════════════════════════════════════════════ --}}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js" defer></script>
 <script>
-function initDashboardCharts() {
-    if (typeof Chart === 'undefined') return;
+function initDashboardCharts(Chart) {
+    if (!Chart) return;
 
     /* SPA-safe: destroy any existing dashboard charts before re-creating them.
-       With ->spa() enabled, this runs on livewire:navigated (and on the initial
-       DOMContentLoaded), so guard against a canvas already being in use. */
+       This script runs each time the dashboard's HTML is rendered (first load
+       and every SPA navigation back to it); it registers no global listener. */
     document.querySelectorAll('canvas[id^="db-"]').forEach(function (cv) {
         var existing = Chart.getChart(cv);
         if (existing) existing.destroy();
     });
 
+    const pfx = @json(\App\Support\Money::prefix($currency));
+
     /* ── Check dark mode ─────────────────────────────────────────────── */
-    const isDark = document.documentElement.classList.contains('dark');
-    const gridColor  = isDark ? 'rgba(255,255,255,.07)' : 'rgba(0,0,0,.06)';
-    const tickColor  = isDark ? '#6b7280' : '#9ca3af';
-    const tooltipBg  = isDark ? '#1f2937' : '#fff';
-    const tooltipClr = isDark ? '#f3f4f6' : '#111827';
-    const tooltipBdr = isDark ? '#374151' : '#e5e7eb';
+    /* Colours come from the design tokens, so dark mode follows autnyx-ui.css. */
+    const css = getComputedStyle(document.documentElement);
+    const tok = function (name, fallback) { return (css.getPropertyValue(name) || '').trim() || fallback; };
+    const gridColor  = tok('--ax-chart-grid', '#e5e7eb');
+    const tickColor  = tok('--ax-chart-axis', '#858c99');
+    const tooltipBg  = tok('--ax-bg', '#fff');
+    const tooltipClr = tok('--ax-ink', '#111827');
+    const tooltipBdr = tok('--ax-line', '#e5e7eb');
 
     /* ── Revenue chart ───────────────────────────────────────────────── */
     const revCtx = document.getElementById('db-revenue-chart');
@@ -883,7 +704,7 @@ function initDashboardCharts() {
                 labels: @json($chartLabels),
                 datasets: [
                     {
-                        label: 'Revenue at Risk',
+                        label: 'New at risk',
                         data: @json($chartAtRisk),
                         borderColor: '#7c3aed',
                         backgroundColor: 'rgba(124,58,237,.12)',
@@ -927,9 +748,9 @@ function initDashboardCharts() {
                         callbacks: {
                             label: function(ctx) {
                                 const v = ctx.raw;
-                                if (v >= 1000000) return ctx.dataset.label + ': $' + (v/1000000).toFixed(2) + 'M';
-                                if (v >= 1000)    return ctx.dataset.label + ': $' + (v/1000).toFixed(1) + 'K';
-                                return ctx.dataset.label + ': $' + v.toFixed(0);
+                                if (v >= 1000000) return ctx.dataset.label + ': ' + pfx + (v/1000000).toFixed(2) + 'M';
+                                if (v >= 1000)    return ctx.dataset.label + ': ' + pfx + (v/1000).toFixed(1) + 'K';
+                                return ctx.dataset.label + ': ' + pfx + v.toFixed(0);
                             }
                         }
                     }
@@ -947,7 +768,6 @@ function initDashboardCharts() {
                         ticks: {
                             color: tickColor, font: { size: 10 },
                             callback: function(v) {
-                                var pfx = @json(\App\Support\Money::prefix(\Filament\Facades\Filament::getTenant()?->currency));
                                 if (v >= 1000000) return pfx+(v/1000000).toFixed(1)+'M';
                                 if (v >= 1000)    return pfx+(v/1000).toFixed(0)+'K';
                                 return pfx+v;
@@ -1000,8 +820,9 @@ function initDashboardCharts() {
         });
     }
 }
-document.addEventListener('DOMContentLoaded', initDashboardCharts);
-document.addEventListener('livewire:navigated', initDashboardCharts);
+(window.axLoadChartJs ? window.axLoadChartJs() : Promise.reject(new Error('autnyx-ui.js not loaded')))
+    .then(initDashboardCharts)
+    .catch(function (e) { console.warn('Dashboard charts unavailable:', e.message); });
 </script>
 
 </x-filament-panels::page>

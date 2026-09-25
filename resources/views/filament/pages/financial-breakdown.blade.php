@@ -100,10 +100,10 @@
             <tbody>
                 @foreach($fb['rows'] as $row)
                 <tr class="{{ $row['url'] ? 'fb-row-link' : '' }}"
-                    @if($row['url']) onclick="window.location.href='{{ $row['url'] }}'" @endif>
+                    @if($row['url']) data-href="{{ $row['url'] }}" @endif>
                     <td>
                         @if($row['url'])
-                            <a href="{{ $row['url'] }}" class="fb-inv-id" onclick="event.stopPropagation()">#{{ $row['id'] }}</a>
+                            <a href="{{ $row['url'] }}" class="fb-inv-id">#{{ $row['id'] }}</a>
                         @else
                             <span class="fb-inv-id">#{{ $row['id'] }}</span>
                         @endif

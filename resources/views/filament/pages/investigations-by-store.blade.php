@@ -13,9 +13,9 @@
 .ibs-code{font-size:.74rem; color:var(--ax-faint); font-weight:600;}
 .ibs-badges{margin-left:auto; display:flex; gap:.4rem; flex-wrap:wrap; align-items:center;}
 .ibs-badge{font-size:.72rem; font-weight:700; padding:.22rem .55rem; border-radius:9999px; background:var(--ax-panel); color:var(--ax-muted);}
-.ibs-badge.open{background:#fef3e2; color:#b45309;}
-.ibs-badge.urgent{background:#fdeceb; color:#b91c1c;}
-.ibs-badge.value{background:#eef2ff; color:#4338ca;}
+.ibs-badge.open{background:var(--ax-warning-soft); color:var(--ax-warning-fg);}
+.ibs-badge.urgent{background:var(--ax-danger-soft); color:var(--ax-danger-fg);}
+.ibs-badge.value{background:var(--ax-accent-soft); color:var(--ax-accent-strong);}
 .ibs-body{border-top:1px solid var(--ax-line); padding:.4rem 0;}
 .ibs-tbl{width:100%; border-collapse:collapse; font-size:.83rem;}
 .ibs-tbl th{text-align:left; font-size:.68rem; text-transform:uppercase; letter-spacing:.05em; color:var(--ax-faint); font-weight:700; padding:.5rem 1.15rem;}
@@ -23,14 +23,14 @@
 .ibs-tbl tr:first-child td{border-top:0;}
 .ibs-tbl a{color:var(--ax-accent-strong); font-weight:700; text-decoration:none;}
 .ibs-pill{font-size:.68rem; font-weight:700; padding:.15rem .5rem; border-radius:9999px; text-transform:capitalize;}
-.ibs-pill.s-open{background:#fef3e2; color:#b45309;}
-.ibs-pill.s-in_progress{background:#e0f2fe; color:#0369a1;}
-.ibs-pill.s-resolved{background:#e7f6ee; color:#15803d;}
+.ibs-pill.s-open{background:var(--ax-warning-soft); color:var(--ax-warning-fg);}
+.ibs-pill.s-in_progress{background:var(--ax-info-soft); color:var(--ax-info-fg);}
+.ibs-pill.s-resolved{background:var(--ax-success-soft); color:var(--ax-success-fg);}
 .ibs-pill.s-closed{background:var(--ax-panel); color:var(--ax-muted);}
 .ibs-pri{font-size:.72rem; font-weight:700;}
-.ibs-pri.critical{color:#b91c1c;}
-.ibs-pri.high{color:#b45309;}
-.ibs-pri.medium{color:#0369a1;}
+.ibs-pri.critical{color:var(--ax-danger-fg);}
+.ibs-pri.high{color:var(--ax-warning-fg);}
+.ibs-pri.medium{color:var(--ax-info-fg);}
 .ibs-pri.low{color:var(--ax-faint);}
 .ibs-more{font-size:.75rem; color:var(--ax-faint); padding:.5rem 1.15rem;}
 .ibs-empty{background:var(--ax-bg); border:1px dashed var(--ax-line); border-radius:1rem; padding:2rem; text-align:center; color:var(--ax-muted);}
