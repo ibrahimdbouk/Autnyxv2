@@ -638,7 +638,14 @@ class ImportProcessorService
 
         DB::beginTransaction();
         try {
-            $path = app(\App\Services\Storage\TenantStorage::class)->importCopy($import);
+            try {
+                $path = app(\App\Services\Storage\TenantStorage::class)->importCopy($import);
+            } catch (\Throwable) {
+                $path = null;
+            }
+            if ($path === null || ! is_file($path) || filesize($path) === 0) {
+                throw new \RuntimeException("Import #{$import->id}: the stored file is gone (disk [{$import->disk}]) — nothing to rehearse.");
+            }
             $this->primeCaches($import->tenant_id);
             $this->parser = ValueParser::forImport($import);
             $this->lineCounters = [];

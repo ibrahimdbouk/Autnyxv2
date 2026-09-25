@@ -71,6 +71,13 @@ class SystemHealthCheckCommand extends Command
             }
         }
 
+        // W9: tenant uploads on the container's local disk vanish on every deploy
+        // (and a second worker could never read them).
+        $disk = (string) config('autnyx.storage_disk');
+        if (app()->environment('production') && config("filesystems.disks.{$disk}.driver") === 'local') {
+            $problems[] = "tenant uploads are stored on the ephemeral local disk [{$disk}] — set AUTNYX_STORAGE_DISK (or FILESYSTEM_DISK) to the private bucket";
+        }
+
         if (empty($problems)) {
             $this->info('System health: OK — no failures or stale jobs.');
             Cache::store(config('pipeline.lock_store', 'database'))->forget('health-check:last-alert');

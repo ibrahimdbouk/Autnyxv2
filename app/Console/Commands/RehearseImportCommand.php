@@ -32,7 +32,7 @@ class RehearseImportCommand extends Command
             try {
                 $r = $processor->rehearse($import, $this->option('limit') ? (int) $this->option('limit') : null);
             } catch (\Throwable $e) {
-                $this->error("Import #{$id}: {$e->getMessage()}");
+                $this->error(str_starts_with($e->getMessage(), 'Import #') ? $e->getMessage() : "Import #{$id}: {$e->getMessage()}");
                 continue;
             }
             $all[] = $r;

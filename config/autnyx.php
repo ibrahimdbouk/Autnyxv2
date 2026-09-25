@@ -32,7 +32,9 @@ return [
     | platform's private storage) is the intended production target.
     |
     */
-    'storage_disk' => env('AUTNYX_STORAGE_DISK', 'local'),
+    // W9: falls back to the app's default disk (FILESYSTEM_DISK — the private
+    // bucket on Laravel Cloud), never silently to the ephemeral local disk.
+    'storage_disk' => env('AUTNYX_STORAGE_DISK', env('FILESYSTEM_DISK', 'local')),
 
     /*
     |--------------------------------------------------------------------------

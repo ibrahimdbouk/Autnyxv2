@@ -121,6 +121,46 @@ class DataTrustTest extends TestCase
         $this->assertSame(Import::STATUS_UPLOADED, $import->fresh()->status);
     }
 
+    public function test_a_rehearsal_of_a_file_that_is_no_longer_stored_fails_loudly(): void
+    {
+        $import = $this->import($this->salesCsv(3));
+        Storage::disk('local')->delete($import->path);
+
+        $this->artisan('imports:rehearse', ['import' => [$import->id]])->assertFailed()
+            ->expectsOutputToContain('stored file is gone');
+    }
+
+    /** W9: uploads went to the container's ephemeral disk on production and were lost on each deploy. */
+    public function test_tenant_files_follow_the_default_private_disk_unless_set_explicitly(): void
+    {
+        $cfg = fn (array $env) => (function () use ($env) {
+            foreach ($env as $k => $v) {
+                $v === null ? putenv($k) : putenv("{$k}={$v}");
+            }
+            try {
+                return (require base_path('config/autnyx.php'))['storage_disk'];
+            } finally {
+                foreach (array_keys($env) as $k) {
+                    putenv($k);
+                }
+            }
+        })();
+
+        $this->assertSame('private', $cfg(['FILESYSTEM_DISK' => 'private', 'AUTNYX_STORAGE_DISK' => null]));
+        $this->assertSame('s3', $cfg(['FILESYSTEM_DISK' => 'private', 'AUTNYX_STORAGE_DISK' => 's3']));
+        $this->assertSame('local', $cfg(['FILESYSTEM_DISK' => null, 'AUTNYX_STORAGE_DISK' => null]));
+    }
+
+    public function test_the_health_check_flags_uploads_kept_on_an_ephemeral_disk_in_production(): void
+    {
+        $this->app['env'] = 'production';
+        config(['autnyx.storage_disk' => 'local', 'backup.enabled' => false]);
+        $this->artisan('system:health-check')->expectsOutputToContain('ephemeral');
+
+        config(['autnyx.storage_disk' => 's3', 'filesystems.disks.s3.driver' => 's3']);
+        $this->artisan('system:health-check')->doesntExpectOutputToContain('ephemeral');
+    }
+
     // ── WP9.2 feeds ──────────────────────────────────────────────────────────
 
     public function test_every_ingestion_path_tags_its_feed(): void

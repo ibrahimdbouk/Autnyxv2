@@ -12,6 +12,8 @@
 | Mistake older than the PITR window; PITR not configured; lost cluster or project | **Nightly logical backup** (`db:backup`) | Up to 24 h (backup at 03:15 UTC) | **37 s restore measured** on 2026-09-25, plus about 15 min to repoint and redeploy |
 | Lost object storage (import files) | Re-upload the source files | Import files only; imported rows stay in the database | — |
 
+**Import files (W9 correction):** until 2026-09-25, uploads were written to the app container's local disk, which is ephemeral, so files from before then are gone (their rows are in the database). Since W9 they go to the private bucket (`AUTNYX_STORAGE_DISK`, falling back to `FILESYSTEM_DISK`). The hourly health check flags a production app that stores uploads locally.
+
 ## Layer 1: Point-in-time recovery (Laravel Cloud)
 
 - Laravel Cloud keeps a continuous log of changes for a configurable **retention window of 0 to 30 days** (Resources → Databases → the database → **Backups**). A restore never touches production: it creates a **separate cluster**.
