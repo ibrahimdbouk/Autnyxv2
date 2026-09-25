@@ -85,6 +85,7 @@ class ApiPollService
             $feed->data_type,
             $connector->fetch($connection, $feed),
             'api',
+            sourceRef: $feed->id,   // W9 (WP9.2): one feed per ApiFeed
         );
 
         // WP3.7: remember where this pull got to, and say so when it was cut short.

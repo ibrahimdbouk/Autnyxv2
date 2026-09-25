@@ -21,6 +21,7 @@ final class OwnerConnection
         'db:wipe', 'schema:dump',
         'db:runtime-role', 'db:backup', 'db:restore-drill', 'db:integrity',
         'imports:dedupe-natural-keys', 'detection:load-test',
+        'db:jsonb', 'db:drop-legacy-tables', 'db:top-queries',
     ];
 
     public static function configured(): bool

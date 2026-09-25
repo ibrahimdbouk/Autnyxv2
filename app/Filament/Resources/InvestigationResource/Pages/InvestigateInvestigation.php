@@ -101,6 +101,23 @@ class InvestigateInvestigation extends Page
         }
     }
 
+    /** W9 (WP9.6): the batches behind this investigation (memoised per request). */
+    private ?array $lineageCache = null;
+
+    public function dataLineage(): array
+    {
+        if ($this->lineageCache === null) {
+            try {
+                $this->lineageCache = app(\App\Services\DataQuality\DataLineage::class)->forInvestigation($this->record);
+            } catch (\Throwable $e) {
+                report($e);
+                $this->lineageCache = ['window' => ['', ''], 'skus' => [], 'batches' => [], 'caveats' => []];
+            }
+        }
+
+        return $this->lineageCache;
+    }
+
     /** B8: deterministic root-cause inference for this investigation (memoised per request). */
     private ?array $causalCache = null;
 

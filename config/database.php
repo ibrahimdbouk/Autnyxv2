@@ -133,6 +133,12 @@ return [
     | (App\Support\Database\OwnerConnection). Unset = everything runs as
     | DB_USERNAME, as before.
     */
+    /*
+    | W9 — the longest a single statement may run during a web request (ms).
+    | Queued jobs and commands are not limited. 0 disables.
+    */
+    'web_statement_timeout_ms' => (int) env('DB_WEB_STATEMENT_TIMEOUT_MS', 60000),
+
     'owner' => [
         'username' => env('DB_OWNER_USERNAME', ''),
         'password' => env('DB_OWNER_PASSWORD', ''),

@@ -72,7 +72,73 @@ class DataHealthCenter extends Page
                             ->body('The figures refresh in a minute or two — reload the page to see them.')->success()->send();
                     }
                 }),
+
+            // W9 (WP9.3): the semantic data checks, on demand.
+            Action::make('runChecks')
+                ->label('Run data checks')
+                ->icon('heroicon-o-magnifying-glass-circle')
+                ->color('gray')
+                ->visible(fn () => $this->canSeeReadiness())
+                ->action(function () {
+                    $tenantId = Filament::getTenant()?->id;
+                    if ($tenantId) {
+                        \App\Jobs\DataQuality\RunDataQualityChecksJob::dispatch((int) $tenantId);
+                        Notification::make()->title('Data checks queued')->body('Findings refresh in a minute — reload the page.')->success()->send();
+                    }
+                }),
+
+            // W9 (WP9.2): who answers for a feed, and its explicit service level.
+            Action::make('feedSettings')
+                ->label('Feed settings')
+                ->icon('heroicon-o-signal')
+                ->color('gray')
+                ->visible(fn () => $this->canSeeReadiness() && $this->getFeeds()->isNotEmpty())
+                ->form([
+                    \Filament\Forms\Components\Select::make('feed')->required()->live()
+                        ->options(fn () => $this->getFeeds()->mapWithKeys(fn ($c) => [$c->id => $c->label()])->all())
+                        ->afterStateUpdated(function ($state, \Filament\Schemas\Components\Utilities\Set $set) {
+                            $c = $this->getFeeds()->firstWhere('id', (int) $state);
+                            $set('owner_email', $c?->owner_email);
+                            $set('freshness_sla_hours', $c?->freshness_sla_hours);
+                            $set('min_rows', $c?->min_rows);
+                            $set('required_columns', implode(', ', $c?->required_columns ?? []));
+                        }),
+                    \Filament\Forms\Components\TextInput::make('owner_email')->label('Feed owner (alerted with the admins)')->email(),
+                    \Filament\Forms\Components\TextInput::make('freshness_sla_hours')->label('Late after (hours) — blank = learned cadence')->numeric()->minValue(1),
+                    \Filament\Forms\Components\TextInput::make('min_rows')->label('Minimum rows per batch')->numeric()->minValue(1),
+                    \Filament\Forms\Components\TextInput::make('required_columns')->label('Required columns (comma-separated)'),
+                ])
+                ->action(function (array $data) {
+                    abort_unless($this->canSeeReadiness(), 403);
+                    $c = \App\Models\DataContract::where('tenant_id', Filament::getTenant()?->id)->findOrFail((int) $data['feed']);
+                    $c->update([
+                        'owner_email'         => $data['owner_email'] ?: null,
+                        'freshness_sla_hours' => $data['freshness_sla_hours'] ?: null,
+                        'min_rows'            => $data['min_rows'] ?: null,
+                        'required_columns'    => array_values(array_filter(array_map('trim', explode(',', (string) ($data['required_columns'] ?? ''))))),
+                    ]);
+                    Notification::make()->title('Feed settings saved')->success()->send();
+                }),
         ];
+    }
+
+    /** W9 (WP9.2): the tenant's feeds and what they normally deliver. */
+    public function getFeeds(): Collection
+    {
+        $tenantId = Filament::getTenant()?->id;
+
+        return $tenantId ? \App\Models\DataContract::where('tenant_id', $tenantId)->where('active', true)
+            ->withCount(['violations as open_violations' => fn ($q) => $q->whereNull('resolved_at')])
+            ->orderBy('data_type')->orderBy('feed_key')->get() : collect();
+    }
+
+    /** W9 (WP9.3): open data-check findings, most severe first. */
+    public function getFindings(): Collection
+    {
+        $tenantId = Filament::getTenant()?->id;
+
+        return $tenantId ? \App\Models\DqFinding::where('tenant_id', $tenantId)->open()->get()
+            ->sortBy(fn ($f) => [$f->severityRank(), -$f->last_seen_at?->getTimestamp()])->values() : collect();
     }
 
     public function mount(): void

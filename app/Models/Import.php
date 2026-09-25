@@ -33,7 +33,40 @@ class Import extends Model
         'process_phase', // WP3.6
         'process_cursor',
         'error_message',
+        // W9 (WP9.2): which feed delivered this batch.
+        'source',
+        'source_ref',
+        'feed_key',
     ];
+
+    /** W9 (WP9.2): how a batch arrived. */
+    public const SOURCE_UPLOAD = 'upload';
+    public const SOURCE_SFTP   = 'sftp';
+    public const SOURCE_API    = 'api';     // a scheduled pull (ApiFeed)
+    public const SOURCE_INGEST = 'ingest';  // pushed to the public ingest API
+
+    /** Automated sources are expected on a schedule, so lateness is alerted. */
+    public const AUTOMATED_SOURCES = [self::SOURCE_SFTP, self::SOURCE_API, self::SOURCE_INGEST];
+
+    /**
+     * W9 (WP9.2): the feed a batch belongs to — the unit whose cadence, volume
+     * and header shape are learned. "sftp:12:sales_transactions", "upload:inventory_levels".
+     */
+    protected static function booted(): void
+    {
+        // W9 (WP9.5): the upload sample never keeps personal data (e-mails,
+        // phone and card numbers are masked before it is stored).
+        static::saving(function (Import $import) {
+            if ($import->isDirty('sample_rows') && is_array($import->sample_rows) && ! $import->exists) {
+                $import->sample_rows = \App\Services\DataQuality\PiiGuard::maskSample($import->sample_rows);
+            }
+        });
+    }
+
+    public static function feedKeyFor(string $source, string $dataType, int|string|null $ref = null): string
+    {
+        return $source . ':' . ($ref !== null && $ref !== '' ? $ref . ':' : '') . $dataType;
+    }
 
     protected $casts = [
         'sample_rows' => 'array',

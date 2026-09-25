@@ -215,6 +215,9 @@ class SftpPollService
         $import = Import::create([
             'tenant_id'         => $tenantId,
             'user_id'           => null, // system / automated
+            'source'            => Import::SOURCE_SFTP,   // W9 (WP9.2)
+            'source_ref'        => $feed ? (string) $feed->id : null,
+            'feed_key'          => Import::feedKeyFor(Import::SOURCE_SFTP, $dataType, $feed?->id),
             'original_filename' => $filename,
             'disk'              => 'local',
             'path'              => $localPath,

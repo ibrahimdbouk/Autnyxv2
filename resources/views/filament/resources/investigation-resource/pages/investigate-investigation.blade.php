@@ -1403,6 +1403,45 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
                 @endif
             </div>
         </details>
+
+        {{-- ── W9 (WP9.6) Data lineage ───────────────────────────────────── --}}
+        @php $lin = $this->dataLineage(); @endphp
+        <details class="dinv-panel">
+            <summary>
+                <span>🧬 Data lineage</span>
+                @if(count($lin['batches']))<span class="dinv-count">{{ count($lin['batches']) }} batch(es)@if(count($lin['caveats'])) · {{ count($lin['caveats']) }} caveat(s)@endif</span>@endif
+                <span class="dinv-chev">▶</span>
+            </summary>
+            <div class="dinv-body">
+                @if(empty($lin['batches']))
+                    <div class="dinv-empty">No loaded rows for these SKUs between {{ $lin['window'][0] }} and {{ $lin['window'][1] }} carry a batch reference.</div>
+                @else
+                    <div class="dinv-ev-src" style="margin-bottom:.5rem">Rows for {{ implode(', ', array_slice($lin['skus'], 0, 6)) }}@if(count($lin['skus']) > 6) and {{ count($lin['skus']) - 6 }} more @endif between {{ $lin['window'][0] }} and {{ $lin['window'][1] }} came from:</div>
+                    <table class="dinv-ev-table"><tbody>
+                        @foreach($lin['batches'] as $b)
+                            <tr>
+                                <td>
+                                    <div class="dinv-ev-label">#{{ $b['id'] }} · {{ $b['file'] }}</div>
+                                    <div class="dinv-ev-src">
+                                        {{ ucfirst($b['source']) }} · loaded {{ \App\Support\Tenancy\TenantClock::display($b['loaded'])?->format('M j, Y H:i') }}
+                                        @foreach($b['datasets'] as $label => $d) · {{ $label }}: {{ number_format($d['rows']) }} row(s), {{ $d['from'] }}@if($d['to'] !== $d['from'])–{{ $d['to'] }}@endif @endforeach
+                                    </div>
+                                    @if($b['flags'])<div class="dinv-ev-src" style="color:var(--ax-warn,#b45309)">⚠ {{ implode(' · ', $b['flags']) }}</div>@endif
+                                </td>
+                                <td class="dinv-ev-val">
+                                    @if($b['state'])<span class="dinv-pill {{ match($b['state']) { 'green' => 's-success', 'amber' => 's-warning', 'red' => 's-danger', default => '' } }}">{{ strtoupper($b['state']) }}</span>@endif
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody></table>
+                    @if(count($lin['caveats']))
+                        <div class="dinv-explain" style="margin-top:.75rem"><b>Data caveats:</b>
+                            @foreach($lin['caveats'] as $c)<div style="margin-top:.2rem">• {{ $c }}</div>@endforeach
+                        </div>
+                    @endif
+                @endif
+            </div>
+        </details>
     </div>
 
     <script>

@@ -68,6 +68,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // W9: a web request never holds the database for more than
+        // database.web_statement_timeout (queues and commands are not limited).
+        \Illuminate\Support\Facades\Event::listen(\Illuminate\Database\Events\ConnectionEstablished::class,
+            fn ($e) => \App\Support\Database\WebStatementTimeout::apply($e->connection, $this->app->runningInConsole()));
+
         // WP8.1: schema, dump and restore commands run as the owner role; the
         // app itself runs as the least-privilege runtime role.
         \Illuminate\Support\Facades\Event::listen(\Illuminate\Console\Events\CommandStarting::class, function ($e) {
@@ -203,6 +208,12 @@ class AppServiceProvider extends ServiceProvider
                 ->withoutOverlapping(30);
             $schedule->command('model:prune')
                 ->dailyAt('04:20')
+                ->onOneServer()
+                ->withoutOverlapping(30);
+
+            // W9 (WP9.2) — hourly: automated data feeds that are overdue.
+            $schedule->command(\App\Console\Commands\FeedsCheckCommand::class)
+                ->hourlyAt(25)
                 ->onOneServer()
                 ->withoutOverlapping(30);
 

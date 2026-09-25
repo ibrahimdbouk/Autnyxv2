@@ -44,6 +44,23 @@ class DataHealthService
         DataHealthSnapshot::DATASET_SUPPLIERS       => ['freshness_max_hours' => 8760, 'completeness_min_pct' => 70, 'rejection_max_pct' => 5],
     ];
 
+    /**
+     * W9 (WP9.8): detection cannot run without these. A required dataset with
+     * no data scores 0 in the overall score and makes the tenant critical; an
+     * optional one (POs, stores, suppliers) that is absent is only a warning
+     * and does not move the score.
+     */
+    public const REQUIRED = [
+        DataHealthSnapshot::DATASET_SALES,
+        DataHealthSnapshot::DATASET_INVENTORY,
+        DataHealthSnapshot::DATASET_PRODUCTS,
+    ];
+
+    public static function isRequired(string $dataset): bool
+    {
+        return in_array($dataset, self::REQUIRED, true);
+    }
+
     /** Datasets backed by ingestion_runs (have a data_type). */
     public const INGESTION_TYPES = [
         DataHealthSnapshot::DATASET_SALES           => IngestionRun::TYPE_SALES,
@@ -112,7 +129,9 @@ class DataHealthService
                 'records_received' => 0,
                 'records_accepted' => 0,
                 'records_rejected' => 0,
-                'warnings'         => [['level' => 'critical', 'message' => 'No ' . $dataset . ' data has been ingested yet.']],
+                'warnings'         => [self::isRequired($dataset)
+                    ? ['level' => 'critical', 'message' => 'No ' . $dataset . ' data has been ingested yet. Detection needs it.']
+                    : ['level' => 'warning', 'message' => 'No ' . $dataset . ' data yet (optional — the checks that use it are skipped).']],
                 'metrics'          => ['version' => self::VERSION, 'reason' => 'no_data'],
             ];
         }
@@ -264,18 +283,28 @@ class DataHealthService
     public function overall(int $tenantId): array
     {
         $snaps = DataHealthSnapshot::where('tenant_id', $tenantId)->get();
-        $scored = $snaps->whereNotNull('score');
+        $byDataset = $snaps->keyBy('dataset');
 
+        // W9 (WP9.8): a required dataset with no snapshot or no data counts
+        // as 0; an optional one with no data is left out of the average.
+        $missingRequired = collect(self::REQUIRED)
+            ->filter(fn ($d) => ! $byDataset->has($d) || $byDataset[$d]->score === null)->values()->all();
+        $scores = $snaps->whereNotNull('score')->pluck('score')->map(fn ($s) => (float) $s)
+            ->concat(array_fill(0, count($missingRequired), 0.0));
+
+        $criticalHere = fn ($s) => $s->status === DataHealthSnapshot::STATUS_CRITICAL
+            || ($s->status === DataHealthSnapshot::STATUS_NO_DATA && self::isRequired($s->dataset));
         $status = DataHealthSnapshot::STATUS_HEALTHY;
-        if ($snaps->contains(fn ($s) => $s->status === DataHealthSnapshot::STATUS_CRITICAL || $s->status === DataHealthSnapshot::STATUS_NO_DATA)) {
+        if ($missingRequired !== [] || $snaps->contains($criticalHere)) {
             $status = DataHealthSnapshot::STATUS_CRITICAL;
-        } elseif ($snaps->contains(fn ($s) => $s->status === DataHealthSnapshot::STATUS_WARNING)) {
+        } elseif ($snaps->contains(fn ($s) => in_array($s->status, [DataHealthSnapshot::STATUS_WARNING, DataHealthSnapshot::STATUS_NO_DATA], true))) {
             $status = DataHealthSnapshot::STATUS_WARNING;
         }
 
         return [
             'status'      => $snaps->isEmpty() ? DataHealthSnapshot::STATUS_NO_DATA : $status,
-            'score'       => $scored->isNotEmpty() ? round($scored->avg('score'), 1) : null,
+            'score'       => $snaps->isNotEmpty() && $scores->isNotEmpty() ? round($scores->avg(), 1) : null,
+            'missing_required' => $missingRequired,
             'datasets'    => $snaps->count(),
             'warning_count' => $snaps->sum(fn ($s) => is_array($s->warnings) ? count($s->warnings) : 0),
             'last_computed' => $snaps->max('computed_at'),
@@ -288,7 +317,8 @@ class DataHealthService
     public function notifyCritical(int $tenantId, Collection $snapshots): void
     {
         $critical = $snapshots->filter(
-            fn (DataHealthSnapshot $s) => in_array($s->status, [DataHealthSnapshot::STATUS_CRITICAL, DataHealthSnapshot::STATUS_NO_DATA], true)
+            fn (DataHealthSnapshot $s) => $s->status === DataHealthSnapshot::STATUS_CRITICAL
+                || ($s->status === DataHealthSnapshot::STATUS_NO_DATA && self::isRequired($s->dataset))   // W9: optional gaps don't page
         );
         if ($critical->isEmpty()) {
             return;

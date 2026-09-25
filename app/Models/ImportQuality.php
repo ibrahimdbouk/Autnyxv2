@@ -25,11 +25,13 @@ class ImportQuality extends Model
         'reason_counts', 'column_profile', 'file_fingerprint', 'is_duplicate_file',
         'state', 'decision', 'blocked',
         'overridden_by', 'overridden_at', // WP3.6: a RED batch promoted by an admin
+        'pii_columns', // W9 (WP9.5)
     ];
 
     protected $casts = [
         'reason_counts'     => 'array',
         'column_profile'    => 'array',
+        'pii_columns'       => 'array',
         'is_duplicate_file' => 'boolean',
         'blocked'           => 'boolean',
         'rows_seen'         => 'integer',

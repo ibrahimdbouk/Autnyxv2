@@ -16,11 +16,17 @@ class ContractViolation extends Model
     public const KIND_STALE           = 'stale';
     public const KIND_EMPTY           = 'empty';
     public const KIND_BELOW_MIN_ROWS  = 'below_min_rows';
+    // W9 (WP9.2): learned-contract breaches.
+    public const KIND_VOLUME_LOW      = 'volume_low';
+    public const KIND_VOLUME_HIGH     = 'volume_high';
+    public const KIND_SCHEMA_DRIFT    = 'schema_drift';
+    public const KIND_LATE            = 'late';
 
     protected $fillable = [
         'tenant_id',
         'data_contract_id',
         'feed_key',
+        'import_id',
         'kind',
         'detail',
         'occurred_at',

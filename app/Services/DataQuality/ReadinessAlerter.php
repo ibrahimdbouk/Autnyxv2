@@ -36,8 +36,25 @@ class ReadinessAlerter
         }
     }
 
+    /**
+     * W9: a data-trust alert (feed late / short / re-shaped, a critical data
+     * finding). Same audience as a RED batch, plus the feed's own owner.
+     */
+    public function alert(?int $tenantId, string $title, string $body, ?string $feedOwnerEmail = null, string $level = 'danger'): void
+    {
+        try {
+            $this->bell($tenantId, $title, $body, $level);
+            $this->emailOwner($title, $body);
+            if ($feedOwnerEmail && filter_var($feedOwnerEmail, FILTER_VALIDATE_EMAIL) && $feedOwnerEmail !== config('autnyx.owner_email')) {
+                Mail::raw($body, fn ($m) => $m->to($feedOwnerEmail)->subject("[Autnyx] {$title}"));
+            }
+        } catch (\Throwable) {
+            // best-effort
+        }
+    }
+
     /** In-app bell for the tenant's own admins + every platform super admin. */
-    private function bell(?int $tenantId, string $title, string $body): void
+    private function bell(?int $tenantId, string $title, string $body, string $level = 'danger'): void
     {
         $recipients = User::query()
             ->where(function ($w) use ($tenantId): void {
@@ -53,7 +70,7 @@ class ReadinessAlerter
                 Notification::make()
                     ->title($title)
                     ->body($body)
-                    ->danger()
+                    ->status($level === 'warning' ? 'warning' : 'danger')
                     ->sendToDatabase($user);
             } catch (\Throwable) {
                 // skip a single failed recipient; keep alerting the rest.

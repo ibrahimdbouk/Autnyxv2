@@ -37,6 +37,10 @@ class DataQualityFirewall
     private ?ImportQuality $quality = null;
     private bool $duplicateBatch = false;
 
+    /** W9 (WP9.5): personal-data columns of this import — header → kind, and mapped field → kind. */
+    private array $pii = [];
+    private array $piiFields = [];
+
     public function __construct(
         private CleansingEngine $cleanser,
         private RowValidator $validator,
@@ -62,6 +66,14 @@ class DataQualityFirewall
 
     /** Prepare per-import context. Cheap on later chunks (no re-fingerprint, no re-create). */
     public function begin(Import $import): void
+    {
+        $tenantId = (int) $import->tenant_id;
+        $this->prepare($import);
+        $this->beginQuality($import, $tenantId);
+    }
+
+    /** Per-request state and the import's cleansing context (no writes). */
+    private function prepare(Import $import): void
     {
         $tenantId = (int) $import->tenant_id;
 
@@ -92,7 +104,10 @@ class DataQualityFirewall
                 ->all();
             $this->preparedImportId = $import->id;
         }
+    }
 
+    private function beginQuality(Import $import, int $tenantId): void
+    {
         $quality = ImportQuality::firstOrNew(['import_id' => $import->id]);
         $this->captureProfile = ! $quality->exists;
         if (! $quality->exists) {
@@ -122,16 +137,102 @@ class DataQualityFirewall
             ])->save();
         }
         $this->quality = $quality;
+        $this->loadPii($quality);
 
         // Idempotency: an identical file already ingested → the caller skips the batch.
         $this->duplicateBatch = $quality->is_duplicate_file
             && (bool) config('data_quality.idempotent_uploads', true);
     }
 
-    /** Coarse source label for the batch/source-health view (feed tagging comes with continuous ingest). */
+    /**
+     * W9 (WP9.1): prepare a rehearsal — the same cleansing context and gates
+     * as a real run (optionally with gates overridden), but nothing is read
+     * from or written to the batch's quality record.
+     *
+     * @param  array{strict?:bool, referential_gate?:bool}  $overrides
+     */
+    public function beginDry(Import $import, array $overrides = []): void
+    {
+        $this->prepare($import);
+        $this->strict          = (bool) ($overrides['strict'] ?? $this->strict);
+        $this->referentialGate = (bool) ($overrides['referential_gate'] ?? $this->referentialGate);
+        $this->captureProfile  = true;
+        $this->quality         = null;
+        $this->duplicateBatch  = false;
+        $this->pii = $this->piiFields = [];
+    }
+
+    /**
+     * W9 (WP9.1): what a rehearsal pass saw.
+     *
+     * @return array{promoted:int, cleansed:int, reason_counts:array<string,int>, profile:array}
+     */
+    public function dryTally(Import $import): array
+    {
+        return [
+            'promoted'      => $this->promoted,
+            'cleansed'      => $this->cleansed,
+            'reason_counts' => $this->reasonCounts,
+            'profile'       => $this->profileRows ? $this->profiler->profile($import->data_type, $this->profileRows) : [],
+        ];
+    }
+
+    /** A rehearsal's quarantine: counted, never stored. */
+    public function dryReject(string $reason): void
+    {
+        $this->quarantined++;
+        $this->reasonCounts[$reason] = ($this->reasonCounts[$reason] ?? 0) + 1;
+    }
+
+    /** Coarse source label for the batch/source-health view (W9: the feed's source when known). */
     private function sourceLabel(Import $import): string
     {
-        return $import->original_filename ? 'file' : 'api';
+        return $import->source ?: ($import->original_filename ? 'file' : 'api');
+    }
+
+    /**
+     * W9 (WP9.5): on the first chunk, find the columns holding personal data,
+     * remember them on the batch and mask the upload sample. Later chunks and
+     * the write pass reuse what was found.
+     *
+     * @param  array<int,array<string,mixed>>  $rawRows
+     * @param  array<string,?string>           $targets  source header → mapped field
+     */
+    public function inspectPii(Import $import, array $rawRows, array $targets): void
+    {
+        if (! PiiGuard::enabled() || ! $this->quality || $this->quality->pii_columns !== null) {
+            return;
+        }
+        $found = PiiGuard::detect(array_slice($rawRows, 0, 500), $targets);
+        $this->quality->pii_columns = array_map(fn ($h, $k) => ['column' => $h, 'kind' => $k, 'field' => $targets[$h] ?? null], array_keys($found), $found);
+        if ($found !== []) {
+            $counts = $this->quality->reason_counts ?? [];
+            $counts[Reasons::PII_DETECTED] = count($found);
+            $this->quality->reason_counts = $counts;
+            if (is_array($import->sample_rows)) {
+                $import->sample_rows = array_map(fn ($r) => is_array($r) ? PiiGuard::maskRow($r, $found) : $r, $import->sample_rows);
+                $import->saveQuietly();
+            }
+        }
+        $this->quality->save();
+        $this->loadPii($this->quality);
+    }
+
+    private function loadPii(ImportQuality $q): void
+    {
+        $this->pii = $this->piiFields = [];
+        foreach ($q->pii_columns ?? [] as $c) {
+            $this->pii[$c['column']] = $c['kind'];
+            if (! empty($c['field'])) {
+                $this->piiFields[$c['field']] = $c['kind'];
+            }
+        }
+    }
+
+    /** W9 (WP9.5): a raw row with its personal-data columns masked (for anything kept for review). */
+    public function maskRaw(array $raw): array
+    {
+        return $this->pii === [] ? $raw : PiiGuard::maskRow($raw, $this->pii);
     }
 
     /**
@@ -143,6 +244,13 @@ class DataQualityFirewall
         $clean   = $this->cleanser->clean($import->data_type, $data, $this->ctx);
         $data    = $clean['data'];
         $changed = $clean['changed'];
+
+        // W9 (WP9.5): a customer reference that is an e-mail / phone / card
+        // number is stored as a stable pseudonym, never as the value itself.
+        if (isset($data['customer_ref']) && PiiGuard::enabled() && PiiGuard::isPersonal((string) $data['customer_ref'])) {
+            $data['customer_ref'] = PiiGuard::pseudonym((int) $import->tenant_id, (string) $data['customer_ref']);
+            $changed = true;
+        }
 
         if ($this->captureProfile && count($this->profileRows) < $this->profileCap) {
             $this->profileRows[] = \App\Services\Import\ValueParser::stripMeta($data);
@@ -232,8 +340,8 @@ class DataQualityFirewall
             'import_id'     => $import->id,
             'data_type'     => $import->data_type,
             'row_number'    => $rowNumber,
-            'raw_data'      => $raw,
-            'cleansed_data' => $cleansed,
+            'raw_data'      => $this->maskRaw($raw),   // W9 (WP9.5)
+            'cleansed_data' => $this->piiFields === [] ? $cleansed : PiiGuard::maskRow($cleansed, $this->piiFields),
             'reason_code'   => $reason,
             'severity'      => Reasons::severity($reason),
             'message'       => Reasons::label($reason),

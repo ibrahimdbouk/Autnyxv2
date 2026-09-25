@@ -463,6 +463,9 @@ class ImportProcessorService
             return ['done' => true, 'processed' => (int) $import->total_rows, 'total' => (int) $import->total_rows];
         }
 
+        // W9 (WP9.5): personal-data columns, found once on the first chunk.
+        $this->firewall()?->inspectPii($import, $chunk['rows'], $columnMap->map(fn ($m) => $m->target_field)->all());
+
         foreach ($chunk['rows'] as $i => $rawRow) {
             $data = $mappedRows[$i];
             if ($isSales) {
@@ -510,7 +513,7 @@ class ImportProcessorService
                     'import_id'     => $import->id,
                     'tenant_id'     => $import->tenant_id,
                     'row_number'    => $rowNumber,
-                    'raw_data'      => $rawRow,
+                    'raw_data'      => $this->firewall()?->maskRaw($rawRow) ?? $rawRow,   // W9 (WP9.5)
                     'mapped_data'   => $data,
                     'error_message' => $e->getMessage(),
                     'status'        => ImportRow::STATUS_PENDING,
@@ -545,7 +548,7 @@ class ImportProcessorService
                                 'import_id'     => $import->id,
                                 'tenant_id'     => $import->tenant_id,
                                 'row_number'    => $entry['row'],
-                                'raw_data'      => $entry['raw'],
+                                'raw_data'      => $this->firewall()?->maskRaw($entry['raw']) ?? $entry['raw'],
                                 'mapped_data'   => $entry['mapped'],
                                 'error_message' => $rowError->getMessage(),
                                 'status'        => ImportRow::STATUS_PENDING,
@@ -613,6 +616,115 @@ class ImportProcessorService
         }
 
         return ['done' => false, 'processed' => $newCursor, 'total' => (int) $import->total_rows];
+    }
+
+    /**
+     * W9 (WP9.1) — dress rehearsal. Re-read a stored file with its saved
+     * column map and run every row through the firewall exactly as a load
+     * would — twice: with the gates as configured, and with every gate on
+     * (strict validation + referential) — plus the feed and personal-data
+     * checks. NOTHING is written: the whole pass runs in a transaction that
+     * is rolled back.
+     *
+     * @return array<string,mixed>
+     */
+    public function rehearse(Import $import, ?int $limit = null): array
+    {
+        $started = microtime(true);
+        $columnMap = $import->columnMaps()->where('is_skipped', false)->whereNotNull('target_field')->get()->keyBy('source_header');
+        if ($columnMap->isEmpty()) {
+            throw new \RuntimeException("Import #{$import->id} has no saved column mapping.");
+        }
+
+        DB::beginTransaction();
+        try {
+            $path = app(\App\Services\Storage\TenantStorage::class)->importCopy($import);
+            $this->primeCaches($import->tenant_id);
+            $this->parser = ValueParser::forImport($import);
+            $this->lineCounters = [];
+            $this->touchedReceipts = [];
+
+            $modes = ['configured' => [], 'all_gates' => ['strict' => true, 'referential_gate' => true]];
+            $fws = $samples = $rejected = [];
+            foreach ($modes as $mode => $overrides) {
+                $fws[$mode] = app(DataQualityFirewall::class);
+                $fws[$mode]->beginDry($import, $overrides);
+                $rejected[$mode] = 0;
+            }
+
+            $reader = app(FileReaderService::class);
+            $offset = 0;
+            $rows = 0;
+            $firstRows = [];
+            $isSales = $import->data_type === Import::TYPE_SALES;
+            do {
+                $chunk = $reader->readRange($path, $offset, self::CHUNK_SIZE, $this->dialectOf($import));
+                if ($firstRows === []) {
+                    $firstRows = array_slice($chunk['rows'], 0, 500);
+                }
+                foreach ($chunk['rows'] as $raw) {
+                    $rows++;
+                    $data = $this->applyMap($columnMap, $raw);
+                    if ($isSales) {
+                        $data = $this->numberLine($data);
+                    }
+                    $data = $this->parser()->normalizeRow($import->data_type, $data);
+                    foreach ($fws as $mode => $fw) {
+                        $s = $fw->screen($import, $data);
+                        if ($s['reason'] !== null) {
+                            $fw->dryReject($s['reason']);
+                            $rejected[$mode]++;
+                            if (count($samples[$mode][$s['reason']] ?? []) < 3) {
+                                $samples[$mode][$s['reason']][] = ['row' => $rows + 1, 'raw' => $raw];
+                            }
+                        }
+                    }
+                    if ($limit && $rows >= $limit) {
+                        break 2;
+                    }
+                }
+                $offset += (int) $chunk['consumed'];
+            } while (! $chunk['eof'] && (int) $chunk['consumed'] > 0);
+
+            $targets = $columnMap->map(fn ($m) => $m->target_field)->all();
+            $pii = \App\Services\DataQuality\PiiGuard::detect($firstRows, $targets);
+            $decider = app(\App\Services\DataQuality\BatchDecisionService::class);
+            $out = [];
+            foreach ($fws as $mode => $fw) {
+                $t = $fw->dryTally($import);
+                $decision = $decider->decide($import->data_type, $t['promoted'], $rejected[$mode], false);
+                $warnings = array_diff_key($t['reason_counts'], $samples[$mode] ?? []);
+                $out[$mode] = [
+                    'passed'      => $t['promoted'],
+                    'quarantined' => $rejected[$mode],
+                    'cleansed'    => $t['cleansed'],
+                    'state'       => $decision['state'],
+                    'decision'    => $decision['decision'],
+                    'rejections'  => array_intersect_key($t['reason_counts'], $samples[$mode] ?? []),
+                    'warnings'    => $warnings,
+                    'samples'     => array_map(fn ($list) => array_map(fn ($s) => ['row' => $s['row'], 'raw' => \App\Services\DataQuality\PiiGuard::maskRow($s['raw'], $pii)], $list), $samples[$mode] ?? []),
+                ];
+            }
+
+            $monitor = app(\App\Services\DataQuality\FeedMonitor::class);
+            $contract = $monitor->contractFor($import);
+            $headers = array_keys($firstRows[0] ?? []) ?: \App\Services\DataQuality\FeedMonitor::headersOf($import);
+
+            return [
+                'import'    => ['id' => $import->id, 'file' => $import->original_filename, 'data_type' => $import->data_type,
+                    'feed' => \App\Services\DataQuality\FeedMonitor::feedKeyOf($import), 'loaded_at' => (string) $import->created_at, 'status' => $import->status],
+                'rows'      => $rows,
+                'limited'   => (bool) ($limit && $rows >= $limit),
+                'modes'     => $out,
+                'feed'      => ['established' => $contract->exists && $contract->batches_seen >= \App\Services\DataQuality\FeedMonitor::minHistory(),
+                    'batches_seen' => (int) $contract->batches_seen, 'issues' => $monitor->check($contract, $headers, $rows)],
+                'pii'       => $pii,
+                'seconds'   => round(microtime(true) - $started, 1),
+            ];
+        } finally {
+            DB::rollBack();
+            app(\App\Services\Storage\TenantStorage::class)->forgetImportCopy($import);
+        }
     }
 
     /**
@@ -753,6 +865,20 @@ class ImportProcessorService
             ]);
             app(\App\Services\DataQuality\ReadinessAlerter::class)->redBatch($q);
             app(\App\Services\Storage\TenantStorage::class)->forgetImportCopy($import);
+            app(\App\Services\DataQuality\FeedMonitor::class)->recordBatch($import);   // W9: it was delivered
+
+            return ['done' => true, 'processed' => $total, 'total' => $total];
+        }
+
+        // W9 (WP9.2): an automated sales / stock file far below its usual size
+        // is held before anything is written — a half-delivered file would
+        // otherwise read as a sales or stock collapse.
+        $import->total_rows = $total;
+        if ($reason = app(\App\Services\DataQuality\FeedMonitor::class)->holdAsPartial($import)) {
+            $import->update(['status' => Import::STATUS_HELD, 'total_rows' => $total, 'error_message' => $reason]);
+            $q?->update(['state' => ImportQuality::STATE_RED, 'blocked' => true, 'decision' => $reason]);
+            app(\App\Services\Storage\TenantStorage::class)->forgetImportCopy($import);
+            app(\App\Services\DataQuality\FeedMonitor::class)->recordBatch($import);
 
             return ['done' => true, 'processed' => $total, 'total' => $total];
         }
@@ -829,6 +955,9 @@ class ImportProcessorService
 
         DB::table('import_line_counters')->where('import_id', $import->id)->delete(); // WP3.1
 
+        // W9 (WP9.2): check the batch against its feed, then learn from it.
+        app(\App\Services\DataQuality\FeedMonitor::class)->recordBatch($import);
+
         // Slice 5 — learn this confirmed mapping so the next same-shaped import auto-maps.
         try {
             \App\Models\MappingMemory::rememberFromImport($import);
@@ -858,6 +987,8 @@ class ImportProcessorService
             if ($dataset = self::HEALTH_DATASET[$import->data_type] ?? null) {
                 \App\Jobs\DataHealth\ComputeDataHealthJob::dispatch($import->tenant_id, $dataset)->afterCommit();
             }
+            // W9 (WP9.3): the semantic data checks, after the aggregate moved.
+            \App\Jobs\DataQuality\RunDataQualityChecksJob::dispatch((int) $import->tenant_id)->afterCommit();
 
             // Detection can take minutes on large data, so it runs off the web
             // request as a queued job (requires a queue worker). Incremental by

@@ -39,6 +39,7 @@
     <div class="dh-wrap">
         @if($this->canSeeReadiness())
             @include('filament.pages.partials.data-health-readiness')
+            @include('filament.pages.partials.data-health-trust')   {{-- W9 --}}
         @endif
 
         @if($this->canSeeDatasets())
@@ -60,6 +61,11 @@
                     {{ $overall['datasets'] }} datasets scored ·
                     {{ $overall['warning_count'] }} active warning(s)
                 </div>
+                @if(! empty($overall['missing_required']))
+                    <div class="dh-muted" style="color:var(--ax-danger, #b91c1c); font-weight:600;">
+                        Missing required data: {{ implode(', ', $overall['missing_required']) }} — scored as 0 until it arrives.
+                    </div>
+                @endif
                 <div class="dh-muted">
                     Last computed:
                     {{ $overall['last_computed'] ? \Illuminate\Support\Carbon::parse($overall['last_computed'])->diffForHumans() : 'never' }}

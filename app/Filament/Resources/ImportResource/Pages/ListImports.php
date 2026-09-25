@@ -176,6 +176,8 @@ class ListImports extends ListRecords
                         $import = Import::create([
                             'tenant_id'         => $tenantId,
                             'user_id'           => Auth::id(),
+                            'source'            => Import::SOURCE_UPLOAD,   // W9 (WP9.2)
+                            'feed_key'          => Import::feedKeyFor(Import::SOURCE_UPLOAD, $dt),
                             'original_filename' => basename($f),
                             'disk'              => $storage->diskName(),
                             'path'              => $securePath,

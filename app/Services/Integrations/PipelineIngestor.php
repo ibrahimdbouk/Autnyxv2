@@ -35,7 +35,7 @@ class PipelineIngestor
     /** WP3.7: the last ingestRows() stopped at MAX_ROWS (the source had more). */
     public bool $lastTruncated = false;
 
-    public function ingestRows(int $tenantId, string $dataType, iterable $rows, string $source = 'api', bool $queue = false): ?Import
+    public function ingestRows(int $tenantId, string $dataType, iterable $rows, string $source = 'api', bool $queue = false, int|string|null $sourceRef = null): ?Import
     {
         $headers = [];
         $buffer  = [];
@@ -69,6 +69,10 @@ class PipelineIngestor
         $import = Import::create([
             'tenant_id'         => $tenantId,
             'user_id'           => null,
+            // W9 (WP9.2): a scheduled pull ("api") or a push to the ingest API.
+            'source'            => $feedSource = ($source === 'apiingest' ? Import::SOURCE_INGEST : Import::SOURCE_API),
+            'source_ref'        => $sourceRef !== null ? (string) $sourceRef : null,
+            'feed_key'          => Import::feedKeyFor($feedSource, $dataType, $sourceRef),
             'original_filename' => $filename,
             'disk'              => 'local',
             'path'              => $localPath,

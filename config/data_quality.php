@@ -65,4 +65,35 @@ return [
     // Idempotent uploads: an identical file (same content fingerprint) already ingested
     // is skipped rather than re-promoted, so a re-upload can't duplicate canonical rows.
     'idempotent_uploads' => (bool) env('DATA_QUALITY_IDEMPOTENT_UPLOADS', true),
+
+    /*
+    |--------------------------------------------------------------------------
+    | W9 — feeds, semantic checks, personal data
+    |--------------------------------------------------------------------------
+    */
+
+    'feeds' => [
+        // Batches a feed needs before its learned cadence / volume / shape are enforced.
+        'min_history' => (int) env('DATA_QUALITY_FEED_MIN_HISTORY', 3),
+        // A batch outside [low, high] × the feed's median row count is flagged.
+        'volume_low_ratio'  => (float) env('DATA_QUALITY_FEED_VOLUME_LOW', 0.4),
+        'volume_high_ratio' => (float) env('DATA_QUALITY_FEED_VOLUME_HIGH', 2.5),
+        // An AUTOMATED sales / inventory batch below this share of the median is
+        // treated as a partial delivery and held before anything is loaded (a
+        // half-delivered POS file would otherwise read as a sales collapse).
+        // An admin can promote it in one click. 0 disables.
+        'partial_hold_ratio' => (float) env('DATA_QUALITY_FEED_PARTIAL_HOLD', 0.25),
+    ],
+
+    // Open quarantined rows older than this many days raise a finding.
+    'quarantine_aging_days' => (int) env('DATA_QUALITY_QUARANTINE_AGING_DAYS', 7),
+
+    // Personal data in files: columns that look like e-mails, phone numbers or
+    // card numbers are masked wherever raw rows are kept (samples, quarantine,
+    // failed rows) unless the column maps to a field that legitimately holds
+    // contact details (a user's or supplier's e-mail, a store's phone).
+    'pii' => [
+        'mask' => (bool) env('DATA_QUALITY_PII_MASK', true),
+        'contact_fields' => ['email', 'phone', 'contact_email', 'contact_phone', 'manager_email'],
+    ],
 ];

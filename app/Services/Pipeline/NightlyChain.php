@@ -47,7 +47,7 @@ class NightlyChain
         'tidy'     => ['queue:tidy-tail'],
         'notify'   => ['anomalies:notify'],
         'watches'  => ['investigations:evaluate-watches'],
-        'health'   => ['data:health'],
+        'health'   => ['data:health', 'dq:check'],   // W9: + semantic data checks
         'outcomes' => ['outcomes:measure'],
     ];
 

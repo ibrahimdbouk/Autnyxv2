@@ -21,6 +21,13 @@ class Reasons
     // ── Warnings (recorded, still promote) ──────────────────────────────────
     public const WARN_ORPHAN_SKU  = 'warn_orphan_sku';
     public const WARN_INVALID_VALUE = 'warn_invalid_value'; // WP3.4: optional value unusable → stored empty
+    // W9: feed-level and personal-data warnings (recorded on the batch).
+    public const FEED_VOLUME_LOW   = 'feed_volume_low';
+    public const FEED_VOLUME_HIGH  = 'feed_volume_high';
+    public const FEED_PARTIAL      = 'feed_partial';
+    public const FEED_SCHEMA_DRIFT = 'feed_schema_drift';
+    public const FEED_MISSING_COLUMNS = 'feed_missing_columns';
+    public const PII_DETECTED      = 'pii_detected';
 
     public const LABELS = [
         self::MISSING_KEY      => 'Missing identity key',
@@ -32,6 +39,12 @@ class Reasons
         self::ORPHAN_REFERENCE => 'Orphan SKU (no product master)',
         self::WARN_ORPHAN_SKU  => 'Orphan SKU (promoted, unmatched)',
         self::WARN_INVALID_VALUE => 'Invalid optional value (stored empty)',
+        self::FEED_VOLUME_LOW   => 'Fewer rows than this feed usually sends',
+        self::FEED_VOLUME_HIGH  => 'More rows than this feed usually sends',
+        self::FEED_PARTIAL      => 'Partial delivery suspected (held)',
+        self::FEED_SCHEMA_DRIFT => 'Columns changed since the last batch',
+        self::FEED_MISSING_COLUMNS => 'Required columns missing',
+        self::PII_DETECTED      => 'Personal data found (masked)',
     ];
 
     public const SEVERITY = [
@@ -44,6 +57,12 @@ class Reasons
         self::ORPHAN_REFERENCE => 'high',
         self::WARN_ORPHAN_SKU  => 'low',
         self::WARN_INVALID_VALUE => 'low',
+        self::FEED_VOLUME_LOW   => 'medium',
+        self::FEED_VOLUME_HIGH  => 'low',
+        self::FEED_PARTIAL      => 'high',
+        self::FEED_SCHEMA_DRIFT => 'medium',
+        self::FEED_MISSING_COLUMNS => 'high',
+        self::PII_DETECTED      => 'medium',
     ];
 
     public static function label(string $code): string
