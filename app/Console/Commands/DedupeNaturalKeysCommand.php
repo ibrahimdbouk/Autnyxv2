@@ -9,14 +9,17 @@ use Illuminate\Support\Facades\DB;
 /**
  * WP3.5 — data repair for the natural-key indexes.
  *
- * Finds rows that repeat a natural key and keeps the NEWEST (highest id, i.e.
- * the latest import) of each group:
- *   • inventory_levels (tenant, store, sku, as_of_date, batch)
- *   • purchase_orders  (tenant, po_number, sku, store)
- *   • sales_returns    (tenant, return_id, sku) — rows with a return id only
+ * Finds rows that repeat a natural key:
+ *   • inventory_levels (tenant, store, sku, as_of_date, batch) — MERGED into
+ *     the newest row: quantities summed (they are bins / lots of one
+ *     position), reorder point and safety stock the maximum;
+ *   • purchase_orders  (tenant, po_number, sku, store) — newest row kept;
+ *   • sales_returns    (tenant, return_id, sku) — newest row kept (rows with a
+ *     return id only).
  * NULLs count as equal, like the indexes. Dry run by default. --apply first
- * copies the rows it will delete into a `wp35_dedupe_backup_<table>` table,
- * deletes them, then creates any index that is still missing. Idempotent.
+ * copies EVERY row of each duplicate group, as it was, into a
+ * `wp35_dedupe_backup_<table>` table, then merges / deletes, then creates any
+ * index that is still missing. Idempotent.
  */
 class DedupeNaturalKeysCommand extends Command
 {
@@ -37,14 +40,17 @@ class DedupeNaturalKeysCommand extends Command
                 $backup = "wp35_dedupe_backup_{$table}";
                 DB::transaction(function () use ($table, $ids, $backup, &$deleted) {
                     DB::statement("CREATE TABLE IF NOT EXISTS {$backup} (LIKE {$table} INCLUDING DEFAULTS)");
-                    DB::statement("INSERT INTO {$backup} SELECT * FROM {$table} WHERE id IN ({$ids})");
+                    DB::statement("INSERT INTO {$backup} SELECT * FROM {$table} WHERE id IN (" . NaturalKeyIndexes::groupIdsSql($table) . ')');
+                    if ($table === 'inventory_levels') {
+                        DB::statement(NaturalKeyIndexes::mergeInventorySql());
+                    }
                     $deleted = DB::affectingStatement("DELETE FROM {$table} WHERE id IN ({$ids})");
                 });
             }
             $rows[] = [$table, $count, $deleted];
         }
 
-        $this->table(['Table', 'Duplicate rows', 'Deleted (backed up)'], $rows);
+        $this->table(['Table', 'Duplicate rows', 'Removed (inventory: merged into the kept row)'], $rows);
 
         if (! $apply) {
             $this->line('Dry run. Re-run with --apply to back up + delete (the newest row of each key is kept) and create the indexes.');

@@ -36,6 +36,50 @@ final class NaturalKeyIndexes
         throw new \InvalidArgumentException("No natural key for {$table}");
     }
 
+    /**
+     * SQL for the ids of EVERY row in a duplicate group (keepers included) —
+     * what the repair backs up before touching anything.
+     */
+    public static function groupIdsSql(string $table): string
+    {
+        foreach (self::INDEXES as [$t, $cols, , $where]) {
+            if ($t === $table) {
+                $whereSql = $where ? "WHERE {$where}" : '';
+
+                return 'SELECT id FROM (SELECT id, count(*) OVER (PARTITION BY ' . implode(', ', $cols) . ") AS n FROM {$table} {$whereSql}) d WHERE d.n > 1";
+            }
+        }
+
+        throw new \InvalidArgumentException("No natural key for {$table}");
+    }
+
+    /**
+     * Inventory: rows repeating (store, sku, date, lot) inside a load are parts
+     * of one position (bins / lots without a lot id). Merge them into the newest
+     * row — quantities summed, reorder point / safety stock the maximum — so no
+     * stock disappears. Returns rows merged away (the caller deletes them).
+     */
+    public static function mergeInventorySql(): string
+    {
+        return <<<'SQL'
+            WITH g AS (
+                SELECT max(id) AS keep,
+                       sum(on_hand_qty) AS oh, sum(on_order_qty) AS oo, sum(inventory_value) AS iv,
+                       sum(allocated_qty) AS aq, sum(in_transit_qty) AS it,
+                       max(reorder_point) AS rp, max(safety_stock) AS ss
+                FROM inventory_levels
+                GROUP BY tenant_id, store_id, sku, as_of_date, batch_ref
+                HAVING count(*) > 1
+            )
+            UPDATE inventory_levels t
+               SET on_hand_qty = COALESCE(g.oh, 0), on_order_qty = g.oo, inventory_value = g.iv,
+                   allocated_qty = g.aq, in_transit_qty = g.it, reorder_point = g.rp, safety_stock = g.ss,
+                   updated_at = now()
+              FROM g
+             WHERE t.id = g.keep
+            SQL;
+    }
+
     public static function duplicates(string $table, ?int $tenantId = null): int
     {
         return (int) DB::selectOne('SELECT count(*) AS c FROM (' . self::duplicateIdsSql($table, $tenantId) . ') x')->c;

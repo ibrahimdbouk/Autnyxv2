@@ -948,19 +948,57 @@ class ImportProcessorService
             return count($rows) - DB::table($table)->insertOrIgnore($rows);
         }
 
-        // Snapshots: the last row per key wins (inside the batch and over the table).
         $keys = self::NATURAL_KEYS[$table];
+        $additive = self::ADDITIVE[$table] ?? [];
+
+        // Snapshots. Within ONE file, rows sharing a key are parts of one position
+        // (bins / lots without a lot id): quantities add up. A later file replaces.
         $unique = [];
+        $merged = 0;
         foreach ($rows as $r) {
             $k = implode("\x1F", array_map(fn ($c) => var_export($r[$c] ?? null, true), $keys));
+            if (isset($unique[$k]) && $additive !== []) {
+                $unique[$k] = $this->mergePosition($unique[$k], $r, $additive);
+                $merged++;
+                continue;
+            }
             unset($unique[$k]);
             $unique[$k] = $r;
         }
         $unique = array_values($unique);
-        $update = array_values(array_diff(array_keys($unique[0]), array_merge($keys, ['created_at'])));
+
+        $update = [];
+        foreach (array_diff(array_keys($unique[0]), array_merge($keys, ['created_at'])) as $col) {
+            $update[$col] = in_array($col, $additive, true)
+                // Same import (a later chunk of the same file) → add; another import → replace.
+                ? DB::raw("CASE WHEN {$table}.import_id IS NOT DISTINCT FROM EXCLUDED.import_id THEN COALESCE({$table}.{$col}, 0) + COALESCE(EXCLUDED.{$col}, 0) ELSE EXCLUDED.{$col} END")
+                : DB::raw("EXCLUDED.{$col}");
+        }
         DB::table($table)->upsert($unique, $keys, $update);
 
-        return count($rows) - count($unique);
+        // Merged parts of a position were loaded (as part of the sum), not skipped.
+        return $additive === [] ? count($rows) - count($unique) : 0;
+    }
+
+    /** WP3.5: quantities that add up across the parts of one inventory position. */
+    private const ADDITIVE = [
+        'inventory_levels' => ['on_hand_qty', 'on_order_qty', 'inventory_value', 'allocated_qty', 'in_transit_qty'],
+    ];
+
+    private function mergePosition(array $a, array $b, array $additive): array
+    {
+        foreach ($additive as $col) {
+            if (($a[$col] ?? null) !== null || ($b[$col] ?? null) !== null) {
+                $a[$col] = (float) ($a[$col] ?? 0) + (float) ($b[$col] ?? 0);
+            }
+        }
+        foreach (['reorder_point', 'safety_stock'] as $col) {
+            if (isset($b[$col])) {
+                $a[$col] = max((float) ($a[$col] ?? 0), (float) $b[$col]);
+            }
+        }
+
+        return $a;
     }
 
     /**

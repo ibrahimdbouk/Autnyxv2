@@ -76,6 +76,18 @@ class NaturalKeyIdempotencyTest extends TestCase
         $this->assertSame($second->id, (int) $a->import_id);
     }
 
+    public function test_bins_of_one_position_in_a_file_add_up_and_a_later_file_replaces_them(): void
+    {
+        // Two bins of the same SKU/store/day, split across chunks (chunk size 1).
+        $csv = "SKU,Store,OnHand,AsOf\nA,Downtown,4,2026-04-03\nA,Downtown,6,2026-04-03\n";
+        $this->runImport($this->import(Import::TYPE_INVENTORY, self::INV, $csv), chunk: 1);
+        $this->assertEqualsWithDelta(10, (float) InventoryLevel::sole()->on_hand_qty, 0.001);
+
+        // The next file is the new truth for that position.
+        $this->runImport($this->import(Import::TYPE_INVENTORY, self::INV, "SKU,Store,OnHand,AsOf\nA,Downtown,3,2026-04-03\n"));
+        $this->assertEqualsWithDelta(3, (float) InventoryLevel::sole()->on_hand_qty, 0.001);
+    }
+
     public function test_a_snapshot_without_a_date_is_the_import_days_snapshot(): void
     {
         $import = $this->runImport($this->import(Import::TYPE_INVENTORY, ['SKU' => 'sku', 'OnHand' => 'on_hand_qty'], "SKU,OnHand\nA,3\n"));
@@ -168,7 +180,7 @@ class NaturalKeyIdempotencyTest extends TestCase
         Bus::assertDispatched(RunTenantDetectionJob::class);
     }
 
-    public function test_the_dedupe_command_keeps_the_newest_row_per_key(): void
+    public function test_the_dedupe_command_merges_inventory_bins_with_a_backup(): void
     {
         DB::statement('DROP INDEX IF EXISTS inventory_levels_natural_key');
         ImportProcessorService::forgetNaturalKeys();
@@ -180,9 +192,9 @@ class NaturalKeyIdempotencyTest extends TestCase
         $this->assertSame(2, InventoryLevel::count(), 'dry run deletes nothing');
 
         $this->artisan('imports:dedupe-natural-keys', ['--apply' => true])->assertSuccessful();
-        $this->assertEqualsWithDelta(20, (float) InventoryLevel::sole()->on_hand_qty, 0.001);
+        $this->assertEqualsWithDelta(30, (float) InventoryLevel::sole()->on_hand_qty, 0.001, 'bins of one position are summed, not dropped');
         $this->assertSame(0, \App\Support\Database\NaturalKeyIndexes::duplicates('inventory_levels'));
-        $this->assertSame(1, (int) DB::table('wp35_dedupe_backup_inventory_levels')->count(), 'the removed row is backed up');
+        $this->assertSame(2, (int) DB::table('wp35_dedupe_backup_inventory_levels')->count(), 'every original row is backed up');
         $this->assertNotNull(DB::selectOne("select 1 as x from pg_class where relname = 'inventory_levels_natural_key'"), 'and the index is created');
     }
 }
