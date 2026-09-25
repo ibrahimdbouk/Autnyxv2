@@ -57,12 +57,17 @@ class InvestigationOutcome extends Model
     const ATTR_INSUFFICIENT_EVIDENCE = 'insufficient_evidence';
     const ATTR_ESTIMATED            = 'estimated';
     const ATTR_HIGH_CONFIDENCE      = 'high_confidence';
+    const ATTR_CLAIMED              = 'claimed';   // W10: entered by a person, not (yet) measured
+
+    /** W10: attribution states that come from a measurement. */
+    const MEASURED_ATTRIBUTIONS = [self::ATTR_ESTIMATED, self::ATTR_HIGH_CONFIDENCE];
 
     const ATTR_LABELS = [
         self::ATTR_NOT_ATTEMPTED         => 'Not Attempted',
         self::ATTR_INSUFFICIENT_EVIDENCE => 'Insufficient Evidence',
         self::ATTR_ESTIMATED             => 'Estimated',
         self::ATTR_HIGH_CONFIDENCE       => 'High Confidence',
+        self::ATTR_CLAIMED               => 'Claimed (not measured)',
     ];
 
     protected $fillable = [
@@ -70,6 +75,7 @@ class InvestigationOutcome extends Model
         'tenant_id',
         'revenue_at_risk',
         'observed_recovery',
+        'measured_recovery', // W10: only the measurement writes this
         'cost_to_resolve',
         'recovery_method',
         'recovery_measured_from',
@@ -99,6 +105,7 @@ class InvestigationOutcome extends Model
     protected $casts = [
         'revenue_at_risk'        => 'decimal:2',
         'observed_recovery'      => 'decimal:2',
+        'measured_recovery'      => 'decimal:2',
         'cost_to_resolve'        => 'decimal:2',
         'was_false_positive'     => 'boolean',
         'rule_feedback_sent'     => 'boolean',
@@ -163,6 +170,12 @@ class InvestigationOutcome extends Model
     public function getAttributionLabel(): string
     {
         return self::ATTR_LABELS[$this->attribution_status] ?? ucwords(str_replace('_', ' ', (string) $this->attribution_status));
+    }
+
+    /** W10: a recovery figure a person entered that no measurement has confirmed. */
+    public function isClaimOnly(): bool
+    {
+        return (float) $this->observed_recovery > 0 && $this->measured_recovery === null;
     }
 
     /**

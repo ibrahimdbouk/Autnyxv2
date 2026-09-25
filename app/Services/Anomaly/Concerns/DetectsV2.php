@@ -53,6 +53,34 @@ trait DetectsV2
     /** @var array<int,true> stores present in the sales feed over the demand window */
     private array $storesWithSales = [];
 
+    private ?\App\Services\Detection\PromotionCalendar $promos = null;
+
+    /** @var array<string,int> */
+    private array $promoSuppressedByRule = [];
+
+    /**
+     * W10: the promotion on this SKU (and store) that overlaps [from, to], if
+     * any — the swing is then the promotion, not an anomaly. Counted per rule.
+     *
+     * @return array{ref:string, from:string, to:string, store_id:?int}|null
+     */
+    private function promoExplains(int $tenantId, string $ruleType, string $sku, ?int $storeId, string $from, string $to): ?array
+    {
+        if (! config('detection.promo_suppression', true)) {
+            return null;
+        }
+        if ($this->promos === null) {
+            $end = $this->clock('sales');
+            $this->promos = \App\Services\Detection\PromotionCalendar::load($tenantId, $end->copy()->subDays(400)->toDateString(), $end->toDateString());
+        }
+        $hit = $this->promos->overlapping($sku, $storeId, $from, $to);
+        if ($hit !== null) {
+            $this->promoSuppressedByRule[$ruleType] = ($this->promoSuppressedByRule[$ruleType] ?? 0) + 1;
+        }
+
+        return $hit;
+    }
+
     private function clock(string $dataset): Carbon
     {
         return ($this->clocks[$dataset] ?? Carbon::today())->copy();
@@ -147,6 +175,8 @@ trait DetectsV2
     private function v2Rules(int $tenantId, \Closure $t): array
     {
         return [
+            // W10: the tenant's own rules (one switch in Rules settings).
+            'custom_rule'                => fn () => $this->detectCustomRules($tenantId, $t('custom_rule')),
             'sales_spike'                => fn () => $this->salesSwingV2($tenantId, 'sales_spike', $t('sales_spike'), false),
             'sales_drop'                 => fn () => $this->salesSwingV2($tenantId, 'sales_drop', $t('sales_drop'), true),
             'demand_seasonality_breach'  => fn () => $this->detectDemandSeasonalityBreachV2($tenantId, $t('demand_seasonality_breach')),
@@ -281,6 +311,13 @@ trait DetectsV2
             $severity = $price > 0 ? $this->severityFromImpact($impact)
                 : ($isDrop ? Anomaly::SEVERITY_MEDIUM : Anomaly::SEVERITY_LOW);
 
+            // W10: a spike during a promotion, or a drop against a promo-inflated
+            // baseline / in the dip after one, is the promotion — not an anomaly.
+            if ($this->promoExplains($tenantId, $ruleType, (string) $sku, $storeId,
+                $isDrop ? $histW->fromDate() : $recentW->fromDate(), $recentW->lastDate())) {
+                continue;
+            }
+
             $where = $storeId !== null ? " at store {$storeId}" : '';
             $this->flag($tenantId, $ruleType, $severity, $sku, $storeId, null,
                 "SKU {$sku}{$where} sold " . round($recentRate, 1) . " units/day over the {$recentW->days()} days to "
@@ -327,6 +364,11 @@ trait DetectsV2
                 continue;
             }
             $direction = $currentQty > $priorQty ? 'above' : 'below';
+            // W10: a promotion this year (above) or in last year's window (below) explains it.
+            $promoW = $direction === 'above' ? $current : $prior;
+            if ($this->promoExplains($tenantId, 'demand_seasonality_breach', (string) $sku, null, $promoW->fromDate(), $promoW->lastDate())) {
+                continue;
+            }
             $this->flag($tenantId, 'demand_seasonality_breach', 'medium', $sku, null, $productIds[$sku] ?? null,
                 "SKU {$sku} sold " . round($currentQty) . " units in the 30 days to {$current->lastDate()} — "
                 . round($changePct) . "% {$direction} the same 30 days last year (" . round($priorQty) . ' units).',
@@ -370,6 +412,10 @@ trait DetectsV2
                 continue;
             }
             $direction = $actual > $expected ? 'above' : 'below';
+            if ($this->promoExplains($tenantId, 'demand_seasonality_breach', (string) $sku, null,
+                $direction === 'above' ? $recentW->fromDate() : $baseW->fromDate(), $recentW->lastDate())) {
+                continue;
+            }
             $this->flag($tenantId, 'demand_seasonality_breach', 'medium', $sku, null, $productIds[$sku] ?? null,
                 "SKU {$sku} sold " . round($actual) . " units in the 7 days to {$recentW->lastDate()} — "
                 . round($deviation) . "% {$direction} its calendar-adjusted expectation of " . round($expected) . ' units.',
@@ -1197,6 +1243,10 @@ trait DetectsV2
             if ($price > 0 && $value < $minValue) {
                 continue;
             }
+            // W10: this store's own promotion inflated its prior weeks (or it is in the post-promo dip).
+            if ($this->promoExplains($tenantId, 'store_outlier', $sku, $storeId, $histW->fromDate(), $recentW->lastDate())) {
+                continue;
+            }
             $this->flag($tenantId, 'store_outlier', $price > 0 ? $this->severityFromImpact($value) : Anomaly::SEVERITY_MEDIUM,
                 $sku, $storeId, null,
                 "SKU {$sku} sold " . round($actual) . " units at store {$storeId} in the {$recentW->days()} days to {$recentW->lastDate()} — "
@@ -1241,5 +1291,84 @@ trait DetectsV2
                 ['transaction_id' => $dup->transaction_id, 'count' => (int) $dup->cnt, 'imports' => (int) $dup->imports],
                 'receipt:' . $dup->transaction_id
             ));
+    }
+
+    // =========================================================================
+    // W10 (WP10.6) — TENANT-DEFINED RULES
+    // =========================================================================
+
+    /** @var array<string,string> custom rule key => why it could not run this time */
+    private array $customFailed = [];
+
+    /**
+     * Every active rule the tenant wrote, on every store × SKU position. A hit
+     * is an anomaly of type custom_rule whose subject is the rule's key, so two
+     * rules on the same position are two anomalies, and each reconciles on its
+     * own. A rule whose formula no longer compiles, or that throws, is skipped
+     * and its open anomalies are left as they are — never cleared by a typo.
+     */
+    private function detectCustomRules(int $tenantId, array $thresholds): void
+    {
+        $this->customFailed = [];
+        $rules = \App\Models\CustomRuleDefinition::where('tenant_id', $tenantId)->where('active', true)->orderBy('key')->get();
+        if ($rules->isEmpty()) {
+            return;
+        }
+        $cap = max(1, (int) ($thresholds['max_flags_per_rule'] ?? 5000));
+        $stores = Store::where('tenant_id', $tenantId)->pluck('name', 'id')->all();
+        $count = [];
+        $failed = [];
+
+        foreach (app(\App\Platform\Extensibility\CustomRuleEngine::class)->hits($tenantId, $rules, $failed) as $hit) {
+            $rule = $hit['rule'];
+            if (($count[$rule->key] = ($count[$rule->key] ?? 0) + 1) > $cap) {
+                continue;
+            }
+            $pos = $hit['position'];
+            $valueType = $rule->value_type ?: \App\Support\Detection\ValueModel::DATA_QUALITY;
+            $where = $pos['store_id'] !== null ? ($stores[$pos['store_id']] ?? "store #{$pos['store_id']}") : 'all stores';
+            $inputs = collect($hit['inputs'])->map(fn ($v, $k) => $k . ' ' . ($v === null ? '—' : rtrim(rtrim(number_format((float) $v, 2, '.', ''), '0'), '.')))->implode(', ');
+            $money = $hit['impact'] !== null ? ' — ' . $this->currency . ' ' . number_format($hit['impact'], 0) . ' at stake' : '';
+
+            $context = [
+                'custom_key'   => $rule->key,
+                'custom_label' => $rule->label,
+                'formula'      => $rule->formula,
+                'inputs'       => $hit['inputs'],
+                'value_type'   => $valueType,
+            ];
+            if ($hit['impact'] !== null) {
+                // Only lost revenue is "revenue at risk"; any other kind of money
+                // is reported as a value, never added to it (WP4.4).
+                $context[$valueType === \App\Support\Detection\ValueModel::LOST_REVENUE ? 'revenue_impact' : 'value_impact'] = $hit['impact'];
+            }
+
+            $this->flagV2(
+                $tenantId, 'custom_rule',
+                \App\Models\CustomRuleDefinition::ANOMALY_SEVERITY[$rule->severity] ?? Anomaly::SEVERITY_MEDIUM,
+                $pos['sku'], $pos['store_id'], $pos['product_id'],
+                "{$rule->label}: SKU {$pos['sku']} at {$where}" . ($inputs !== '' ? " ({$inputs})" : '') . $money . '.',
+                $context,
+                'custom:' . $rule->key,
+            );
+        }
+
+        foreach ($count as $key => $n) {
+            if ($n > $cap) {
+                \Illuminate\Support\Facades\Log::warning("[detect] tenant {$tenantId}: custom rule {$key} matched {$n} positions; flagged the first {$cap}.");
+            }
+        }
+        foreach ($failed as $key => $why) {
+            \Illuminate\Support\Facades\Log::warning("[detect] tenant {$tenantId}: custom rule {$key} skipped — {$why}");
+        }
+        $this->customFailed = $failed;
+    }
+
+    /** A custom rule that did not run this time judges nothing: its anomalies stay as they are. */
+    private function customEvaluability(): \Closure
+    {
+        $failed = $this->customFailed;
+
+        return fn (Anomaly $a): bool => ! isset($failed[$a->context['custom_key'] ?? '']);
     }
 }

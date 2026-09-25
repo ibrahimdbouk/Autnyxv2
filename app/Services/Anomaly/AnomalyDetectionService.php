@@ -213,6 +213,11 @@ class AnomalyDetectionService
     /** Forces v1/v2 for the next run (detection:diff); null = the tenant's setting. */
     private ?bool $forcedV2 = null;
 
+    private int $gateTenantId = 0;
+
+    /** @var array<string,int>|null the run's SKUs when it is scoped (W10) */
+    private ?array $scopeSkuSet = null;
+
     /**
      * Dry-run capture (detection:diff): when an array, flag() records what it
      * would write here and writes nothing, and nothing is reconciled.
@@ -545,6 +550,7 @@ class AnomalyDetectionService
 
         if (! self::RULE_GATING_ENABLED) return;
 
+        $this->gateTenantId = $tenantId;
         DB::table('sku_profiles')
             ->where('tenant_id', $tenantId)
             ->when($this->scope, fn ($q) => $this->scope->constrain($q))
@@ -571,6 +577,14 @@ class AnomalyDetectionService
         if ($this->v2 && in_array($ruleType, self::V2_ALWAYS_ON, true)) return true;
 
         $sku = trim($sku);
+        if ($storeId !== null && $this->v2 && $this->aggregateOnly && ! array_key_exists($storeId . '|' . $sku, $this->skuSegments)) {
+            // W10: the aggregate pass holds chain profiles only; a store-level
+            // flag asks for its store profile (memoised), so it is gated exactly
+            // as a single pass gates it. One indexed lookup per flag, not the
+            // tenant's millions of store profiles in memory.
+            $this->skuSegments[$storeId . '|' . $sku] = DB::table('sku_profiles')
+                ->where('tenant_id', $this->gateTenantId)->where('store_id', $storeId)->where('sku', $sku)->value('segment');
+        }
         $segment = $storeId !== null
             ? ($this->skuSegments[$storeId . '|' . $sku] ?? $this->skuSegments['0|' . $sku] ?? null)
             : ($this->skuSegments['0|' . $sku] ?? null);
@@ -606,6 +620,9 @@ class AnomalyDetectionService
 
     /** B2: per-rule flags suppressed by best-fit gating in the last run. @return array<string,int> */
     public function gatedByRule(): array { return $this->gatedByRule; }
+
+    /** @return array<string,int> W10: flags left alone because a promotion explains them */
+    public function promoSuppressedByRule(): array { return $this->promoSuppressedByRule; }
 
     /** B2: total flags suppressed by best-fit gating in the last run. */
     public function gatedFlags(): int { return $this->gatedFlags; }
@@ -811,9 +828,11 @@ class AnomalyDetectionService
         // Set per call (each call overwrites), so a subsequent run on a reused
         // instance is never accidentally scoped. null scope = full scan.
         $this->scope         = $scope;
+        $this->scopeSkuSet   = $scope !== null ? array_flip(array_map(fn ($s) => trim((string) $s), $scope->skus())) : null;
         $this->aggregateOnly = $aggregateOnly;
         $this->ruleStats     = [];
         $this->episodes      = [];
+        $this->v1Open        = [];
 
         AnomalySetting::seedForTenant($tenantId);
 
@@ -841,6 +860,8 @@ class AnomalyDetectionService
         );
         $this->v2 = $this->forcedV2 ?? self::rulesV2For($tenantId);
         $this->suppressedByRule = [];
+        $this->promos = null;                 // W10: the promotion calendar, loaded on first use
+        $this->promoSuppressedByRule = [];
         // Set the analysis clock BEFORE any priming — every window below measures
         // "recent" relative to the latest data date, not wall-clock today.
         // v2 (audit H18): one clock per dataset; the shared clock is the sales one.
@@ -1019,7 +1040,7 @@ class AnomalyDetectionService
                     $ruleType,
                     $this->touchedAnomalyIds,
                     $this->v2
-                        ? $this->evaluabilityV2($tenantId, $ruleType, $costSkus)
+                        ? ($ruleType === 'custom_rule' ? $this->customEvaluability() : $this->evaluabilityV2($tenantId, $ruleType, $costSkus))
                         : $this->evaluabilityFor($ruleType, $invPairs, $invSkus, $demPairs, $demSkus, $costSkus),
                     $confirmRunsFor,
                     null,
@@ -3326,6 +3347,15 @@ class AnomalyDetectionService
         array $context = [],
         ?string $subject = null,
     ): void {
+        // W10: a scoped run (incremental, or one SKU bucket of a full run) never
+        // writes a subject outside its scope. Rules that compare SKUs with their
+        // siblings (cannibalization) see the whole category, but a sibling's
+        // flag belongs to the run that scopes — and profiles — that sibling;
+        // flagging it here skipped its best-fit gate (no profile loaded for it).
+        if ($this->scopeSkuSet !== null && $sku !== null && ! isset($this->scopeSkuSet[trim($sku)])) {
+            return;
+        }
+
         // Best-fit gate (Phase 3): skip rules that don't fit this item's demand
         // segment. Not "touching" the anomaly here means a pre-existing one is
         // cleaned up by the per-rule stale sweep — so gating also clears anomalies
@@ -3359,22 +3389,14 @@ class AnomalyDetectionService
         // Store A stockout and Store B stockout are separate operational incidents.
         // NULL store_id is a valid distinct key (non-store-specific rules stay grouped).
         if ($sku !== null) {
-            $query = Anomaly::where('tenant_id', $tenantId)
-                ->where('rule_type', $ruleType)
-                ->where('sku', $sku)
-                ->whereNull('dismissed_at')
-                // Recovery lifecycle (R2): never reopen a RESOLVED episode — a
-                // subject that fails again after recovery is a fresh episode
-                // (new row), so recovery history stays intact.
-                ->where('lifecycle_state', '!=', Anomaly::LIFECYCLE_RESOLVED);
-
-            if ($storeId !== null) {
-                $query->where('store_id', $storeId);
-            } else {
-                $query->whereNull('store_id');
-            }
-
-            $anomaly = $query->first();
+            // W10: the rule's open anomalies are loaded once per run and keyed
+            // by (SKU, store) — this lookup used to be one query per flag
+            // (~18k queries per run on the demo tenant).
+            // Recovery lifecycle (R2): never reopen a RESOLVED episode — a
+            // subject that fails again after recovery is a fresh episode
+            // (new row), so recovery history stays intact.
+            $open = $this->v1OpenAnomalies($tenantId, $ruleType);
+            $anomaly = $open[$sku . '|' . ($storeId ?? '')] ?? null;
         }
 
         if ($anomaly) {
@@ -3398,9 +3420,33 @@ class AnomalyDetectionService
                 'context'     => $context,
                 'detected_at' => now(),
             ]);
+            if ($sku !== null) {
+                $this->v1Open[$ruleType][$sku . '|' . ($storeId ?? '')] = $anomaly;
+            }
         }
 
         $this->touchedAnomalyIds[] = $anomaly->id;
+    }
+
+    /** @var array<string,array<string,Anomaly>> W10: rule → "sku|store" → open anomaly (v1 path, per run) */
+    private array $v1Open = [];
+
+    /** @return array<string,Anomaly> */
+    private function v1OpenAnomalies(int $tenantId, string $ruleType): array
+    {
+        if (! isset($this->v1Open[$ruleType])) {
+            $map = [];
+            Anomaly::where('tenant_id', $tenantId)->where('rule_type', $ruleType)
+                ->whereNotNull('sku')->whereNull('dismissed_at')
+                ->where('lifecycle_state', '!=', Anomaly::LIFECYCLE_RESOLVED)
+                ->orderBy('id')
+                ->each(function (Anomaly $a) use (&$map) {
+                    $map[$a->sku . '|' . ($a->store_id ?? '')] ??= $a;
+                });
+            $this->v1Open[$ruleType] = $map;
+        }
+
+        return $this->v1Open[$ruleType];
     }
 
     /**

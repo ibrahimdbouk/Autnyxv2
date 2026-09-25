@@ -30,6 +30,7 @@ class DataQualityChecks
     public const CHECKS = [
         'store_went_silent', 'sales_day_collapse', 'future_dated', 'negative_stock',
         'stock_stale_store', 'price_outliers', 'cost_missing', 'quarantine_aging', 'alias_suggestions',
+        'promotions_missing',
     ];
 
     public const LABELS = [
@@ -42,6 +43,7 @@ class DataQualityChecks
         'cost_missing'       => 'Sold products without a unit cost',
         'quarantine_aging'   => 'Quarantined rows waiting too long',
         'alias_suggestions'  => 'Unknown SKUs that match a known SKU',
+        'promotions_missing' => 'No promotion data',
     ];
 
     /** @var array<string,true> keys seen in this run */
@@ -261,6 +263,23 @@ class DataQualityChecks
             count($s) . ' unknown SKU(s) match a known SKU written differently (e.g. ' . implode(', ', array_map(fn ($x) => "{$x['alias']} → {$x['canonical']}", array_slice($s, 0, 3)))
             . '). Accept them on the Quarantine page so their rows count.',
             ['suggestions' => array_slice($s, 0, 50)]);
+    }
+
+    /** W10: without promotions, a promo spike (and the dip after it) reads as an anomaly. */
+    private function checkPromotionsMissing(int $tenantId): void
+    {
+        $max = $this->maxSalesDate($tenantId);
+        if (! $max) {
+            return;
+        }
+        $from = $max->copy()->subDays(90)->toDateString();
+        if (DB::table('promotions')->where('tenant_id', $tenantId)->where('ends_on', '>=', $from)->exists()
+            || DB::table('sales_transactions')->where('tenant_id', $tenantId)->where('date', '>=', $from)->whereNotNull('promotion_ref')->exists()) {
+            return;
+        }
+        $this->see($tenantId, 'promotions_missing', 'sales', DqFinding::SEVERITY_INFO, 'tenant', 'Promotions',
+            'No promotion calendar and no promotion references on sales lines in the last 90 days. Promotion spikes and the dip after them may be flagged as anomalies. Upload a Promotions file (promotion, SKU, store, start, end) or map a promotion column in sales.',
+            []);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

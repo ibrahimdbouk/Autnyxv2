@@ -17,6 +17,7 @@ class CustomMetricDefinition extends Model
         'label',
         'unit',
         'description',
+        'formula',
         'expression',
         'objective',
         'version',

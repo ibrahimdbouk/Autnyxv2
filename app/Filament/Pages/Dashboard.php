@@ -72,7 +72,22 @@ class Dashboard extends BaseDashboard
             : null;
         $insights = $m['insights'];
 
+        // W10: the tenant's own KPIs (Intelligence → Custom KPIs), a minute's cache.
+        $customKpis = $tenantId
+            ? \Illuminate\Support\Facades\Cache::remember("dashboard:custom-kpis:{$tenantId}", 60, function () use ($tenantId) {
+                try {
+                    return app(\App\Platform\Extensibility\CustomRuleEngine::class)->tenantKpis($tenantId);
+                } catch (\Throwable $e) {
+                    report($e);
+
+                    return [];
+                }
+            })
+            : [];
+
         return [
+            'customKpis'         => $customKpis,
+            'customKpisUrl'      => \App\Filament\Resources\CustomMetricResource::canAccess() ? \App\Filament\Resources\CustomMetricResource::getUrl('index') : null,
             'm'                  => $m,
             'currency'           => \App\Support\Money::normalize($tenant?->currency),
             'recentHighPriority' => $recentHighPriority,

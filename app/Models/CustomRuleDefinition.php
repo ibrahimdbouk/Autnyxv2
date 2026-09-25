@@ -20,6 +20,11 @@ class CustomRuleDefinition extends Model
         'key',
         'label',
         'condition',
+        'formula',
+        'impact_formula',
+        'impact',
+        'value_type',
+        'description',
         'severity',
         'objective',
         'active',
@@ -27,7 +32,15 @@ class CustomRuleDefinition extends Model
 
     protected $casts = [
         'condition' => 'array',
+        'impact'    => 'array',
         'active'    => 'boolean',
+    ];
+
+    /** W10: how a hit maps onto an anomaly's severity. */
+    public const ANOMALY_SEVERITY = [
+        self::SEVERITY_INFO     => 'low',
+        self::SEVERITY_WARNING  => 'medium',
+        self::SEVERITY_CRITICAL => 'high',
     ];
 
     public function tenant(): BelongsTo

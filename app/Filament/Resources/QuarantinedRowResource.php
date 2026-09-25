@@ -151,6 +151,7 @@ class QuarantinedRowResource extends Resource
                         'suppliers'          => 'Suppliers',
                         'users'              => 'Users (account setup)',
                         'returns'            => 'Returns / Refunds',
+                        'promotions'         => 'Promotions (calendar)',
                     ]),
                 Filter::make('created_at')
                     ->label('Date')

@@ -100,6 +100,7 @@ class ImportQualityResource extends Resource
                         'suppliers'          => 'Suppliers',
                         'users'              => 'Users (account setup)',
                         'returns'            => 'Returns / Refunds',
+                        'promotions'         => 'Promotions (calendar)',
                     ]),
 
                 TernaryFilter::make('is_duplicate_file')

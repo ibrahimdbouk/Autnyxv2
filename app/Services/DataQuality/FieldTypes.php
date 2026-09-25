@@ -27,7 +27,7 @@ class FieldTypes
         // dates
         'date' => self::DATE, 'as_of_date' => self::DATE, 'order_date' => self::DATE,
         'expected_date' => self::DATE, 'received_date' => self::DATE, 'generated_at' => self::DATE,
-        'target_date' => self::DATE,
+        'target_date' => self::DATE, 'start_date' => self::DATE, 'end_date' => self::DATE,
         // numbers
         'quantity' => self::NUMBER, 'unit_price' => self::NUMBER, 'total_amount' => self::NUMBER,
         'discount' => self::NUMBER, 'on_hand_qty' => self::NUMBER, 'reorder_point' => self::NUMBER,
@@ -38,7 +38,8 @@ class FieldTypes
         // WP3.4 — hardening fields
         'cost_amount' => self::NUMBER, 'safety_stock' => self::NUMBER, 'allocated_qty' => self::NUMBER,
         'in_transit_qty' => self::NUMBER, 'sales_area_sqm' => self::NUMBER, 'min_order_value' => self::NUMBER,
-        'latitude' => self::NUMBER, 'longitude' => self::NUMBER,
+        'latitude' => self::NUMBER, 'longitude' => self::NUMBER, 'promo_price' => self::NUMBER,
+        'discount_pct' => self::PERCENT,
         'expiry_date' => self::DATE, 'opened_on' => self::DATE,
         'tax_rate' => self::PERCENT, 'weight_grams' => self::WEIGHT, 'volume_cm3' => self::VOLUME,
         'length_mm' => self::LENGTH, 'width_mm' => self::LENGTH, 'height_mm' => self::LENGTH,
@@ -57,7 +58,7 @@ class FieldTypes
         'name', 'product_name', 'location', 'supplier', 'category', 'subcategory',
         'brand', 'city', 'region', 'country', 'address', 'format', 'type',
         'specialization', 'reason', 'payment_method', 'pack_size', 'role',
-        'department', 'banner', 'channel', 'buyer', 'season', 'condition',
+        'department', 'banner', 'channel', 'buyer', 'season', 'condition', 'promotion_name', 'mechanic',
     ];
 
     /** Types whose canonical form is a plain number (after any unit conversion). */

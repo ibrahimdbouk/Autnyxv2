@@ -258,6 +258,10 @@ class Anomaly extends Model
 
     public function getRuleLabel(): string
     {
+        if ($this->rule_type === 'custom_rule' && ! empty($this->context['custom_label'])) {
+            return (string) $this->context['custom_label'];
+        }
+
         return AnomalySetting::RULES[$this->rule_type]['label'] ?? $this->rule_type;
     }
 

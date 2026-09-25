@@ -39,6 +39,16 @@ class SkuProfilerService
         // Volume tier cut-offs over the store-level revenues (A = top 20%,
         // B = next 30%, C = the rest; zero revenue is C), computed in SQL.
         [$p80, $p50] = $this->tierCutoffs($tenantId, $from);
+
+        // W10: intermittency is measured over the history there IS. A tenant
+        // with 35 days of data used to divide by the 90-day window, so every
+        // daily seller looked intermittent (ADI 2.6) and the demand rules were
+        // gated off for its first ~2 months.
+        $span = DB::selectOne('SELECT MIN(date) AS a, MAX(date) AS b FROM sales_daily WHERE tenant_id = ? AND date >= ?', [$tenantId, $from]);
+        $spanDays = $span && $span->a
+            ? max(1, Carbon::parse($span->a)->diffInDays(Carbon::parse($span->b), true) + 1)
+            : $windowDays;
+        $spanDays = (int) min($windowDays, $spanDays);
         $tier = fn (float $rev) => ($p80 === null) ? 'C' : ($rev >= $p80 ? 'A' : ($rev >= $p50 ? 'B' : 'C'));
 
         $buffer = [];
@@ -87,7 +97,7 @@ class SkuProfilerService
             [$tenantId, $from, $tenantId]
         );
         foreach ($sales as $r) {
-            $row = $this->makeRow($tenantId, (string) $r->sku, (int) $r->store_id, $r, $windowDays, $newFrom, $now);
+            $row = $this->makeRow($tenantId, (string) $r->sku, (int) $r->store_id, $r, $windowDays, $newFrom, $now, $spanDays);
             $row['has_inventory'] = (bool) $r->has_inventory;
             $row['volume_tier']   = $tier((float) $r->total_revenue);
             $push($row);
@@ -118,7 +128,7 @@ class SkuProfilerService
             [$tenantId, $from]
         );
         foreach ($chain as $r) {
-            $row = $this->makeRow($tenantId, (string) $r->sku, 0, $r, $windowDays, $newFrom, $now);
+            $row = $this->makeRow($tenantId, (string) $r->sku, 0, $r, $windowDays, $newFrom, $now, $spanDays);
             $row['volume_tier'] = $tier(0.0);
             $push($row);
         }
@@ -182,12 +192,12 @@ class SkuProfilerService
     }
 
     /** Build a profile row from an aggregate stats object (store- or chain-level). */
-    private function makeRow(int $tenantId, string $sku, int $storeId, object $r, int $windowDays, string $newFrom, $now): array
+    private function makeRow(int $tenantId, string $sku, int $storeId, object $r, int $windowDays, string $newFrom, $now, ?int $spanDays = null): array
     {
         $sellingDays = (int) $r->selling_days;
         $meanNz      = (float) $r->mean_nz;
         $sd          = $r->sd_nz !== null ? (float) $r->sd_nz : 0.0;
-        $adi         = $sellingDays > 0 ? $windowDays / $sellingDays : null;
+        $adi         = $sellingDays > 0 ? max(1.0, ($spanDays ?? $windowDays) / $sellingDays) : null;
         $cv2         = $meanNz > 0 ? pow($sd / $meanNz, 2) : 0.0;
 
         $firstSoldRecent = $r->first_sold !== null

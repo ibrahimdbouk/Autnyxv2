@@ -59,6 +59,12 @@ class TenantDetectionRunner
     /** @var array<string,array{ms:int,peak_mb:float,flags:int,ok:bool}> WP6.3: last full run, summed over its passes */
     private array $stats = [];
 
+    /** @return array<string,int> W10: flags a promotion explained, in the last run */
+    public function lastPromoSuppressed(): array
+    {
+        return $this->detector->promoSuppressedByRule();
+    }
+
     /** WP6.3: per-rule time / memory / flags of this runner's last detection run. */
     public function lastRuleStats(): array
     {

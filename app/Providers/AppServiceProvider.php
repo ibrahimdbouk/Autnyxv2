@@ -68,6 +68,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // W10: a tenant rule that is deleted, switched off or rewritten sets its anomalies aside.
+        \App\Services\Anomaly\CustomRuleHits::register();
+
         // W9: a web request never holds the database for more than
         // database.web_statement_timeout (queues and commands are not limited).
         \Illuminate\Support\Facades\Event::listen(\Illuminate\Database\Events\ConnectionEstablished::class,
@@ -248,14 +251,14 @@ class AppServiceProvider extends ServiceProvider
                 ->whereIn('status', ['open', 'in_progress'])->sum('revenue_at_risk'));
 
         $make('observed_recovery', 'Observed Recovery', $D::UNIT_MONEY,
-            'Total observed recovery recorded across investigation outcomes.', 1,
-            fn (int $t) => (float) \App\Models\InvestigationOutcome::where('tenant_id', $t)->sum('observed_recovery'));
+            'Total measured recovery across investigation outcomes (hand-entered claims excluded, W10).', 2,
+            fn (int $t) => (float) \App\Models\InvestigationOutcome::where('tenant_id', $t)->sum('measured_recovery'));
 
         $make('recovery_rate', 'Recovery Rate', $D::UNIT_PERCENT,
-            'Observed recovery as a percentage of revenue at risk (across outcomes).', 1,
+            'Measured recovery as a percentage of revenue at risk (across outcomes).', 2,
             function (int $t) {
                 $risk = (float) \App\Models\InvestigationOutcome::where('tenant_id', $t)->sum('revenue_at_risk');
-                $rec  = (float) \App\Models\InvestigationOutcome::where('tenant_id', $t)->sum('observed_recovery');
+                $rec  = (float) \App\Models\InvestigationOutcome::where('tenant_id', $t)->sum('measured_recovery');
                 return $risk > 0 ? round($rec / $risk * 100, 1) : 0.0;
             });
 

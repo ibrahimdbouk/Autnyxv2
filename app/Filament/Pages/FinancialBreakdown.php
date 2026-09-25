@@ -260,23 +260,25 @@ class FinancialBreakdown extends Page
 
         $outcomes = (clone $base)
             ->with('investigation')
-            ->orderByDesc('observed_recovery')
+            ->orderByDesc('measured_recovery')
             ->limit(200)
             ->get();
+        $claimed = $metrics->claimed($tenantId, $monthStart);
 
         return [
             'metric'      => $this->metric,
             'label'       => 'Recovered This Month',
             'value'       => $this->money($total),
-            'formula'     => 'Σ observed_recovery (> 0) for every outcome recorded since ' . \App\Support\Tenancy\TenantClock::now($tenantId)->startOfMonth()->format('M j, Y') . ' (your timezone). Observed recovery is analyst- or measurement-confirmed after an investigation is resolved.',
+            'formula'     => 'Σ measured recovery for every outcome recorded since ' . \App\Support\Tenancy\TenantClock::now($tenantId)->startOfMonth()->format('M j, Y') . ' (your timezone) — revenue measured against what sales would have been without the action. A figure entered by hand is shown as claimed until the measurement confirms it.',
             'components'  => [
-                ['label' => 'Outcomes recorded this month',          'value' => number_format($count)],
-                ['label' => 'Total observed recovery',               'value' => $this->money($total)],
+                ['label' => 'Measured outcomes this month',          'value' => number_format($count)],
+                ['label' => 'Measured recovery',                     'value' => $this->money($total)],
+                ['label' => 'Claimed, not yet measured',             'value' => $this->money($claimed['amount']) . ' (' . $claimed['count'] . ')'],
                 ['label' => 'Same point last month (for the trend)', 'value' => $this->money($prev['amount'])],
             ],
-            'amountLabel' => 'Observed Recovery',
-            'rowsHeader'  => ['Investigation', 'SKU', 'Recovery Method', 'Observed Recovery'],
-            'rows'        => $this->outcomeRows($outcomes, 'observed_recovery'),
+            'amountLabel' => 'Measured Recovery',
+            'rowsHeader'  => ['Investigation', 'SKU', 'Recovery Method', 'Measured Recovery'],
+            'rows'        => $this->outcomeRows($outcomes, 'measured_recovery'),
             'empty'       => 'No recovery has been recorded this month.',
         ];
     }
@@ -363,9 +365,8 @@ class FinancialBreakdown extends Page
 
         $outcomes = InvestigationOutcome::where('tenant_id', $tenantId)
             ->with('investigation')
-            ->whereNotNull('observed_recovery')
-            ->where('observed_recovery', '>', 0)
-            ->orderByDesc('observed_recovery')
+            ->where('measured_recovery', '>', 0)
+            ->orderByDesc('measured_recovery')
             ->limit(200)
             ->get();
 
@@ -373,15 +374,16 @@ class FinancialBreakdown extends Page
             'metric'      => $this->metric,
             'label'       => 'Observed Recovery',
             'value'       => $this->money((float) $summary['total_recovered']),
-            'formula'     => 'Σ observed_recovery across every recorded outcome (analyst-confirmed). ' . (int) $report['investigations_resolved'] . ' investigations resolved to date.',
+            'formula'     => 'Σ measured recovery across every outcome — revenue measured against what sales would have been without the action. A figure entered by hand counts once the measurement confirms it. ' . (int) $report['investigations_resolved'] . ' investigations resolved to date.',
             'components'  => [
                 ['label' => 'Total revenue at risk',  'value' => $this->money((float) $summary['total_at_risk'])],
-                ['label' => 'Total observed recovery', 'value' => $this->money((float) $summary['total_recovered'])],
+                ['label' => 'Measured recovery',       'value' => $this->money((float) $summary['total_recovered'])],
+                ['label' => 'Claimed, not yet measured', 'value' => $this->money((float) ($summary['total_claimed'] ?? 0))],
                 ['label' => 'Investigations resolved', 'value' => number_format((int) $report['investigations_resolved'])],
             ],
-            'amountLabel' => 'Observed Recovery',
-            'rowsHeader'  => ['Investigation', 'SKU', 'Recovery Method', 'Observed Recovery'],
-            'rows'        => $this->outcomeRows($outcomes, 'observed_recovery'),
+            'amountLabel' => 'Measured Recovery',
+            'rowsHeader'  => ['Investigation', 'SKU', 'Recovery Method', 'Measured Recovery'],
+            'rows'        => $this->outcomeRows($outcomes, 'measured_recovery'),
             'empty'       => 'No recovery has been recorded yet.',
         ];
     }

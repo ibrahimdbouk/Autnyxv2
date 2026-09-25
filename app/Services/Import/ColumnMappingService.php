@@ -384,6 +384,13 @@ PROMPT;
             'status'         => ['status', 'po_status', 'order_status', 'line_status', 'product_status', 'item_status', 'store_status', 'supplier_status'],
             'buyer'          => ['buyer', 'buyer_name', 'purchaser', 'planner'],
             'condition'      => ['condition', 'item_condition', 'return_condition'],
+            // W10 — promotion calendar.
+            'start_date'     => ['start_date', 'promo_start', 'promotion_start', 'valid_from', 'from_date', 'begin_date', 'start'],
+            'end_date'       => ['end_date', 'promo_end', 'promotion_end', 'valid_to', 'to_date', 'finish_date', 'end'],
+            'promotion_name' => ['promotion_name', 'promo_name', 'campaign_name', 'deal_name', 'promotion_description'],
+            'mechanic'       => ['mechanic', 'promo_type', 'promotion_type', 'deal_type', 'offer_type'],
+            'discount_pct'   => ['discount_pct', 'discount_percent', 'discount_percentage', 'pct_off', 'percent_off'],
+            'promo_price'    => ['promo_price', 'promotion_price', 'deal_price', 'offer_price', 'sale_price'],
             'original_transaction_ref' => ['original_transaction_ref', 'original_receipt', 'original_receipt_no', 'original_transaction_id', 'original_order_id'],
             'department'     => ['department', 'dept', 'division'],
             'uom'            => ['uom', 'unit_of_measure', 'base_unit', 'sales_unit', 'selling_unit'],

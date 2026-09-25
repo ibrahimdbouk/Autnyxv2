@@ -352,8 +352,10 @@ class InvestigateInvestigation extends Page
                     TextInput::make('observed_recovery')
                         ->label('Observed Recovery')
                         ->numeric()
+                        ->minValue(0)
+                        ->live(onBlur: true)
                         ->prefix(\App\Support\Money::symbol(Filament::getTenant()?->currencyCode()))
-                        ->helperText('Actual revenue recovered or loss prevented'),
+                        ->helperText('Actual revenue recovered or loss prevented. Shown as "claimed" until Autnyx measures it against what sales would have been.'),
 
                     TextInput::make('cost_to_resolve')
                         ->label('Cost to Resolve')
@@ -361,15 +363,20 @@ class InvestigateInvestigation extends Page
                         ->prefix(\App\Support\Money::symbol(Filament::getTenant()?->currencyCode()))
                         ->helperText('Internal time + remediation cost estimate'),
 
+                    // W10: a recovery figure needs to say how and over when it was seen.
                     Select::make('recovery_method')
                         ->label('Recovery Method')
                         ->options(InvestigationOutcome::RECOVERY_METHOD_LABELS)
+                        ->required(fn ($get) => (float) $get('observed_recovery') > 0)
                         ->placeholder('How was recovery measured?'),
 
                     DatePicker::make('recovery_measured_from')
+                        ->required(fn ($get) => (float) $get('observed_recovery') > 0)
                         ->label('Recovery Period From'),
 
                     DatePicker::make('recovery_measured_to')
+                        ->required(fn ($get) => (float) $get('observed_recovery') > 0)
+                        ->afterOrEqual('recovery_measured_from')
                         ->label('Recovery Period To'),
 
                     Textarea::make('confirmed_root_cause')

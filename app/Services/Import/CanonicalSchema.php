@@ -31,6 +31,7 @@ class CanonicalSchema
             'suppliers'           => self::suppliers(),
             'users'               => self::users(),
             'returns'             => self::returns(),
+            'promotions'          => self::promotions(),
             default               => [],
         };
     }
@@ -182,6 +183,22 @@ class CanonicalSchema
             'channel' => ['label' => 'Channel', 'description' => 'Channel the return came through, e.g. store, online', 'required' => false],
             'condition' => ['label' => 'Condition', 'description' => 'Condition of the returned item, e.g. resellable, damaged', 'required' => false],
             'original_transaction_ref' => ['label' => 'Original Receipt', 'description' => 'Receipt / transaction number of the original sale', 'required' => false],
+        ];
+    }
+
+    /** W10 — the promotion calendar: one row per promotion × SKU (× store). */
+    private static function promotions(): array
+    {
+        return [
+            'promotion_ref'  => ['label' => 'Promotion ID', 'description' => 'Promotion, campaign or deal identifier', 'required' => true],
+            'sku'            => ['label' => 'SKU', 'description' => 'Product SKU, item code, or product ID on promotion', 'required' => true],
+            'start_date'     => ['label' => 'Start Date', 'description' => 'First day of the promotion', 'required' => true],
+            'end_date'       => ['label' => 'End Date', 'description' => 'Last day of the promotion', 'required' => true],
+            'location'       => ['label' => 'Store', 'description' => 'Store the promotion runs in (blank = every store)', 'required' => false],
+            'promotion_name' => ['label' => 'Promotion Name', 'description' => 'Name or description of the promotion', 'required' => false],
+            'mechanic'       => ['label' => 'Mechanic', 'description' => 'Type of deal, e.g. price cut, multibuy, bundle, gondola end', 'required' => false],
+            'discount_pct'   => ['label' => 'Discount %', 'description' => 'Discount off the regular price, e.g. 20 or 20%', 'required' => false],
+            'promo_price'    => ['label' => 'Promo Price', 'description' => 'Promotional selling price per unit', 'required' => false],
         ];
     }
 
