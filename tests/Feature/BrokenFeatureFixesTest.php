@@ -84,11 +84,17 @@ class BrokenFeatureFixesTest extends TestCase
         $this->actingAsTenantAdmin($t);
         $this->inPanel($t);
 
-        Livewire::test(ListAnomalies::class)->callTableAction('dismiss', $a);
+        // WP4.3: the dismissal asks why; only "false positive" is feedback.
+        Livewire::test(ListAnomalies::class)->callTableAction('dismiss', $a, data: ['reason' => 'not_actionable'])->assertHasNoTableActionErrors();
 
         $this->assertNotNull($a->fresh()->dismissed_at);
-        $this->assertSame(2.0, (float) $baseline->fresh()->sensitivity_multiplier, 'a dismissal 3 days later is not a quick false-positive signal');
+        $this->assertSame('not_actionable', $a->fresh()->dismiss_reason);
+        $this->assertSame(2.0, (float) $baseline->fresh()->sensitivity_multiplier, 'not a false-positive signal');
         $this->assertSame(0, (int) $baseline->fresh()->fp_count);
+
+        $b = $this->anomaly($t, ['sku' => $a->sku, 'detected_at' => now()->subDays(3)]);
+        Livewire::test(ListAnomalies::class)->callTableAction('dismiss', $b, data: ['reason' => 'false_positive'])->assertHasNoTableActionErrors();
+        $this->assertEqualsWithDelta(2.2, (float) $baseline->fresh()->sensitivity_multiplier, 0.0001, 'a stated false positive is, however late');
     }
 
     public function test_ingestion_run_duration_is_positive(): void

@@ -67,4 +67,38 @@ return [
     'import_block_minutes'      => (int) env('DETECTION_IMPORT_BLOCK_MINUTES', 30),
     'pending_import_block_hours' => (int) env('DETECTION_PENDING_IMPORT_BLOCK_HOURS', 24),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Corrected rules (W4)
+    |--------------------------------------------------------------------------
+    |
+    | The W4 rule set (store outlier on daily rates, store-joined shrink, one
+    | window definition, a clock per dataset, latest-snapshot inventory, subject
+    | identity for PO / supplier / receipt rules, sticky dismissals, robust
+    | baselines). Off by default: `detection:diff --tenant=X` compares both sets
+    | without writing, and a tenant is switched with its own
+    | settings.detection_rules_v2 flag (which overrides this default either way)
+    | or by `detection:recalibrate`.
+    |
+    */
+
+    'rules_v2' => (bool) env('DETECTION_RULES_V2', false),
+
+    /*
+    | v2: an inventory position whose latest snapshot is this many days older
+    | than the tenant's newest snapshot is stale — no longer in the feed — and
+    | is not judged.
+    */
+
+    'inventory_max_age_days' => (int) env('DETECTION_INVENTORY_MAX_AGE_DAYS', 14),
+
+    /*
+    | v2 (WP4.3): a dismissed anomaly stays quiet while its condition persists,
+    | unless it becomes materially worse (value × this factor, or a higher
+    | severity) — and for at most this many days.
+    */
+
+    'dismissal_worsen_factor' => (float) env('DETECTION_DISMISSAL_WORSEN_FACTOR', 1.5),
+    'dismissal_max_days'      => (int) env('DETECTION_DISMISSAL_MAX_DAYS', 90),
+
 ];

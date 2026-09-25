@@ -23,21 +23,33 @@ final class AnomalyIdentity
     /** Sentinel for an absent subject field, so null is a distinct, stable key part. */
     private const NIL = "\u{2205}"; // ∅
 
-    public static function key(int $tenantId, string $ruleType, ?int $storeId, ?string $sku): string
+    /**
+     * WP4.1 (audit C10): a rule whose subject is not a (store, SKU) — a PO, a
+     * supplier, a receipt — passes a subject discriminator ("po:4711",
+     * "supplier:12"). It is appended only when present, so every key minted
+     * before it existed is unchanged.
+     */
+    public static function key(int $tenantId, string $ruleType, ?int $storeId, ?string $sku, ?string $subject = null): string
     {
         $store = $storeId !== null ? (string) $storeId : self::NIL;
         $skuNorm = ($sku !== null && trim($sku) !== '') ? trim($sku) : self::NIL;
+        $base = $tenantId . '|' . $ruleType . '|' . $store . '|' . $skuNorm;
 
-        return hash('sha1', $tenantId . '|' . $ruleType . '|' . $store . '|' . $skuNorm);
+        $subject = $subject !== null ? trim($subject) : '';
+
+        return hash('sha1', $subject === '' ? $base : $base . '|' . $subject);
     }
 
     public static function forAnomaly(Anomaly $anomaly): string
     {
+        $context = is_array($anomaly->context) ? $anomaly->context : [];
+
         return self::key(
             (int) $anomaly->tenant_id,
             (string) $anomaly->rule_type,
             $anomaly->store_id !== null ? (int) $anomaly->store_id : null,
             $anomaly->sku,
+            isset($context['subject']) ? (string) $context['subject'] : null,
         );
     }
 }
