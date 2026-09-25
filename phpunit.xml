@@ -37,6 +37,7 @@
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="CACHE_STORE" value="array"/>
+        <env name="BACKUP_ENABLED" value="false"/>
         <!-- Postgres aborts the test transaction on the database lock's insert race; locks use the array store in tests. -->
         <env name="PIPELINE_LOCK_STORE" value="array"/>
         <env name="SESSION_DRIVER" value="array"/>

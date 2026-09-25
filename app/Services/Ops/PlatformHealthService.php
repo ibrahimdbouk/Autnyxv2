@@ -85,6 +85,10 @@ class PlatformHealthService
         $expected = [
             'nightly:dispatch' => 3,
         ];
+        // WP8.1: a missing nightly backup is an incident, not a footnote.
+        if (config('backup.enabled')) {
+            $expected['db:backup'] = (int) config('backup.max_age_hours', 30);
+        }
 
         // Only judge staleness once the pipeline has run at least once (avoids a
         // brand-new environment reporting everything stale before its first night).

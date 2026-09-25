@@ -58,6 +58,19 @@ class SystemHealthCheckCommand extends Command
             $problems[] = "{$n['name']}: last nightly run " . ($n['status'] ?? 'never ran') . ($n['finished_at'] ? " (finished {$n['finished_at']} UTC)" : '');
         }
 
+        // WP8.1: the runtime role must still reach every table (a table created
+        // outside the owner's default privileges would fail at runtime).
+        if (\App\Support\Database\OwnerConnection::configured()) {
+            $blind = collect(\Illuminate\Support\Facades\DB::select("SELECT tablename FROM pg_tables WHERE schemaname = 'public'
+                AND NOT (has_table_privilege(current_user, 'public.' || tablename, 'SELECT')
+                     AND has_table_privilege(current_user, 'public.' || tablename, 'INSERT')
+                     AND has_table_privilege(current_user, 'public.' || tablename, 'UPDATE')
+                     AND has_table_privilege(current_user, 'public.' || tablename, 'DELETE'))"))->pluck('tablename');
+            if ($blind->isNotEmpty()) {
+                $problems[] = 'the runtime database role lacks row access to: ' . $blind->take(10)->implode(', ') . ' — run db:runtime-role';
+            }
+        }
+
         if (empty($problems)) {
             $this->info('System health: OK — no failures or stale jobs.');
             Cache::store(config('pipeline.lock_store', 'database'))->forget('health-check:last-alert');

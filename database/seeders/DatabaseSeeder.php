@@ -25,21 +25,24 @@ class DatabaseSeeder extends Seeder
         //    TENANT admin of the Autnyx tenant — NOT a super admin. Platform/ops
         //    access belongs to the owner (config/autnyx.php › owner_email); extra
         //    super admins are minted by the owner, not seeded here.
-        $admin = User::firstOrCreate(
-            ['email' => env('ADMIN_EMAIL', 'admin@autnyx.io')],
-            [
+        // WP8.1: never a password in code. The account is created only when
+        // ADMIN_PASSWORD is set; an existing account keeps its password.
+        $admin = User::where('email', env('ADMIN_EMAIL', 'admin@autnyx.io'))->first();
+        if ($admin === null && filled(env('ADMIN_PASSWORD'))) {
+            $admin = User::create([
+                'email'             => env('ADMIN_EMAIL', 'admin@autnyx.io'),
                 'name'              => 'Admin',
-                'password'          => Hash::make(env('ADMIN_PASSWORD', 'Autnyx2026!')),
+                'password'          => Hash::make(env('ADMIN_PASSWORD')),
                 'email_verified_at' => now(),
                 'tenant_id'         => $tenant->id,
                 'is_tenant_admin'   => true,
                 'is_super_admin'    => false,
-            ]
-        );
+            ]);
+        }
 
         // Keep it a tenant admin of Autnyx on every deploy — and demote it if it
         // was previously a super admin.
-        if (! $admin->wasRecentlyCreated) {
+        if ($admin !== null && ! $admin->wasRecentlyCreated) {
             $admin->update([
                 'tenant_id'       => $tenant->id,
                 'is_tenant_admin' => true,

@@ -74,6 +74,7 @@ return [
             'sslmode' => 'prefer',
         ],
 
+        // (WP8.1: pgsql above is the runtime role; see 'owner' below.)
         'sqlsrv' => [
             'driver' => 'sqlsrv',
             'url' => env('DB_URL'),
@@ -125,6 +126,16 @@ return [
             'database' => env('REDIS_CACHE_DB', '1'),
         ],
 
+    ],
+
+    /*
+    | WP8.1 — the owner role, used only by schema and backup commands
+    | (App\Support\Database\OwnerConnection). Unset = everything runs as
+    | DB_USERNAME, as before.
+    */
+    'owner' => [
+        'username' => env('DB_OWNER_USERNAME', ''),
+        'password' => env('DB_OWNER_PASSWORD', ''),
     ],
 
 ];

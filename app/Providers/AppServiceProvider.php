@@ -68,6 +68,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // WP8.1: schema, dump and restore commands run as the owner role; the
+        // app itself runs as the least-privilege runtime role.
+        \Illuminate\Support\Facades\Event::listen(\Illuminate\Console\Events\CommandStarting::class, function ($e) {
+            if (\App\Support\Database\OwnerConnection::needsOwner($e->command)) {
+                \App\Support\Database\OwnerConnection::use();
+            }
+        });
+
         // WP7.3: every <script> written in a template carries the request's
         // CSP nonce (compile time, template source only — never data).
         \Illuminate\Support\Facades\Blade::precompiler(fn (string $t) => \App\Support\Security\Csp::precompile($t));
@@ -178,6 +186,13 @@ class AppServiceProvider extends ServiceProvider
             // 04:30 UTC — data retention (2e), platform-wide.
             $schedule->command(\App\Console\Commands\PurgeOldDataCommand::class)
                 ->dailyAt('04:30')
+                ->onOneServer()
+                ->withoutOverlapping(120);
+
+            // WP8.1 — nightly logical backup to object storage (+ retention).
+            // 03:15 UTC: after the Gulf tenants' nights, before data:purge.
+            $schedule->command(\App\Console\Commands\DatabaseBackupCommand::class)
+                ->dailyAt('03:15')
                 ->onOneServer()
                 ->withoutOverlapping(120);
 
