@@ -30,3 +30,13 @@ setup-scheduler.ps1
 .watcher.log
 test-push.txt
 _to_delete/
+
+# W9 (W0 hygiene): generated or personal files that never belong in the repo
+/Claude outputs/
+/_ship/
+/*.bundle
+/*.patch
+/autopush-hidden.vbs
+/fix-and-push.bat
+/setup-autopush.bat
+/scripts/*.log
