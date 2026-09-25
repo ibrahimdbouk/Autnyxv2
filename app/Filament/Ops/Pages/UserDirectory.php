@@ -12,6 +12,13 @@ use Livewire\Attributes\Url;
  */
 class UserDirectory extends Page
 {
+    use \App\Filament\Concerns\SanitizesUrlState;   // WP7.2
+
+    protected function urlRules(): array
+    {
+        return ['search' => 'string'];
+    }
+
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-identification';
 
     protected static ?string $navigationLabel = 'User Directory';
@@ -21,7 +28,7 @@ class UserDirectory extends Page
     protected string $view = 'filament.ops.pages.user-directory';
 
     #[Url]
-    public ?string $search = null;
+    public $search = null;
 
     public function getTitle(): string
     {

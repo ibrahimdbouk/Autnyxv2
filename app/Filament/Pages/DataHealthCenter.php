@@ -25,11 +25,15 @@ class DataHealthCenter extends Page
     const SCREEN_KEY = 'data_health';
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-heart';
 
-    protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';
+    // WP7.4 (D12): the one status screen for data — readiness, dataset health
+    // and the AI check — at the top of the Data Quality group (quarantine,
+    // cleansing rules, aliases). Data Readiness and the AI "Data Quality"
+    // page were folded in; their old URLs redirect here.
+    protected static \UnitEnum|string|null $navigationGroup = 'Data Quality';
 
     protected static ?string $navigationLabel = 'Data Health';
 
-    protected static ?int $navigationSort = 5;
+    protected static ?int $navigationSort = 0;
 
     protected static ?string $slug = 'data-health';
 
@@ -37,7 +41,20 @@ class DataHealthCenter extends Page
 
     public function getTitle(): string
     {
-        return 'Data Health Center';
+        return 'Data Health';
+    }
+
+    /** Open to the data-health screen, or to the AI check's screen alone. */
+    protected static function userCanSeeScreen(): bool
+    {
+        $user = auth()->user();
+
+        return (bool) ($user?->canSeeScreen(self::SCREEN_KEY) || $user?->canSeeScreen('data_quality'));
+    }
+
+    public function canSeeDatasets(): bool
+    {
+        return auth()->user()?->canSeeScreen(self::SCREEN_KEY) ?? false;
     }
 
     protected function getHeaderActions(): array
@@ -89,6 +106,95 @@ class DataHealthCenter extends Page
             return ['status' => 'no_data', 'score' => null, 'datasets' => 0, 'warning_count' => 0, 'last_computed' => null];
         }
         return app(DataHealthService::class)->overall($tenantId);
+    }
+
+    /** Readiness is the ingestion firewall's view: admins only (as the old page). */
+    public function canSeeReadiness(): bool
+    {
+        $user = auth()->user();
+
+        return (bool) ($user && ($user->is_super_admin || $user->is_tenant_admin));
+    }
+
+    /** @return array{overall:string, datasets:array<int,array<string,mixed>>} */
+    public function getReadiness(): array
+    {
+        $tenantId = Filament::getTenant()?->id;
+
+        return $tenantId && $this->canSeeReadiness()
+            ? app(\App\Services\DataQuality\DataReadinessService::class)->summary($tenantId)
+            : ['overall' => 'green', 'datasets' => []];
+    }
+
+    public function batchesUrl(): ?string
+    {
+        return \App\Filament\Resources\ImportQualityResource::canViewAny()
+            ? \App\Filament\Resources\ImportQualityResource::getUrl('index') : null;
+    }
+
+    /** The AI check keeps its own screen permission (data_quality). */
+    public function canRunAiCheck(): bool
+    {
+        return auth()->user()?->canSeeScreen('data_quality') ?? false;
+    }
+
+    /** @return array<string,mixed> the latest AI data-quality verdict */
+    public function getReport(): array
+    {
+        $tenantId = Filament::getTenant()?->id;
+        if (! $tenantId || ! $this->canRunAiCheck()) {
+            return ['ready' => false];
+        }
+
+        try {
+            $run = \App\Models\AgentRun::where('tenant_id', $tenantId)
+                ->where('agent_key', \App\Models\AgentRun::KEY_DATA_QUALITY)
+                ->whereIn('status', [\App\Models\AgentRun::STATUS_COMPLETE, \App\Models\AgentRun::STATUS_FAILED])
+                ->latest('id')
+                ->first();
+        } catch (\Throwable $e) {
+            report($e);
+
+            return ['ready' => true, 'has' => false];
+        }
+
+        if (! $run) {
+            return ['ready' => true, 'has' => false];
+        }
+
+        return [
+            'ready'         => true,
+            'has'           => true,
+            'failed'        => $run->isFailed(),
+            'headline'      => $run->out('headline'),
+            'summary'       => $run->out('summary'),
+            'readiness'     => $run->out('data_readiness', 'fair'),
+            'issues'        => is_array($run->out('issues')) ? $run->out('issues') : [],
+            'checks'        => is_array($run->out('checks')) ? $run->out('checks') : [],
+            'confidence'    => $run->confidence,
+            'generated_ago' => optional($run->created_at)->diffForHumans(),
+            'generated_at'  => \App\Support\Tenancy\TenantClock::display($run->created_at)?->format('D, d M Y H:i'),
+        ];
+    }
+
+    public function run(): void
+    {
+        $tenantId = Filament::getTenant()?->id;
+        if (! $tenantId || ! $this->canRunAiCheck()) {
+            return;
+        }
+
+        $run = app(\App\Services\Agents\DataQualityAgent::class)->checkTenant($tenantId, auth()->id());
+
+        if ($run->isFailed()) {
+            Notification::make()->title('Could not run the data-quality check')
+                ->body('The AI service did not respond. Please try again in a moment.')
+                ->danger()->send();
+
+            return;
+        }
+
+        Notification::make()->title('Data-quality check complete')->success()->send();
     }
 
     /**

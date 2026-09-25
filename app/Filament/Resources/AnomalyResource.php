@@ -242,8 +242,8 @@ class AnomalyResource extends Resource
                                     $r->investigation_status ?? 'not_started',
                                     $r->action_notes ?? '',
                                     $r->resolution_notes ?? '',
-                                    $r->detected_at?->format('Y-m-d H:i') ?? '',
-                                    $r->resolved_at?->format('Y-m-d H:i') ?? '',
+                                    \App\Support\Tenancy\TenantClock::display($r->detected_at)?->format('Y-m-d H:i') ?? '',
+                                    \App\Support\Tenancy\TenantClock::display($r->resolved_at)?->format('Y-m-d H:i') ?? '',
                                 ]);
                             }
 

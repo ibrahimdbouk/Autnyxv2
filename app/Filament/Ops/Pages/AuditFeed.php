@@ -12,6 +12,13 @@ use Livewire\Attributes\Url;
  */
 class AuditFeed extends Page
 {
+    use \App\Filament\Concerns\SanitizesUrlState;   // WP7.2
+
+    protected function urlRules(): array
+    {
+        return ['event' => 'string'];
+    }
+
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-shield-check';
 
     protected static ?string $navigationLabel = 'Audit Feed';
@@ -21,7 +28,7 @@ class AuditFeed extends Page
     protected string $view = 'filament.ops.pages.audit-feed';
 
     #[Url]
-    public ?string $event = null;
+    public $event = null;
 
     public function getTitle(): string
     {

@@ -101,7 +101,7 @@ class InvestigationsByStore extends Page
                 'priority'   => $i->priority,
                 'priority_label' => ucfirst((string) $i->priority),
                 'value_fmt'  => Money::compact((float) $i->revenue_at_risk, $currency),
-                'opened'     => optional($i->opened_at)->format('M j, Y'),
+                'opened'     => \App\Support\Tenancy\TenantClock::display($i->opened_at)?->format('M j, Y'),
                 'url'        => InvestigationResource::getUrl('investigate', ['record' => $i->id]),
             ])->all();
 

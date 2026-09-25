@@ -32,6 +32,12 @@ class ImportQualityResource extends Resource
 
     protected static ?int $navigationSort = 1;
 
+    /** WP7.4 (D12): reached from Data Health's readiness section, not the sidebar. */
+    public static function shouldRegisterNavigation(): bool
+    {
+        return false;
+    }
+
     public static function canAccess(): bool
     {
         $user = auth()->user();

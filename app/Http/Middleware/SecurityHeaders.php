@@ -12,14 +12,16 @@ use Symfony\Component\HttpFoundation\Response;
  * Complements the edge/CDN headers (Laravel Cloud already sets X-Frame-Options
  * and X-Content-Type-Options), adding the ones it doesn't: a conservative
  * referrer policy, a locked-down permissions policy, HSTS over HTTPS, and a
- * Content-Security-Policy (Report-Only by default — see config/autnyx.php ›
- * csp_mode). The CSP allows what a Filament/Livewire/Alpine app needs while
- * locking down framing, base-uri, form-action, and objects.
+ * nonce-based Content-Security-Policy (enforced by default — see
+ * config/autnyx.php › csp_mode and App\Support\Security\Csp).
  */
 class SecurityHeaders
 {
     public function handle(Request $request, Closure $next): Response
     {
+        $mode = strtolower((string) config('autnyx.csp_mode', 'enforce'));
+        $nonce = in_array($mode, ['report', 'enforce'], true) ? \App\Support\Security\Csp::start() : null;
+
         $response = $next($request);
         $headers = $response->headers;
 
@@ -30,29 +32,14 @@ class SecurityHeaders
             $headers->set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
         }
 
-        $mode = strtolower((string) config('autnyx.csp_mode', 'report'));
-        if ($mode === 'report' || $mode === 'enforce') {
+        // WP7.3: nonce-based policy (see App\Support\Security\Csp), enforced
+        // by default; CSP_MODE=report is the kill switch. Violations are
+        // reported to /csp-report either way.
+        if ($nonce !== null) {
             $headerName = $mode === 'enforce' ? 'Content-Security-Policy' : 'Content-Security-Policy-Report-Only';
-            $headers->set($headerName, $this->csp());
+            $headers->set($headerName, \App\Support\Security\Csp::policy($nonce, url('/csp-report')));
         }
 
         return $response;
-    }
-
-    private function csp(): string
-    {
-        return implode('; ', [
-            "default-src 'self'",
-            // Filament/Livewire/Alpine need inline + eval; Chart.js from cdnjs.
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com",
-            "style-src 'self' 'unsafe-inline'",
-            "img-src 'self' data: blob:",
-            "font-src 'self' data:",
-            "connect-src 'self'",
-            "frame-ancestors 'none'",
-            "base-uri 'self'",
-            "form-action 'self'",
-            "object-src 'none'",
-        ]);
     }
 }

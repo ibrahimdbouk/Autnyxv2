@@ -17,6 +17,13 @@ use Livewire\Attributes\Url;
  */
 class TenantProfile extends Page
 {
+    use \App\Filament\Concerns\SanitizesUrlState;   // WP7.2
+
+    protected function urlRules(): array
+    {
+        return ['tenant' => 'int'];
+    }
+
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-building-office-2';
 
     protected static ?string $slug = 'tenant-profile';
@@ -24,7 +31,7 @@ class TenantProfile extends Page
     protected string $view = 'filament.ops.pages.tenant-profile';
 
     #[Url]
-    public ?int $tenant = null;
+    public $tenant = null;
 
     public ?Tenant $record = null;
 

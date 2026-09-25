@@ -13,8 +13,8 @@ use Illuminate\Database\Eloquent\Model;
  * navigation entry and views then appear only for tenants that hold the app
  * (assigned in /ops). This is the enforcement side of app entitlements: new apps
  * (Assortment, Task Execution) use this trait so their nav is entitlement-gated
- * from birth. Root-Cause is universal today (every tenant is entitled), so it is
- * intentionally not retrofitted.
+ * from birth. WP7.4: Root-Cause screens are gated too (AppGate::ROOT_CAUSE), and
+ * EnsureAppEntitlement refuses any request to a screen of an app not held.
  *
  * Fail-open only when there is no tenant context (e.g. the super-admin /ops
  * panel, which has its own gating); inside a tenant panel the entitlement decides.
@@ -38,8 +38,6 @@ trait GatedByApp
 
     protected static function tenantHasApp(): bool
     {
-        $tenant = Filament::getTenant();
-
-        return $tenant instanceof Tenant ? $tenant->hasApp(static::APP_KEY) : true;
+        return \App\Support\Apps\AppGate::allows(Filament::getTenant(), static::class);
     }
 }

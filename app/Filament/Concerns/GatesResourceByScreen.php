@@ -33,6 +33,8 @@ trait GatesResourceByScreen
 
     protected static function userCanSeeScreen(): bool
     {
-        return auth()->user()?->canSeeScreen(static::SCREEN_KEY) ?? false;
+        // WP7.4: and the tenant holds the app the screen belongs to.
+        return (auth()->user()?->canSeeScreen(static::SCREEN_KEY) ?? false)
+            && \App\Support\Apps\AppGate::allows(\Filament\Facades\Filament::getTenant(), static::class);
     }
 }

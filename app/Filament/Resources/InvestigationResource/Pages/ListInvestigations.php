@@ -17,6 +17,24 @@ use Livewire\Attributes\Url;
 
 class ListInvestigations extends ListRecords
 {
+    use \App\Filament\Concerns\SanitizesUrlState;   // WP7.2
+
+    protected function urlRules(): array
+    {
+        return [
+            'search'           => 'string',
+            'statusFilter'     => ['', 'open', 'in_progress', 'resolved', 'closed'],
+            'priorityFilter'   => ['', 'high_critical', 'low', 'medium', 'high', 'critical'],
+            'ruleFilter'       => 'string',
+            'storeFilter'      => 'int',
+            'confidenceFilter' => 'string',
+            'teamFilter'       => 'int',
+            'openedFrom'       => 'date',
+            'openedTo'         => 'date',
+            'minValue'         => 'numeric',
+        ];
+    }
+
     protected static string $resource = InvestigationResource::class;
 
     protected string $view = 'filament.resources.investigation-resource.pages.list-investigations';
@@ -28,25 +46,25 @@ class ListInvestigations extends ListRecords
     // URL-bound so the dashboard KPI cards can deep-link with a pre-applied
     // filter (e.g. ?status=open&priority=high_critical).
     #[Url(as: 'q')]
-    public string $search        = '';
+    public $search        = '';
     #[Url(as: 'status')]
-    public string $statusFilter  = 'open';
+    public $statusFilter  = 'open';
     #[Url(as: 'priority')]
-    public string $priorityFilter= '';
+    public $priorityFilter= '';
     #[Url(as: 'rule')]
-    public string $ruleFilter    = '';
+    public $ruleFilter    = '';
     #[Url(as: 'store')]
-    public string $storeFilter   = '';
+    public $storeFilter   = '';
     #[Url(as: 'conf')]
-    public string $confidenceFilter = '';
+    public $confidenceFilter = '';
     #[Url(as: 'team')]
-    public string $teamFilter    = '';
+    public $teamFilter    = '';
     #[Url(as: 'from')]
-    public string $openedFrom    = '';
+    public $openedFrom    = '';
     #[Url(as: 'to')]
-    public string $openedTo      = '';
+    public $openedTo      = '';
     #[Url(as: 'min')]
-    public string $minValue      = '';
+    public $minValue      = '';
     public string $sortField     = 'revenue_at_risk';
     public string $sortDir       = 'desc';
     #[\Livewire\Attributes\Locked] // WP2.5: not client-settable (a tampered 10^7 page size)
@@ -347,7 +365,7 @@ class ListInvestigations extends ListRecords
             $query->orderBy($sortField, $sortDir);
         }
 
-        return $query->paginate($this->perPage, ['*'], 'inv_page', max(1, $this->currentPage));
+        return $query->paginate(min(100, max(10, $this->perPage)), ['*'], 'inv_page', max(1, $this->currentPage));
     }
 
     public function getOpenCount(): int

@@ -30,6 +30,13 @@ use Livewire\Attributes\Url;
  */
 class FinancialBreakdown extends Page
 {
+    use \App\Filament\Concerns\SanitizesUrlState;   // WP7.2
+
+    protected function urlRules(): array
+    {
+        return ['metric' => self::METRICS];
+    }
+
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-banknotes';
 
     protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';
@@ -42,7 +49,7 @@ class FinancialBreakdown extends Page
 
     /** Which figure to explain. Deep-linked from the dashboard/widgets. */
     #[Url]
-    public string $metric = 'revenue_at_risk';
+    public $metric = 'revenue_at_risk';
 
     /** Valid metrics this page can derive. */
     public const METRICS = [
@@ -237,20 +244,19 @@ class FinancialBreakdown extends Page
     }
 
     /**
-     * Dashboard "Recovered MTD" card: SUM(observed_recovery) over outcomes
-     * recorded this calendar month. Same query the dashboard blade runs.
+     * Dashboard "Recovered MTD" card — RecoveryMetrics, the one definition the
+     * card, the operations pulse and this page share (WP7.1).
      */
     private function recoveredMtd(int $tenantId): array
     {
-        $monthStart = \App\Support\Tenancy\TenantClock::startOfMonth($tenantId);
+        $metrics    = app(\App\Services\Metrics\RecoveryMetrics::class);
+        $monthStart = $metrics->monthStart($tenantId);
+        $base       = $metrics->attributedQuery($tenantId, $monthStart);
+        $mtd        = $metrics->attributedMtd($tenantId);
+        $prev       = $metrics->attributedPrevMtd($tenantId);
 
-        $base = InvestigationOutcome::where('tenant_id', $tenantId)
-            ->where('created_at', '>=', $monthStart)
-            ->whereNotNull('observed_recovery')
-            ->where('observed_recovery', '>', 0);
-
-        $total = (float) ((clone $base)->sum('observed_recovery') ?? 0);
-        $count = (clone $base)->count();
+        $total = $mtd['amount'];
+        $count = $mtd['count'];
 
         $outcomes = (clone $base)
             ->with('investigation')
@@ -262,10 +268,11 @@ class FinancialBreakdown extends Page
             'metric'      => $this->metric,
             'label'       => 'Recovered This Month',
             'value'       => $this->money($total),
-            'formula'     => 'Σ observed_recovery for every outcome recorded since ' . $monthStart->format('M j, Y') . '. Observed recovery is analyst-confirmed after an investigation is resolved.',
+            'formula'     => 'Σ observed_recovery (> 0) for every outcome recorded since ' . \App\Support\Tenancy\TenantClock::now($tenantId)->startOfMonth()->format('M j, Y') . ' (your timezone). Observed recovery is analyst- or measurement-confirmed after an investigation is resolved.',
             'components'  => [
-                ['label' => 'Outcomes recorded this month', 'value' => number_format($count)],
-                ['label' => 'Total observed recovery',      'value' => $this->money($total)],
+                ['label' => 'Outcomes recorded this month',          'value' => number_format($count)],
+                ['label' => 'Total observed recovery',               'value' => $this->money($total)],
+                ['label' => 'Same point last month (for the trend)', 'value' => $this->money($prev['amount'])],
             ],
             'amountLabel' => 'Observed Recovery',
             'rowsHeader'  => ['Investigation', 'SKU', 'Recovery Method', 'Observed Recovery'],
@@ -474,7 +481,7 @@ class FinancialBreakdown extends Page
             } else {
                 $meta = $o->recovery_method
                     ? ucwords(str_replace('_', ' ', (string) $o->recovery_method))
-                    : ($o->recorded_at ? $o->recorded_at->format('M j, Y') : '—');
+                    : ($o->recorded_at ? \App\Support\Tenancy\TenantClock::display($o->recorded_at)->format('M j, Y') : '—');
             }
 
             return [
@@ -510,7 +517,7 @@ class FinancialBreakdown extends Page
                 'url'    => $this->anomalyUrl($a->id),
                 'title'  => $label . ' #' . $a->id,
                 'sku'    => $scope,
-                'meta'   => $a->resolved_at ? $a->resolved_at->format('M j, Y') : '—',
+                'meta'   => $a->resolved_at ? \App\Support\Tenancy\TenantClock::display($a->resolved_at)->format('M j, Y') : '—',
                 'amount' => $this->money((float) ($a->value_at_open ?? 0)),
             ];
         })->all();

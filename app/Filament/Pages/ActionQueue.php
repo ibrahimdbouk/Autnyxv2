@@ -31,6 +31,13 @@ use Livewire\Attributes\Url;
  */
 class ActionQueue extends Page
 {
+    use \App\Filament\Concerns\SanitizesUrlState;   // WP7.2
+
+    protected function urlRules(): array
+    {
+        return ['campaign' => 'string', 'tab' => ['campaigns', 'today']];
+    }
+
     use GatesPageByScreen;
 
     const SCREEN_KEY = 'action_queue';
@@ -49,11 +56,11 @@ class ActionQueue extends Page
 
     /** Drill-down: when set, the page shows that campaign's full ranked list. */
     #[Url]
-    public ?string $campaign = null;
+    public $campaign = null;
 
     /** Main-view tab: null|'campaigns' (default) or 'today' (what changed in 24h). */
     #[Url]
-    public ?string $tab = null;
+    public $tab = null;
 
     /** Bulk-review: investigation ids selected in the campaign drill-down. */
     public array $selected = [];

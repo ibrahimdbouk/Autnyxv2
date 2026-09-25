@@ -5,15 +5,8 @@ use App\Filament\Concerns\GatesResourceByScreen;
 
 use App\Filament\Resources\InvestigationResource\Pages;
 use App\Models\Investigation;
-use App\Models\Team;
 use Filament\Facades\Filament;
 use Filament\Resources\Resource;
-use Filament\Actions\BulkActionGroup;
-use Filament\Forms\Components\DatePicker;
-use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Filters\Filter;
-use Filament\Tables\Filters\SelectFilter;
-use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
 class InvestigationResource extends Resource
@@ -61,151 +54,8 @@ class InvestigationResource extends Resource
         return 'warning';
     }
 
-    public static function table(Table $table): Table
-    {
-        return $table
-            ->columns([
-                TextColumn::make('priority')
-                    ->badge()
-                    ->color(fn ($state) => match ($state) {
-                        'critical' => 'danger',
-                        'high'     => 'warning',
-                        'medium'   => 'info',
-                        default    => 'gray',
-                    })
-                    ->sortable(),
-
-                TextColumn::make('title')
-                    ->searchable()
-                    ->limit(60)
-                    ->wrap(),
-
-                TextColumn::make('status')
-                    ->badge()
-                    ->color(fn ($state) => match ($state) {
-                        'open'        => 'warning',
-                        'in_progress' => 'info',
-                        'resolved'    => 'success',
-                        'closed'      => 'gray',
-                        default       => 'gray',
-                    })
-                    ->sortable(),
-
-                TextColumn::make('anomaly_count')
-                    ->label('Anomalies')
-                    ->sortable()
-                    ->alignCenter(),
-
-                TextColumn::make('primary_sku')
-                    ->label('SKU')
-                    ->searchable()
-                    ->placeholder('—'),
-
-                TextColumn::make('assignedTeam.name')
-                    ->label('Team')
-                    ->placeholder('Unassigned')
-                    ->badge()
-                    ->color('gray'),
-
-                TextColumn::make('ai_confidence')
-                    ->label('Confidence')
-                    ->badge()
-                    ->color(fn ($state) => match ($state) {
-                        'established' => 'success',
-                        'probable'    => 'info',
-                        'suspected'   => 'warning',
-                        default       => 'gray',
-                    })
-                    ->placeholder('—'),
-
-                TextColumn::make('opened_at')
-                    ->label('Opened')
-                    ->since()
-                    ->sortable(),
-            ])
-            ->emptyStateIcon('heroicon-o-magnifying-glass')
-            ->emptyStateHeading('No investigations yet')
-            ->emptyStateDescription('Investigations are correlated from related anomalies nightly. Once detection finds connected signals, they are grouped here.')
-            ->defaultSort('opened_at', 'desc')
-            ->filters([
-                SelectFilter::make('status')
-                    ->options([
-                        'open'        => 'Open',
-                        'in_progress' => 'In Progress',
-                        'resolved'    => 'Resolved',
-                        'closed'      => 'Closed',
-                    ])
-                    ->default('open'),
-
-                SelectFilter::make('priority')
-                    ->options([
-                        'critical' => 'Critical',
-                        'high'     => 'High',
-                        'medium'   => 'Medium',
-                        'low'      => 'Low',
-                    ]),
-
-                SelectFilter::make('assigned_team_id')
-                    ->label('Team')
-                    ->options(fn () => Team::where('tenant_id', Filament::getTenant()?->id)
-                        ->pluck('name', 'id')
-                        ->toArray()),
-
-                SelectFilter::make('ai_confidence')
-                    ->label('Confidence')
-                    ->multiple()
-                    ->options([
-                        'established' => 'Established',
-                        'probable'    => 'Probable',
-                        'suspected'   => 'Suspected',
-                    ]),
-
-                Filter::make('opened_at')
-                    ->label('Opened Date')
-                    ->form([
-                        DatePicker::make('from')->label('From'),
-                        DatePicker::make('until')->label('Until'),
-                    ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        return $query
-                            ->when($data['from'],  fn (Builder $q, $d) => $q->whereDate('opened_at', '>=', $d))
-                            ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('opened_at', '<=', $d));
-                    }),
-            ])
-            ->actions([
-                \Filament\Actions\Action::make('investigate')
-                    ->label('Investigate')
-                    ->icon('heroicon-o-magnifying-glass')
-                    ->url(fn (Investigation $record) => static::getUrl('investigate', ['record' => $record->getKey()]))
-                    ->color('primary'),
-
-                \Filament\Actions\Action::make('reassign')
-                    ->label('Reassign')
-                    ->icon('heroicon-o-arrow-path')
-                    ->color('gray')
-                    ->visible(fn () => auth()->user()?->canReassignInvestigation() ?? false)
-                    ->form([
-                        \Filament\Forms\Components\Select::make('assigned_team_id')
-                            ->label('Team')
-                            ->options(fn () => Team::where('tenant_id', Filament::getTenant()?->id)->pluck('name', 'id'))
-                            ->nullable(),
-                    ])
-                    ->action(fn (Investigation $record, array $data) => $record->update([
-                        'assigned_team_id' => $data['assigned_team_id'],
-                    ])),
-
-                \Filament\Actions\Action::make('close')
-                    ->label('Close')
-                    ->icon('heroicon-o-lock-closed')
-                    ->color('danger')
-                    ->requiresConfirmation()
-                    ->visible(fn (Investigation $record) => $record->status !== Investigation::STATUS_CLOSED && (auth()->user()?->canCloseInvestigation() ?? false))
-                    ->action(fn (Investigation $record) => $record->update(['status' => Investigation::STATUS_CLOSED])),
-            ])
-            ->bulkActions([
-                BulkActionGroup::make([]),
-            ]);
-    }
+    // WP7.4 (L6): the list page renders its own table (ListInvestigations),
+    // so the resource-level table() configuration was never shown — removed.
 
     public static function getRelationManagers(): array
     {

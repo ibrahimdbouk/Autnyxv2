@@ -16,6 +16,19 @@ use Livewire\Attributes\Url;
 
 class ActionCenter extends Page
 {
+    use \App\Filament\Concerns\SanitizesUrlState;   // WP7.2
+
+    protected function urlRules(): array
+    {
+        return [
+            'activeTab'      => ['all', 'overdue', 'due_today', 'due_week', 'in_progress', 'completed'],
+            'search'         => 'string',
+            'typeFilter'     => 'string',
+            'assigneeFilter' => 'int',
+            'priorityFilter' => ['', 'low', 'medium', 'high', 'critical'],
+        ];
+    }
+
     use GatesPageByScreen;
 
     const SCREEN_KEY = 'action_center';
@@ -38,15 +51,15 @@ class ActionCenter extends Page
     // URL-bound so the dashboard "Overdue Actions" KPI card can deep-link to
     // the matching tab (e.g. ?tab=overdue).
     #[Url(as: 'tab')]
-    public string $activeTab     = 'all';
+    public $activeTab     = 'all';
     #[Url(as: 'q')]
-    public string $search        = '';
+    public $search        = '';
     #[Url(as: 'type')]
-    public string $typeFilter    = '';
+    public $typeFilter    = '';
     #[Url(as: 'assignee')]
-    public string $assigneeFilter= '';
+    public $assigneeFilter= '';
     #[Url(as: 'priority')]
-    public string $priorityFilter= '';
+    public $priorityFilter= '';
     public string $sortField     = 'due_at';
     public string $sortDir       = 'asc';
     #[\Livewire\Attributes\Locked] // WP2.5: not client-settable (a tampered 10^7 page size)
@@ -351,7 +364,7 @@ class ActionCenter extends Page
             $query->orderBy($field, $dir);
         }
 
-        return $query->paginate($this->perPage, ['*'], 'ac_page', max(1, $this->currentPage));
+        return $query->paginate(min(100, max(10, $this->perPage)), ['*'], 'ac_page', max(1, $this->currentPage));
     }
 
     public function getSelectedAction(): ?Action

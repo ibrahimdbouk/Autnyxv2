@@ -79,7 +79,7 @@ class WeeklyBriefing extends Page
             'focus_next_week'   => $run->out('focus_next_week', []),
             'stats'             => $run->out('stats', []),
             'confidence'        => $run->confidence,
-            'generated_at'      => optional($run->created_at)->format('D, d M Y H:i'),
+            'generated_at'      => \App\Support\Tenancy\TenantClock::display($run->created_at)?->format('D, d M Y H:i'),
             'generated_ago'     => optional($run->created_at)->diffForHumans(),
         ];
     }

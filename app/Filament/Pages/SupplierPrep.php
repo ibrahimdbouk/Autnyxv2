@@ -21,6 +21,13 @@ use Livewire\Attributes\Url;
  */
 class SupplierPrep extends Page
 {
+    use \App\Filament\Concerns\SanitizesUrlState;   // WP7.2
+
+    protected function urlRules(): array
+    {
+        return ['supplier' => 'int'];
+    }
+
     use GatesPageByScreen;
 
     const SCREEN_KEY = 'supplier_prep';
@@ -39,7 +46,7 @@ class SupplierPrep extends Page
 
     /** Drill-down: the supplier currently being prepared. */
     #[Url]
-    public ?int $supplier = null;
+    public $supplier = null;
 
     public function getTitle(): string
     {

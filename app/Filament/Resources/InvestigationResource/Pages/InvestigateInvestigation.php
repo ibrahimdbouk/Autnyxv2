@@ -306,32 +306,10 @@ class InvestigateInvestigation extends Page
                     Notification::make()->title('Investigation resolved')->success()->send();
                 }),
 
-            // Close
-            Action::make('close')
-                ->label('Close')
-                ->icon('heroicon-o-x-circle')
-                ->color('gray')
-                ->visible(fn () => $this->record->status === Investigation::STATUS_RESOLVED
-                    && (auth()->user()?->canCloseInvestigation() ?? false))
-                ->requiresConfirmation()
-                ->modalHeading('Close Investigation?')
-                ->modalDescription('Closing marks this as permanently done. You can still view it.')
-                ->action(function () {
-                    abort_unless(auth()->user()?->canCloseInvestigation() ?? false, 403);
-                    $old = $this->record->status;
-                    $this->record->update([
-                        'status'    => Investigation::STATUS_CLOSED,
-                        'closed_at' => now(),
-                    ]);
-                    AuditLogger::statusChanged($this->record, $old, Investigation::STATUS_CLOSED);
-                    $this->record = $this->record->fresh(['anomalies', 'evidence', 'actions.assignedTo', 'actions.assignedTeam', 'auditLogs.user', 'assignedTeam', 'assignedUser']);
-                    Notification::make()->title('Investigation closed')->success()->send();
-                }),
-
             // Record / update outcome
             Action::make('record_outcome')
                 ->label(fn () => $this->record->outcome ? 'Update Outcome' : 'Record Outcome')
-                ->icon('heroicon-o-currency-dollar')
+                ->icon('heroicon-o-banknotes')
                 ->color('success')
                 ->visible(fn () => in_array($this->record->status, [
                     Investigation::STATUS_RESOLVED,
@@ -408,150 +386,180 @@ class InvestigateInvestigation extends Page
                     Notification::make()->title('Outcome recorded')->success()->send();
                 }),
 
-            // ── Feature 5 — Watch / Unwatch ────────────────────────────────
-            Action::make('watch')
-                ->label('Watch')
-                ->icon('heroicon-o-eye')
-                ->color('info')
-                ->visible(fn () => ! $this->isWatchedByMe())
-                ->form([
-                    Select::make('mode')
-                        ->label('Watch')
-                        ->options([
-                            InvestigationWatch::MODE_UNTIL_RESOLVED => 'Until resolved',
-                            InvestigationWatch::MODE_UNTIL_DATE      => 'Until a date',
-                            InvestigationWatch::MODE_INDEFINITE      => 'Indefinitely',
-                        ])
-                        ->default(InvestigationWatch::MODE_UNTIL_RESOLVED)
-                        ->live()
-                        ->required(),
-                    DateTimePicker::make('watch_until')
-                        ->label('Watch until')
-                        ->visible(fn ($get) => $get('mode') === InvestigationWatch::MODE_UNTIL_DATE)
-                        ->minDate(now()),
-                    CheckboxList::make('triggers')
-                        ->label('Notify me on')
-                        ->options(InvestigationWatch::TRIGGER_LABELS)
-                        ->default(InvestigationWatch::DEFAULT_TRIGGERS)
-                        ->columns(2),
-                    Select::make('team_id')
-                        ->label('Watch as team (optional)')
-                        ->options(fn () => Team::where('tenant_id', $this->record->tenant_id)->pluck('name', 'id'))
-                        ->placeholder('Just me')
-                        ->helperText('Team watches notify all members.'),
-                ])
-                ->action(function (array $data) {
-                    $service = app(WatchService::class);
-                    $until   = ! empty($data['watch_until']) ? \Illuminate\Support\Carbon::parse($data['watch_until']) : null;
-                    if (! empty($data['team_id'])) {
-                        $service->watchForTeam($this->record, (int) $data['team_id'], $data['mode'], $until, $data['triggers'] ?? null, auth()->id());
-                    } else {
-                        $service->watchForUser($this->record, auth()->id(), $data['mode'], $until, $data['triggers'] ?? null);
-                    }
-                    $this->reloadRecord();
-                    Notification::make()->title('Watching investigation')->success()->send();
-                }),
+            // WP7.3: the secondary actions sit in one menu so the header fits a
+            // phone screen (it overflowed with fourteen buttons).
+            \Filament\Actions\ActionGroup::make([
+                // Close
+                Action::make('close')
+                    ->label('Close')
+                    ->icon('heroicon-o-x-circle')
+                    ->color('gray')
+                    ->visible(fn () => $this->record->status === Investigation::STATUS_RESOLVED
+                        && (auth()->user()?->canCloseInvestigation() ?? false))
+                    ->requiresConfirmation()
+                    ->modalHeading('Close Investigation?')
+                    ->modalDescription('Closing marks this as permanently done. You can still view it.')
+                    ->action(function () {
+                        abort_unless(auth()->user()?->canCloseInvestigation() ?? false, 403);
+                        $old = $this->record->status;
+                        $this->record->update([
+                            'status'    => Investigation::STATUS_CLOSED,
+                            'closed_at' => now(),
+                        ]);
+                        AuditLogger::statusChanged($this->record, $old, Investigation::STATUS_CLOSED);
+                        $this->record = $this->record->fresh(['anomalies', 'evidence', 'actions.assignedTo', 'actions.assignedTeam', 'auditLogs.user', 'assignedTeam', 'assignedUser']);
+                        Notification::make()->title('Investigation closed')->success()->send();
+                    }),
 
-            Action::make('unwatch')
-                ->label('Unwatch')
-                ->icon('heroicon-o-eye-slash')
+                // ── Feature 5 — Watch / Unwatch ────────────────────────────────
+                Action::make('watch')
+                    ->label('Watch')
+                    ->icon('heroicon-o-eye')
+                    ->color('info')
+                    ->visible(fn () => ! $this->isWatchedByMe())
+                    ->form([
+                        Select::make('mode')
+                            ->label('Watch')
+                            ->options([
+                                InvestigationWatch::MODE_UNTIL_RESOLVED => 'Until resolved',
+                                InvestigationWatch::MODE_UNTIL_DATE      => 'Until a date',
+                                InvestigationWatch::MODE_INDEFINITE      => 'Indefinitely',
+                            ])
+                            ->default(InvestigationWatch::MODE_UNTIL_RESOLVED)
+                            ->live()
+                            ->required(),
+                        DateTimePicker::make('watch_until')
+                            ->label('Watch until')
+                            ->visible(fn ($get) => $get('mode') === InvestigationWatch::MODE_UNTIL_DATE)
+                            ->minDate(now()),
+                        CheckboxList::make('triggers')
+                            ->label('Notify me on')
+                            ->options(InvestigationWatch::TRIGGER_LABELS)
+                            ->default(InvestigationWatch::DEFAULT_TRIGGERS)
+                            ->columns(2),
+                        Select::make('team_id')
+                            ->label('Watch as team (optional)')
+                            ->options(fn () => Team::where('tenant_id', $this->record->tenant_id)->pluck('name', 'id'))
+                            ->placeholder('Just me')
+                            ->helperText('Team watches notify all members.'),
+                    ])
+                    ->action(function (array $data) {
+                        $service = app(WatchService::class);
+                        $until   = ! empty($data['watch_until']) ? \Illuminate\Support\Carbon::parse($data['watch_until']) : null;
+                        if (! empty($data['team_id'])) {
+                            $service->watchForTeam($this->record, (int) $data['team_id'], $data['mode'], $until, $data['triggers'] ?? null, auth()->id());
+                        } else {
+                            $service->watchForUser($this->record, auth()->id(), $data['mode'], $until, $data['triggers'] ?? null);
+                        }
+                        $this->reloadRecord();
+                        Notification::make()->title('Watching investigation')->success()->send();
+                    }),
+
+                Action::make('unwatch')
+                    ->label('Unwatch')
+                    ->icon('heroicon-o-eye-slash')
+                    ->color('gray')
+                    ->visible(fn () => $this->isWatchedByMe())
+                    ->action(function () {
+                        app(WatchService::class)->unwatchForUser($this->record, auth()->id());
+                        $this->reloadRecord();
+                        Notification::make()->title('Stopped watching')->success()->send();
+                    }),
+
+                // ── Feature 6 — Snooze / Unsnooze ──────────────────────────────
+                Action::make('snooze')
+                    ->label('Snooze')
+                    ->icon('heroicon-o-clock')
+                    ->color('warning')
+                    ->visible(fn () => ! $this->record->isSnoozed())
+                    ->form([
+                        Select::make('duration')
+                            ->label('Snooze for')
+                            ->options(SnoozeService::DURATIONS)
+                            ->default('7d')
+                            ->live()
+                            ->required(),
+                        DatePicker::make('custom_date')
+                            ->label('Until')
+                            ->visible(fn ($get) => $get('duration') === 'custom')
+                            ->minDate(now()),
+                        Select::make('reason')
+                            ->label('Reason')
+                            ->options(SnoozeService::REASONS)
+                            ->required(),
+                        Textarea::make('notes')->label('Notes')->rows(2),
+                    ])
+                    ->action(function (array $data) {
+                        $service = app(SnoozeService::class);
+                        $until = $service->resolveUntil($data['duration'], $data['custom_date'] ?? null);
+                        $service->snooze($this->record, $until, $data['reason'], $data['notes'] ?? null, auth()->id());
+                        $this->reloadRecord();
+                        Notification::make()->title('Investigation snoozed')->success()->send();
+                    }),
+
+                Action::make('unsnooze')
+                    ->label('Unsnooze')
+                    ->icon('heroicon-o-bell-alert')
+                    ->color('gray')
+                    ->visible(fn () => $this->record->isSnoozed())
+                    ->action(function () {
+                        app(SnoozeService::class)->unsnooze($this->record, auth()->id());
+                        $this->reloadRecord();
+                        Notification::make()->title('Snooze cleared')->success()->send();
+                    }),
+
+                // ── Feature 10 — Add comment ───────────────────────────────────
+                Action::make('add_comment')
+                    ->label('Comment')
+                    ->icon('heroicon-o-chat-bubble-left-right')
+                    ->color('gray')
+                    ->form([
+                        Textarea::make('body')
+                            ->label('Comment')
+                            ->required()
+                            ->rows(3)
+                            ->placeholder('Add context, a decision, or a question…'),
+                        Select::make('mentioned_user_ids')
+                            ->label('Mention users')
+                            ->multiple()
+                            ->options(fn () => User::where('tenant_id', $this->record->tenant_id)->orderBy('name')->pluck('name', 'id'))
+                            ->searchable(),
+                        Select::make('mentioned_team_ids')
+                            ->label('Mention teams')
+                            ->multiple()
+                            ->options(fn () => Team::where('tenant_id', $this->record->tenant_id)->orderBy('name')->pluck('name', 'id'))
+                            ->searchable(),
+                    ])
+                    ->action(function (array $data) {
+                        app(CommentService::class)->post(
+                            $this->record,
+                            auth()->id(),
+                            $data['body'],
+                            array_map('intval', $data['mentioned_user_ids'] ?? []),
+                            array_map('intval', $data['mentioned_team_ids'] ?? []),
+                        );
+                        $this->reloadRecord();
+                        Notification::make()->title('Comment added')->success()->send();
+                    }),
+
+                // Export the full investigation dossier as a PDF (tenant-scoped, audited).
+                Action::make('export_pdf')
+                    ->label('Export PDF')
+                    ->icon('heroicon-o-document-arrow-down')
+                    ->color('gray')
+                    ->url(fn (): string => route('investigation.report.pdf', $this->record->id), shouldOpenInNewTab: true),
+
+                // Back to list
+                Action::make('back')
+                    ->label('All Investigations')
+                    ->icon('heroicon-o-arrow-left')
+                    ->color('gray')
+                    ->url(InvestigationResource::getUrl('index')),
+            ])
+                ->label('More')
+                ->icon('heroicon-m-ellipsis-vertical')
                 ->color('gray')
-                ->visible(fn () => $this->isWatchedByMe())
-                ->action(function () {
-                    app(WatchService::class)->unwatchForUser($this->record, auth()->id());
-                    $this->reloadRecord();
-                    Notification::make()->title('Stopped watching')->success()->send();
-                }),
-
-            // ── Feature 6 — Snooze / Unsnooze ──────────────────────────────
-            Action::make('snooze')
-                ->label('Snooze')
-                ->icon('heroicon-o-clock')
-                ->color('warning')
-                ->visible(fn () => ! $this->record->isSnoozed())
-                ->form([
-                    Select::make('duration')
-                        ->label('Snooze for')
-                        ->options(SnoozeService::DURATIONS)
-                        ->default('7d')
-                        ->live()
-                        ->required(),
-                    DatePicker::make('custom_date')
-                        ->label('Until')
-                        ->visible(fn ($get) => $get('duration') === 'custom')
-                        ->minDate(now()),
-                    Select::make('reason')
-                        ->label('Reason')
-                        ->options(SnoozeService::REASONS)
-                        ->required(),
-                    Textarea::make('notes')->label('Notes')->rows(2),
-                ])
-                ->action(function (array $data) {
-                    $service = app(SnoozeService::class);
-                    $until = $service->resolveUntil($data['duration'], $data['custom_date'] ?? null);
-                    $service->snooze($this->record, $until, $data['reason'], $data['notes'] ?? null, auth()->id());
-                    $this->reloadRecord();
-                    Notification::make()->title('Investigation snoozed')->success()->send();
-                }),
-
-            Action::make('unsnooze')
-                ->label('Unsnooze')
-                ->icon('heroicon-o-bell-alert')
-                ->color('gray')
-                ->visible(fn () => $this->record->isSnoozed())
-                ->action(function () {
-                    app(SnoozeService::class)->unsnooze($this->record, auth()->id());
-                    $this->reloadRecord();
-                    Notification::make()->title('Snooze cleared')->success()->send();
-                }),
-
-            // ── Feature 10 — Add comment ───────────────────────────────────
-            Action::make('add_comment')
-                ->label('Comment')
-                ->icon('heroicon-o-chat-bubble-left-right')
-                ->color('gray')
-                ->form([
-                    Textarea::make('body')
-                        ->label('Comment')
-                        ->required()
-                        ->rows(3)
-                        ->placeholder('Add context, a decision, or a question…'),
-                    Select::make('mentioned_user_ids')
-                        ->label('Mention users')
-                        ->multiple()
-                        ->options(fn () => User::where('tenant_id', $this->record->tenant_id)->orderBy('name')->pluck('name', 'id'))
-                        ->searchable(),
-                    Select::make('mentioned_team_ids')
-                        ->label('Mention teams')
-                        ->multiple()
-                        ->options(fn () => Team::where('tenant_id', $this->record->tenant_id)->orderBy('name')->pluck('name', 'id'))
-                        ->searchable(),
-                ])
-                ->action(function (array $data) {
-                    app(CommentService::class)->post(
-                        $this->record,
-                        auth()->id(),
-                        $data['body'],
-                        array_map('intval', $data['mentioned_user_ids'] ?? []),
-                        array_map('intval', $data['mentioned_team_ids'] ?? []),
-                    );
-                    $this->reloadRecord();
-                    Notification::make()->title('Comment added')->success()->send();
-                }),
-
-            // Export the full investigation dossier as a PDF (tenant-scoped, audited).
-            Action::make('export_pdf')
-                ->label('Export PDF')
-                ->icon('heroicon-o-document-arrow-down')
-                ->color('gray')
-                ->url(fn (): string => route('investigation.report.pdf', $this->record->id), shouldOpenInNewTab: true),
-
-            // Back to list
-            Action::make('back')
-                ->label('All Investigations')
-                ->icon('heroicon-o-arrow-left')
-                ->color('gray')
-                ->url(InvestigationResource::getUrl('index')),
+                ->button(),
         ];
     }
 }

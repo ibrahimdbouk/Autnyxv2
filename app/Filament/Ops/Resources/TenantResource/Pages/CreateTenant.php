@@ -23,6 +23,7 @@ class CreateTenant extends CreateRecord
                 'status'   => $data['status'] ?? Tenant::STATUS_ACTIVE,
                 'apps'     => $data['apps'] ?? Tenant::DEFAULT_APPS,
                 'currency' => $data['currency'] ?? 'USD',
+                'timezone' => $data['timezone'] ?? null,
             ],
             [
                 'name'     => $data['admin_name'] ?? null,

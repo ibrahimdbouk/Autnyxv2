@@ -98,6 +98,16 @@ class TenantResource extends Resource
                         ->columns(1),
                 ]),
 
+            // WP7.4 (L14): recommend-only unless the tenant explicitly opts in.
+            Section::make('Sending actions to the tenant\'s systems')
+                ->visibleOn('edit')
+                ->description('Off: Autnyx recommends and records; nothing is sent to an ERP or replenishment system. On: approved or auto-level actions may be sent, still subject to the tenant\'s autonomy levels and guardrails.')
+                ->schema([
+                    \Filament\Forms\Components\Toggle::make('execution_opt_in')
+                        ->label('The tenant has agreed in writing to let Autnyx send actions')
+                        ->default(false),
+                ]),
+
             Section::make('First administrator')
                 ->description('Create the tenant’s first admin account. They can add the rest of their team.')
                 ->visibleOn('create')
