@@ -22,6 +22,13 @@ Schedule::command('api:poll')
     ->onOneServer()
     ->withoutOverlapping(55);
 
+// W13: webhook deliveries retry on the queue; this re-queues any whose retry
+// job was lost (worker restart, deploy).
+Schedule::command('webhooks:findings --retry')
+    ->everyFifteenMinutes()
+    ->onOneServer()
+    ->withoutOverlapping(14);
+
 // WP1.2 (audit C3) — retire uploads left awaiting review so they can never hold
 // detection back indefinitely (detection only waits for them for 24h anyway).
 Schedule::command('imports:expire-abandoned')

@@ -988,6 +988,11 @@ class ImportProcessorService
             app(\App\Services\Sales\SalesDailyAggregator::class)->aggregateForImport($import);
             // WP6.2: the current stock positions this inventory load moved.
             app(\App\Services\Inventory\InventoryCurrentService::class)->refreshForImport($import);
+            // W13: PO lines in selling units and the tenant's currency (a product
+            // file can supply the units per case a waiting case line needs).
+            if (in_array($import->data_type, [Import::TYPE_PURCHASE_ORDERS, Import::TYPE_PRODUCTS], true)) {
+                app(\App\Services\Supply\PurchaseOrderNormalizer::class)->normalize((int) $import->tenant_id);
+            }
             // WP6.5: master data moves the canonical hierarchies with it.
             if (in_array($import->data_type, [Import::TYPE_PRODUCTS, Import::TYPE_STORES, Import::TYPE_SUPPLIERS], true)) {
                 app(\App\Services\Platform\HierarchySync::class)->syncTenant((int) $import->tenant_id);
@@ -1222,6 +1227,8 @@ class ImportProcessorService
                 'location' => null, 'open_qty' => null, 'late_days' => null, 'fill_rate' => null,
                 // WP3.4
                 'currency' => null, 'status' => null, 'buyer' => null,
+                // W13: raw as sent — a re-sent line is normalised again.
+                'order_uom' => null, 'pack_factor' => null, 'unit_cost_original' => null, 'fx_rate' => null,
             ],
             'sales_returns' => [
                 'tenant_id' => null, 'import_id' => null, 'store_id' => null, 'product_id' => null,
@@ -1470,6 +1477,7 @@ class ImportProcessorService
             'width_mm'      => $this->optNumber($data, 'width_mm', 0),
             'height_mm'     => $this->optNumber($data, 'height_mm', 0),
             'volume_cm3'    => $this->optNumber($data, 'volume_cm3', 0),
+            'units_per_case' => $this->optNumber($data, 'units_per_case', 1),   // W13
         ]);
 
         $product = Product::firstOrNew(['tenant_id' => $import->tenant_id, 'sku' => $sku]);
@@ -1515,6 +1523,7 @@ class ImportProcessorService
             'currency'      => $this->optCurrency($data, 'currency'),
             'status'        => $this->optText($data, 'status'),
             'buyer'         => $this->optText($data, 'buyer'),
+            'order_uom'     => ($u = $this->optText($data, 'uom')) !== null ? mb_substr($u, 0, 20) : null,   // W13
         ];
 
         if (! ValueParser::isBlank($data['location'] ?? null)) {

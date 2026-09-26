@@ -81,6 +81,107 @@ trait DetectsV2
         return $hit;
     }
 
+    private ?\App\Services\Calendar\RetailCalendar $events = null;
+
+    /** @var array<string,int> */
+    private array $eventSuppressedByRule = [];
+
+    /**
+     * W13: the retail-calendar event that explains a swing between the two
+     * windows (inclusive dates), if any — counted per rule.
+     *
+     * @return array{key:string,name:string,from:string,to:string}|null
+     */
+    private function eventExplains(int $tenantId, string $ruleType, ?string $sku, ?int $storeId, string $aFrom, string $aTo, string $bFrom, string $bTo, ?string $direction = null): ?array
+    {
+        if (! config('detection.event_suppression', true)) {
+            return null;
+        }
+        if ($this->events === null) {
+            $end = $this->clock('sales');
+            $this->events = \App\Services\Calendar\RetailCalendar::load($tenantId, $end->copy()->subDays(430)->toDateString(), $end->toDateString());
+        }
+        if ($this->events->isEmpty()) {
+            return null;
+        }
+        $hit = $this->events->explains($sku, $storeId, $aFrom, $aTo, $bFrom, $bTo);
+        // The event must show in the data: the item's department (or, for a
+        // small one, the whole business) moved the same way over the same
+        // windows. A calendar date alone never silences a finding.
+        if ($hit !== null && $direction !== null && ! $this->categoryMoved($tenantId, $sku, $direction, $aFrom, $aTo, $bFrom, $bTo)) {
+            $hit = null;
+        }
+        if ($hit !== null) {
+            $this->eventSuppressedByRule[$ruleType] = ($this->eventSuppressedByRule[$ruleType] ?? 0) + 1;
+        }
+
+        return $hit;
+    }
+
+    /** @var array<string,array{dept:array<string,array{a:float,b:float,n:int}>, sku:array<string,array{a:float,b:float,d:string}>, da:int, db:int}> window pair => totals */
+    private array $categoryMoves = [];
+
+    /** @var array<string,string>|null unused (kept for reset symmetry) */
+    private ?array $skuDepartment = null;
+
+    /**
+     * Did the SKU's department — or, when that has fewer than 5 other selling
+     * SKUs, the rest of the business — move $direction by at least 15% per day
+     * between window A and B? The SKU's own sales are left out, so its swing
+     * can never explain itself.
+     */
+    private function categoryMoved(int $tenantId, ?string $sku, string $direction, string $aFrom, string $aTo, string $bFrom, string $bTo): bool
+    {
+        $k = "{$aFrom}|{$aTo}|{$bFrom}|{$bTo}";
+        if (! isset($this->categoryMoves[$k])) {
+            $rows = DB::select(
+                "SELECT s.sku, COALESCE(NULLIF(lower(trim(MAX(p.department))), ''), NULLIF(lower(trim(MAX(p.category))), ''), '') AS c,
+                        COALESCE(SUM(s.units_sold) FILTER (WHERE s.date BETWEEN ? AND ?), 0) AS a,
+                        COALESCE(SUM(s.units_sold) FILTER (WHERE s.date BETWEEN ? AND ?), 0) AS b
+                   FROM sales_daily s LEFT JOIN products p ON p.tenant_id = s.tenant_id AND p.sku = s.sku
+                  WHERE s.tenant_id = ? AND ((s.date BETWEEN ? AND ?) OR (s.date BETWEEN ? AND ?))
+                  GROUP BY s.sku",
+                [$aFrom, $aTo, $bFrom, $bTo, $tenantId, $aFrom, $aTo, $bFrom, $bTo]
+            );
+            $t = ['dept' => ['__all__' => ['a' => 0.0, 'b' => 0.0, 'n' => 0]], 'sku' => [],
+                'da' => (int) max(1, Carbon::parse($aFrom)->diffInDays(Carbon::parse($aTo)) + 1),
+                'db' => (int) max(1, Carbon::parse($bFrom)->diffInDays(Carbon::parse($bTo)) + 1)];
+            foreach ($rows as $r) {
+                $a = (float) $r->a;
+                $b = (float) $r->b;
+                $t['sku'][(string) $r->sku] = ['a' => $a, 'b' => $b, 'd' => (string) $r->c];
+                foreach ([(string) $r->c, '__all__'] as $d) {
+                    $t['dept'][$d] ??= ['a' => 0.0, 'b' => 0.0, 'n' => 0];
+                    $t['dept'][$d]['a'] += $a;
+                    $t['dept'][$d]['b'] += $b;
+                    $t['dept'][$d]['n']++;
+                }
+            }
+            $this->categoryMoves[$k] = $t;
+        }
+        $t = $this->categoryMoves[$k];
+        $own = $t['sku'][(string) $sku] ?? ['a' => 0.0, 'b' => 0.0, 'd' => ''];
+        $pick = null;
+        foreach ($own['d'] !== '' ? [$own['d'], '__all__'] : ['__all__'] as $d) {
+            $g = $t['dept'][$d] ?? null;
+            if ($g !== null && $g['n'] - 1 >= 5) {
+                $pick = $g;
+                break;
+            }
+        }
+        if ($pick === null) {
+            return false;
+        }
+        $a = ($pick['a'] - $own['a']) / $t['da'];
+        $b = ($pick['b'] - $own['b']) / $t['db'];
+        if ($b <= 0) {
+            return false;
+        }
+        $ratio = $a / $b;
+
+        return $direction === 'up' ? $ratio >= 1.15 : $ratio <= 1 / 1.15;
+    }
+
     private function clock(string $dataset): Carbon
     {
         return ($this->clocks[$dataset] ?? Carbon::today())->copy();
@@ -320,6 +421,11 @@ trait DetectsV2
                 $isDrop ? $histW->fromDate() : $recentW->fromDate(), $recentW->lastDate())) {
                 continue;
             }
+            // W13: Ramadan, Eid, back to school… in one window and not the other.
+            if ($this->eventExplains($tenantId, $ruleType, (string) $sku, $storeId,
+                $recentW->fromDate(), $recentW->lastDate(), $histW->fromDate(), $histW->lastDate(), $isDrop ? 'down' : 'up')) {
+                continue;
+            }
 
             $where = $storeId !== null ? " at store {$storeId}" : '';
             $this->flag($tenantId, $ruleType, $severity, $sku, $storeId, null,
@@ -372,6 +478,11 @@ trait DetectsV2
             if ($this->promoExplains($tenantId, 'demand_seasonality_breach', (string) $sku, null, $promoW->fromDate(), $promoW->lastDate())) {
                 continue;
             }
+            // W13: the Hijri calendar moves ~11 days a year — Ramadan / Eid in one year's dates and not the other's.
+            if ($this->eventExplains($tenantId, 'demand_seasonality_breach', (string) $sku, null,
+                $current->fromDate(), $current->lastDate(), $prior->fromDate(), $prior->lastDate(), $direction === 'above' ? 'up' : 'down')) {
+                continue;
+            }
             $this->flag($tenantId, 'demand_seasonality_breach', 'medium', $sku, null, $productIds[$sku] ?? null,
                 "SKU {$sku} sold " . round($currentQty) . " units in the 30 days to {$current->lastDate()} — "
                 . round($changePct) . "% {$direction} the same 30 days last year (" . round($priorQty) . ' units).',
@@ -417,6 +528,10 @@ trait DetectsV2
             $direction = $actual > $expected ? 'above' : 'below';
             if ($this->promoExplains($tenantId, 'demand_seasonality_breach', (string) $sku, null,
                 $direction === 'above' ? $recentW->fromDate() : $baseW->fromDate(), $recentW->lastDate())) {
+                continue;
+            }
+            if ($this->eventExplains($tenantId, 'demand_seasonality_breach', (string) $sku, null,
+                $recentW->fromDate(), $recentW->lastDate(), $baseW->fromDate(), $baseW->lastDate(), $direction === 'above' ? 'up' : 'down')) {
                 continue;
             }
             $this->flag($tenantId, 'demand_seasonality_breach', 'medium', $sku, null, $productIds[$sku] ?? null,
@@ -859,6 +974,7 @@ trait DetectsV2
                     . 'expected ' . Carbon::parse($po->expected_date)->format('Y-m-d') . ', ' . round($open) . ' units still open'
                     . ($value > 0 ? ' (' . $this->money($value) . ')' : '') . '.',
                     ['po_number' => $po->po_number, 'supplier' => $po->supplier, 'days_overdue' => $daysOverdue,
+                     'expected_date' => Carbon::parse($po->expected_date)->format('Y-m-d'),
                      'qty_ordered' => (float) $po->qty_ordered, 'qty_received' => (float) ($po->qty_received ?? 0),
                      'goods_value' => round($value, 2)],
                     $this->poSubject($po->po_number)
@@ -892,6 +1008,7 @@ trait DetectsV2
                     . Carbon::parse($po->received_date)->format('Y-m-d') . " with only {$receivedPct}% of the order ("
                     . round($received) . ' of ' . round($ordered) . ' units, ' . $this->money($value) . ' short).',
                     ['po_number' => $po->po_number, 'supplier' => $po->supplier, 'qty_ordered' => $ordered, 'qty_received' => $received,
+                     'received_date' => Carbon::parse($po->received_date)->format('Y-m-d'),
                      'received_pct' => $receivedPct, 'goods_value' => round($value, 2)],
                     $this->poSubject($po->po_number)
                 );

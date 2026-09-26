@@ -624,6 +624,9 @@ class AnomalyDetectionService
     /** @return array<string,int> W10: flags left alone because a promotion explains them */
     public function promoSuppressedByRule(): array { return $this->promoSuppressedByRule; }
 
+    /** @return array<string,int> W13: flags the retail calendar explained, per rule */
+    public function eventSuppressedByRule(): array { return $this->eventSuppressedByRule; }
+
     /** B2: total flags suppressed by best-fit gating in the last run. */
     public function gatedFlags(): int { return $this->gatedFlags; }
 
@@ -862,6 +865,10 @@ class AnomalyDetectionService
         $this->suppressedByRule = [];
         $this->promos = null;                 // W10: the promotion calendar, loaded on first use
         $this->promoSuppressedByRule = [];
+        $this->events = null;                 // W13: the retail calendar, loaded on first use
+        $this->eventSuppressedByRule = [];
+        $this->categoryMoves = [];
+        $this->skuDepartment = null;
         // Set the analysis clock BEFORE any priming — every window below measures
         // "recent" relative to the latest data date, not wall-clock today.
         // v2 (audit H18): one clock per dataset; the shared clock is the sales one.
@@ -1021,8 +1028,10 @@ class AnomalyDetectionService
 
             try {
                 $detector();
+                $this->flushWrites();   // W13: the rule's bulk writes, before its sweep
                 $succeeded = true;
             } catch (\Throwable $e) {
+                $this->pendingCreates = $this->pendingUpdates = [];
                 report($e);   // WP5.3: to Nightwatch — a failed rule must be seen
                 Log::error("Anomaly detection failed [{$ruleType}]", [
                     'tenant_id' => $tenantId,
@@ -1055,6 +1064,11 @@ class AnomalyDetectionService
                 'ok'      => $succeeded,
             ];
         }
+        $this->flushWrites();   // W13: nothing is left unwritten
+        if ($this->insertedThisRun >= (int) config('detection.analyze_after_rows', 1000)) {
+            self::refreshStats(['anomalies']);
+        }
+        $this->insertedThisRun = 0;
         $slow = array_filter($this->ruleStats, fn ($s) => $s['ms'] >= 30000);
         if ($slow !== []) {
             Log::warning('[detect] slow rules', ['tenant_id' => $tenantId, 'rules' => $slow]);
@@ -3498,16 +3512,18 @@ class AnomalyDetectionService
         $open = $latest && $latest->dismissed_at === null && $latest->lifecycle_state !== Anomaly::LIFECYCLE_RESOLVED;
 
         if ($open) {
-            $latest->update([
+            // W13: written in bulk at the end of the rule (flushWrites), not one UPDATE per flag.
+            $latest->forceFill([
                 'severity'    => $severity,
                 'description' => $description,
                 'context'     => $context,
                 'product_id'  => $productId ?? $latest->product_id,
                 'value_type'  => ValueModel::type($ruleType, $context),
             ]);
+            $this->queueWrite($latest);
             $anomaly = $latest;
         } else {
-            $anomaly = Anomaly::create([
+            $anomaly = (new Anomaly)->forceFill([
                 // The prior episode is already known (WP6.3) — no second lookup at insert.
                 'previous_episode_id' => $latest?->id,
                 'episode_seq'  => $latest ? (int) $latest->episode_seq + 1 : 1,
@@ -3526,10 +3542,127 @@ class AnomalyDetectionService
                 'value_type'    => ValueModel::type($ruleType, $context),
                 'value_at_open' => ValueModel::amount($context),
             ]);
+            $this->queueWrite($anomaly);
         }
 
-        $this->touchedAnomalyIds[] = $anomaly->id;
+        if ($anomaly->exists) {
+            $this->touchedAnomalyIds[] = $anomaly->id;   // a new row's id is added when it is inserted
+        }
         $this->episodes[$ruleType][$key] = $anomaly;
+    }
+
+    // ── W13: bulk writes for v2 flags ────────────────────────────────────────
+    // A nightly run flags tens of thousands of subjects; one INSERT or UPDATE
+    // per flag was most of detection's database time. New episodes are
+    // inserted in batches (INSERT … RETURNING id) and changed ones updated in
+    // batches (UPDATE … FROM VALUES), at the end of each rule or every
+    // WRITE_BATCH flags. A subject flagged twice in one rule before the flush
+    // simply updates the pending row.
+
+    private const WRITE_BATCH = 500;
+
+    /** Rows inserted by this run (for the statistics refresh at the end). */
+    private int $insertedThisRun = 0;
+
+    /**
+     * After a run that added many findings (a first run, a new feed), refresh
+     * the planner's statistics for the table at once: until autovacuum gets
+     * to it the planner believes the table is still small and picks nested
+     * loops that make correlation and the next rules crawl (measured: 4–5×).
+     */
+    public static function refreshStats(array $tables): void
+    {
+        foreach ($tables as $table) {
+            try {
+                DB::statement('ANALYZE ' . preg_replace('/[^a-z_]/', '', $table));
+            } catch (\Throwable) {
+                // not the owner, or inside a failed transaction — autovacuum will do it
+            }
+        }
+    }
+
+    /** @var array<int, Anomaly> spl id => new episode waiting to be inserted */
+    private array $pendingCreates = [];
+
+    /** @var array<int, Anomaly> anomaly id => changed episode waiting to be written */
+    private array $pendingUpdates = [];
+
+    private function queueWrite(Anomaly $a): void
+    {
+        if (! $a->exists) {
+            $this->pendingCreates[spl_object_id($a)] = $a;
+        } elseif ($a->isDirty()) {
+            $this->pendingUpdates[$a->id] = $a;
+        }
+        if (count($this->pendingCreates) + count($this->pendingUpdates) >= self::WRITE_BATCH) {
+            $this->flushWrites();
+        }
+    }
+
+    /** Columns every new v2 episode is inserted with (what Anomaly::creating would fill). */
+    private const INSERT_COLUMNS = ['tenant_id', 'rule_type', 'severity', 'sku', 'store_id', 'product_id', 'description', 'context',
+        'detected_at', 'identity_key', 'episode_seq', 'previous_episode_id', 'value_type', 'value_at_open', 'lifecycle_state',
+        'first_seen_at', 'last_seen_at', 'occurrence_count', 'clear_streak', 'backfilled', 'created_at', 'updated_at'];
+
+    private function flushWrites(): void
+    {
+        if ($this->pendingCreates !== []) {
+            $now = now();
+            foreach (array_chunk($this->pendingCreates, self::WRITE_BATCH) as $batch) {
+                $rows = [];
+                $bind = [];
+                foreach ($batch as $a) {
+                    $a->forceFill([
+                        'first_seen_at'    => $a->first_seen_at ?? $a->detected_at ?? $now,
+                        'last_seen_at'     => $a->last_seen_at ?? $a->first_seen_at ?? $a->detected_at ?? $now,
+                        'lifecycle_state'  => $a->lifecycle_state ?: Anomaly::LIFECYCLE_OPEN,
+                        'episode_seq'      => $a->episode_seq ?: 1,
+                        'occurrence_count' => $a->occurrence_count ?: 1,
+                        'clear_streak'     => $a->clear_streak ?? 0,
+                        'backfilled'       => $a->backfilled ?? false,
+                        'created_at'       => $now,
+                        'updated_at'       => $now,
+                    ]);
+                    $attrs = $a->getAttributes();
+                    $rows[] = '(' . implode(', ', array_map(fn ($c) => $c === 'context' ? '?::jsonb' : '?', self::INSERT_COLUMNS)) . ')';
+                    foreach (self::INSERT_COLUMNS as $c) {
+                        $v = $attrs[$c] ?? null;
+                        $bind[] = is_bool($v) ? ($v ? 'true' : 'false') : $v;
+                    }
+                }
+                $ids = DB::select('INSERT INTO anomalies (' . implode(', ', self::INSERT_COLUMNS) . ') VALUES ' . implode(', ', $rows) . ' RETURNING id', $bind);
+                $this->insertedThisRun += count($ids);
+                foreach (array_values($batch) as $i => $a) {
+                    $a->setAttribute('id', (int) $ids[$i]->id);
+                    $a->exists = true;
+                    $a->wasRecentlyCreated = true;
+                    $a->syncOriginal();
+                    $this->touchedAnomalyIds[] = $a->id;
+                }
+            }
+            $this->pendingCreates = [];
+        }
+
+        if ($this->pendingUpdates !== []) {
+            foreach (array_chunk($this->pendingUpdates, self::WRITE_BATCH) as $batch) {
+                $rows = [];
+                $bind = [];
+                foreach ($batch as $a) {
+                    $attrs = $a->getAttributes();
+                    $rows[] = '(?::bigint, ?, ?, ?::jsonb, ?::bigint, ?)';
+                    array_push($bind, $a->id, $attrs['severity'] ?? null, $attrs['description'] ?? null, $attrs['context'] ?? null,
+                        $attrs['product_id'] ?? null, $attrs['value_type'] ?? null);
+                }
+                DB::update('UPDATE anomalies AS a SET severity = v.severity, description = v.description, context = v.context,
+                        product_id = v.product_id, value_type = v.value_type, updated_at = ?
+                    FROM (VALUES ' . implode(', ', $rows) . ') AS v(id, severity, description, context, product_id, value_type)
+                    WHERE a.id = v.id', array_merge([now()], $bind));
+                foreach ($batch as $a) {
+                    $a->syncOriginal();
+                }
+            }
+            $this->pendingUpdates = [];
+        }
     }
 
     /** @var array<string,array<string,Anomaly>> rule => identity => latest episode (WP6.3, per run) */

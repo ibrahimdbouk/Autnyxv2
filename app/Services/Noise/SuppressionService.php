@@ -38,6 +38,28 @@ class SuppressionService
         return null;
     }
 
+    /** @var array<string, \Illuminate\Support\Collection> W13: tenant|rule => active suppressions, for one batch */
+    private array $batchCandidates = [];
+
+    /**
+     * W13 — matchFor() for a batch (correlating a night's findings): the active
+     * suppressions of a rule are read once, not once per finding. Use a fresh
+     * instance per batch.
+     */
+    public function matchForBatch(Anomaly $anomaly): ?Suppression
+    {
+        $k = $anomaly->tenant_id . '|' . $anomaly->rule_type;
+        $this->batchCandidates[$k] ??= Suppression::query()->currentlyActive()
+            ->where('tenant_id', $anomaly->tenant_id)->where('rule_type', $anomaly->rule_type)->get();
+        foreach ($this->batchCandidates[$k] as $suppression) {
+            if ($this->scopeMatches($suppression, $anomaly)) {
+                return $suppression;
+            }
+        }
+
+        return null;
+    }
+
     public function isSuppressed(Anomaly $anomaly): bool
     {
         return $this->matchFor($anomaly) !== null;

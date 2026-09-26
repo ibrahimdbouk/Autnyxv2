@@ -36,6 +36,68 @@ class InvestigationNarratorService
      */
     public function narrate(Investigation $investigation, bool $force = false): Investigation
     {
+        $prompt = $this->prepare($investigation, $force);
+        if ($prompt === null) {
+            return $investigation;
+        }
+        // WP5.4: through AnthropicClient — budget, retries, circuit breaker,
+        // metering, model from config, data-is-not-instructions system prompt.
+        $r = app(\App\Services\AI\AnthropicClient::class)
+            ->message((int) $investigation->tenant_id, 'narrator', $prompt, 'fast', 1024, null, 45);
+
+        return $this->apply($investigation, $r);
+    }
+
+    /**
+     * W13 — the nightly run: prompts are built one by one (database work), the
+     * model calls go out several at a time (ai.narrate_concurrency), each reply
+     * is stored as it is. Budget, retries, circuit breaker and metering are the
+     * client's, as for a single call.
+     *
+     * @param  iterable<Investigation>  $investigations
+     * @return int narratives written
+     */
+    public function narrateMany(iterable $investigations, bool $force = false): int
+    {
+        $client = app(\App\Services\AI\AnthropicClient::class);
+        $concurrency = max(1, (int) config('ai.narrate_concurrency', 5));
+        $written = 0;
+
+        $batch = [];
+        $flush = function () use (&$batch, $client, $concurrency, &$written) {
+            if ($batch === []) {
+                return;
+            }
+            $results = $client->messages(array_map(fn ($b) => [
+                'tenant_id' => (int) $b['inv']->tenant_id, 'feature' => 'narrator', 'prompt' => $b['prompt'],
+                'tier' => 'fast', 'max_tokens' => 1024, 'timeout' => 45,
+            ], $batch), $concurrency);
+            foreach ($batch as $i => $b) {
+                $before = $b['inv']->ai_generated_at;
+                $after = $this->apply($b['inv'], $results[$i]);
+                if ($after->ai_generated_at && (! $before || $after->ai_generated_at->ne($before))) {
+                    $written++;
+                }
+            }
+            $batch = [];
+        };
+
+        foreach ($investigations as $inv) {
+            if (($prompt = $this->prepare($inv, $force)) !== null) {
+                $batch[] = ['inv' => $inv, 'prompt' => $prompt];
+            }
+            if (count($batch) >= $concurrency * 2) {
+                $flush();
+            }
+        }
+        $flush();
+
+        return $written;
+    }
+
+    /** Evidence, the deterministic cause and the prompt — or null when the narrative is current. */
+    private function prepare(Investigation $investigation, bool $force): ?string
+    {
         // Ensure evidence is collected before narrating
         if ($investigation->evidence()->count() === 0) {
             app(EvidenceCollectorService::class)->collectForInvestigation($investigation);
@@ -47,21 +109,21 @@ class InvestigationNarratorService
             $latestEvidence = $investigation->evidence()->latest('updated_at')->value('updated_at');
             if (!$latestEvidence || $investigation->ai_generated_at->gte($latestEvidence)) {
                 Log::info("[M19] Investigation #{$investigation->id} narrative is current — skipping.");
-                return $investigation;
+                return null;
             }
         }
 
         // WP4.5 (audit H23): the cause is decided deterministically and handed
         // to the model as a fixed fact; its tier sets the confidence shown.
         $cause  = app(\App\Services\Anomaly\RootCauseAnalysisService::class)->record($investigation);
-        $prompt = $this->buildPrompt($investigation, $cause);
 
+        return $this->buildPrompt($investigation, $cause);
+    }
+
+    /** Store one reply on the investigation. */
+    private function apply(Investigation $investigation, \App\Services\AI\AiResult $r): Investigation
+    {
         try {
-            // WP5.4: through AnthropicClient — budget, retries, circuit breaker,
-            // metering, model from config, data-is-not-instructions system prompt.
-            $r = app(\App\Services\AI\AnthropicClient::class)
-                ->message((int) $investigation->tenant_id, 'narrator', $prompt, 'fast', 1024, null, 45);
-
             if (! $r->ok || $r->truncated()) {
                 if ($r->ok) {
                     $this->recordFailure("Narrative cut off at max_tokens (investigation #{$investigation->id})");
@@ -167,11 +229,9 @@ class InvestigationNarratorService
             ->limit(max(1, (int) config('ai.narrate_per_run', 50)))
             ->get();
 
-        foreach ($investigations as $investigation) {
-            $this->narrate($investigation);
-        }
+        $written = $this->narrateMany($investigations);
 
-        Log::info("[M19] Narrated {$investigations->count()} investigation(s) for tenant {$tenantId}");
+        Log::info("[M19] Narrated {$written} of {$investigations->count()} investigation(s) for tenant {$tenantId}");
     }
 
     // =========================================================================

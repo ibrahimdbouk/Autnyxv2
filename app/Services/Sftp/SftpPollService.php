@@ -170,11 +170,11 @@ class SftpPollService
                 throw new \RuntimeException('Empty or unreadable remote file.');
             }
 
-            // Store locally for the import pipeline.
-            $localPath = 'sftp-imports/' . $connection->tenant_id . '/' . Str::uuid() . '_' . $filename;
-            Storage::disk('local')->put($localPath, $contents);
+            // W13: land it on the secure (private) disk like an upload — the
+            // bucket in production, not the app server's own disk.
+            $landed = app(\App\Services\Storage\TenantStorage::class)->landImport($connection->tenant_id, $contents, $filename);
 
-            $import = $this->autoImport($connection->tenant_id, $feed->data_type, $localPath, $filename, $feed);
+            $import = $this->autoImport($connection->tenant_id, $feed->data_type, $landed, $filename, $feed);
 
             $ledger->fill([
                 'checksum'        => md5($contents),
@@ -207,10 +207,13 @@ class SftpPollService
     /**
      * Create + process an Import non-interactively (auto column mapping).
      */
-    private function autoImport(int $tenantId, string $dataType, string $localPath, string $filename, ?SftpFeed $feed = null): Import
+    private function autoImport(int $tenantId, string $dataType, array $landed, string $filename, ?SftpFeed $feed = null): Import
     {
-        $fullPath = Storage::disk('local')->path($localPath);
-        $parsed   = $this->reader->read($fullPath);
+        try {
+            $parsed = $this->reader->read($landed['readable']);
+        } finally {
+            app(\App\Services\Storage\TenantStorage::class)->forgetScratch($landed);
+        }
 
         $import = Import::create([
             'tenant_id'         => $tenantId,
@@ -219,8 +222,8 @@ class SftpPollService
             'source_ref'        => $feed ? (string) $feed->id : null,
             'feed_key'          => Import::feedKeyFor(Import::SOURCE_SFTP, $dataType, $feed?->id),
             'original_filename' => $filename,
-            'disk'              => 'local',
-            'path'              => $localPath,
+            'disk'              => $landed['disk'],
+            'path'              => $landed['path'],
             'data_type'         => $dataType,
             'status'            => Import::STATUS_UPLOADED,
             'sample_rows'       => $parsed['rows'] ?? [],

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\AnomalyController;
 use App\Http\Controllers\Api\V1\DataHealthController;
+use App\Http\Controllers\Api\V1\ExportController;
 use App\Http\Controllers\Api\V1\IngestController;
 use App\Http\Controllers\Api\V1\InvestigationController;
 use App\Http\Controllers\Api\V1\OpenApiController;
@@ -44,6 +45,12 @@ Route::prefix('v1')->group(function () {
 
     Route::middleware(['api.key:' . ApiKey::SCOPE_READ_DATA_HEALTH, 'throttle:publicapi'])
         ->get('data-health', [DataHealthController::class, 'index']);
+
+    // W13: BI exports — flat tables for Power BI / Excel, incremental by ?since=.
+    Route::middleware(['api.key:' . ApiKey::SCOPE_READ_EXPORTS, 'throttle:publicapi'])->group(function () {
+        Route::get('exports', [ExportController::class, 'index']);
+        Route::get('exports/{dataset}', [ExportController::class, 'show'])->where('dataset', '[a-z_]+');
+    });
 
     Route::middleware(['api.key:' . ApiKey::SCOPE_WRITE_INGEST, 'throttle:publicapi'])->group(function () {
         Route::post('ingest', [IngestController::class, 'store']);

@@ -201,6 +201,48 @@ class PlatformHealthService
         }
     }
 
+    /**
+     * The tables that grow with every day of trading, and the row count at
+     * which one tenant's share should be split out (partitioned by date).
+     */
+    public const HOT_TABLES = ['sales_transactions', 'sales_daily', 'inventory_levels', 'purchase_orders', 'anomalies', 'sales_weekly'];
+
+    /**
+     * W13 — partitioning readiness. Postgres keeps single tables fast to tens
+     * of millions of rows with the indexes in place; past that, one tenant's
+     * history is better split by month. Planner estimates only (no count(*));
+     * when a table is past the watch level, a 1% sample says which tenants
+     * hold the rows.
+     *
+     * @return array<int, array{table:string, rows:int, level:string, tenants:array<int, array{tenant_id:int, rows:int}>}>
+     *   level: watch (≥ 80% of the threshold) | partition (≥ threshold)
+     */
+    public function partitionReadiness(?int $threshold = null): array
+    {
+        $threshold ??= (int) config('autnyx.partition_rows', 50_000_000);
+        $out = [];
+        try {
+            $est = collect(DB::select("SELECT relname, GREATEST(reltuples, 0)::bigint AS n FROM pg_class
+                WHERE relkind IN ('r', 'p') AND relnamespace = 'public'::regnamespace AND relname IN ('" . implode("','", self::HOT_TABLES) . "')"))
+                ->pluck('n', 'relname');
+            foreach (self::HOT_TABLES as $table) {
+                $rows = (int) ($est[$table] ?? 0);
+                if ($rows < 0.8 * $threshold) {
+                    continue;
+                }
+                $tenants = collect(DB::select("SELECT tenant_id, (COUNT(*) * 100)::bigint AS n FROM {$table} TABLESAMPLE SYSTEM (1)
+                    GROUP BY tenant_id ORDER BY 2 DESC LIMIT 5"))
+                    ->map(fn ($r) => ['tenant_id' => (int) $r->tenant_id, 'rows' => (int) $r->n])
+                    ->filter(fn ($r) => $r['rows'] >= 0.8 * $threshold)->values()->all();
+                $out[] = ['table' => $table, 'rows' => $rows, 'level' => $rows >= $threshold ? 'partition' : 'watch', 'tenants' => $tenants];
+            }
+        } catch (Throwable) {
+            return [];
+        }
+
+        return $out;
+    }
+
     /** Latest data:purge run. */
     public function lastPurge(): ?JobRun
     {
@@ -226,6 +268,7 @@ class PlatformHealthService
             'stuck_imports'  => $imports['stuck'],
             'failed_imports' => $imports['failed'],
             'db_bytes'       => $this->database()['bytes'],
+            'partition'      => $this->partitionReadiness(),
         ];
     }
 }

@@ -59,12 +59,14 @@ class PipelineIngestor
 
         $headerList = array_keys($headers);
         $filename   = $dataType . '_' . now()->format('Ymd_His') . '.csv';
-        $localPath  = $source . '-imports/' . $tenantId . '/' . Str::uuid() . '_' . $filename;
-
-        Storage::disk('local')->put($localPath, $this->toCsv($headerList, $buffer));
-
-        $fullPath = Storage::disk('local')->path($localPath);
-        $parsed   = $this->reader->read($fullPath);
+        // W13: on the secure (private) disk like an upload — the bucket in production.
+        $storage = app(\App\Services\Storage\TenantStorage::class);
+        $landed  = $storage->landImport($tenantId, $this->toCsv($headerList, $buffer), $filename);
+        try {
+            $parsed = $this->reader->read($landed['readable']);
+        } finally {
+            $storage->forgetScratch($landed);
+        }
 
         $import = Import::create([
             'tenant_id'         => $tenantId,
@@ -74,8 +76,8 @@ class PipelineIngestor
             'source_ref'        => $sourceRef !== null ? (string) $sourceRef : null,
             'feed_key'          => Import::feedKeyFor($feedSource, $dataType, $sourceRef),
             'original_filename' => $filename,
-            'disk'              => 'local',
-            'path'              => $localPath,
+            'disk'              => $landed['disk'],
+            'path'              => $landed['path'],
             'data_type'         => $dataType,
             'status'            => Import::STATUS_UPLOADED,
             'sample_rows'       => $parsed['rows'] ?? [],

@@ -63,6 +63,43 @@ class TenantStorage
     }
 
     /**
+     * W13 — land a file pulled by the platform (SFTP poll, API pull, ingest
+     * push) on the secure disk, like an upload: private, under the tenant's
+     * prefix, with a fresh name. Returns where it went and a local readable
+     * copy for the header/sample read (delete it with forgetScratch()).
+     *
+     * @return array{disk:string, path:string, readable:string}
+     */
+    public function landImport(int $tenantId, string $contents, string $filename): array
+    {
+        $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION)) ?: 'csv';
+        $stream = fopen('php://temp', 'r+b');
+        fwrite($stream, $contents);
+        rewind($stream);
+        $path = $this->putStream($tenantId, self::CATEGORY_IMPORTS, $stream, $ext);
+        fclose($stream);
+
+        $disk = $this->diskName();
+        if (config("filesystems.disks.{$disk}.driver") === 'local') {
+            $readable = Storage::disk($disk)->path($path);
+        } else {
+            $readable = tempnam(sys_get_temp_dir(), 'autnyx_land_');
+            @rename($readable, $readable .= '.' . $this->safeSegment($ext));
+            file_put_contents($readable, $contents);
+        }
+
+        return ['disk' => $disk, 'path' => $path, 'readable' => $readable];
+    }
+
+    /** Remove a scratch copy made by landImport() (never the stored file on a local disk). */
+    public function forgetScratch(array $landed): void
+    {
+        if (config("filesystems.disks.{$landed['disk']}.driver") !== 'local') {
+            @unlink($landed['readable']);
+        }
+    }
+
+    /**
      * Guard: a path handed to us for a tenant MUST live under that tenant's
      * prefix. Blocks both cross-tenant access and `..` traversal.
      */

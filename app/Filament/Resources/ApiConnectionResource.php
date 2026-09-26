@@ -107,7 +107,7 @@ class ApiConnectionResource extends Resource
                 ->required()
                 ->url()
                 ->maxLength(1024)
-                ->rule(self::egressRule())
+                ->rule(fn () => self::egressRule())
                 ->placeholder('https://host/api'),
 
             Select::make('auth_type')
@@ -155,7 +155,7 @@ class ApiConnectionResource extends Resource
             TextInput::make('auth_config.token_url')
                 ->label('Token URL')
                 ->url()->maxLength(1024)
-                ->rule(self::egressRule())
+                ->rule(fn () => self::egressRule())
                 ->visible(fn ($get) => $get('auth_type') === ApiConnection::AUTH_OAUTH2_CC)
                 ->columnSpanFull(),
             TextInput::make('auth_config.client_id')

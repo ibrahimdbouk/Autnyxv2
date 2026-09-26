@@ -39,15 +39,25 @@ class SalesDailyAggregator
         // WP3.5 (audit H27): the range is REBUILT, not merely upserted — a
         // (store, SKU, day) whose raw rows were rolled back must disappear
         // instead of lingering as phantom demand.
-        return DB::transaction(function () use ($tenantId, $from, $to, $now) {
+        $n = DB::transaction(function () use ($tenantId, $from, $to, $now) {
             DB::table('sales_daily')->where('tenant_id', $tenantId)->whereBetween('date', [$from, $to])->delete();
 
             return $this->insertRange($tenantId, $from, $to, $now);
         });
+
+        // W13: the weeks and months those days belong to.
+        app(SalesPeriodAggregator::class)->rebuild($tenantId, $from, $to);
+
+        return $n;
     }
 
     private function insertRange(int $tenantId, string $from, string $to, string $now): int
     {
+        $fx = app(\App\Services\Fx\FxService::class);
+        if ($fx->needsConversion($tenantId, $from, $to)) {
+            return $this->insertRangeConverted($tenantId, $from, $to, $now, $fx->base($tenantId));
+        }
+
         // Portable upsert (works on PostgreSQL and the SQLite test DB). Null
         // store_id rows are excluded — cannibalization is store-level and a null
         // store cannot be attributed, and a nullable column breaks the ON CONFLICT
@@ -79,6 +89,42 @@ class SalesDailyAggregator
             ->where('tenant_id', $tenantId)
             ->whereBetween('date', [$from, $to])
             ->count();
+    }
+
+    /**
+     * W13: as insertRange, with each line's revenue converted into the tenant's
+     * currency (the line's currency, else its store's) at the rate in force
+     * that day. A currency with no rate is left unconverted (the data check
+     * fx_rate_missing reports it).
+     */
+    private function insertRangeConverted(int $tenantId, string $from, string $to, string $now, string $base): int
+    {
+        DB::statement(
+            "INSERT INTO sales_daily
+                (tenant_id, store_id, sku, date, units_sold, revenue, transaction_count, created_at, updated_at)
+             SELECT st.tenant_id, st.store_id, st.sku, st.date,
+                    SUM(st.quantity),
+                    SUM(COALESCE(st.total_amount, 0) * COALESCE(r.rate, 1)),
+                    COUNT(DISTINCT st.transaction_id) + COUNT(*) FILTER (WHERE st.transaction_id IS NULL),
+                    ?, ?
+               FROM sales_transactions st
+               LEFT JOIN stores s ON s.id = st.store_id
+               LEFT JOIN LATERAL (
+                    SELECT f.rate FROM fx_rates f
+                     WHERE f.tenant_id = st.tenant_id
+                       AND f.currency = upper(COALESCE(NULLIF(st.currency, ''), s.currency))
+                       AND f.valid_from <= st.date
+                     ORDER BY f.valid_from DESC LIMIT 1
+               ) r ON upper(COALESCE(NULLIF(st.currency, ''), s.currency, ?)) <> ?
+              WHERE st.tenant_id = ? AND st.store_id IS NOT NULL AND st.date BETWEEN ? AND ?
+              GROUP BY st.tenant_id, st.store_id, st.sku, st.date
+             ON CONFLICT (tenant_id, store_id, sku, date)
+             DO UPDATE SET units_sold = EXCLUDED.units_sold, revenue = EXCLUDED.revenue,
+                           transaction_count = EXCLUDED.transaction_count, updated_at = EXCLUDED.updated_at",
+            [$now, $now, $base, $base, $tenantId, $from, $to]
+        );
+
+        return (int) DB::table('sales_daily')->where('tenant_id', $tenantId)->whereBetween('date', [$from, $to])->count();
     }
 
     /** The first day whose raw sales lines are still retained (null: no raw retention). */

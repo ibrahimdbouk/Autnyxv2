@@ -18,6 +18,7 @@ class ApiKey extends Model
     public const SCOPE_READ_RECOVERIES     = 'read:recoveries';
     public const SCOPE_READ_DATA_HEALTH    = 'read:data_health';
     public const SCOPE_WRITE_INGEST        = 'write:ingest';
+    public const SCOPE_READ_EXPORTS        = 'read:exports';
 
     /** @return array<string,string> scope => label */
     public static function scopeOptions(): array
@@ -28,6 +29,7 @@ class ApiKey extends Model
             self::SCOPE_READ_RECOVERIES     => 'Read recoveries',
             self::SCOPE_READ_DATA_HEALTH    => 'Read data health',
             self::SCOPE_WRITE_INGEST        => 'Ingest data (write)',
+            self::SCOPE_READ_EXPORTS        => 'BI exports (Power BI, Excel): read all reporting tables',
         ];
     }
 

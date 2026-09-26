@@ -110,6 +110,7 @@ class CanonicalSchema
             'length_mm' => ['label' => 'Length', 'description' => 'Length per unit (mm, cm, m or in — converted to mm; plain number = mm)', 'required' => false],
             'width_mm' => ['label' => 'Width', 'description' => 'Width per unit (mm, cm, m or in — converted to mm; plain number = mm)', 'required' => false],
             'height_mm' => ['label' => 'Height', 'description' => 'Height per unit (mm, cm, m or in — converted to mm; plain number = mm)', 'required' => false],
+            'units_per_case' => ['label' => 'Units per Case', 'description' => 'Selling units in one case / carton (purchase orders in cases are converted to units with it)', 'required' => false],
             'volume_cm3' => ['label' => 'Volume', 'description' => 'Volume per unit in cm³ (l / ml converted). Derived from the dimensions when missing', 'required' => false],
         ];
     }
@@ -237,6 +238,7 @@ class CanonicalSchema
             'late_days'     => ['label' => 'Late Days',     'description' => 'Days late vs the expected date',                   'required' => false],
             'fill_rate'     => ['label' => 'Fill Rate',     'description' => 'Fill rate for the order (received ÷ ordered), as a percentage', 'required' => false],
             // WP3.4 — hardening fields.
+            'uom' => ['label' => 'Order Unit', 'description' => 'Unit the quantities are in: each, or case / carton / pack (converted to units with the product\'s units per case)', 'required' => false],
             'currency' => ['label' => 'Currency', 'description' => '3-letter currency code of the order', 'required' => false],
             'status' => ['label' => 'Status', 'description' => 'Order / line status, e.g. open, received, cancelled', 'required' => false],
             'buyer' => ['label' => 'Buyer', 'description' => 'Buyer or planner who placed the order', 'required' => false],

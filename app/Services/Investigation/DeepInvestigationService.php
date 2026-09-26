@@ -261,6 +261,10 @@ class DeepInvestigationService
             $analysis = null;
         }
 
+        // W13: a link whose cause started after its effect is not a link.
+        $reversed = collect($analysis['reversed'] ?? [])->map(fn ($r) => $r['cause_id'] . '-' . $r['effect_id'])->flip();
+        $edges = array_values(array_filter($edges, fn ($e) => ! isset($reversed[$e['from'] . '-' . $e['to']])));
+
         $rootId = $analysis['root_anomaly_id'] ?? null;
         if ($rootId !== null && isset($nodes[$rootId])) {
             $nodes[$rootId]['is_root'] = true;
@@ -293,6 +297,7 @@ class DeepInvestigationService
                 'alternatives' => $analysis['alternatives'],
                 'root_label'   => $analysis['root_label'],
                 'explanation'  => $analysis['explanation'],
+                'timing'       => $analysis['timing'] ?? null,
             ],
         ];
     }

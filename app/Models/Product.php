@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 class Product extends Model
 {
     protected $fillable = [
+        'units_per_case',   // W13
         'tenant_id',
         'sku',
         'name',

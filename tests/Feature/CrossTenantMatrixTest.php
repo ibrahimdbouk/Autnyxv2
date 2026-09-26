@@ -86,6 +86,8 @@ class CrossTenantMatrixTest extends TestCase
             \App\Models\StoreCluster::class   => ['method' => 'attribute', 'objective' => 'general', 'key' => "k-$tag", 'label' => "Cluster $tag", 'params' => []],
             \App\Models\Suppression::class    => ['scope_type' => 'rule_sku', 'rule_type' => 'sales_drop', 'sku' => "SKU-$tag", 'reason' => 'known_issue', 'starts_at' => now()->subDay(), 'expires_at' => now()->addDay(), 'active' => true],
             \App\Models\Team::class           => ['name' => "Team $tag"],
+            \App\Models\FxRate::class         => ['currency' => 'EUR', 'valid_from' => now()->toDateString(), 'rate' => 4.1],
+            \App\Models\RetailEvent::class    => ['key' => 'own_xt', 'year' => 2026, 'name' => "Event $tag", 'kind' => 'custom', 'starts_on' => '2026-10-01', 'ends_on' => '2026-10-05', 'source' => 'tenant'],
             \App\Models\TeamsConnection::class => ['channel_webhook_url' => 'https://acme.webhook.office.com/webhookb2/x', 'post_to_channel' => false, 'notify_users' => false, 'is_active' => false],
             \App\Models\Store::class          => ['name' => "Store $tag", 'code' => "S-$tag"],
             \App\Models\Supplier::class       => ['name' => "Supplier $tag"],

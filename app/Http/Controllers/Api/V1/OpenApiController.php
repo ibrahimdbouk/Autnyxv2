@@ -69,6 +69,23 @@ class OpenApiController
                     'summary' => 'Latest data-health snapshot per dataset', 'security' => $secured('read:data_health'),
                     'responses' => ['200' => ['description' => 'OK']],
                 ]],
+                '/exports' => ['get' => [
+                    'summary' => 'BI export datasets (Power BI / Excel)', 'security' => $secured('read:exports'),
+                    'responses' => ['200' => ['description' => 'The datasets, their columns and URLs']],
+                ]],
+                '/exports/{dataset}' => ['get' => [
+                    'summary' => 'One BI dataset as a flat table — JSON pages by id, or the whole table as CSV',
+                    'security' => $secured('read:exports'),
+                    'parameters' => [
+                        ['name' => 'dataset', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string',
+                            'enum' => array_keys(\App\Services\Api\BiExport::catalogue())]],
+                        ['name' => 'format', 'in' => 'query', 'schema' => ['type' => 'string', 'enum' => ['json', 'csv'], 'default' => 'json']],
+                        ['name' => 'since', 'in' => 'query', 'description' => 'Only rows changed since (updated_at).', 'schema' => ['type' => 'string', 'format' => 'date-time']],
+                        ['name' => 'after', 'in' => 'query', 'description' => 'JSON paging: rows with id above this.', 'schema' => ['type' => 'integer']],
+                        ['name' => 'limit', 'in' => 'query', 'schema' => ['type' => 'integer', 'default' => 5000, 'maximum' => 10000]],
+                    ],
+                    'responses' => ['200' => ['description' => 'OK'], '404' => ['description' => 'Unknown dataset']],
+                ]],
                 '/ingest' => ['post' => [
                     'summary' => 'Push data into Autnyx (queued; poll /imports/{id})', 'security' => $secured('write:ingest'),
                     'parameters' => [['name' => 'Idempotency-Key', 'in' => 'header', 'required' => false,

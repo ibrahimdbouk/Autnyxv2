@@ -460,10 +460,13 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
         <div class="ax-chain ax-mt-2">
             @foreach($causal['chain'] as $i => $step)
                 @if($i > 0)<span class="ax-chain-arrow">→</span>@endif
-                <span class="ax-chain-node {{ $i === 0 ? 'ax-chain-node--root' : '' }}">{{ $step['label'] }}</span>
+                <span class="ax-chain-node {{ $i === 0 ? 'ax-chain-node--root' : '' }}">{{ $step['label'] }} @if(! empty($step['onset']))<span class="ax-faint ax-text-xs" title="{{ ($step['onset_source'] ?? '') === 'data' ? 'Start read from the data: ' . ($step['onset_basis'] ?? '') : 'Start not in the data: first flagged' }}">· {{ ($step['onset_source'] ?? '') === 'data' ? 'from' : 'flagged' }} {{ \Illuminate\Support\Carbon::parse($step['onset'])->format('j M') }}</span>@endif</span>
             @endforeach
         </div>
         <p class="ax-muted ax-text-sm ax-lh ax-mt-3">{{ $causal['explanation'] }}</p>
+        @if(! empty($causal['timing']))
+            <p class="ax-faint ax-text-xs ax-mt-2">Timing: {{ $causal['timing']['in_order'] }} link(s) in order in the data, {{ $causal['timing']['unverified'] }} not confirmed{{ $causal['timing']['reversed'] > 0 ? ', ' . $causal['timing']['reversed'] . ' left out (cause started after the effect)' : '' }}.</p>
+        @endif
         @if($causal['alternatives'] > 0)
             <p class="ax-faint ax-text-xs ax-mt-2">{{ $causal['alternatives'] }} other independent signal chain(s) present — see the evidence panel.</p>
         @endif

@@ -65,6 +65,12 @@ class TenantDetectionRunner
         return $this->detector->promoSuppressedByRule();
     }
 
+    /** @return array<string,int> W13: flags the retail calendar explained, in the last run */
+    public function lastEventSuppressed(): array
+    {
+        return $this->detector->eventSuppressedByRule();
+    }
+
     /** WP6.3: per-rule time / memory / flags of this runner's last detection run. */
     public function lastRuleStats(): array
     {

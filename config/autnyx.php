@@ -36,6 +36,9 @@ return [
     // bucket on Laravel Cloud), never silently to the ephemeral local disk.
     'storage_disk' => env('AUTNYX_STORAGE_DISK', env('FILESYSTEM_DISK', 'local')),
 
+    /* W13: rows in one hot table at which Ops is told to partition it by month. */
+    'partition_rows' => (int) env('AUTNYX_PARTITION_ROWS', 50_000_000),
+
     /*
     |--------------------------------------------------------------------------
     | Content-Security-Policy (3b)

@@ -23,12 +23,26 @@ use App\Models\Investigation;
  * signal is not part of today's cause), and a link that needs the same store
  * holds when one side is chain-level — it is then matched on the SKU.
  *
+ * W13 — timing: a cause has to come before its effect in the data. Each
+ * signal's start is read from the data (SignalOnset); a link whose cause
+ * certainly started after its effect was under way is dropped, a link whose
+ * order the data confirms is marked "in order", and one the data cannot
+ * settle stays, marked "timing not confirmed". A chain whose every link is in
+ * order earns a little more confidence.
+ *
  * Everything is deterministic and explainable: the AI does not choose the cause,
  * the graph does. (Narration can later phrase this conclusion; it never invents it.)
  */
 class RootCauseAnalysisService
 {
     public const TIER_CORROBORATED = 'corroborated';
+
+    /** A day's grace: files land on different nights. */
+    public const TIMING_TOLERANCE_DAYS = 1;
+
+    public const TIMING_IN_ORDER   = 'in_order';
+    public const TIMING_UNVERIFIED = 'unverified';
+    public const TIMING_REVERSED   = 'reversed';
 
     /** Tier → the investigation confidence scale the UI and API already use. */
     public const CONFIDENCE_FOR_TIER = [
@@ -72,7 +86,9 @@ class RootCauseAnalysisService
 
         // Node info per anomaly.
         $nodes = [];
+        $onsets = new SignalOnset;
         foreach ($anomalies as $a) {
+            $onset = $onsets->of($a);
             $nodes[$a->id] = [
                 'id'       => $a->id,
                 'rule'     => $a->rule_type,
@@ -81,11 +97,14 @@ class RootCauseAnalysisService
                 'supplier' => $a->context['supplier'] ?? null,
                 'sev'      => $this->sevRank($a->severity),
                 'impact'   => (float) ($a->context['revenue_impact'] ?? 0),
+                'onset'    => $onset,
             ];
         }
 
         // Directed causal links among the actual anomalies.
         $links = [];                 // list of [causeId, effectId]
+        $timing = [];                // "cause-effect" => in_order | unverified
+        $reversed = [];              // links dropped: the cause started after the effect
         $out   = array_fill_keys(array_keys($nodes), []);
         $indeg = array_fill_keys(array_keys($nodes), 0);
         foreach ($nodes as $ca) {
@@ -94,6 +113,13 @@ class RootCauseAnalysisService
                 $scope = CausalGraph::scopeFor($ca['rule'], $ef['rule']);
                 if ($scope === null) continue;
                 if (! $this->linked($scope, $ca, $ef)) continue;
+                $order = self::order($ca['onset'], $ef['onset']);
+                if ($order === self::TIMING_REVERSED) {
+                    $reversed[] = ['cause_id' => $ca['id'], 'effect_id' => $ef['id'], 'cause' => $this->label($ca['rule']),
+                        'effect' => $this->label($ef['rule']), 'cause_from' => $ca['onset']['earliest'], 'effect_by' => $ef['onset']['latest']];
+                    continue;
+                }
+                $timing[$ca['id'] . '-' . $ef['id']] = $order;
                 $links[] = [$ca['id'], $ef['id']];
                 $out[$ca['id']][] = $ef['id'];
                 $indeg[$ef['id']]++;
@@ -112,7 +138,12 @@ class RootCauseAnalysisService
                 'confidence'      => 30,
                 'links'           => 0,
                 'alternatives'    => 0,
-                'explanation'     => 'These signals co-occur on the same subject but form no known cause→effect chain — treat as correlated, not causally linked.',
+                'timing'          => ['in_order' => 0, 'unverified' => 0, 'reversed' => count($reversed)],
+                'reversed'        => $reversed,
+                'explanation'     => $reversed
+                    ? 'These signals would form a cause→effect chain, but the data shows the supposed cause started after the effect was already under way ('
+                        . $this->reversedText($reversed[0]) . ') — treat as correlated, not causally linked.'
+                    : 'These signals co-occur on the same subject but form no known cause→effect chain — treat as correlated, not causally linked.',
             ];
         }
 
@@ -144,7 +175,16 @@ class RootCauseAnalysisService
         };
 
         $chain = array_map(fn ($id) => $this->chainNode($nodes[$id]), $path);
-        $explanation = $this->explain($chain, $tier);
+        $pathTiming = [];
+        for ($i = 1; $i < count($path); $i++) {
+            $pathTiming[] = $timing[$path[$i - 1] . '-' . $path[$i]] ?? self::TIMING_UNVERIFIED;
+            $chain[$i]['timing'] = end($pathTiming);
+        }
+        $allInOrder = $pathTiming !== [] && ! in_array(self::TIMING_UNVERIFIED, $pathTiming, true);
+        if ($allInOrder) {
+            $confidence = min($tier === self::TIER_CORROBORATED ? 95 : 70, $confidence + 5);
+        }
+        $explanation = $this->explain($chain, $tier) . $this->timingText($chain, $allInOrder, $reversed);
         // Other independent chain heads (alternative root causes worth noting).
         $alternatives = max(0, count($roots) - 1);
 
@@ -157,8 +197,60 @@ class RootCauseAnalysisService
             'confidence'      => (int) $confidence,
             'links'           => count($links),
             'alternatives'    => $alternatives,
+            'timing'          => [
+                'in_order'   => count(array_filter($timing, fn ($t) => $t === self::TIMING_IN_ORDER)),
+                'unverified' => count(array_filter($timing, fn ($t) => $t === self::TIMING_UNVERIFIED)),
+                'reversed'   => count($reversed),
+            ],
+            'reversed'        => $reversed,
             'explanation'     => $explanation,
         ];
+    }
+
+    /**
+     * Does the cause come before the effect?
+     *   reversed    the cause cannot have started until after the effect was under way
+     *   in_order    the cause was under way by the time the effect could have started
+     *   unverified  the data cannot settle it
+     *
+     * @param array{earliest:?string, latest:?string} $cause
+     * @param array{earliest:?string, latest:?string} $effect
+     */
+    public static function order(array $cause, array $effect): string
+    {
+        $tol = self::TIMING_TOLERANCE_DAYS;
+        if ($cause['earliest'] !== null && $effect['latest'] !== null
+            && \Illuminate\Support\Carbon::parse($cause['earliest'])->gt(\Illuminate\Support\Carbon::parse($effect['latest'])->addDays($tol))) {
+            return self::TIMING_REVERSED;
+        }
+        if ($cause['latest'] !== null && $effect['earliest'] !== null
+            && \Illuminate\Support\Carbon::parse($cause['latest'])->lte(\Illuminate\Support\Carbon::parse($effect['earliest'])->addDays($tol))) {
+            return self::TIMING_IN_ORDER;
+        }
+
+        return self::TIMING_UNVERIFIED;
+    }
+
+    private function timingText(array $chain, bool $allInOrder, array $reversed): string
+    {
+        $text = '';
+        if ($allInOrder) {
+            $steps = array_map(fn ($c) => $c['label'] . ' from ' . $c['onset'], $chain);
+            $text .= ' The timing checks out: ' . implode(', then ', $steps) . '.';
+        } elseif (count($chain) > 1) {
+            $text .= ' The data does not settle the order of every step, so the timing is not confirmed.';
+        }
+        if ($reversed) {
+            $text .= ' ' . count($reversed) . ' possible link(s) were left out because the supposed cause started after the effect ('
+                . $this->reversedText($reversed[0]) . ').';
+        }
+
+        return $text;
+    }
+
+    private function reversedText(array $r): string
+    {
+        return "{$r['cause']} from {$r['cause_from']}, {$r['effect']} already by {$r['effect_by']}";
     }
 
     /** Do two anomalies share the key required by this link scope? */
@@ -231,6 +323,10 @@ class RootCauseAnalysisService
             'label'      => $this->label($n['rule']),
             'sku'        => $n['sku'],
             'store_id'   => $n['store'],
+            'onset'      => $n['onset']['latest'],
+            'onset_basis'=> $n['onset']['basis'],
+            'onset_source' => $n['onset']['source'],
+            'timing'     => null,
         ];
     }
 

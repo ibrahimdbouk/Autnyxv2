@@ -86,6 +86,25 @@
         </table>
     </div>
 
+    @if(count($d['summary']['partition'] ?? []))
+    <div class="ph-card">
+        <h3>Partitioning readiness</h3>
+        <table class="ph-tbl">
+            <thead><tr><th>Table</th><th>Rows (approx)</th><th>Status</th><th>Largest tenants (sampled)</th></tr></thead>
+            <tbody>
+                @foreach($d['summary']['partition'] as $p)
+                    <tr>
+                        <td>{{ $p['table'] }}</td>
+                        <td class="ph-num">{{ number_format($p['rows']) }}</td>
+                        <td>{{ $p['level'] === 'partition' ? 'Partition by month now' : 'Watch — approaching the threshold' }}</td>
+                        <td class="ph-muted">{{ collect($p['tenants'])->map(fn ($t) => '#' . $t['tenant_id'] . ' ~' . number_format($t['rows']))->implode(', ') ?: '—' }}</td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+    </div>
+    @endif
+
     @if(count($d['failures']))
     <div class="ph-card">
         <h3>Recent job failures</h3>

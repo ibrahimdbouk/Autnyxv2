@@ -71,6 +71,15 @@ class SystemHealthCheckCommand extends Command
             }
         }
 
+        // W13: a hot table past the partitioning threshold (about 50M rows).
+        foreach ($health->partitionReadiness() as $p) {
+            if ($p['level'] === 'partition') {
+                $who = collect($p['tenants'])->map(fn ($t) => 'tenant ' . $t['tenant_id'] . ' ~' . number_format($t['rows']))->implode(', ');
+                $problems[] = "{$p['table']} holds ~" . number_format($p['rows']) . ' rows — time to partition it by month'
+                    . ($who !== '' ? " ({$who})" : '') . ' (see claude/scale-design.md)';
+            }
+        }
+
         // W9: tenant uploads on the container's local disk vanish on every deploy
         // (and a second worker could never read them).
         $disk = (string) config('autnyx.storage_disk');

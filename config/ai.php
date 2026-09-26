@@ -16,6 +16,9 @@ return [
     /** Most investigations one nightly narrate run writes up (highest revenue at risk first). */
     'narrate_per_run'     => (int) env('AI_NARRATE_PER_RUN', 50),
 
+    /** W13: model calls in flight at once during the nightly narrate run. */
+    'narrate_concurrency' => (int) env('AI_NARRATE_CONCURRENCY', 5),
+
     /** Prompt caps — beyond these a list is summarised as "+N more". */
     'prompt_max_anomalies' => 25,
     'prompt_max_evidence'  => 30,

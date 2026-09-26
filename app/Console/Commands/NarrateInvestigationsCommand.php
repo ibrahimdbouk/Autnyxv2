@@ -54,9 +54,9 @@ class NarrateInvestigationsCommand extends Command
         foreach ($tenants as $tenant) {
             try {
                 if ($force) {
-                    Investigation::where('tenant_id', $tenant->id)
+                    $narrator->narrateMany(Investigation::where('tenant_id', $tenant->id)
                         ->whereIn('status', [Investigation::STATUS_OPEN, Investigation::STATUS_IN_PROGRESS])
-                        ->each(fn ($inv) => $narrator->narrate($inv, true));
+                        ->lazyById(100), true);
                 } else {
                     $narrator->narrateForTenant($tenant->id);
                 }

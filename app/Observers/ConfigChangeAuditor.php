@@ -14,7 +14,8 @@ use Throwable;
 class ConfigChangeAuditor
 {
     private const IGNORED = ['updated_at', 'created_at', 'last_used_at', 'last_polled_at', 'last_success_at',
-        'last_error', 'last_error_at', 'status', 'last_run_at', 'last_synced_at'];
+        'last_error', 'last_error_at', 'status', 'last_run_at', 'last_synced_at',
+        'last_finding_id', 'failure_streak', 'last_failure_at'];   // W13: webhook bookkeeping
 
     public function created(Model $model): void
     {

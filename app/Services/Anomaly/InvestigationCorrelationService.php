@@ -65,6 +65,7 @@ class InvestigationCorrelationService
         // anomalies remain detected/recorded (history + FP learning preserved) but
         // are not correlated into investigations and do not notify.
         $suppressionService = App::make(\App\Services\Noise\SuppressionService::class);
+        $this->pendingLinks = $this->pendingEntities = [];
 
         $correlated = 0;
         $suppressed = 0;
@@ -81,7 +82,7 @@ class InvestigationCorrelationService
                 break;
             }
             try {
-                $match = $suppressionService->matchFor($anomaly);
+                $match = $suppressionService->matchForBatch($anomaly);   // W13: one read per rule
                 if ($match) {
                     $suppressionService->recordMatch($match);
                     $suppressed++;
@@ -93,9 +94,18 @@ class InvestigationCorrelationService
                 $inv = $this->correlate($anomaly, false);
                 $touched[$inv->id] = $inv;
                 $correlated++;
+                if (count($this->pendingLinks) >= self::WRITE_BATCH) {
+                    $this->flushLinks();
+                }
             } catch (\Throwable $e) {
                 Log::error("[M16/correlate] anomaly {$anomaly->id}: {$e->getMessage()}");
             }
+        }
+        $this->flushLinks();
+        // W13: many new links and investigations — fresh planner statistics
+        // before the per-investigation finalisation below (measured 4–5× faster).
+        if ($correlated >= (int) config('detection.analyze_after_rows', 1000)) {
+            AnomalyDetectionService::refreshStats(['anomalies', 'investigations', 'investigation_entities']);
         }
 
         // Finalise each touched investigation ONCE — was per-anomaly (O(anomalies)
@@ -139,8 +149,13 @@ class InvestigationCorrelationService
             $this->remember($investigation);
         }
 
-        // Link the anomaly
-        $anomaly->update(['investigation_id' => $investigation->id]);
+        // Link the anomaly (W13: in a batch, written set-based by flushLinks()).
+        if ($this->run !== null) {
+            $anomaly->forceFill(['investigation_id' => $investigation->id])->syncOriginalAttribute('investigation_id');
+            $this->pendingLinks[(int) $anomaly->id] = (int) $investigation->id;
+        } else {
+            $anomaly->update(['investigation_id' => $investigation->id]);
+        }
 
         // WP4.5: an incident joining an auto-snoozed trend item brings it back.
         \App\Services\Investigation\TidyTail::resurfaceIfWarranted($investigation, (string) $anomaly->rule_type);
@@ -426,10 +441,42 @@ class InvestigationCorrelationService
         // One statement; duplicates skipped by the unique key
         // (investigation_id, anomaly_id, entity_type, entity_key). WP6.3.
         $now = now();
-        InvestigationEntity::insertOrIgnore(array_map(
-            fn ($row) => $row + ['created_at' => $now, 'updated_at' => $now],
-            $toInsert
-        ));
+        $rows = array_map(fn ($row) => $row + ['created_at' => $now, 'updated_at' => $now], $toInsert);
+        if ($this->run !== null) {
+            array_push($this->pendingEntities, ...$rows);   // W13: written with the links
+
+            return;
+        }
+        InvestigationEntity::insertOrIgnore($rows);
+    }
+
+    // ── W13: set-based writes for the nightly batch ──────────────────────────
+
+    private const WRITE_BATCH = 1000;
+
+    /** @var array<int,int> anomaly id => investigation id, waiting to be written */
+    private array $pendingLinks = [];
+
+    /** @var array<int, array<string,mixed>> investigation_entities rows waiting to be written */
+    private array $pendingEntities = [];
+
+    /** One UPDATE … FROM VALUES for the links and one INSERT for the entities, per batch. */
+    private function flushLinks(): void
+    {
+        foreach (array_chunk($this->pendingLinks, self::WRITE_BATCH, true) as $chunk) {
+            $values = [];
+            $bind = [now()];
+            foreach ($chunk as $anomalyId => $investigationId) {
+                $values[] = '(?::bigint, ?::bigint)';
+                array_push($bind, $anomalyId, $investigationId);
+            }
+            \Illuminate\Support\Facades\DB::update('UPDATE anomalies AS a SET investigation_id = v.inv, updated_at = ?
+                FROM (VALUES ' . implode(', ', $values) . ') AS v(id, inv) WHERE a.id = v.id AND a.investigation_id IS NULL', $bind);
+        }
+        foreach (array_chunk($this->pendingEntities, self::WRITE_BATCH) as $chunk) {
+            InvestigationEntity::insertOrIgnore($chunk);
+        }
+        $this->pendingLinks = $this->pendingEntities = [];
     }
 
     /**

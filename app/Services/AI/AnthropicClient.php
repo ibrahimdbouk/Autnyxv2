@@ -139,6 +139,103 @@ class AnthropicClient
         return AiResult::fail($lastError, $model);
     }
 
+    /**
+     * W13 — several calls at once (the nightly narrate run). The first attempt
+     * of each goes out in parallel, at most $concurrency in flight; a call that
+     * fails with a retryable status is then retried on its own through
+     * message(), with its backoff. The same budget, per-tenant metering and
+     * circuit breaker apply as for one call. Results keep the input keys.
+     *
+     * @param  array<int|string, array{tenant_id:?int, feature:string, prompt:string, tier?:string, max_tokens?:int, system?:?string, timeout?:int}>  $requests
+     * @return array<int|string, AiResult>
+     */
+    public function messages(array $requests, int $concurrency = 5): array
+    {
+        $results = [];
+        $key = config('services.anthropic.key');
+        $ready = [];
+        foreach ($requests as $k => $r) {
+            $model = $this->model($r['tier'] ?? 'fast');
+            if (empty($key)) {
+                $results[$k] = AiResult::fail('ai_disabled', $model);
+            } elseif (($r['tenant_id'] ?? null) !== null && ($why = $this->budget->allows((int) $r['tenant_id'])) !== null) {
+                $results[$k] = AiResult::fail($why, $model);
+            } else {
+                $ready[$k] = $r;
+            }
+        }
+
+        foreach (array_chunk($ready, max(1, $concurrency), true) as $chunk) {
+            if ($this->circuitOpen()) {
+                foreach ($chunk as $k => $r) {
+                    $results[$k] = AiResult::fail('circuit_open', $this->model($r['tier'] ?? 'fast'));
+                }
+                continue;
+            }
+            $keys = array_keys($chunk);
+            try {
+                $responses = Http::pool(function (\Illuminate\Http\Client\Pool $pool) use ($chunk, $key) {
+                    $out = [];
+                    foreach ($chunk as $k => $r) {
+                        $out[] = $pool->as((string) $k)->withHeaders([
+                            'x-api-key'         => $key,
+                            'anthropic-version' => '2023-06-01',
+                            'content-type'      => 'application/json',
+                        ])->timeout((int) ($r['timeout'] ?? 60))->post(self::URL, [
+                            'model'      => $this->model($r['tier'] ?? 'fast'),
+                            'max_tokens' => (int) ($r['max_tokens'] ?? 1024),
+                            'system'     => trim(self::SYSTEM_GUARD . (! empty($r['system']) ? "\n\n" . $r['system'] : '')),
+                            'messages'   => [['role' => 'user', 'content' => $r['prompt']]],
+                        ]);
+                    }
+
+                    return $out;
+                });
+            } catch (\Throwable) {
+                $responses = [];
+            }
+
+            foreach ($keys as $k) {
+                $r = $chunk[$k];
+                $model = $this->model($r['tier'] ?? 'fast');
+                $resp = $responses[(string) $k] ?? null;
+                if ($resp instanceof \Illuminate\Http\Client\Response && $resp->successful()) {
+                    $this->closeCircuit();
+                    $in  = (int) $resp->json('usage.input_tokens', 0);
+                    $out = (int) $resp->json('usage.output_tokens', 0);
+                    if (($r['tenant_id'] ?? null) !== null) {
+                        $this->budget->record((int) $r['tenant_id'], $in, $out);
+                    }
+                    $results[$k] = new AiResult(true, (string) $resp->json('content.0.text', ''), null, $model, $resp->json('stop_reason'), $in, $out);
+                    continue;
+                }
+                $retryable = ! ($resp instanceof \Illuminate\Http\Client\Response) || in_array($resp->status(), self::RETRY_STATUSES, true);
+                if ($retryable) {
+                    // One at a time from here, with the usual backoff and circuit breaker.
+                    $results[$k] = $this->message($r['tenant_id'] ?? null, $r['feature'], $r['prompt'], $r['tier'] ?? 'fast',
+                        (int) ($r['max_tokens'] ?? 1024), $r['system'] ?? null, (int) ($r['timeout'] ?? 60));
+                    continue;
+                }
+                $error = 'api_' . $resp->status();
+                $this->noteFailure();
+                Log::warning("[ai:{$r['feature']}] call failed: {$error}", ['tenant_id' => $r['tenant_id'] ?? null]);
+                try {
+                    JobRun::create(['tenant_id' => $r['tenant_id'] ?? null, 'command' => 'ai:' . $r['feature'], 'status' => JobRun::STATUS_FAILED,
+                        'message' => Str::limit("Anthropic call failed ({$error})", 500), 'ran_at' => now()]);
+                } catch (\Throwable) {
+                }
+                $results[$k] = AiResult::fail($error, $model);
+            }
+        }
+
+        $ordered = [];
+        foreach (array_keys($requests) as $k) {
+            $ordered[$k] = $results[$k];
+        }
+
+        return $ordered;
+    }
+
     private function backoff(int $attempt): int
     {
         return min(30, 2 ** $attempt);

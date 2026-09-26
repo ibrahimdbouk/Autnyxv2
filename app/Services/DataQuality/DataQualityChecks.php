@@ -31,6 +31,7 @@ class DataQualityChecks
         'store_went_silent', 'sales_day_collapse', 'future_dated', 'negative_stock',
         'stock_stale_store', 'price_outliers', 'cost_missing', 'quarantine_aging', 'alias_suggestions',
         'promotions_missing',
+        'po_case_without_pack', 'fx_rate_missing',   // W13
     ];
 
     public const LABELS = [
@@ -44,6 +45,8 @@ class DataQualityChecks
         'quarantine_aging'   => 'Quarantined rows waiting too long',
         'alias_suggestions'  => 'Unknown SKUs that match a known SKU',
         'promotions_missing' => 'No promotion data',
+        'po_case_without_pack' => 'PO lines in cases without units per case',
+        'fx_rate_missing'    => 'Currency without an exchange rate',
     ];
 
     /** @var array<string,true> keys seen in this run */
@@ -280,6 +283,33 @@ class DataQualityChecks
         $this->see($tenantId, 'promotions_missing', 'sales', DqFinding::SEVERITY_INFO, 'tenant', 'Promotions',
             'No promotion calendar and no promotion references on sales lines in the last 90 days. Promotion spikes and the dip after them may be flagged as anomalies. Upload a Promotions file (promotion, SKU, store, start, end) or map a promotion column in sales.',
             []);
+    }
+
+    /** W13: PO lines ordered in cases whose product has no units per case — quantities are not in selling units. */
+    private function checkPoCaseWithoutPack(int $tenantId): void
+    {
+        $cases = implode(',', array_map(fn ($u) => DB::getPdo()->quote($u), \App\Services\Supply\PurchaseOrderNormalizer::CASE_UNITS));
+        $r = DB::selectOne("SELECT COUNT(*) AS n, COUNT(DISTINCT sku) AS skus FROM purchase_orders
+                             WHERE tenant_id = ? AND pack_factor IS NULL AND lower(trim(order_uom)) IN ({$cases})", [$tenantId]);
+        if ((int) $r->n === 0) {
+            return;
+        }
+        $this->see($tenantId, 'po_case_without_pack', 'purchase_orders', DqFinding::SEVERITY_WARNING, 'tenant', 'Purchase orders',
+            "{$r->n} PO line(s) on {$r->skus} SKU(s) are in cases but the product has no Units per Case, so fill rate and cover on them compare cases with units. Add Units per Case to the product file.",
+            ['lines' => (int) $r->n, 'skus' => (int) $r->skus]);
+    }
+
+    /** W13: a currency in use with no exchange rate — those amounts are not converted. */
+    private function checkFxRateMissing(int $tenantId): void
+    {
+        $missing = app(\App\Services\Fx\FxService::class)->missing($tenantId);
+        if ($missing === []) {
+            return;
+        }
+        $this->see($tenantId, 'fx_rate_missing', 'sales', DqFinding::SEVERITY_WARNING, 'tenant', 'Exchange rates',
+            'No exchange rate for ' . implode(', ', $missing) . '. Amounts in ' . (count($missing) === 1 ? 'that currency' : 'those currencies')
+            . ' are counted as if they were in your own currency. Add the rates under Settings → Exchange rates.',
+            ['currencies' => $missing]);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

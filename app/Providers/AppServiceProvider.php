@@ -96,10 +96,13 @@ class AppServiceProvider extends ServiceProvider
         foreach ([
             \App\Models\SsoConnection::class, \App\Models\ApiKey::class, \App\Models\ApiConnection::class,
             \App\Models\SftpConnection::class, \App\Models\TeamsConnection::class, \App\Models\OutboundTarget::class,
-            \App\Models\TeamMember::class,
+            \App\Models\TeamMember::class, \App\Models\WebhookEndpoint::class,
         ] as $audited) {
             $audited::observe(\App\Observers\ConfigChangeAuditor::class);
         }
+
+        // W13: outbound webhooks (notification only) for investigation, outcome and count changes.
+        \App\Services\Webhooks\WebhookEvents::register();
 
         // 3b — org-wide strong password policy (applied wherever a password is
         // validated via Password::defaults(), e.g. the user form).

@@ -77,7 +77,7 @@ class InventoryCurrentService
     /** Recompute every position of a tenant, reorder-point history included. */
     public function rebuild(int $tenantId): int
     {
-        return DB::transaction(function () use ($tenantId) {
+        $n = DB::transaction(function () use ($tenantId) {
             $stamp = now()->subSecond();
             $n = $this->upsert($tenantId,
                 'SELECT DISTINCT store_id, sku FROM inventory_levels WHERE tenant_id = ? AND store_id IS NOT NULL',
@@ -87,6 +87,11 @@ class InventoryCurrentService
 
             return $n;
         });
+        // W13: a whole tenant rewritten — fresh planner statistics for detection
+        // (cheap next to the rebuild; stale ones made evidence lookups 20× slower).
+        \App\Services\Anomaly\AnomalyDetectionService::refreshStats(['inventory_current']);
+
+        return $n;
     }
 
     /** Positions a keys subquery names: upsert the newest snapshot, drop the ones with no history left. */

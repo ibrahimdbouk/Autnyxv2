@@ -118,4 +118,12 @@ return [
     // promotion_ref on sales lines. Off = flag them as before.
     'promo_suppression'       => (bool) env('DETECTION_PROMO_SUPPRESSION', true),
 
+    // W13: a demand swing the retail calendar explains (Ramadan, Eid, back to
+    // school, Christmas, White Friday, national days, the tenant's own events)
+    // is not flagged. Off = flag them as before.
+    'event_suppression'       => (bool) env('DETECTION_EVENT_SUPPRESSION', true),
+
+    /* W13: a run that writes at least this many new rows refreshes the table's planner statistics. */
+    'analyze_after_rows'      => (int) env('DETECTION_ANALYZE_AFTER_ROWS', 1000),
+
 ];
