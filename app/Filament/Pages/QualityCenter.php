@@ -17,7 +17,7 @@ class QualityCenter extends Page
 {
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-chart-bar-square';
 
-    protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';
+    protected static \UnitEnum|string|null $navigationGroup = 'Root Cause';
 
     protected static ?string $navigationLabel = 'Quality Center';
 
@@ -34,6 +34,11 @@ class QualityCenter extends Page
 
     public static function canAccess(): bool
     {
+        // The screen belongs to Root Cause: gone from the menu (and refused) without it.
+        if (! \App\Support\Apps\AppGate::allows(\Filament\Facades\Filament::getTenant(), static::class)) {
+            return false;
+        }
+
         return auth()->user()?->canViewAuditLogs() ?? false;
     }
 

@@ -36,6 +36,8 @@ class ActionCenter extends Page
 
     protected static ?string $navigationLabel = 'Action Center';
 
+    protected static \UnitEnum|string|null $navigationGroup = 'Root Cause';
+
     protected static ?int $navigationSort = -1;
 
     protected static ?string $slug = 'action-center';

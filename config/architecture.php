@@ -273,6 +273,17 @@ return [
 
         // Root-Cause Intelligence: detection, investigation, recovery. The one
         // built app. Its domain logic stays here and is NOT platformised.
+        // App 2 — Assortment Intelligence: reads Platform\\Data + Platform\\Intelligence
+        // (clusters, availability) and emits Platform recommendations/explanations.
+        'Apps\\Assortment' => [
+            'app/Services/Assortment/',
+            'app/Models/AssortmentStoreRange.php',
+            'app/Models/AssortmentBenchmark.php',
+            'app/Models/AssortmentGap.php',
+            'app/Models/AssortmentMustStock.php',
+            'app/Models/AssortmentRun.php',
+        ],
+
         'Apps\\RootCause' => [
             'app/Services/Anomaly/',        // detection + investigation engine
             'app/Services/Detection/',      // incremental detection

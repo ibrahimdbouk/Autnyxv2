@@ -44,7 +44,7 @@ class ActionQueue extends Page
 
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-bolt';
 
-    protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';
+    protected static \UnitEnum|string|null $navigationGroup = 'Root Cause';
 
     protected static ?string $navigationLabel = 'Action Queue';
 

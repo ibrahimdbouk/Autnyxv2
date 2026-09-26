@@ -25,6 +25,8 @@ final class AppGate
         Resources\SuppressionResource::class,
         Resources\ReplenishmentResource::class,
         Resources\PlanningExceptionResource::class,
+        Resources\CustomRuleResource::class,     // tenant-written detection rules
+        Resources\CustomMetricResource::class,   // KPIs shown on the Root Cause dashboard
         Pages\ActionCenter::class,
         Pages\ActionQueue::class,
         Pages\DailyBriefing::class,

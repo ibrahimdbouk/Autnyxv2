@@ -33,7 +33,7 @@ class CountLists extends Page
 
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-clipboard-document-check';
 
-    protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';
+    protected static \UnitEnum|string|null $navigationGroup = 'Root Cause';
 
     protected static ?string $navigationLabel = 'Count Lists';
 

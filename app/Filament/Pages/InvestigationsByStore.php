@@ -27,7 +27,7 @@ class InvestigationsByStore extends Page
 
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-building-storefront';
 
-    protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';
+    protected static \UnitEnum|string|null $navigationGroup = 'Root Cause';
 
     protected static ?string $navigationLabel = 'By Store';
 

@@ -26,7 +26,7 @@ class SupplierScorecard extends Page
 
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-truck';
 
-    protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';
+    protected static \UnitEnum|string|null $navigationGroup = 'Root Cause';
 
     protected static ?string $navigationLabel = 'Supplier Scorecard';
 

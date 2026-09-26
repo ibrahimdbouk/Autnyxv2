@@ -295,6 +295,11 @@ a.ax-stat:hover { box-shadow: var(--ax-shadow-md); transform: translateY(-1px); 
 }
 
 /* ---- Print: drop chrome, flatten to ink-on-paper, keep cards intact ---- */
+/* Dashboard app switch — the tabs wrap on phones instead of scrolling out of view. */
+@media (max-width: 639px) {
+  .ax-app-switch .fi-tabs { flex-wrap: wrap; overflow-x: visible; }
+}
+
 @media print {
   .fi-sidebar, .fi-topbar, .fi-sidebar-nav, .fi-breadcrumbs { display: none !important; }
   .fi-main, .fi-page { margin: 0 !important; padding: 0 !important; max-width: none !important; }

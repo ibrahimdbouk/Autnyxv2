@@ -39,7 +39,7 @@ class FinancialBreakdown extends Page
 
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-banknotes';
 
-    protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';
+    protected static \UnitEnum|string|null $navigationGroup = 'Root Cause';
 
     protected static ?int $navigationSort = 8;
 

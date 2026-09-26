@@ -27,7 +27,7 @@ class AnomalySettingResource extends Resource
 
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-adjustments-horizontal';
 
-    protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';
+    protected static \UnitEnum|string|null $navigationGroup = 'Root Cause';
 
     protected static ?string $navigationLabel = 'Detection Rules';
 
@@ -36,6 +36,11 @@ class AnomalySettingResource extends Resource
     // Only admins can manage detection rules
     public static function canViewAny(): bool
     {
+        // The screen belongs to Root Cause: gone from the menu (and refused) without it.
+        if (! \App\Support\Apps\AppGate::allows(\Filament\Facades\Filament::getTenant(), static::class)) {
+            return false;
+        }
+
         $user = auth()->user();
         return $user && ($user->is_super_admin || $user->is_tenant_admin);
     }

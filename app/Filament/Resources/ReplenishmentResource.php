@@ -28,7 +28,7 @@ class ReplenishmentResource extends Resource
 
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-shopping-cart';
 
-    protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';
+    protected static \UnitEnum|string|null $navigationGroup = 'Root Cause';
 
     protected static ?string $navigationLabel = 'Replenishment';
 

@@ -18,7 +18,7 @@ class InvestigationResource extends Resource
 
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-magnifying-glass';
 
-    protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';
+    protected static \UnitEnum|string|null $navigationGroup = 'Root Cause';
 
     protected static ?string $navigationLabel = 'Investigations';
 

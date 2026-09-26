@@ -55,6 +55,8 @@ return [
                                   'where' => "status <> 'open'"],
         'platform_events'     => ['days' => (int) env('RETAIN_EVENTS_DAYS', 395),       'column' => 'occurred_at'],
         'agent_runs'          => ['days' => (int) env('RETAIN_AGENT_RUNS_DAYS', 180),   'column' => 'created_at'],
+        // Assortment engine run log (the engine's own tables are rebuilt per run).
+        'assortment_runs'     => ['days' => (int) env('RETAIN_ASSORTMENT_RUNS_DAYS', 180), 'column' => 'created_at'],
         'feature_values'      => ['days' => (int) env('RETAIN_FEATURES_DAYS', 395),     'column' => 'as_of'],
         // Notifications belong to users, not tenants (no tenant_id): purged platform-wide.
         'notifications'       => ['days' => (int) env('RETAIN_NOTIFICATIONS_DAYS', 90), 'column' => 'created_at',

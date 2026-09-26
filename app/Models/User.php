@@ -76,6 +76,7 @@ class User extends Authenticatable implements FilamentUser, HasTenants, HasAppAu
             'is_owner'          => 'boolean',
             'is_tenant_admin'   => 'boolean',
             'visible_screens'   => 'array',
+            'preferences'       => 'array',   // UI choices, e.g. last_dashboard
             'last_login_at'     => 'datetime',
             'store_digest'         => 'boolean',   // W12
             'store_digest_sent_at' => 'datetime',

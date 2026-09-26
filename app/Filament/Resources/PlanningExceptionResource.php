@@ -28,7 +28,7 @@ class PlanningExceptionResource extends Resource
 
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-inbox-arrow-down';
 
-    protected static \UnitEnum|string|null $navigationGroup = 'Data';
+    protected static \UnitEnum|string|null $navigationGroup = 'Root Cause';
 
     protected static ?string $navigationLabel = 'Planning Exceptions';
 
@@ -36,6 +36,11 @@ class PlanningExceptionResource extends Resource
 
     public static function canAccess(): bool
     {
+        // The screen belongs to Root Cause: gone from the menu (and refused) without it.
+        if (! \App\Support\Apps\AppGate::allows(\Filament\Facades\Filament::getTenant(), static::class)) {
+            return false;
+        }
+
         $user = auth()->user();
 
         return (bool) ($user && ($user->is_super_admin || $user->is_tenant_admin));

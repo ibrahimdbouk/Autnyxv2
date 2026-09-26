@@ -22,7 +22,7 @@ class Reports extends Page
     const SCREEN_KEY = 'reports';
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-document-arrow-down';
 
-    protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';
+    protected static \UnitEnum|string|null $navigationGroup = 'Root Cause';
 
     protected static ?string $navigationLabel = 'Reports';
 

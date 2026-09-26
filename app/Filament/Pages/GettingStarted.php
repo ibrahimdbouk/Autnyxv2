@@ -19,6 +19,8 @@ class GettingStarted extends Page
 
     protected static ?string $navigationLabel = 'Getting started';
 
+    protected static \UnitEnum|string|null $navigationGroup = 'Administration';
+
     protected static ?int $navigationSort = -10;
 
     protected static ?string $slug = 'getting-started';

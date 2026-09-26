@@ -22,6 +22,8 @@ class Account extends Page
 
     protected static ?string $navigationLabel = 'My Account';
 
+    protected static \UnitEnum|string|null $navigationGroup = 'Settings';
+
     protected static ?int $navigationSort = 99;
 
     protected string $view = 'filament.pages.account';

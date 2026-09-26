@@ -24,7 +24,7 @@ class FreshExpiry extends Page
 
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-clock';
 
-    protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';
+    protected static \UnitEnum|string|null $navigationGroup = 'Root Cause';
 
     protected static ?string $navigationLabel = 'Fresh & Expiry';
 

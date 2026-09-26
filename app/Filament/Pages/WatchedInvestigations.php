@@ -21,7 +21,7 @@ class WatchedInvestigations extends Page
     const SCREEN_KEY = 'watched';
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-eye';
 
-    protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';
+    protected static \UnitEnum|string|null $navigationGroup = 'Root Cause';
 
     protected static ?string $navigationLabel = 'My Watched';
 

@@ -39,7 +39,7 @@ class SuppressionResource extends Resource
 
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-bell-slash';
 
-    protected static \UnitEnum|string|null $navigationGroup = 'Settings';
+    protected static \UnitEnum|string|null $navigationGroup = 'Root Cause';
 
     protected static ?string $navigationLabel = 'Suppressions';
 
@@ -47,6 +47,11 @@ class SuppressionResource extends Resource
 
     public static function canAccess(): bool
     {
+        // The screen belongs to Root Cause: gone from the menu (and refused) without it.
+        if (! \App\Support\Apps\AppGate::allows(\Filament\Facades\Filament::getTenant(), static::class)) {
+            return false;
+        }
+
         return auth()->user()?->canChangeAnomalyThresholds() ?? false;
     }
 

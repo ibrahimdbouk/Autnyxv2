@@ -73,6 +73,15 @@ class AdminPanelProvider extends PanelProvider
                         . '</div>';
                 }
             )
+            // Menu layout: Dashboard first, then one group per app the tenant
+            // holds, then the shared groups (App\Support\Apps\AppRegistry).
+            ->navigationGroups(\App\Support\Apps\AppRegistry::navigationGroups())
+            // The group of the app the current page belongs to opens, the other
+            // app groups close (on the Dashboard: the group of the open tab).
+            ->renderHook(
+                'panels::sidebar.nav.end',
+                fn (): string => \App\Support\Apps\AppRegistry::sidebarScript(\App\Support\Apps\AppRegistry::currentApp())
+            )
             ->maxContentWidth('full')
             ->databaseNotifications()
             ->databaseNotificationsPolling('60s')

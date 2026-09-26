@@ -27,7 +27,7 @@ class AnomalyResource extends Resource
 
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-exclamation-triangle';
 
-    protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';
+    protected static \UnitEnum|string|null $navigationGroup = 'Root Cause';
 
     protected static ?string $navigationLabel = 'Anomalies';
 

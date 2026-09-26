@@ -25,22 +25,22 @@ final class ScreenRegistry
      */
     public const SCREENS = [
         // Intelligence
-        'anomalies'       => ['label' => 'Anomalies',        'group' => 'Intelligence'],
-        'investigations'  => ['label' => 'Investigations',   'group' => 'Intelligence'],
-        'action_center'   => ['label' => 'Action Center',    'group' => 'Intelligence'],
-        'action_queue'    => ['label' => 'Action Queue',     'group' => 'Intelligence'],
-        'daily_briefing'  => ['label' => 'Daily Briefing',   'group' => 'Intelligence'],
-        'weekly_briefing' => ['label' => 'Weekly Briefing',  'group' => 'Intelligence'],
-        'follow_ups'      => ['label' => 'Follow-Ups',       'group' => 'Intelligence'],
-        'supplier_prep'   => ['label' => 'Supplier Prep',    'group' => 'Intelligence'],
+        'anomalies'       => ['label' => 'Anomalies',        'group' => 'Root Cause'],
+        'investigations'  => ['label' => 'Investigations',   'group' => 'Root Cause'],
+        'action_center'   => ['label' => 'Action Center',    'group' => 'Root Cause'],
+        'action_queue'    => ['label' => 'Action Queue',     'group' => 'Root Cause'],
+        'daily_briefing'  => ['label' => 'Daily Briefing',   'group' => 'Root Cause'],
+        'weekly_briefing' => ['label' => 'Weekly Briefing',  'group' => 'Root Cause'],
+        'follow_ups'      => ['label' => 'Follow-Ups',       'group' => 'Root Cause'],
+        'supplier_prep'   => ['label' => 'Supplier Prep',    'group' => 'Root Cause'],
         // W11
-        'count_lists'        => ['label' => 'Count Lists',        'group' => 'Intelligence'],
-        'fresh_expiry'       => ['label' => 'Fresh & Expiry',     'group' => 'Intelligence'],
-        'supplier_scorecard' => ['label' => 'Supplier Scorecard', 'group' => 'Intelligence'],
+        'count_lists'        => ['label' => 'Count Lists',        'group' => 'Root Cause'],
+        'fresh_expiry'       => ['label' => 'Fresh & Expiry',     'group' => 'Root Cause'],
+        'supplier_scorecard' => ['label' => 'Supplier Scorecard', 'group' => 'Root Cause'],
         'data_quality'    => ['label' => 'AI data-quality check (on Data Health)', 'group' => 'Data'],
-        'watched'         => ['label' => 'Watched',          'group' => 'Intelligence'],
-        'replenishment'   => ['label' => 'Replenishment',    'group' => 'Intelligence'],
-        'reports'         => ['label' => 'Reports',          'group' => 'Intelligence'],
+        'watched'         => ['label' => 'Watched',          'group' => 'Root Cause'],
+        'replenishment'   => ['label' => 'Replenishment',    'group' => 'Root Cause'],
+        'reports'         => ['label' => 'Reports',          'group' => 'Root Cause'],
         // Data
         'products'        => ['label' => 'Products',         'group' => 'Data'],
         'sales'           => ['label' => 'Sales',            'group' => 'Data'],
@@ -51,7 +51,7 @@ final class ScreenRegistry
         'data_health'     => ['label' => 'Data Health',      'group' => 'Data'],
         // WP2.4 (audit M9): previously ungated — reachable by URL for anyone.
         'stores'          => ['label' => 'Stores',           'group' => 'Data'],
-        'store_clusters'  => ['label' => 'Store Clustering', 'group' => 'Intelligence'],
+        'store_clusters'  => ['label' => 'Store Clustering', 'group' => 'Data'],
     ];
 
     /** @return array<int,string> every valid screen key */
@@ -68,7 +68,7 @@ final class ScreenRegistry
 
     /**
      * Options for a Filament CheckboxList, grouped by navigation group:
-     *   ['Intelligence' => ['anomalies' => 'Anomalies', ...], 'Data' => [...]]
+     *   ['Root Cause' => ['anomalies' => 'Anomalies', ...], 'Data' => [...]]
      *
      * @return array<string,array<string,string>>
      */

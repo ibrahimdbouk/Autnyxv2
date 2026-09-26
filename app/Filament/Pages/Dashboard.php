@@ -2,18 +2,18 @@
 
 namespace App\Filament\Pages;
 
-use App\Filament\Resources\AnomalyResource;
-use App\Filament\Resources\InvestigationResource;
-use App\Models\Action;
-use App\Models\Investigation;
-use App\Services\Metrics\DashboardMetrics;
+use App\Filament\Dashboards\AppDashboard;
+use App\Support\Apps\AppRegistry;
 use Filament\Facades\Filament;
 use Filament\Pages\Dashboard as BaseDashboard;
+use Livewire\Attributes\Url;
 
 /**
- * The tenant dashboard. Figures come from DashboardMetrics (WP7.1); the view
- * only formats them. Drill-down links carry the filter that reproduces the
- * figure and are left out when the user cannot open the target screen.
+ * The one Dashboard — the first item of the menu for every app. A switch across
+ * the top moves between each app's own dashboard (Root Cause · Assortment ·
+ * Tasks); tabs are the apps the tenant holds, and a tab never shows another
+ * app's numbers. The tab lives in the URL (?app=…) so it can be bookmarked and
+ * shared; the person's last tab is remembered.
  */
 class Dashboard extends BaseDashboard
 {
@@ -21,9 +21,12 @@ class Dashboard extends BaseDashboard
 
     protected static ?string $navigationLabel = 'Dashboard';
 
-    protected static ?int $navigationSort = -2;
+    protected static ?int $navigationSort = -100;
 
     protected string $view = 'filament.pages.dashboard';
+
+    #[Url(as: 'app')]
+    public ?string $app = null;
 
     public function getTitle(): string
     {
@@ -36,77 +39,48 @@ class Dashboard extends BaseDashboard
         return [];
     }
 
+    public function mount(): void
+    {
+        $this->app = static::resolveApp($this->app);
+        if ($this->app !== null) {
+            AppRegistry::rememberDashboard(auth()->user(), $this->app);
+        }
+    }
+
+    /** The tab to show: the requested one if the tenant holds it, else the person's default. */
+    public static function resolveApp(?string $requested): ?string
+    {
+        $available = AppRegistry::forTenant(Filament::getTenant());
+
+        return is_string($requested) && in_array($requested, $available, true)
+            ? $requested
+            : AppRegistry::defaultFor(auth()->user(), $available);
+    }
+
     protected function getViewData(): array
     {
-        $tenant   = Filament::getTenant();
-        $tenantId = $tenant?->id;
-        $m        = $tenantId ? app(DashboardMetrics::class)->forTenant($tenantId) : app(DashboardMetrics::class)->compute(0);
+        $tenant = Filament::getTenant();
+        $apps   = AppRegistry::apps();
+        $app    = static::resolveApp($this->app);
 
-        $canInv   = InvestigationResource::canViewAny();
-        $canAnom  = AnomalyResource::canViewAny();
-        $canFin   = FinancialBreakdown::canAccess();
-        $canAct   = ActionCenter::canAccess();
+        $tabs = [];
+        foreach (AppRegistry::forTenant($tenant) as $key) {
+            $tabs[] = [
+                'key'    => $key,
+                'label'  => $apps[$key]['label'],
+                'icon'   => $apps[$key]['icon'],
+                'url'    => static::getUrl(['app' => $key]),
+                'active' => $key === $app,
+            ];
+        }
 
-        $recentHighPriority = $tenantId
-            ? Investigation::where('tenant_id', $tenantId)
-                ->whereIn('priority', ['critical', 'high'])
-                ->whereIn('status', ['open', 'in_progress'])
-                ->with(['assignedTeam', 'anomalies', 'primaryStore'])
-                ->orderByDesc('opened_at')
-                ->limit(6)
-                ->get()
-            : collect();
-
-        $pendingActions = $tenantId
-            ? Action::whereHas('investigation', fn ($q) => $q->where('tenant_id', $tenantId)->whereIn('status', ['open', 'in_progress']))
-                ->whereNotIn('status', [Action::STATUS_COMPLETED, Action::STATUS_CANCELLED])
-                ->with(['investigation'])
-                ->orderByRaw('due_at IS NULL, due_at')
-                ->orderBy('created_at')
-                ->limit(6)
-                ->get()
-            : collect();
-
-        $anomaliesOfRule = fn (string $rule) => $canAnom
-            ? AnomalyResource::getUrl('index', ['filters' => ['rule_type' => ['value' => $rule]]])
-            : null;
-        $insights = $m['insights'];
-
-        // W10: the tenant's own KPIs (Intelligence → Custom KPIs), a minute's cache.
-        $customKpis = $tenantId
-            ? \Illuminate\Support\Facades\Cache::remember("dashboard:custom-kpis:{$tenantId}", 60, function () use ($tenantId) {
-                try {
-                    return app(\App\Platform\Extensibility\CustomRuleEngine::class)->tenantKpis($tenantId);
-                } catch (\Throwable $e) {
-                    report($e);
-
-                    return [];
-                }
-            })
-            : [];
+        /** @var AppDashboard|null $dashboard */
+        $dashboard = $app !== null ? app($apps[$app]['dashboard']) : null;
 
         return [
-            'customKpis'         => $customKpis,
-            'customKpisUrl'      => \App\Filament\Resources\CustomMetricResource::canAccess() ? \App\Filament\Resources\CustomMetricResource::getUrl('index') : null,
-            'm'                  => $m,
-            'currency'           => \App\Support\Money::normalize($tenant?->currency),
-            'recentHighPriority' => $recentHighPriority,
-            'pendingActions'     => $pendingActions,
-            'canInvestigate'     => $canInv,
-            'links' => [
-                'revenue_at_risk' => $canFin ? FinancialBreakdown::getUrl(['metric' => 'revenue_at_risk']) : null,
-                'recovered_mtd'   => $canFin ? FinancialBreakdown::getUrl(['metric' => 'recovered_mtd']) : null,
-                'cleared_mtd'     => $canFin ? FinancialBreakdown::getUrl(['metric' => 'observed_cleared']) : null,
-                'open'            => $canInv ? InvestigationResource::getUrl('index', ['status' => 'open']) : null,
-                'high'            => $canInv ? InvestigationResource::getUrl('index', ['status' => 'open', 'priority' => 'high_critical']) : null,
-                'overdue'         => $canAct ? ActionCenter::getUrl(['tab' => 'overdue']) : null,
-                'drivers'         => collect($m['drivers'])->mapWithKeys(fn ($d) => [$d['rule_type'] => $anomaliesOfRule($d['rule_type'])])->all(),
-                'recurring'       => $insights['recurring'] ? $anomaliesOfRule($insights['recurring']['rule_type']) : null,
-                'month_top'       => $insights['month_top'] ? $anomaliesOfRule($insights['month_top']['rule_type']) : null,
-                'store'           => $insights['store'] && $canInv
-                    ? InvestigationResource::getUrl('index', ['status' => 'open', 'store' => $insights['store']['id']]) : null,
-                'open_all'        => $canInv ? InvestigationResource::getUrl('index', ['status' => 'open']) : null,
-            ],
+            'tabs'    => $tabs,
+            'appView' => $dashboard?->view(),
+            'appData' => $dashboard?->data($tenant) ?? [],
         ];
     }
 }

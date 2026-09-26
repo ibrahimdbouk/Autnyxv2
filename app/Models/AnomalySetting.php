@@ -303,12 +303,12 @@ class AnomalySetting extends Model
         ],
 
         // ── Tenant-defined (W10) ──────────────────────────────────────────────
-        // One switch for every rule the tenant wrote (Intelligence → Custom
+        // One switch for every rule the tenant wrote (Root Cause → Custom
         // rules); each rule is its own subject (`custom:<key>`) and carries its
         // own label, severity and value type.
         'custom_rule' => [
             'label'              => 'Custom Rule',
-            'description'        => 'A rule your team defined as a formula on store × SKU data (Intelligence → Custom rules).',
+            'description'        => 'A rule your team defined as a formula on store × SKU data (Root Cause → Custom rules).',
             'severity'           => 'medium',
             'tier'               => 'core',   // Requires: sales_daily and/or inventory_current
             'default_thresholds' => ['max_flags_per_rule' => 5000],

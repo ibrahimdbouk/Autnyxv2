@@ -24,7 +24,7 @@ class FollowUps extends Page
 
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-arrow-path-rounded-square';
 
-    protected static \UnitEnum|string|null $navigationGroup = 'Intelligence';
+    protected static \UnitEnum|string|null $navigationGroup = 'Root Cause';
 
     protected static ?string $navigationLabel = 'Follow-Ups';
 
