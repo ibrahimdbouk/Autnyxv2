@@ -12,6 +12,11 @@ class ListRetailEvents extends ListRecords
 {
     protected static string $resource = RetailEventResource::class;
 
+    public function getTitle(): string
+    {
+        return 'Retail Calendar';
+    }
+
     public function mount(): void
     {
         // The defaults exist before anyone looks for them.

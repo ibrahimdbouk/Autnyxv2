@@ -105,7 +105,14 @@ class RetailCalendarDefaults
         }
         $c = \IntlCalendar::createInstance('UTC', '@calendar=islamic-umalqura');
         $c->clear();
-        $c->set($hy, $month0, $day);
+        // PHP 8.5: set() with 3 arguments is deprecated; setDate() where available.
+        if (method_exists($c, 'setDate')) {
+            $c->setDate($hy, $month0, $day);
+        } else {
+            $c->set(\IntlCalendar::FIELD_YEAR, $hy);
+            $c->set(\IntlCalendar::FIELD_MONTH, $month0);
+            $c->set(\IntlCalendar::FIELD_DAY_OF_MONTH, $day);
+        }
 
         return Carbon::createFromTimestampUTC((int) floor($c->getTime() / 1000))->startOfDay();
     }
