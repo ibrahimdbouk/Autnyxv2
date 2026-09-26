@@ -14,8 +14,18 @@
 */
 
 return [
-    // Nothing reaches a screen while true (gaps are stored with status 'shadow').
+    // Global kill switch. While true, a tenant's decisions stay in 'shadow' until
+    // that tenant passes the validation gate (tenants.settings.assortment.live).
+    // Set false only to skip the gate everywhere (never in production).
     'shadow' => (bool) env('ASSORTMENT_SHADOW', true),
+
+    // Validation gate: the top N decisions of each type are reviewed by a person;
+    // the tenant goes live when at least this share are judged sensible.
+    'gate_sample'   => 50,
+    'gate_pass'     => 0.70,
+
+    // Measuring an accepted decision: this many days before and after it was done.
+    'measure_days' => 56,
 
     // A product is "carried" if it had stock or a sale in the last N days.
     'carried_window_days' => 56,
@@ -48,6 +58,7 @@ return [
     'delist_bottom_share'       => 0.10,
     'delist_min_history_days'   => 182,   // no delists before 26 weeks of history
     'delist_min_tier'           => 'likely',
+    'max_delists_per_category'  => 3,     // per store per run: a review is a few calls, not a cull
 
     // Stockout-hidden: the right product, but out of stock this often.
     'stockout_max_availability' => 0.70,

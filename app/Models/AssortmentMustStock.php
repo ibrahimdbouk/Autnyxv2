@@ -10,4 +10,14 @@ class AssortmentMustStock extends Model
     protected $table = 'assortment_must_stock';
 
     protected $fillable = ['tenant_id', 'sku', 'store_id', 'reason'];
+
+    public function tenant(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Tenant::class);
+    }
+
+    public function store(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Store::class);
+    }
 }

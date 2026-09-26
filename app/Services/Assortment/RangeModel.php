@@ -38,13 +38,36 @@ class RangeModel
     /**
      * Rebuild the inferred range for a tenant as of a date.
      *
-     * @return array{positions:int, carried:int, stores:int, skus:int, history_days:int, first_seen:?string}
+     * @return array{positions:int, carried:int, from_listing:int, stores:int, skus:int, history_days:int, first_seen:?string}
      */
-    public function rebuild(int $tenantId, string $asOf): array
+    public function rebuild(int $tenantId, string $asOf, ?int $carriedWindowDays = null): array
     {
-        $cutoff = Carbon::parse($asOf)->subDays(max(1, (int) config('assortment.carried_window_days', 56)) - 1)->toDateString();
+        $window = max(1, $carriedWindowDays ?? (int) config('assortment.carried_window_days', 56));
+        $cutoff = Carbon::parse($asOf)->subDays($window - 1)->toDateString();
 
         DB::transaction(function () use ($tenantId, $asOf, $cutoff) {
+            // One pass over the history, reused for the inferred rows and to date the listing rows.
+            DB::statement('DROP TABLE IF EXISTS tmp_range_history');
+            DB::statement(
+                "CREATE TEMP TABLE tmp_range_history ON COMMIT DROP AS
+                 SELECT COALESCE(s.store_id, i.store_id) AS store_id,
+                        COALESCE(s.sku, i.sku)           AS sku,
+                        s.first_sale, s.last_sale, i.first_stock, i.last_in_stock
+                   FROM (SELECT store_id, sku, MIN(date) AS first_sale, MAX(date) AS last_sale
+                           FROM sales_daily
+                          WHERE tenant_id = ? AND store_id IS NOT NULL AND units_sold > 0 AND date <= CAST(? AS date)
+                       GROUP BY store_id, sku) s
+              FULL OUTER JOIN
+                        (SELECT store_id, sku,
+                                MIN(as_of_date) FILTER (WHERE on_hand_qty > 0) AS first_stock,
+                                MAX(as_of_date) FILTER (WHERE on_hand_qty > 0) AS last_in_stock
+                           FROM inventory_levels
+                          WHERE tenant_id = ? AND store_id IS NOT NULL AND as_of_date <= CAST(? AS date)
+                       GROUP BY store_id, sku) i
+                     ON i.store_id = s.store_id AND i.sku = s.sku",
+                [$tenantId, $asOf, $tenantId, $asOf],
+            );
+
             DB::table('assortment_store_ranges')
                 ->where('tenant_id', $tenantId)
                 ->where('source', AssortmentStoreRange::SOURCE_INFERRED)
@@ -59,33 +82,33 @@ class RangeModel
                         LEAST(x.first_sale, x.first_stock),
                         GREATEST(x.last_sale, x.last_in_stock),
                         x.last_sale, x.last_in_stock, CAST(? AS date), NOW(), NOW()
-                   FROM (
-                        SELECT COALESCE(s.store_id, i.store_id) AS store_id,
-                               COALESCE(s.sku, i.sku)           AS sku,
-                               s.first_sale, s.last_sale, i.first_stock, i.last_in_stock
-                          FROM (SELECT store_id, sku, MIN(date) AS first_sale, MAX(date) AS last_sale
-                                  FROM sales_daily
-                                 WHERE tenant_id = ? AND store_id IS NOT NULL AND units_sold > 0 AND date <= CAST(? AS date)
-                              GROUP BY store_id, sku) s
-                     FULL OUTER JOIN
-                               (SELECT store_id, sku,
-                                       MIN(as_of_date) FILTER (WHERE on_hand_qty > 0) AS first_stock,
-                                       MAX(as_of_date) FILTER (WHERE on_hand_qty > 0) AS last_in_stock
-                                  FROM inventory_levels
-                                 WHERE tenant_id = ? AND store_id IS NOT NULL AND as_of_date <= CAST(? AS date)
-                              GROUP BY store_id, sku) i
-                            ON i.store_id = s.store_id AND i.sku = s.sku
-                   ) x
+                   FROM tmp_range_history x
               LEFT JOIN products p ON p.tenant_id = ? AND p.sku = x.sku
                   WHERE LEAST(x.first_sale, x.first_stock) IS NOT NULL
              ON CONFLICT (tenant_id, store_id, sku) DO NOTHING",
-                [$tenantId, $cutoff, $asOf, $tenantId, $asOf, $tenantId, $asOf, $tenantId],
+                [$tenantId, $cutoff, $asOf, $tenantId],
+            );
+
+            // Listing rows keep what the file says is carried; their dates come from history.
+            DB::statement(
+                "UPDATE assortment_store_ranges r
+                    SET first_seen    = COALESCE(LEAST(x.first_sale, x.first_stock), r.first_seen),
+                        last_seen     = GREATEST(x.last_sale, x.last_in_stock),
+                        last_sale     = x.last_sale,
+                        last_in_stock = x.last_in_stock,
+                        as_of_date    = CAST(? AS date),
+                        updated_at    = NOW()
+                   FROM tmp_range_history x
+                  WHERE r.tenant_id = ? AND r.source = 'listing'
+                    AND r.store_id = x.store_id AND r.sku = x.sku",
+                [$asOf, $tenantId],
             );
         });
 
         $s = DB::selectOne(
             'SELECT COUNT(*) AS positions,
                     SUM(CASE WHEN carried THEN 1 ELSE 0 END) AS carried,
+                    SUM(CASE WHEN source = \'listing\' THEN 1 ELSE 0 END) AS from_listing,
                     COUNT(DISTINCT store_id) AS stores,
                     COUNT(DISTINCT sku) AS skus,
                     MIN(first_seen) AS first_seen
@@ -98,6 +121,7 @@ class RangeModel
         return [
             'positions'    => (int) $s->positions,
             'carried'      => (int) $s->carried,
+            'from_listing' => (int) $s->from_listing,
             'stores'       => (int) $s->stores,
             'skus'         => (int) $s->skus,
             'history_days' => $first ? (int) $first->diffInDays(Carbon::parse($asOf)) + 1 : 0,

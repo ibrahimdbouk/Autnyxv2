@@ -1,0 +1,114 @@
+<x-filament-panels::page>
+@if($gap)
+@php
+    $e = $gap->evidence ?? [];
+    $x = $gap->explanation ?? [];
+    $tierColor = match ($gap->confidence_tier) { 'established' => 'success', 'likely' => 'info', default => null };
+    $typeColor = match ($gap->type) { 'add' => 'success', 'delist' => 'warning', default => 'danger' };
+    $pct = static fn ($v) => $v === null ? '—' : (int) round($v * 100) . '%';
+    $m = $gap->measurement;
+@endphp
+
+<div class="ax-stack">
+    <a href="{{ $backUrl }}" class="ax-text-sm ax-muted" wire:navigate>← All decisions</a>
+
+    <x-ui.card>
+        <div class="ax-row ax-wrap ax-mb-2" style="gap:.5rem">
+            <x-ui.badge :color="$typeColor">{{ \App\Models\AssortmentGap::TYPES[$gap->type] ?? $gap->type }}</x-ui.badge>
+            <x-ui.badge :color="$tierColor">Confidence: {{ ucfirst($gap->confidence_tier) }}</x-ui.badge>
+            <x-ui.badge>{{ ucfirst(str_replace('_', ' ', $gap->status)) }}</x-ui.badge>
+        </div>
+        <h2 class="ax-text-lg ax-fw-700 ax-ink ax-m-0">{{ $gap->headline() }}</h2>
+        <p class="ax-muted ax-text-sm ax-mt-1">{{ $gap->product?->name }} · {{ $gap->sku }} · {{ $gap->product?->category ?? 'No category' }} · {{ $gap->store?->name }}</p>
+    </x-ui.card>
+
+    <div class="ax-grid ax-grid-3">
+        <x-ui.stat label="Value a year" :value="$gap->valueRange($currency)"
+            :foot="($e['value_basis'] ?? 'margin') === 'margin' ? 'Gross margin, as a range' : 'Sales (no cost price on file), as a range'" />
+        <x-ui.stat label="Compared with" :value="($e['qualifying_peers'] ?? 0) . ' stores'" :foot="$e['peer_group'] ?? ''" />
+        <x-ui.stat label="Based on data up to" :value="$gap->as_of_date?->format('j M Y') ?? '—'"
+            :foot="'Last ' . ($e['window_days'] ?? 90) . ' days of sales and stock'" />
+    </div>
+
+    <x-ui.card title="Why">
+        <ul class="ax-list">
+            @foreach(($x['evidence'] ?? []) as $line)
+                <li>{{ $line }}</li>
+            @endforeach
+        </ul>
+        @if(! empty($x['reasons']))
+            <p class="ax-faint ax-text-xs ax-mt-3">{{ implode(' · ', $x['reasons']) }}</p>
+        @endif
+        @if($gap->type === 'stockout_hidden')
+            <p class="ax-text-sm ax-mt-3">This is a stock problem, not a range problem: work it as a stock issue (in Root Cause if you have it), not as a delist.</p>
+        @endif
+    </x-ui.card>
+
+    <x-ui.card title="The stores behind it">
+        <div class="ax-scroll-x">
+            <table class="ax-table">
+                <thead>
+                    <tr><th>Store</th><th>Carries it</th><th>Since</th><th class="ax-num">In stock</th><th class="ax-num">Sells a day (in stock)</th></tr>
+                </thead>
+                <tbody>
+                    @forelse($peers as $p)
+                        <tr @class(['ax-row-hl' => $p['this_store']])>
+                            <td>{{ $p['store'] }}@if($p['this_store']) <span class="ax-faint">(this store)</span>@endif</td>
+                            <td>{{ $p['carried'] ? 'Yes' : 'No' }}</td>
+                            <td>{{ $p['since'] ? \Illuminate\Support\Carbon::parse($p['since'])->format('j M Y') : '—' }}</td>
+                            <td class="ax-num">{{ $p['carried'] ? $pct($p['availability']) : '—' }}</td>
+                            <td class="ax-num">{{ $p['units_per_day'] ?? '—' }}</td>
+                        </tr>
+                    @empty
+                        <tr><td colspan="5" class="ax-muted">The peer group for this decision has changed since it was made.</td></tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+        <p class="ax-faint ax-text-xs ax-mt-2">Stores count as comparable when they have carried the product for at least 28 days and kept it in stock at least 80% of the time. The store being judged is never part of its own comparison.</p>
+    </x-ui.card>
+
+    @if($gap->decided_at)
+        <x-ui.card title="What happened">
+            <div class="ax-grid ax-grid-3">
+                <div>
+                    <div class="ax-faint ax-text-xs">Decision</div>
+                    <div class="ax-fw-600">{{ ucfirst($gap->status) }} by {{ $gap->decider?->name ?? 'someone' }}</div>
+                    <div class="ax-muted ax-text-sm">{{ $gap->decided_at->format('j M Y') }}</div>
+                </div>
+                @if($gap->status === 'accepted')
+                    <div>
+                        <div class="ax-faint ax-text-xs">Task</div>
+                        <div class="ax-fw-600">{{ match($gap->task_status) { 'done' => 'Done', 'cancelled' => 'Cancelled', default => 'To do' } }}@if($gap->assignee) · {{ $gap->assignee->name }}@endif</div>
+                        <div class="ax-muted ax-text-sm">
+                            @if($gap->done_at) Done {{ $gap->done_at->format('j M Y') }} @elseif($gap->due_at) Due {{ $gap->due_at->format('j M Y') }} @endif
+                        </div>
+                    </div>
+                    <div>
+                        <div class="ax-faint ax-text-xs">Result</div>
+                        @if($m)
+                            <div class="ax-fw-600">{{ \App\Support\Money::displayCompact((float) ($m['uplift_per_year'] ?? 0), $currency) }} a year</div>
+                            <div class="ax-muted ax-text-sm">
+                                {{ $m['metric'] === 'category_sales' ? 'Category sales' : 'Product sales' }} against {{ $m['control_stores'] }} similar stores that did not change{{ ($m['strength'] ?? '') === 'weak' ? ' (few comparison stores — treat as indicative)' : '' }}
+                            </div>
+                        @elseif($gap->measure_after)
+                            <div class="ax-fw-600">Measured after {{ $gap->measure_after->format('j M Y') }}</div>
+                            <div class="ax-muted ax-text-sm">8 weeks after it was done</div>
+                        @else
+                            <div class="ax-muted ax-text-sm">Measured 8 weeks after it is marked done.</div>
+                        @endif
+                    </div>
+                @endif
+            </div>
+            @if($gap->decision_note)
+                <p class="ax-text-sm ax-mt-3">{{ $gap->decision_note }}</p>
+            @endif
+        </x-ui.card>
+    @endif
+</div>
+@else
+<x-ui.card>
+    <x-ui.empty title="Pick a decision">Open one from <a href="{{ $backUrl }}" wire:navigate>the list of range decisions</a>.</x-ui.empty>
+</x-ui.card>
+@endif
+</x-filament-panels::page>

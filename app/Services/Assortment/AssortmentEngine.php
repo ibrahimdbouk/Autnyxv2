@@ -73,7 +73,8 @@ class AssortmentEngine
             return ['reason' => 'no sales or stock data yet'];
         }
 
-        $range    = $this->ranges->rebuild($tenantId, $asOf);
+        $guards   = TenantAssortment::guardrails($tenant);
+        $range    = $this->ranges->rebuild($tenantId, $asOf, $guards['carried_window_days']);
         $peers    = $this->peerGroups->build($tenantId);
         $products = $this->products($tenantId);
         [$factor, $reasons] = $this->dataQuality($tenantId);
@@ -87,12 +88,23 @@ class AssortmentEngine
             qualityReasons: $reasons,
             allowDelists: $allowDelists,
             currency: $tenant->currencyCode(),
+            delistMinTier: $guards['delist_min_tier'],
+            maxDelistsPerCategory: $guards['max_delists_per_category'],
         );
+        $live   = TenantAssortment::isLive($tenant) || ! config('assortment.shadow', true);
+        $status = $live ? AssortmentGap::STATUS_OPEN : AssortmentGap::STATUS_SHADOW;
+        // Decisions a person already accepted or rejected are never rewritten by a later run.
+        $decided = AssortmentGap::where('tenant_id', $tenantId)
+            ->whereIn('status', [AssortmentGap::STATUS_ACCEPTED, AssortmentGap::STATUS_REJECTED])
+            ->get(['store_id', 'sku', 'type'])
+            ->mapWithKeys(fn ($g) => ["{$g->store_id}|{$g->sku}|{$g->type}" => true])->all();
 
         DB::table('assortment_benchmarks')->where('tenant_id', $tenantId)->delete();
 
-        $counts = ['add' => 0, 'delist' => 0, 'stockout_hidden' => 0, 'skipped_no_category_sales' => 0, 'skipped_speculative_delist' => 0];
+        $counts = ['add' => 0, 'delist' => 0, 'stockout_hidden' => 0, 'skipped_no_category_sales' => 0, 'skipped_speculative_delist' => 0, 'capped_delists' => 0];
         $benchmarks = 0;
+        $health = [];
+        $found  = [];
         $groupsOut = [];
         foreach ($peers['groups'] as $key => $group) {
             $targets = array_keys(array_filter($peers['assignment'], fn ($k) => $k === $key));
@@ -107,21 +119,33 @@ class AssortmentEngine
             foreach ($result['counts'] as $k => $n) {
                 $counts[$k] += $n;
             }
-            $this->saveGaps($tenantId, $result['gaps'], $asOf, $started);
+            $fresh = array_values(array_filter($result['gaps'], fn ($g) => ! isset($decided["{$g['store_id']}|{$g['sku']}|{$g['type']}"])));
+            $this->saveGaps($tenantId, $fresh, $asOf, $status);
+            foreach ($result['gaps'] as $g) {
+                $found["{$g['store_id']}|{$g['sku']}|{$g['type']}"] = true;
+            }
+            array_push($health, ...$result['health']);
             $groupsOut[] = ['key' => $key, 'label' => $group['label'], 'basis' => $group['basis'], 'stores' => count($group['members']), 'judged' => count($targets)];
         }
 
         // Decisions not found again this run are gone (accepted / rejected ones are kept).
-        $removed = AssortmentGap::query()->where('tenant_id', $tenantId)
+        $stale = AssortmentGap::query()->where('tenant_id', $tenantId)
             ->whereIn('status', [AssortmentGap::STATUS_SHADOW, AssortmentGap::STATUS_OPEN])
-            ->where(fn ($q) => $q->whereNull('last_detected_at')->orWhere('last_detected_at', '<', $started))
-            ->delete();
+            ->get(['id', 'store_id', 'sku', 'type'])
+            ->reject(fn ($g) => isset($found["{$g->store_id}|{$g->sku}|{$g->type}"]))
+            ->pluck('id');
+        foreach ($stale->chunk(1000) as $ids) {
+            AssortmentGap::whereIn('id', $ids->all())->delete();
+        }
+        $removed = $stale->count();
 
         $coverage = $this->availability->coverage($tenantId);
 
         return [
             'as_of'          => $asOf,
-            'shadow'         => (bool) config('assortment.shadow', true),
+            'shadow'         => ! $live,
+            'guardrails'     => $guards,
+            'health'         => $health,
             'range'          => $range,
             'stock_history'  => $coverage,
             'peer_groups'    => $groupsOut,
@@ -222,10 +246,9 @@ class AssortmentEngine
         return count($rows);
     }
 
-    private function saveGaps(int $tenantId, array $gaps, string $asOf, \DateTimeInterface $started): void
+    private function saveGaps(int $tenantId, array $gaps, string $asOf, string $status): void
     {
         $now    = now();
-        $status = config('assortment.shadow', true) ? AssortmentGap::STATUS_SHADOW : AssortmentGap::STATUS_OPEN;
         $rows   = [];
         foreach ($gaps as $g) {
             $rows[] = [
@@ -239,7 +262,8 @@ class AssortmentEngine
                 'created_at' => $now, 'updated_at' => $now,
             ];
         }
-        // Re-found decisions keep their status and first-seen time; everything else is refreshed.
+        // Re-found open/shadow decisions keep their status, first-seen time and any
+        // review verdict; their figures are refreshed.
         foreach (array_chunk($rows, 500) as $chunk) {
             DB::table('assortment_gaps')->upsert(
                 $chunk,

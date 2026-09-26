@@ -41,6 +41,11 @@ final class ScreenRegistry
         'watched'         => ['label' => 'Watched',          'group' => 'Root Cause'],
         'replenishment'   => ['label' => 'Replenishment',    'group' => 'Root Cause'],
         'reports'         => ['label' => 'Reports',          'group' => 'Root Cause'],
+        // Assortment
+        'assortment_decisions'  => ['label' => 'Range decisions',       'group' => 'Assortment'],
+        'assortment_categories' => ['label' => 'Category review',       'group' => 'Assortment'],
+        'assortment_stores'     => ['label' => 'Store range profiles',  'group' => 'Assortment'],
+        'assortment_outcomes'   => ['label' => 'Range outcomes',        'group' => 'Assortment'],
         // Data
         'products'        => ['label' => 'Products',         'group' => 'Data'],
         'sales'           => ['label' => 'Sales',            'group' => 'Data'],

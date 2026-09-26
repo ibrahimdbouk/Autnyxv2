@@ -33,7 +33,8 @@ class SmokeTest extends TestCase
         parent::setUp();
 
         // A tenant + an admin that belongs to it, acting inside the admin panel.
-        $this->tenant = $this->createTenant();
+        // Every app switched on, so every registered screen is smoke-tested.
+        $this->tenant = $this->createTenant(['apps' => array_keys(Tenant::APP_LABELS)]);
         $this->actingAsTenantAdmin($this->tenant);
 
         Filament::setCurrentPanel(Filament::getPanel('admin'));

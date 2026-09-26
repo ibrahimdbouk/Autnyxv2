@@ -44,6 +44,10 @@ class GapEngine
 
     private string $currency = 'USD';
 
+    private string $delistMinTier = 'likely';
+
+    private int $maxDelistsPerCategory = 3;
+
     /** @param array<string,array<string,mixed>> $products sku => facts */
     public function __construct(private readonly array $products) {}
 
@@ -56,7 +60,11 @@ class GapEngine
         array $qualityReasons,
         bool $allowDelists,
         string $currency,
+        string $delistMinTier = 'likely',
+        int $maxDelistsPerCategory = 3,
     ): self {
+        $this->delistMinTier         = $delistMinTier;
+        $this->maxDelistsPerCategory = max(1, $maxDelistsPerCategory);
         $this->mustStock      = $mustStock;
         $this->stockValue     = $stockValue;
         $this->storeNames     = $storeNames;
@@ -126,7 +134,7 @@ class GapEngine
     {
         $cfg    = config('assortment');
         $gaps   = [];
-        $counts = ['add' => 0, 'delist' => 0, 'stockout_hidden' => 0, 'skipped_no_category_sales' => 0, 'skipped_speculative_delist' => 0];
+        $counts = ['add' => 0, 'delist' => 0, 'stockout_hidden' => 0, 'skipped_no_category_sales' => 0, 'skipped_speculative_delist' => 0, 'capped_delists' => 0];
 
         // Category bar for adds: the P40 of the group's median share index per product.
         $byCategory = [];
@@ -162,13 +170,33 @@ class GapEngine
                         ?? $this->delist($g, $storeId, $sku, $product, $peers, $median, $tier, $ownRank, $group, $counts);
                 }
                 if ($gap !== null) {
-                    $counts[$gap['type']]++;
                     $gaps[] = $gap;
                 }
             }
         }
 
-        return ['gaps' => $gaps, 'counts' => $counts];
+        // A review is a few calls per shelf, not a cull: keep the most valuable
+        // delists per store × category.
+        $delists = [];
+        foreach ($gaps as $i => $gap) {
+            if ($gap['type'] === AssortmentGap::TYPE_DELIST) {
+                $cat = $this->products[$gap['sku']]['category'] ?? '';
+                $delists[$gap['store_id'] . '|' . $cat][$i] = $gap['value_mid'];
+            }
+        }
+        foreach ($delists as $byValue) {
+            arsort($byValue);
+            foreach (array_slice(array_keys($byValue), $this->maxDelistsPerCategory) as $i) {
+                unset($gaps[$i]);
+                $counts['capped_delists']++;
+            }
+        }
+        $gaps = array_values($gaps);
+        foreach ($gaps as $gap) {
+            $counts[$gap['type']]++;
+        }
+
+        return ['gaps' => $gaps, 'counts' => $counts, 'health' => $this->health($g, $targets, $benchmark, $gaps, $group)];
     }
 
     // ── The three decisions ───────────────────────────────────────────────────
@@ -324,7 +352,7 @@ class GapEngine
         if (trim((string) ($product['season'] ?? '')) !== '') {
             return null;   // seasonal — judged in season, not v1
         }
-        if ($this->tierRank($tier) < $this->tierRank((string) $cfg['delist_min_tier'])) {
+        if ($this->tierRank($tier) < $this->tierRank($this->delistMinTier)) {
             $counts['skipped_speculative_delist']++;   // delists need more certainty than adds
 
             return null;
@@ -369,6 +397,62 @@ class GapEngine
 
         return $this->gap($storeId, $sku, $product, AssortmentGap::TYPE_DELIST, $group, [$low, $mid, $high], $tier, $evidence,
             "Consider delisting {$name} at {$store}", $lines, 'range_delist');
+    }
+
+    /**
+     * Range health per category for the stores judged here:
+     *   coverage  — of the products most peers carry (≥ 50%), the share each
+     *               store carries, averaged over the stores;
+     *   tail      — share of carried products selling under 0.3× their peers;
+     *   stockout  — share of carried products that are stockout-hidden.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    private function health(GroupData $g, array $targets, array $benchmark, array $gaps, array $group): array
+    {
+        $core = $carried = $tail = $out = [];
+        foreach ($benchmark as $sku => $b) {
+            $cat = $this->products[$sku]['category'] ?? null;
+            if ($cat === null) {
+                continue;
+            }
+            $median = $b['share_index_median'];
+            foreach ($targets as $storeId) {
+                $has = $g->carries($storeId, $sku);
+                if ($b['carried_share'] >= 0.5) {
+                    $core[$cat][$storeId]['of'] = ($core[$cat][$storeId]['of'] ?? 0) + 1;
+                    $core[$cat][$storeId]['has'] = ($core[$cat][$storeId]['has'] ?? 0) + ($has ? 1 : 0);
+                }
+                if ($has) {
+                    $carried[$cat] = ($carried[$cat] ?? 0) + 1;
+                    $share = $g->perf[$storeId][$sku]['share'] ?? null;
+                    if ($median && $share !== null && $share < 0.3 * $median) {
+                        $tail[$cat] = ($tail[$cat] ?? 0) + 1;
+                    }
+                }
+            }
+        }
+        foreach ($gaps as $gap) {
+            if ($gap['type'] === AssortmentGap::TYPE_STOCKOUT_HIDDEN) {
+                $cat = $this->products[$gap['sku']]['category'] ?? null;
+                $out[$cat] = ($out[$cat] ?? 0) + 1;
+            }
+        }
+        $rows = [];
+        foreach ($carried as $cat => $n) {
+            $cov = collect($core[$cat] ?? [])->filter(fn ($c) => ($c['of'] ?? 0) > 0)->map(fn ($c) => $c['has'] / $c['of']);
+            $rows[] = [
+                'group'    => $group['label'],
+                'category' => $cat,
+                'stores'   => count($targets),
+                'carried'  => $n,
+                'coverage' => $cov->isEmpty() ? null : round($cov->avg(), 3),
+                'tail'     => round(($tail[$cat] ?? 0) / max(1, $n), 3),
+                'stockout' => round(($out[$cat] ?? 0) / max(1, $n), 3),
+            ];
+        }
+
+        return $rows;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

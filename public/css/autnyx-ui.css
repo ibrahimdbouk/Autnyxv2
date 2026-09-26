@@ -295,6 +295,16 @@ a.ax-stat:hover { box-shadow: var(--ax-shadow-md); transform: translateY(-1px); 
 }
 
 /* ---- Print: drop chrome, flatten to ink-on-paper, keep cards intact ---- */
+/* Simple data table (Assortment pages) — token-driven, dark-safe. */
+.ax-table { width: 100%; border-collapse: collapse; font-size: var(--ax-fs-sm); }
+.ax-table th { text-align: left; font-weight: 600; color: var(--ax-muted); font-size: var(--ax-fs-xs);
+  text-transform: uppercase; letter-spacing: .04em; padding: var(--ax-2) var(--ax-3); border-bottom: 1px solid var(--ax-line); }
+.ax-table td { padding: var(--ax-2) var(--ax-3); border-bottom: 1px solid var(--ax-line-2); color: var(--ax-text); vertical-align: top; }
+.ax-table tr:last-child td { border-bottom: 0; }
+.ax-table .ax-num { text-align: right; font-variant-numeric: tabular-nums; }
+.ax-table tr.ax-row-hl td { background: var(--ax-accent-soft); }
+.ax-list { margin: 0; padding-left: 1.1rem; display: grid; gap: var(--ax-1); }
+
 /* Dashboard app switch — the tabs wrap on phones instead of scrolling out of view. */
 @media (max-width: 639px) {
   .ax-app-switch .fi-tabs { flex-wrap: wrap; overflow-x: visible; }

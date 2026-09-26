@@ -51,8 +51,8 @@ class CrossTenantMatrixTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->a = $this->createTenant(['name' => 'Tenant A']);
-        $this->b = $this->createTenant(['name' => 'Tenant B']);
+        $this->a = $this->createTenant(['name' => 'Tenant A', 'apps' => array_keys(Tenant::APP_LABELS)]);
+        $this->b = $this->createTenant(['name' => 'Tenant B', 'apps' => array_keys(Tenant::APP_LABELS)]);
         $this->adminA = $this->createUser($this->a, admin: true);
         $this->adminB = $this->createUser($this->b, admin: true);
     }
@@ -98,6 +98,8 @@ class CrossTenantMatrixTest extends TestCase
             \App\Models\SalesReturn::class    => ['sku' => "SKU-$tag", 'date' => now()->toDateString(), 'quantity' => 1],
             \App\Models\SkuReplenishment::class => ['sku' => "SKU-$tag", 'store_id' => 0, 'reorder_point' => 1, 'source' => 'computed', 'computed_at' => now()],
             \App\Models\AuditLog::class       => ['event_type' => 'test', 'description' => "Audit $tag"],
+            \App\Models\AssortmentGap::class  => ['store_id' => $this->fixture(\App\Models\Store::class, $t)->id, 'sku' => "SKU-$tag",
+                'type' => 'add', 'status' => 'open', 'peer_group' => 'cluster:0', 'confidence_tier' => 'likely', 'as_of_date' => now()->toDateString()],
             \App\Models\ApiKey::class         => ['name' => "Key $tag", 'prefix' => substr(md5($tag), 0, 8), 'key_hash' => hash('sha256', $tag)],
             default => [],
         };
