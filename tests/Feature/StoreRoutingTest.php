@@ -70,8 +70,8 @@ class StoreRoutingTest extends TestCase
         $this->finding($this->marina, 'A', 500);
         $this->finding($this->mall, 'B', 900);            // another store — not theirs
         $this->finding($this->marina, 'C', 50, ['severity' => 'low']);   // low — left out
-        $this->countLine($this->marina, 'P1');
-        $this->countLine($this->mall, 'P2');
+        $this->countLine($this->marina, 'CNT-MARINA-7431');
+        $this->countLine($this->mall, 'CNT-MALL-8252');
         $other = $this->createUser($this->tenant);          // not linked to a store
         $quiet = $this->createUser($this->tenant);
         $quiet->stores()->attach($this->mall->id, ['tenant_id' => $this->tenant->id]);
@@ -79,7 +79,7 @@ class StoreRoutingTest extends TestCase
 
         $d = app(StoreDigestService::class)->forUser($this->manager);
         $this->assertSame(['A'], $d['findings']->pluck('sku')->all());
-        $this->assertSame(['P1'], $d['counts']->pluck('sku')->all());
+        $this->assertSame(['CNT-MARINA-7431'], $d['counts']->pluck('sku')->all());
 
         $this->artisan('digest:stores', ['--tenant' => $this->tenant->id])->assertSuccessful();
         Mail::assertQueued(StoreDigestMail::class, 1);
@@ -103,12 +103,12 @@ class StoreRoutingTest extends TestCase
     {
         $mine = $this->finding($this->marina, 'A', 500);
         $theirs = $this->finding($this->mall, 'B', 900);
-        $count = $this->countLine($this->marina, 'P1');
-        $foreignCount = $this->countLine($this->mall, 'P2');
+        $count = $this->countLine($this->marina, 'CNT-MARINA-7431');
+        $foreignCount = $this->countLine($this->mall, 'CNT-MALL-8252');
         $url = app(StoreDigestService::class)->sheetUrl($this->manager);
 
         $this->get($url)->assertOk()->assertSee('Stock-out risk A at Marina')->assertDontSee('Stock-out risk B at Mall')
-            ->assertSee('P1')->assertDontSee('P2');
+            ->assertSee('CNT-MARINA-7431')->assertDontSee('CNT-MALL-8252');
 
         $this->post($url, ['do' => 'feedback', 'anomaly' => $mine->id, 'verdict' => 'real'])->assertRedirect($url);
         $this->assertSame(['real', 'store_sheet', $this->manager->id], [$mine->fresh()->feedback, $mine->fresh()->feedback_via, $mine->fresh()->feedback_by]);
@@ -174,12 +174,12 @@ class StoreRoutingTest extends TestCase
         $this->assertSame([$this->mall->id], $u->stores()->pluck('stores.id')->all());
         $this->assertSame($this->tenant->id, (int) DB::table('store_user')->where('user_id', $u->id)->value('tenant_id'));
 
-        $this->countLine($this->marina, 'P1');
-        $this->countLine($this->mall, 'P2');
+        $this->countLine($this->marina, 'CNT-MARINA-7431');
+        $this->countLine($this->mall, 'CNT-MALL-8252');
         $this->actingAs($u);
-        $this->get(CountLists::getUrl(['tenant' => $this->tenant]))->assertOk()->assertSee('P2')->assertDontSee('P1');
-        $this->get(CountLists::getUrl(['tenant' => $this->tenant, 'store' => $this->marina->id]))->assertOk()->assertDontSee('P1');
+        $this->get(CountLists::getUrl(['tenant' => $this->tenant]))->assertOk()->assertSee('CNT-MALL-8252')->assertDontSee('CNT-MARINA-7431');
+        $this->get(CountLists::getUrl(['tenant' => $this->tenant, 'store' => $this->marina->id]))->assertOk()->assertDontSee('CNT-MARINA-7431');
         $this->actingAs($admin);
-        $this->get(CountLists::getUrl(['tenant' => $this->tenant, 'store' => $this->marina->id]))->assertOk()->assertSee('P1');
+        $this->get(CountLists::getUrl(['tenant' => $this->tenant, 'store' => $this->marina->id]))->assertOk()->assertSee('CNT-MARINA-7431');
     }
 }

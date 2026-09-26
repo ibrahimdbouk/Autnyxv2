@@ -59,13 +59,16 @@ class HierarchySync
      * department (source "products") the first time it is seen. Never renamed
      * or removed here — the tenant owns the list once it exists.
      */
+    // Where the same name is spelled differently ("Grocery", " grocery "), the
+    // display spelling is the byte-order first (capitalised first) — COLLATE "C"
+    // so it never depends on the database's locale.
     private function departments(int $t): int
     {
         $now = now()->toDateTimeString();
 
         return DB::affectingStatement(
             "INSERT INTO departments (tenant_id, name, source, active, sort, created_at, updated_at)
-             SELECT ?::bigint, MIN(d.name), 'products', true, 0, ?::timestamp, ?::timestamp
+             SELECT ?::bigint, MIN(d.name COLLATE \"C\"), 'products', true, 0, ?::timestamp, ?::timestamp
                FROM (SELECT regexp_replace(trim(p.department), '\\s+', ' ', 'g') AS name
                        FROM products p WHERE p.tenant_id = ? AND p.department IS NOT NULL AND trim(p.department) <> '') d
               WHERE NOT EXISTS (SELECT 1 FROM departments x WHERE x.tenant_id = ? AND x.parent_id IS NULL AND lower(x.name) = lower(d.name))
@@ -140,7 +143,7 @@ class HierarchySync
 
         DB::insert(
             "INSERT INTO location_nodes (tenant_id, type, name, created_at, updated_at)
-             SELECT ?::bigint, 'region', MIN({$reg}), ?::timestamp, ?::timestamp
+             SELECT ?::bigint, 'region', MIN({$reg} COLLATE \"C\"), ?::timestamp, ?::timestamp
                FROM stores s
               WHERE s.tenant_id = ? AND {$reg} IS NOT NULL
                 AND NOT EXISTS (SELECT 1 FROM location_nodes n WHERE n.tenant_id = ? AND n.type = 'region' AND lower(n.name) = lower({$reg}))
@@ -152,7 +155,7 @@ class HierarchySync
 
         DB::insert(
             "INSERT INTO location_nodes (tenant_id, type, name, parent_id, created_at, updated_at)
-             SELECT ?::bigint, 'area', MIN(x.area), x.region_id, ?::timestamp, ?::timestamp
+             SELECT ?::bigint, 'area', MIN(x.area COLLATE \"C\"), x.region_id, ?::timestamp, ?::timestamp
                FROM (SELECT {$area} AS area, {$regionOf} AS region_id FROM stores s WHERE s.tenant_id = ? AND {$area} IS NOT NULL) x
               WHERE NOT EXISTS (SELECT 1 FROM location_nodes n WHERE n.tenant_id = ? AND n.type = 'area'
                                    AND lower(n.name) = lower(x.area) AND n.parent_id IS NOT DISTINCT FROM x.region_id)
