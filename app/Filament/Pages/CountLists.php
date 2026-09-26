@@ -191,9 +191,9 @@ class CountLists extends Page
                     $path = Storage::disk('local')->path((string) $data['file']);
                     try {
                         $r = app(CycleCountService::class)->importCsv($this->tenantId(), $path, $this->currentStoreId(), auth()->user());
-                        Notification::make()->title($r['recorded'] . ' count(s) recorded')
-                            ->body($r['skipped'] ? implode("\n", array_slice($r['skipped'], 0, 10)) : null)
-                            ->{$r['skipped'] ? 'warning' : 'success'}()->send();
+                        $n = Notification::make()->title($r['recorded'] . ' count(s) recorded')
+                            ->body($r['skipped'] ? implode("\n", array_slice($r['skipped'], 0, 10)) : null);
+                        ($r['skipped'] ? $n->warning() : $n->success())->send();
                     } catch (\InvalidArgumentException|\RuntimeException $e) {
                         Notification::make()->title('Could not read the file')->body($e->getMessage())->danger()->send();
                     } finally {
