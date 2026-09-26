@@ -50,6 +50,11 @@ class SsoUserProvisioner
             throw new RuntimeException('Platform administrators must sign in with their password, not single sign-on.');
         }
 
+        // Platform core: a deactivated person (a leaver) cannot come back through SSO.
+        if ($user !== null && $user->deactivated_at !== null) {
+            throw new RuntimeException('This account has been deactivated. Ask your administrator.');
+        }
+
         if ($user !== null) {
             // Group claim may promote to admin; never auto-demote here.
             if ($shouldBeAdmin && ! $user->is_tenant_admin) {

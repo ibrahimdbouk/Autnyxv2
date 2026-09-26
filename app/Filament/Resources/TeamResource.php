@@ -71,7 +71,7 @@ class TeamResource extends Resource
         $tenantId = Filament::getTenant()?->id;
 
         return $tenantId
-            ? User::where('tenant_id', $tenantId)->orderBy('name')->pluck('name', 'id')->toArray()
+            ? User::active()->where('tenant_id', $tenantId)->orderBy('name')->pluck('name', 'id')->toArray()
             : [];
     }
 

@@ -38,7 +38,8 @@ class GettingStarted extends Page
         if (! $tenantId) {
             return null;
         }
-        $left = app(OnboardingService::class)->progress($tenantId)['required_left'];
+        // Read on every page load: cached (5 min) and built from EXISTS lookups.
+        $left = app(OnboardingService::class)->requiredLeftCached((int) $tenantId);
 
         return $left > 0 ? (string) $left : null;
     }
@@ -48,9 +49,9 @@ class GettingStarted extends Page
         return 'Getting started';
     }
 
-    public function steps(): array
+    public function sections(): array
     {
-        return app(OnboardingService::class)->steps((int) Filament::getTenant()->id);
+        return app(OnboardingService::class)->sections((int) Filament::getTenant()->id);
     }
 
     public function progress(): array
@@ -72,7 +73,20 @@ class GettingStarted extends Page
             ->modalDescription('Runs tonight\'s analytics now: profiles, baselines, detection, investigations and narration. It takes a few minutes; this page updates when you reload it.')
             ->action(function () {
                 abort_unless(static::canAccess(), 403);
-                \Illuminate\Support\Facades\Artisan::queue('nightly:dispatch', ['--tenant' => (int) Filament::getTenant()->id, '--force' => true]);
+                $tenantId = (int) Filament::getTenant()->id;
+                // One run at a time, and at most one start per 10 minutes: a second
+                // click would reset the run in progress and send its digests twice.
+                $running = \App\Models\TenantNightlyRun::where('tenant_id', $tenantId)
+                    ->whereIn('status', [\App\Models\TenantNightlyRun::STATUS_QUEUED, \App\Models\TenantNightlyRun::STATUS_RUNNING])
+                    ->where('updated_at', '>=', now()->subHours(3))->exists();
+                $key = "run-detection-now:{$tenantId}";
+                if ($running || \Illuminate\Support\Facades\RateLimiter::tooManyAttempts($key, 1)) {
+                    Notification::make()->title('Detection is already running')->body('Wait for the current run to finish; findings appear in a few minutes.')->warning()->send();
+
+                    return;
+                }
+                \Illuminate\Support\Facades\RateLimiter::hit($key, 600);
+                \Illuminate\Support\Facades\Artisan::queue('nightly:dispatch', ['--tenant' => $tenantId, '--force' => true]);
                 Notification::make()->title('Detection queued')->body('Findings appear in a few minutes.')->success()->send();
             });
     }

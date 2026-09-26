@@ -4,6 +4,7 @@ namespace App\Services\Onboarding;
 
 use App\Models\Import;
 use App\Models\Tenant;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -17,63 +18,155 @@ class OnboardingService
     public const GOOD_SALES_DAYS = 90;
 
     /**
+     * Platform core: setup in sections — what every app needs (the platform:
+     * stores, structure, people, products, alerts), then one section per app
+     * the tenant has. A Task-Execution-only tenant never sees data feeds; a
+     * Root-Cause tenant sees them under Root Cause.
+     *
+     * @return array<int,array{key:string, title:string, intro:string, steps:array<int,array{key:string, title:string, why:string, level:string, done:bool, detail:string, type:?string}>}>
+     */
+    public function sections(int $tenantId): array
+    {
+        $tenant = Tenant::find($tenantId);
+        $rootCause = $tenant?->hasApp(Tenant::APP_ROOT_CAUSE) ?? true;
+        $tasks = $tenant?->hasApp(Tenant::APP_TASK_EXECUTION) ?? false;
+
+        $sections = [[
+            'key' => 'platform', 'title' => 'Your organisation',
+            'intro' => 'Shared by every Autnyx app: set it up once.',
+            'steps' => $this->platformSteps($tenantId, $tenant, $rootCause),
+        ]];
+        if ($rootCause) {
+            $sections[] = ['key' => Tenant::APP_ROOT_CAUSE, 'title' => Tenant::APP_LABELS[Tenant::APP_ROOT_CAUSE],
+                'intro' => 'Your data feeds, then the first detection run and the first investigation.',
+                'steps' => $this->rootCauseSteps($tenantId)];
+        }
+        if ($tasks) {
+            $sections[] = ['key' => Tenant::APP_TASK_EXECUTION, 'title' => Tenant::APP_LABELS[Tenant::APP_TASK_EXECUTION],
+                'intro' => 'Where work happens in each store, and who does it.',
+                'steps' => $this->taskSteps($tenantId)];
+        }
+
+        return $sections;
+    }
+
+    /**
+     * Every step of every section, in order.
+     *
      * @return array<int,array{key:string, title:string, why:string, level:string, done:bool, detail:string, type:?string}>
      */
     public function steps(int $tenantId): array
     {
-        $count = fn (string $table) => (int) DB::table($table)->where('tenant_id', $tenantId)->count();
-        $span  = DB::selectOne('SELECT MIN(date) AS a, MAX(date) AS b, COUNT(DISTINCT date) AS d FROM sales_daily WHERE tenant_id = ?', [$tenantId]);
-        $salesDays = (int) ($span->d ?? 0);
-        $inv = DB::selectOne('SELECT COUNT(*) AS n, MAX(as_of_date)::text AS latest FROM inventory_current WHERE tenant_id = ?', [$tenantId]);
-        $stores = $count('stores');
-        $products = $count('products');
-        $pos = $count('purchase_orders');
-        $promos = $count('promotions') + (int) DB::table('sales_transactions')->where('tenant_id', $tenantId)->whereNotNull('promotion_ref')->limit(1)->count();
-        $returns = $count('sales_returns');
-        $waste = $count('waste_events');
-        $anomalies = (int) DB::table('anomalies')->where('tenant_id', $tenantId)->count();
-        $investigations = (int) DB::table('investigations')->where('tenant_id', $tenantId)->count();
-        $worked = (int) DB::table('investigations')->where('tenant_id', $tenantId)
-            ->where(fn ($q) => $q->whereIn('status', ['in_progress', 'resolved', 'closed'])->orWhereNotNull('assigned_user_id'))->count();
-        $users = (int) DB::table('users')->where('tenant_id', $tenantId)->count();
-        $tenant = Tenant::find($tenantId);
+        return array_merge(...array_map(fn ($s) => $s['steps'], $this->sections($tenantId)));
+    }
+
+    private function exists(string $table, int $tenantId, ?\Closure $where = null): bool
+    {
+        $q = DB::table($table)->where('tenant_id', $tenantId);
+
+        return ($where ? $where($q) : $q)->exists();
+    }
+
+    private function platformSteps(int $tenantId, ?Tenant $tenant, bool $rootCause): array
+    {
+        $stores = (int) DB::table('stores')->where('tenant_id', $tenantId)->count();
+        $withRegion = (int) DB::table('stores')->where('tenant_id', $tenantId)->whereNotNull('region')->where('region', '<>', '')->count();
+        $managedUnits = (int) DB::table('location_node_managers')->where('tenant_id', $tenantId)->distinct()->count('location_node_id');
+        $users = (int) DB::table('users')->where('tenant_id', $tenantId)->whereNull('deactivated_at')->count();
+        $linked = (int) DB::table('store_user')->where('tenant_id', $tenantId)->distinct()->count('user_id');
+        $products = $this->exists('products', $tenantId);
 
         return [
             ['key' => 'stores', 'type' => Import::TYPE_STORES, 'level' => 'required', 'done' => $stores > 0,
-                'title' => 'Load your stores', 'why' => 'Every sale and stock position is tied to a store; clusters and store comparisons need the list.',
-                'detail' => $stores ? number_format($stores) . ' stores' : 'No stores yet — sales files can create them too, but a store file adds region, format and size.'],
-            ['key' => 'products', 'type' => Import::TYPE_PRODUCTS, 'level' => 'required', 'done' => $products > 0,
-                'title' => 'Load your product master', 'why' => 'Prices and costs turn units into money at risk; categories group the findings.',
-                'detail' => $products ? number_format($products) . ' products' : 'No products yet.'],
+                'title' => 'Load your stores', 'why' => 'Everything is tied to a store: findings, work, people. Upload the store file or add them one by one (Data → Stores).',
+                'detail' => $stores ? number_format($stores) . ' stores' : 'No stores yet.'],
+            ['key' => 'structure', 'type' => null, 'level' => 'recommended', 'done' => $stores > 0 && $withRegion === $stores && $managedUnits > 0,
+                'title' => 'Set up regions, areas and their managers',
+                'why' => 'Give each store a Region (and optionally an Area); then name who manages each one. That is who sees those stores and who problems escalate to.',
+                'detail' => $stores ? "{$withRegion} of {$stores} stores have a region; {$managedUnits} region(s) / area(s) have a manager" : 'Load stores first.'],
+            ['key' => 'people', 'type' => null, 'level' => 'required', 'done' => $users > 1 && $linked > 0,
+                'title' => 'Invite your people with their position and stores',
+                'why' => 'Each person gets a position (head office, area manager, store manager, associate) and the stores they work in: that decides what they see and what reaches them. Add them in Users, or upload a users file with Role and Stores columns.',
+                'detail' => $users . ' active user(s), ' . $linked . ' linked to stores'],
+            ['key' => 'products', 'type' => Import::TYPE_PRODUCTS, 'level' => $rootCause ? 'required' : 'recommended', 'done' => $products,
+                'title' => 'Load your product master',
+                'why' => $rootCause ? 'Prices and costs turn units into money at risk; categories and departments group the findings.'
+                    : 'Lets work point at a product and be checked by scanning its barcode.',
+                'detail' => $products ? number_format((int) DB::table('products')->where('tenant_id', $tenantId)->count()) . ' products' : 'No products yet.'],
+            ['key' => 'alerts', 'type' => null, 'level' => 'recommended', 'done' => ! empty($tenant?->notification_email),
+                'title' => 'Set the company alert address',
+                'why' => 'Where company-wide alerts and the monthly report go (ask your Autnyx contact).',
+                'detail' => empty($tenant?->notification_email) ? 'Not set.' : 'Alerts go to ' . $tenant->notification_email],
+        ];
+    }
+
+    private function rootCauseSteps(int $tenantId): array
+    {
+        $span = DB::selectOne('SELECT MIN(date) AS a, MAX(date) AS b FROM sales_daily WHERE tenant_id = ?', [$tenantId]);
+        // Days spanned by the sales history (read from the (tenant, date) index, not a scan of every day).
+        $salesDays = $span && $span->a ? (int) Carbon::parse($span->a)->diffInDays(Carbon::parse($span->b)) + 1 : 0;
+        $invLatest = DB::table('inventory_current')->where('tenant_id', $tenantId)->max('as_of_date');
+        $inv = $invLatest !== null;
+        $pos = $this->exists('purchase_orders', $tenantId);
+        $promos = $this->exists('promotions', $tenantId) || $this->exists('sales_transactions', $tenantId, fn ($q) => $q->whereNotNull('promotion_ref'));
+        $returns = $this->exists('sales_returns', $tenantId);
+        $waste = $this->exists('waste_events', $tenantId);
+        $anomalies = $this->exists('anomalies', $tenantId);
+        $investigations = $this->exists('investigations', $tenantId);
+        $worked = $this->exists('investigations', $tenantId, fn ($q) => $q->where(fn ($w) => $w->whereIn('status', ['in_progress', 'resolved', 'closed'])->orWhereNotNull('assigned_user_id')));
+
+        return [
             ['key' => 'sales', 'type' => Import::TYPE_SALES, 'level' => 'required', 'done' => $salesDays >= self::MIN_SALES_DAYS,
                 'title' => 'Load sales history', 'why' => 'Detection compares each week with the weeks before it: at least 5 weeks, ideally 13 or more.',
                 'detail' => $salesDays ? "{$salesDays} days of sales (" . substr((string) $span->a, 0, 10) . ' to ' . substr((string) $span->b, 0, 10) . ')'
                     . ($salesDays < self::MIN_SALES_DAYS ? ' — need at least ' . self::MIN_SALES_DAYS : ($salesDays < self::GOOD_SALES_DAYS ? ' — works; 90+ days sharpens it' : '')) : 'No sales yet.'],
-            ['key' => 'inventory', 'type' => Import::TYPE_INVENTORY, 'level' => 'required', 'done' => (int) $inv->n > 0,
+            ['key' => 'inventory', 'type' => Import::TYPE_INVENTORY, 'level' => 'required', 'done' => $inv,
                 'title' => 'Load current stock', 'why' => 'Stock-outs, phantom stock, overstock and shrink all start from what is on hand.',
-                'detail' => (int) $inv->n ? number_format($inv->n) . ' stock positions, latest ' . substr((string) $inv->latest, 0, 10) : 'No stock yet.'],
-            ['key' => 'purchase_orders', 'type' => Import::TYPE_PURCHASE_ORDERS, 'level' => 'recommended', 'done' => $pos > 0,
+                'detail' => $inv ? 'Stock loaded, latest ' . substr((string) $invLatest, 0, 10) : 'No stock yet.'],
+            ['key' => 'purchase_orders', 'type' => Import::TYPE_PURCHASE_ORDERS, 'level' => 'recommended', 'done' => $pos,
                 'title' => 'Add purchase orders', 'why' => 'Explains stock-outs by late or short supplier deliveries — the most common root cause.',
-                'detail' => $pos ? number_format($pos) . ' PO lines' : 'Not loaded — supplier findings are off.'],
-            ['key' => 'promotions', 'type' => Import::TYPE_PROMOTIONS, 'level' => 'recommended', 'done' => $promos > 0,
+                'detail' => $pos ? 'Purchase orders loaded' : 'Not loaded — supplier findings are off.'],
+            ['key' => 'promotions', 'type' => Import::TYPE_PROMOTIONS, 'level' => 'recommended', 'done' => $promos,
                 'title' => 'Add your promotion calendar', 'why' => 'So a promotion spike, and the dip after it, are not reported as anomalies.',
                 'detail' => $promos ? 'Promotions known' : 'Not loaded — promotions may be flagged as demand swings.'],
-            ['key' => 'returns', 'type' => Import::TYPE_RETURNS, 'level' => 'optional', 'done' => $returns > 0,
+            ['key' => 'returns', 'type' => Import::TYPE_RETURNS, 'level' => 'optional', 'done' => $returns,
                 'title' => 'Add returns', 'why' => 'Return-rate spikes point at quality or listing problems.',
-                'detail' => $returns ? number_format($returns) . ' returns' : 'Optional.'],
-            ['key' => 'waste', 'type' => Import::TYPE_WASTE, 'level' => 'optional', 'done' => $waste > 0,
+                'detail' => $returns ? 'Returns loaded' : 'Optional.'],
+            ['key' => 'waste', 'type' => Import::TYPE_WASTE, 'level' => 'optional', 'done' => $waste,
                 'title' => 'Add waste and write-offs', 'why' => 'For fresh and short-life ranges: waste rates by store and item, and what is about to expire.',
-                'detail' => $waste ? number_format($waste) . ' waste lines' : 'Optional — needed for the Fresh & Expiry view.'],
-            ['key' => 'detection', 'type' => null, 'level' => 'required', 'done' => $anomalies > 0,
+                'detail' => $waste ? 'Waste loaded' : 'Optional — needed for the Fresh & Expiry view.'],
+            ['key' => 'detection', 'type' => null, 'level' => 'required', 'done' => $anomalies,
                 'title' => 'Run the first detection', 'why' => 'Runs every night on its own; run it now to see results today.',
-                'detail' => $anomalies ? number_format($anomalies) . ' findings so far' : 'Not run yet.'],
-            ['key' => 'investigate', 'type' => null, 'level' => 'required', 'done' => $worked > 0,
+                'detail' => $anomalies ? 'Detection has run' : 'Not run yet.'],
+            ['key' => 'investigate', 'type' => null, 'level' => 'required', 'done' => $worked,
                 'title' => 'Work your first investigation', 'why' => 'Assign it, start it, resolve it — that is what turns a finding into recovered money.',
-                'detail' => $investigations ? number_format($investigations) . ' investigations, ' . $worked . ' being worked' : 'None yet.'],
-            ['key' => 'team', 'type' => null, 'level' => 'recommended', 'done' => $users > 1 && ! empty($tenant?->notification_email),
-                'title' => 'Invite your team, link store managers to their stores, set the alert address',
-                'why' => 'Findings reach the people who can act on them: each store manager gets a daily digest of their own store (Users → Stores, or a Stores column in the users file).',
-                'detail' => $users . ' user(s)' . (empty($tenant?->notification_email) ? '; no notification address yet (ask your Autnyx contact)' : '; alerts go to ' . $tenant->notification_email)],
+                'detail' => $worked ? 'Investigations are being worked' : ($investigations ? 'Investigations are waiting' : 'None yet.')],
+        ];
+    }
+
+    private function taskSteps(int $tenantId): array
+    {
+        $departments = $this->exists('departments', $tenantId);
+        $zones = (int) DB::table('store_zones')->where('tenant_id', $tenantId)->distinct()->count('store_id');
+        $stores = (int) DB::table('stores')->where('tenant_id', $tenantId)->count();
+        $located = (int) DB::table('stores')->where('tenant_id', $tenantId)->whereNotNull('latitude')->whereNotNull('longitude')->count();
+        $storeManagers = (int) DB::table('users')->where('users.tenant_id', $tenantId)->whereNull('deactivated_at')
+            ->where('org_role', \App\Models\User::ORG_STORE_MANAGER)
+            ->whereExists(fn ($q) => $q->from('store_user')->whereColumn('store_user.user_id', 'users.id'))->count();
+
+        return [
+            ['key' => 'store_managers', 'type' => null, 'level' => 'required', 'done' => $storeManagers > 0,
+                'title' => 'Name a store manager for each store', 'why' => 'Store managers check and approve the work done in their store, and are the first stop when something fails.',
+                'detail' => $storeManagers . ' store manager(s) linked to stores'],
+            ['key' => 'coordinates', 'type' => Import::TYPE_STORES, 'level' => 'recommended', 'done' => $stores > 0 && $located === $stores,
+                'title' => 'Add each store\'s location', 'why' => 'Latitude and longitude let on-site work be confirmed as done at the store.',
+                'detail' => $stores ? "{$located} of {$stores} stores have coordinates" : 'Load stores first.'],
+            ['key' => 'departments', 'type' => null, 'level' => 'recommended', 'done' => $departments,
+                'title' => 'Set up departments', 'why' => 'Work is grouped and routed by department (Grocery, Fresh, Beverages…). A product file with a Department column fills them in.',
+                'detail' => $departments ? 'Departments set up' : 'None yet.'],
+            ['key' => 'zones', 'type' => null, 'level' => 'optional', 'done' => $zones > 0,
+                'title' => 'Map the zones in your stores', 'why' => 'Aisles, endcaps, displays, chillers: so work can point at the exact place. Set up one store, then copy it to the others.',
+                'detail' => $zones ? "{$zones} store(s) have zones" : 'Optional.'],
         ];
     }
 
@@ -85,6 +178,13 @@ class OnboardingService
         $requiredLeft = count(array_filter($steps, fn ($s) => $s['level'] === 'required' && ! $s['done']));
 
         return ['done' => $done, 'total' => count($steps), 'required_left' => $requiredLeft, 'pct' => (int) round(100 * $done / max(1, count($steps)))];
+    }
+
+    /** Required steps left, cached briefly: the navigation badge reads this on every page. */
+    public function requiredLeftCached(int $tenantId): int
+    {
+        return (int) \Illuminate\Support\Facades\Cache::remember("onboarding:{$tenantId}:required_left", 300,
+            fn () => $this->progress($tenantId)['required_left']);
     }
 
     /** A CSV header row a file can be filled into: the canonical field names, required first. */

@@ -17,6 +17,20 @@ class CanonicalSchema
     public const VERSION = 3;
 
     /**
+     * Per-type bumps on top of VERSION, so a change to one file type retires
+     * only that type's learned mappings (an SFTP sales feed keeps its memory
+     * when the store file changes).
+     *   stores/users v4 — platform core: store Area is its own field (it was an
+     *   alias of Region), users' operating role, language and managed regions.
+     */
+    private const TYPE_VERSIONS = ['stores' => 4, 'users' => 4];
+
+    public static function versionFor(string $dataType): int
+    {
+        return self::TYPE_VERSIONS[$dataType] ?? self::VERSION;
+    }
+
+    /**
      * Returns field definitions for the given data type.
      * Each field: ['label' => string, 'description' => string, 'required' => bool]
      */
@@ -123,7 +137,8 @@ class CanonicalSchema
             'format'  => ['label' => 'Format',     'description' => 'Store format, e.g. Hypermarket, Supermarket, Express', 'required' => false],
             'address' => ['label' => 'Address',    'description' => 'Street address',                          'required' => false],
             'city'    => ['label' => 'City',       'description' => 'City',                                    'required' => false],
-            'region'  => ['label' => 'Region',     'description' => 'Region, state or area',                   'required' => false],
+            'region'  => ['label' => 'Region',     'description' => 'Region the store belongs to (top level of your store structure), e.g. Dubai, Northern Emirates', 'required' => false],
+            'area'    => ['label' => 'Area',       'description' => 'Area or district inside the region (the level an area manager looks after)', 'required' => false],
             'country' => ['label' => 'Country',    'description' => 'Country',                                 'required' => false],
             // WP3.4 — hardening fields.
             'postal_code' => ['label' => 'Postal Code', 'description' => 'Postal / ZIP code or PO box', 'required' => false],
@@ -137,6 +152,7 @@ class CanonicalSchema
             'status' => ['label' => 'Status', 'description' => 'Store status, e.g. active, closed, remodel', 'required' => false],
             'opened_on' => ['label' => 'Opened On', 'description' => 'Store opening date', 'required' => false],
             'sales_area_sqm' => ['label' => 'Sales Area (m²)', 'description' => 'Selling floor area in square metres', 'required' => false],
+            'geofence_radius_m' => ['label' => 'On-site Radius (m)', 'description' => 'Distance from the store location within which a person counts as on site (metres, 20–2000)', 'required' => false],
         ];
     }
 
@@ -167,7 +183,9 @@ class CanonicalSchema
         return [
             'name'  => ['label' => 'Name',  'description' => 'Full name of the user',                                   'required' => true],
             'email' => ['label' => 'Email', 'description' => 'Login email address (must be unique)',                    'required' => true],
-            'role'  => ['label' => 'Role',  'description' => 'admin / tenant_admin grants admin rights; anything else is a standard user', 'required' => false],
+            'role'  => ['label' => 'Role',  'description' => 'Operating role: head office, area manager, store manager or associate. "Admin" (or tenant admin) grants admin rights', 'required' => false],
+            'language' => ['label' => 'Language', 'description' => 'Working language: English, Arabic, Urdu or Hindi (or en / ar / ur / hi)', 'required' => false],
+            'manages'  => ['label' => 'Manages', 'description' => 'Region(s) or area(s) this person manages, separated by ; or , (area and regional managers)', 'required' => false],
             // W12: store managers — the store(s) they run, by code or name, separated by ; or ,
             'stores' => ['label' => 'Stores', 'description' => 'Store(s) this person runs — codes or names, separated by ; or , (they get that store\'s daily digest)', 'required' => false],
         ];

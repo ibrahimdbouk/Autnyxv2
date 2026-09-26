@@ -1,6 +1,6 @@
 <x-filament-panels::page>
     @php($p = $this->progress())
-    @php($steps = $this->steps())
+    @php($sections = $this->sections())
     @php($imports = $this->importsUrl())
     <style>
         .gs-wrap { display:flex; flex-direction:column; gap:1rem; max-width:60rem; }
@@ -18,18 +18,25 @@
         .gs-muted { color:var(--ax-muted); font-size:.85rem; line-height:1.45; }
         .gs-links { display:flex; gap:.9rem; flex-wrap:wrap; margin-top:.45rem; font-size:.82rem; }
         .gs-links a { color:var(--ax-primary, #4f46e5); font-weight:600; }
+        .gs-section { margin-top:.6rem; }
+        .gs-section-title { font-weight:800; font-size:1rem; color:var(--ax-ink); }
     </style>
 
     <div class="gs-wrap">
         <div class="gs-head">
             <div style="font-weight:800;font-size:1.1rem;color:var(--ax-ink)">
-                {{ $p['required_left'] === 0 ? 'Set up — detection runs every night on its own.' : $p['required_left'] . ' required step(s) left' }}
+                {{ $p['required_left'] === 0 ? 'Set up — everything required is in place.' : $p['required_left'] . ' required step(s) left' }}
             </div>
-            <div class="gs-muted">{{ $p['done'] }} of {{ $p['total'] }} steps done. Most teams finish in a morning: four files, one detection run, one investigation.</div>
+            <div class="gs-muted">{{ $p['done'] }} of {{ $p['total'] }} steps done. The organisation is set up once and shared by every app.</div>
             <div class="gs-bar"><span style="width: {{ $p['pct'] }}%"></span></div>
         </div>
 
-        @foreach($steps as $i => $s)
+        @foreach($sections as $section)
+            <div class="gs-section">
+                <div class="gs-section-title">{{ $section['title'] }}</div>
+                <div class="gs-muted">{{ $section['intro'] }}</div>
+            </div>
+            @foreach($section['steps'] as $i => $s)
             <div class="gs-step" id="step-{{ $s['key'] }}">
                 <div class="gs-dot {{ $s['done'] ? 'done' : '' }}">{{ $s['done'] ? '✓' : $i + 1 }}</div>
                 <div style="flex:1;min-width:0">
@@ -40,16 +47,26 @@
                         @if($s['type'])
                             <a href="{{ route('import-template', ['type' => $s['type']]) }}">Download template</a>
                             @if($imports)<a href="{{ $imports }}">Upload the file</a>@endif
+                        @endif
+                        @if($s['key'] === 'stores' && \App\Filament\Resources\StoreResource::canCreate())
+                            <a href="{{ \App\Filament\Resources\StoreResource::getUrl('create') }}">Add a store</a>
+                        @elseif($s['key'] === 'structure' && \App\Filament\Resources\OrgUnitResource::canAccess())
+                            <a href="{{ \App\Filament\Resources\OrgUnitResource::getUrl('index') }}">Regions &amp; areas</a>
+                        @elseif(in_array($s['key'], ['people', 'store_managers'], true) && \App\Filament\Resources\UserResource::canViewAny())
+                            <a href="{{ \App\Filament\Resources\UserResource::getUrl('index') }}">Users</a>
+                        @elseif($s['key'] === 'departments' && \App\Filament\Resources\DepartmentResource::canAccess())
+                            <a href="{{ \App\Filament\Resources\DepartmentResource::getUrl('index') }}">Departments</a>
+                        @elseif($s['key'] === 'zones' && \App\Filament\Resources\StoreResource::canViewAny())
+                            <a href="{{ \App\Filament\Resources\StoreResource::getUrl('index') }}">Open a store to add zones</a>
                         @elseif($s['key'] === 'detection')
                             {{ $this->runDetectionAction }}
                         @elseif($s['key'] === 'investigate' && \App\Filament\Pages\ActionQueue::canAccess())
                             <a href="{{ \App\Filament\Pages\ActionQueue::getUrl() }}">Open the action queue</a>
-                        @elseif($s['key'] === 'team' && \App\Filament\Resources\UserResource::canViewAny())
-                            <a href="{{ \App\Filament\Resources\UserResource::getUrl('index') }}">Invite users</a>
                         @endif
                     </div>
                 </div>
             </div>
+            @endforeach
         @endforeach
     </div>
     <x-filament-actions::modals />

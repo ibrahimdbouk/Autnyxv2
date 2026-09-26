@@ -89,7 +89,7 @@ class StoreSheetController extends Controller
     {
         $u = User::find($userId);
         $tenant = $u?->tenant_id ? Tenant::find($u->tenant_id) : null;
-        abort_unless($u && $tenant && $tenant->isActive(), 403);
+        abort_unless($u && $tenant && $tenant->isActive() && $u->isActive(), 403); // platform core: a leaver's link is dead
         $ids = StoreDigestService::storeIds($u);
         abort_if($ids === [], 403, 'This link is no longer linked to a store.');
 

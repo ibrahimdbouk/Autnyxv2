@@ -57,7 +57,7 @@ class MappingMemory extends Model
         // WP3.3: memories learned under an older schema / alias set are ignored.
         $current = static::where('tenant_id', $tenantId)
             ->where('data_type', $dataType)
-            ->where('schema_version', CanonicalSchema::VERSION);
+            ->where('schema_version', CanonicalSchema::versionFor($dataType));
 
         $exact = (clone $current)->where('signature', static::signature($headers))->first();
 
@@ -120,7 +120,7 @@ class MappingMemory extends Model
 
         $mem = static::updateOrCreate(
             ['tenant_id' => $import->tenant_id, 'data_type' => $import->data_type, 'signature' => static::signature($headers)],
-            ['mappings' => $mappings, 'header_count' => count($headers), 'last_used_at' => now(), 'schema_version' => CanonicalSchema::VERSION],
+            ['mappings' => $mappings, 'header_count' => count($headers), 'last_used_at' => now(), 'schema_version' => CanonicalSchema::versionFor($import->data_type)],
         );
         $mem->increment('times_seen');
     }

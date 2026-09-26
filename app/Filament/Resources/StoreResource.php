@@ -27,10 +27,79 @@ class StoreResource extends Resource
 
     protected static ?int $navigationSort = 9;
 
-    // Read-only: stores are created automatically during import
-    public static function canCreate(): bool    { return false; }
-    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool   { return false; }
+    // Platform core: admins can add and edit stores here (a Task-Execution-only
+    // tenant has no sales file to create them from). Never deleted from the UI —
+    // sales, stock and work history point at them.
+    public static function canCreate(): bool
+    {
+        return (bool) auth()->user()?->canManageImports();
+    }
+
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return (bool) auth()->user()?->canManageImports() && (int) $record->tenant_id === (int) Filament::getTenant()?->id;
+    }
+
     public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool { return false; }
+
+    /** Name and code are unique per tenant, ignoring case and spacing (as imports match them). */
+    private static function uniqueInTenant(string $column): \Closure
+    {
+        return fn (?Store $record) => function (string $attribute, $value, \Closure $fail) use ($column, $record) {
+            if ($value === null || trim((string) $value) === '') {
+                return;
+            }
+            $taken = Store::where('tenant_id', Filament::getTenant()?->id)
+                ->whereRaw("lower(regexp_replace(trim({$column}), '\\s+', ' ', 'g')) = ?", [mb_strtolower(trim(preg_replace('/\s+/u', ' ', (string) $value)))])
+                ->when($record?->exists, fn ($q) => $q->whereKeyNot($record->getKey()))
+                ->exists();
+            if ($taken) {
+                $fail("Another store already uses this {$column}.");
+            }
+        };
+    }
+
+    public static function form(\Filament\Schemas\Schema $form): \Filament\Schemas\Schema
+    {
+        $tenantId = fn () => Filament::getTenant()?->id;
+        $suggest = fn (string $col) => fn () => Store::where('tenant_id', $tenantId())->whereNotNull($col)->where($col, '<>', '')
+            ->distinct()->orderBy($col)->limit(200)->pluck($col)->all();
+
+        return $form->columns(1)->schema([
+            \Filament\Schemas\Components\Section::make('Store')->columns(3)->schema([
+                \Filament\Forms\Components\TextInput::make('name')->required()->maxLength(255)
+                    ->rules([static::uniqueInTenant('name')]),
+                \Filament\Forms\Components\TextInput::make('code')->label('Store code')->maxLength(60)
+                    ->rules([static::uniqueInTenant('code')])
+                    ->helperText('As it appears in your sales and stock files.'),
+                \Filament\Forms\Components\TextInput::make('format')->maxLength(60)->datalist($suggest('format')),
+                \Filament\Forms\Components\TextInput::make('banner')->maxLength(60)->datalist($suggest('banner')),
+                \Filament\Forms\Components\TextInput::make('status')->maxLength(30)->placeholder('active'),
+                \Filament\Forms\Components\DatePicker::make('opened_on')->label('Opened'),
+            ]),
+            \Filament\Schemas\Components\Section::make('Place in the organisation')
+                ->description('Region and area build the store structure (Region → Area → Store) that managers, reporting and escalation follow. Assign managers under Administration → Regions & Areas.')
+                ->columns(2)->schema([
+                    \Filament\Forms\Components\TextInput::make('region')->maxLength(120)->datalist($suggest('region')),
+                    \Filament\Forms\Components\TextInput::make('area')->maxLength(120)->datalist($suggest('area'))
+                        ->helperText('Optional: the level an area manager looks after, inside the region.'),
+                ]),
+            \Filament\Schemas\Components\Section::make('Location')->columns(3)->schema([
+                \Filament\Forms\Components\TextInput::make('address')->maxLength(255)->columnSpan(2),
+                \Filament\Forms\Components\TextInput::make('city')->maxLength(120)->datalist($suggest('city')),
+                \Filament\Forms\Components\TextInput::make('country')->maxLength(60)->datalist($suggest('country')),
+                \Filament\Forms\Components\TextInput::make('latitude')->numeric()->minValue(-90)->maxValue(90)->step('any'),
+                \Filament\Forms\Components\TextInput::make('longitude')->numeric()->minValue(-180)->maxValue(180)->step('any'),
+                \Filament\Forms\Components\TextInput::make('geofence_radius_m')->label('On-site radius (m)')->integer()->minValue(20)->maxValue(2000)
+                    ->placeholder((string) Store::DEFAULT_GEOFENCE_M)
+                    ->helperText('Work that must be done at the store is accepted within this distance of the coordinates above. Blank uses the default (' . Store::DEFAULT_GEOFENCE_M . ' m).'),
+                \Filament\Forms\Components\Select::make('timezone')->searchable()
+                    ->options(fn () => array_combine(\DateTimeZone::listIdentifiers(), \DateTimeZone::listIdentifiers()))
+                    ->placeholder('Company time zone'),
+                \Filament\Forms\Components\TextInput::make('sales_area_sqm')->label('Sales area (m²)')->numeric()->minValue(0),
+            ]),
+        ]);
+    }
 
     public static function getEloquentQuery(): Builder
     {
@@ -65,6 +134,16 @@ class StoreResource extends Resource
                     ->label('Code')
                     ->searchable()
                     ->placeholder('—'),
+
+                TextColumn::make('region')
+                    ->searchable()
+                    ->placeholder('—')
+                    ->toggleable(),
+
+                TextColumn::make('area')
+                    ->searchable()
+                    ->placeholder('—')
+                    ->toggleable(),
 
                 TextColumn::make('city')
                     ->searchable()
@@ -121,6 +200,12 @@ class StoreResource extends Resource
                     ->sortable(),
             ])
             ->filters([
+                SelectFilter::make('region')
+                    ->options(fn () => Store::query()->where('tenant_id', \Filament\Facades\Filament::getTenant()?->id)
+                        ->whereNotNull('region')->where('region', '<>', '')->distinct()->orderBy('region')->pluck('region', 'region')->toArray())
+                    ->label('Region')
+                    ->multiple(),
+
                 SelectFilter::make('city')
                     ->options(fn () => Store::query()->where('tenant_id', \Filament\Facades\Filament::getTenant()?->id) /* WP2.4 explicit tenant scope */
                         ->whereNotNull('city')
@@ -194,18 +279,23 @@ class StoreResource extends Resource
                         ->when($data['values'] ?? null, fn (Builder $q, $values) => $q
                             ->whereHas('feature', fn (Builder $fq) => $fq->whereIn('dominant_segment', $values)))),
             ])
+            ->actions([\Filament\Actions\EditAction::make()])
             ->defaultSort('name');
     }
 
     public static function getRelations(): array
     {
-        return [];
+        return [
+            StoreResource\RelationManagers\ZonesRelationManager::class,
+        ];
     }
 
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListStores::route('/'),
+            'index'  => Pages\ListStores::route('/'),
+            'create' => Pages\CreateStore::route('/create'),
+            'edit'   => Pages\EditStore::route('/{record}/edit'),
         ];
     }
 }

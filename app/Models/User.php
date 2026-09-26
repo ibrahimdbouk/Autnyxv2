@@ -30,6 +30,34 @@ class User extends Authenticatable implements FilamentUser, HasTenants, HasAppAu
         'teams_aad_user_id',
         'store_digest',          // W12
         'store_digest_sent_at',  // W12
+        'org_role',              // platform core: operating role (not admin rights)
+        'locale',
+    ];
+
+    /**
+     * Platform core — the operating role ladder. It is separate from admin
+     * rights (is_tenant_admin): it decides which stores a person works in and
+     * who work escalates to (store manager → area → region → HQ). Null means
+     * "not set" and keeps the behaviour from before the ladder existed.
+     */
+    public const ORG_HQ            = 'hq';
+    public const ORG_AREA_MANAGER  = 'area_manager';
+    public const ORG_STORE_MANAGER = 'store_manager';
+    public const ORG_ASSOCIATE     = 'associate';
+
+    public const ORG_ROLES = [
+        self::ORG_HQ            => 'Head office',
+        self::ORG_AREA_MANAGER  => 'Area / regional manager',
+        self::ORG_STORE_MANAGER => 'Store manager',
+        self::ORG_ASSOCIATE     => 'Store associate',
+    ];
+
+    /** Languages a person can work in (the mobile app and messages follow it). */
+    public const LOCALES = [
+        'en' => 'English',
+        'ar' => 'العربية — Arabic',
+        'ur' => 'اردو — Urdu',
+        'hi' => 'हिन्दी — Hindi',
     ];
 
     protected $hidden = [
@@ -51,6 +79,7 @@ class User extends Authenticatable implements FilamentUser, HasTenants, HasAppAu
             'last_login_at'     => 'datetime',
             'store_digest'         => 'boolean',   // W12
             'store_digest_sent_at' => 'datetime',
+            'deactivated_at'       => 'datetime',
             // MFA (3b) — encrypted at rest so a DB leak never exposes them.
             'app_authentication_secret'         => 'encrypted',
             'app_authentication_recovery_codes' => 'encrypted:array',
@@ -113,7 +142,7 @@ class User extends Authenticatable implements FilamentUser, HasTenants, HasAppAu
         });
 
         static::updated(function (User $user): void {
-            $watched = ['visible_screens', 'is_tenant_admin', 'is_super_admin'];
+            $watched = ['visible_screens', 'is_tenant_admin', 'is_super_admin', 'org_role', 'deactivated_at'];
             $changed = array_values(array_intersect($watched, array_keys($user->getChanges())));
 
             // audit_logs.tenant_id is NOT NULL — skip tenantless (platform) users.
@@ -199,19 +228,45 @@ class User extends Authenticatable implements FilamentUser, HasTenants, HasAppAu
     }
 
     /**
-     * W12: the stores this user's store-level screens are limited to — null
-     * means every store (admins, and users not linked to any store).
+     * The stores this user's store-level screens are limited to — null means
+     * every store. Admins and head office: null. Area managers: the stores in
+     * the regions / areas they manage (plus any linked directly). Store
+     * managers and associates: their linked stores — none linked means none
+     * (fails closed). No operating role set: the linked stores, or every store
+     * when none are linked (the behaviour from before the role ladder).
      *
      * @return array<int,int>|null
      */
     public function storeScope(): ?array
     {
-        if ($this->is_super_admin || $this->is_tenant_admin) {
-            return null;
-        }
-        $ids = $this->stores()->pluck('stores.id')->map(fn ($id) => (int) $id)->all();
+        return app(\App\Services\Org\OrgDirectory::class)->storeScope($this);
+    }
 
-        return $ids === [] ? null : $ids;
+    /** Platform core: the regions / areas this person manages. */
+    public function managedNodes(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(LocationNode::class, 'location_node_managers')->withPivot('tenant_id')->withTimestamps();
+    }
+
+    /** Platform core: phones registered for push. */
+    public function devices(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(UserDevice::class);
+    }
+
+    public function isActive(): bool
+    {
+        return $this->deactivated_at === null;
+    }
+
+    public function scopeActive(\Illuminate\Database\Eloquent\Builder $q): \Illuminate\Database\Eloquent\Builder
+    {
+        return $q->whereNull($q->getModel()->getTable() . '.deactivated_at');
+    }
+
+    public function orgRoleLabel(): ?string
+    {
+        return self::ORG_ROLES[$this->org_role] ?? null;
     }
 
     public function canManageUsers(): bool
@@ -380,6 +435,10 @@ class User extends Authenticatable implements FilamentUser, HasTenants, HasAppAu
      */
     public function canAccessPanel(Panel $panel): bool
     {
+        // Platform core: a deactivated person (a leaver) cannot sign in anywhere.
+        if ($this->deactivated_at !== null) {
+            return false;
+        }
         if ($panel->getId() === 'ops') {
             return (bool) $this->is_super_admin;
         }

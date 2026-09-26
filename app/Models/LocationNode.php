@@ -24,6 +24,7 @@ class LocationNode extends Model
 
     public const TYPE_BANNER = 'banner';
     public const TYPE_REGION = 'region';
+    public const TYPE_AREA   = 'area';     // platform core: region → area → store
     public const TYPE_DC     = 'dc';
     public const TYPE_STORE  = 'store';
 
@@ -50,6 +51,12 @@ class LocationNode extends Model
     public function tenant(): BelongsTo
     {
         return $this->belongsTo(Tenant::class);
+    }
+
+    /** Platform core: who manages this region / area (the escalation chain above the store manager). */
+    public function managers(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'location_node_managers')->withPivot('tenant_id')->withTimestamps();
     }
 
     /** Leaf link to the operational store row (null for interior nodes). */

@@ -90,6 +90,8 @@ class CrossTenantMatrixTest extends TestCase
             \App\Models\RetailEvent::class    => ['key' => 'own_xt', 'year' => 2026, 'name' => "Event $tag", 'kind' => 'custom', 'starts_on' => '2026-10-01', 'ends_on' => '2026-10-05', 'source' => 'tenant'],
             \App\Models\TeamsConnection::class => ['channel_webhook_url' => 'https://acme.webhook.office.com/webhookb2/x', 'post_to_channel' => false, 'notify_users' => false, 'is_active' => false],
             \App\Models\Store::class          => ['name' => "Store $tag", 'code' => "S-$tag"],
+            \App\Models\LocationNode::class   => ['type' => 'region', 'name' => "Region $tag"],
+            \App\Models\Department::class     => ['name' => "Department $tag"],
             \App\Models\Supplier::class       => ['name' => "Supplier $tag"],
             \App\Models\Product::class        => ['sku' => "SKU-$tag", 'name' => "Product $tag"],
             \App\Models\PurchaseOrder::class  => ['sku' => "SKU-$tag", 'po_number' => "PO-$tag", 'supplier' => 'S', 'qty_ordered' => 1, 'order_date' => now()->toDateString()],

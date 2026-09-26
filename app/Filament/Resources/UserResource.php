@@ -127,6 +127,32 @@ class UserResource extends Resource
                     ->visible(fn () => auth()->user()?->isOwner() ?? false),
             ]),
 
+            // Platform core — the operating role ladder (separate from admin rights)
+            // and the person's working language.
+            Section::make('Position')
+                ->description('Where this person sits in the operation. It decides which stores they work in and who work escalates to: store manager → area manager → regional manager → head office.')
+                ->columns(2)
+                ->schema([
+                    \Filament\Forms\Components\Select::make('org_role')
+                        ->label('Operating role')
+                        ->options(User::ORG_ROLES)
+                        ->placeholder('Not set')
+                        ->live()
+                        ->helperText('Store roles see only their linked stores; area managers the stores in the regions / areas they manage.'),
+                    \Filament\Forms\Components\Select::make('locale')
+                        ->label('Language')
+                        ->options(User::LOCALES)
+                        ->placeholder('English'),
+                    \Filament\Forms\Components\Select::make('managed_nodes')
+                        ->label('Manages these regions / areas')
+                        ->multiple()
+                        ->searchable()
+                        ->options(fn () => \App\Services\Org\OrgDirectory::nodeOptions((int) Filament::getTenant()?->id))
+                        ->visible(fn (Get $get) => in_array($get('org_role'), [User::ORG_AREA_MANAGER, User::ORG_HQ], true))
+                        ->helperText('Regions and areas come from the stores\' Region and Area.')
+                        ->columnSpanFull(),
+                ]),
+
             // W12 — the store(s) this person runs: they get a daily digest of those
             // stores only, with a login-free store sheet to confirm findings and count.
             Section::make('Stores')
@@ -186,6 +212,20 @@ class UserResource extends Resource
                         default         => 'gray',
                     }),
 
+                TextColumn::make('org_role')
+                    ->label('Position')
+                    ->badge()
+                    ->color('gray')
+                    ->formatStateUsing(fn ($state) => User::ORG_ROLES[$state] ?? $state)
+                    ->placeholder('—'),
+
+                TextColumn::make('deactivated_at')
+                    ->label('Status')
+                    ->badge()
+                    ->state(fn (User $record) => $record->deactivated_at ? 'Deactivated' : 'Active')
+                    ->color(fn (string $state) => $state === 'Active' ? 'success' : 'danger')
+                    ->toggleable(),
+
                 TextColumn::make('stores.name')
                     ->label('Stores')
                     ->badge()
@@ -199,6 +239,21 @@ class UserResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
+                \Filament\Tables\Filters\SelectFilter::make('org_role')
+                    ->label('Position')
+                    ->options(User::ORG_ROLES),
+
+                TernaryFilter::make('active')
+                    ->label('Status')
+                    ->trueLabel('Active')
+                    ->falseLabel('Deactivated')
+                    ->default(true)
+                    ->queries(
+                        true: fn (Builder $q) => $q->whereNull('deactivated_at'),
+                        false: fn (Builder $q) => $q->whereNotNull('deactivated_at'),
+                        blank: fn (Builder $q) => $q,
+                    ),
+
                 TernaryFilter::make('is_super_admin')
                     ->label('Super Admin'),
 
@@ -217,9 +272,48 @@ class UserResource extends Resource
                             ->when($data['until'], fn (Builder $q, $d) => $q->whereDate('created_at', '<=', $d));
                     }),
             ])
+            ->actions([
+                \Filament\Actions\EditAction::make(),
+                \Filament\Actions\Action::make('deactivate')
+                    ->label('Deactivate')
+                    ->icon('heroicon-o-no-symbol')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalDescription('For people who have left. They can no longer sign in, receive nothing, and their signed links and phones stop working. Everything they did stays attributed to them; you can reactivate them later.')
+                    ->visible(fn (User $record) => $record->deactivated_at === null && static::canEdit($record)
+                        && (int) $record->id !== (int) auth()->id() && ! $record->is_super_admin && ! $record->isOwner())
+                    ->action(function (User $record) {
+                        abort_unless(static::canEdit($record), 403);
+                        app(\App\Services\Org\UserLifecycle::class)->deactivate($record, auth()->user());
+                        \Filament\Notifications\Notification::make()->title($record->name . ' deactivated')->success()->send();
+                    }),
+                \Filament\Actions\Action::make('reactivate')
+                    ->label('Reactivate')
+                    ->icon('heroicon-o-arrow-uturn-left')
+                    ->color('gray')
+                    ->visible(fn (User $record) => $record->deactivated_at !== null && static::canEdit($record))
+                    ->action(function (User $record) {
+                        abort_unless(static::canEdit($record), 403);
+                        app(\App\Services\Org\UserLifecycle::class)->reactivate($record, auth()->user());
+                        \Filament\Notifications\Notification::make()->title($record->name . ' reactivated')->success()->send();
+                    }),
+            ])
             ->defaultSort('name')
             ->emptyStateHeading('No users yet')
             ->emptyStateDescription('Add your first team member using the button above.');
+    }
+
+    /** Platform core: the regions / areas a person manages (from the user form), this tenant's only. */
+    public static function syncManagedNodes(User $user, ?array $nodeIds): void
+    {
+        if ($nodeIds === null) {
+            return;
+        }
+        $tenantId = (int) $user->tenant_id;
+        $valid = \App\Models\LocationNode::where('tenant_id', $tenantId)
+            ->whereIn('type', [\App\Models\LocationNode::TYPE_REGION, \App\Models\LocationNode::TYPE_AREA])
+            ->whereIn('id', array_map('intval', $nodeIds))->pluck('id');
+        $user->managedNodes()->sync($valid->mapWithKeys(fn ($id) => [(int) $id => ['tenant_id' => $tenantId]])->all());
     }
 
     public static function getRelations(): array

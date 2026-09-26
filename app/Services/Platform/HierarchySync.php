@@ -43,14 +43,35 @@ class HierarchySync
         self::$pending[$tenantId] = true;
     }
 
-    /** @return array{products:int,locations:int,suppliers:int} leaves written */
+    /** @return array{products:int,locations:int,suppliers:int,departments:int} leaves written */
     public function syncTenant(int $tenantId): array
     {
         return DB::transaction(fn () => [
-            'products'  => $this->products($tenantId),
-            'locations' => $this->locations($tenantId),
-            'suppliers' => $this->suppliers($tenantId),
+            'products'    => $this->products($tenantId),
+            'locations'   => $this->locations($tenantId),
+            'suppliers'   => $this->suppliers($tenantId),
+            'departments' => $this->departments($tenantId),
         ]);
+    }
+
+    /**
+     * Platform core: every department named in the product master becomes a
+     * department (source "products") the first time it is seen. Never renamed
+     * or removed here — the tenant owns the list once it exists.
+     */
+    private function departments(int $t): int
+    {
+        $now = now()->toDateTimeString();
+
+        return DB::affectingStatement(
+            "INSERT INTO departments (tenant_id, name, source, active, sort, created_at, updated_at)
+             SELECT ?::bigint, MIN(d.name), 'products', true, 0, ?::timestamp, ?::timestamp
+               FROM (SELECT regexp_replace(trim(p.department), '\\s+', ' ', 'g') AS name
+                       FROM products p WHERE p.tenant_id = ? AND p.department IS NOT NULL AND trim(p.department) <> '') d
+              WHERE NOT EXISTS (SELECT 1 FROM departments x WHERE x.tenant_id = ? AND x.parent_id IS NULL AND lower(x.name) = lower(d.name))
+              GROUP BY lower(d.name)",
+            [$t, $now, $now, $t, $t]
+        );
     }
 
     private function products(int $t): int
@@ -104,20 +125,44 @@ class HierarchySync
         return $n;
     }
 
+    /**
+     * Location tree: region → area → store, from each store's region and area
+     * (either may be blank: a store with only a region hangs off the region, a
+     * store with only an area off a root-level area). Regions and areas nobody
+     * points at any more are removed unless someone is still assigned to
+     * manage them (they then show on the Regions & Areas screen with no stores).
+     */
     private function locations(int $t): int
     {
         $now = now()->toDateTimeString();
+        $reg = "NULLIF(regexp_replace(trim(s.region), '\\s+', ' ', 'g'), '')";
+        $area = "NULLIF(regexp_replace(trim(s.area), '\\s+', ' ', 'g'), '')";
 
         DB::insert(
             "INSERT INTO location_nodes (tenant_id, type, name, created_at, updated_at)
-             SELECT DISTINCT ?::bigint, 'region', s.region, ?::timestamp, ?::timestamp
+             SELECT ?::bigint, 'region', MIN({$reg}), ?::timestamp, ?::timestamp
                FROM stores s
-              WHERE s.tenant_id = ? AND s.region IS NOT NULL AND s.region <> ''
-                AND NOT EXISTS (SELECT 1 FROM location_nodes n WHERE n.tenant_id = ? AND n.type = 'region' AND n.name = s.region)",
+              WHERE s.tenant_id = ? AND {$reg} IS NOT NULL
+                AND NOT EXISTS (SELECT 1 FROM location_nodes n WHERE n.tenant_id = ? AND n.type = 'region' AND lower(n.name) = lower({$reg}))
+              GROUP BY lower({$reg})",
             [$t, $now, $now, $t, $t]
         );
 
-        $parent = "(SELECT r.id FROM location_nodes r WHERE r.tenant_id = s.tenant_id AND r.type = 'region' AND r.name = s.region ORDER BY r.id LIMIT 1)";
+        $regionOf = "(SELECT r.id FROM location_nodes r WHERE r.tenant_id = s.tenant_id AND r.type = 'region' AND lower(r.name) = lower({$reg}) ORDER BY r.id LIMIT 1)";
+
+        DB::insert(
+            "INSERT INTO location_nodes (tenant_id, type, name, parent_id, created_at, updated_at)
+             SELECT ?::bigint, 'area', MIN(x.area), x.region_id, ?::timestamp, ?::timestamp
+               FROM (SELECT {$area} AS area, {$regionOf} AS region_id FROM stores s WHERE s.tenant_id = ? AND {$area} IS NOT NULL) x
+              WHERE NOT EXISTS (SELECT 1 FROM location_nodes n WHERE n.tenant_id = ? AND n.type = 'area'
+                                   AND lower(n.name) = lower(x.area) AND n.parent_id IS NOT DISTINCT FROM x.region_id)
+              GROUP BY lower(x.area), x.region_id",
+            [$t, $now, $now, $t, $t]
+        );
+
+        $areaOf = "(SELECT a.id FROM location_nodes a WHERE a.tenant_id = s.tenant_id AND a.type = 'area' AND lower(a.name) = lower({$area})
+                     AND a.parent_id IS NOT DISTINCT FROM {$regionOf} ORDER BY a.id LIMIT 1)";
+        $parent = "COALESCE({$areaOf}, {$regionOf})";
         $attrs = "NULLIF(jsonb_strip_nulls(jsonb_build_object('city', NULLIF(s.city, ''), 'country', NULLIF(s.country, ''), 'format', NULLIF(s.format, ''))), '{}'::jsonb)::json";
 
         $n = DB::affectingStatement(
@@ -137,6 +182,17 @@ class HierarchySync
             [$now, $t]
         );
         DB::delete("DELETE FROM location_nodes WHERE tenant_id = ? AND type = 'store' AND store_id IS NULL", [$t]);
+
+        // Areas, then regions, that no longer hold anything and have no manager.
+        foreach (['area', 'region'] as $type) {
+            DB::delete(
+                "DELETE FROM location_nodes n
+                  WHERE n.tenant_id = ? AND n.type = ?
+                    AND NOT EXISTS (SELECT 1 FROM location_nodes c WHERE c.parent_id = n.id)
+                    AND NOT EXISTS (SELECT 1 FROM location_node_managers m WHERE m.location_node_id = n.id)",
+                [$t, $type]
+            );
+        }
 
         return $n;
     }

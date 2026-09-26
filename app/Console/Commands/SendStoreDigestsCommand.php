@@ -36,7 +36,7 @@ class SendStoreDigestsCommand extends Command
             ->when($this->option('tenant'), fn ($q, $t) => $q->whereKey((int) $t))->get();
 
         foreach ($tenants as $tenant) {
-            $users = User::where('tenant_id', $tenant->id)->where('store_digest', true)->whereNotNull('email')
+            $users = User::active()->where('tenant_id', $tenant->id)->where('store_digest', true)->whereNotNull('email')
                 ->whereHas('stores')->get();
             foreach ($users as $user) {
                 try {

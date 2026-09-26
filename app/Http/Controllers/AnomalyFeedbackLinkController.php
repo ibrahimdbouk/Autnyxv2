@@ -49,7 +49,7 @@ class AnomalyFeedbackLinkController extends Controller
         $a = Anomaly::query()->findOrFail($anomalyId);
         [$kind, $id] = array_pad(explode(':', (string) $request->query('r'), 2), 2, null);
         $user = null;
-        if ($kind === 'user' && ($user = User::find((int) $id)) && (int) $user->tenant_id === (int) $a->tenant_id) {
+        if ($kind === 'user' && ($user = User::find((int) $id)) && (int) $user->tenant_id === (int) $a->tenant_id && $user->isActive()) {
             $who = $user->email;
         } elseif ($kind === 'tenant' && (int) $id === (int) $a->tenant_id && ($t = Tenant::find((int) $id))) {
             $user = null;

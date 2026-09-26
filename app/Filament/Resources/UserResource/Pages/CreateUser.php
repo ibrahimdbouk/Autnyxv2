@@ -17,8 +17,18 @@ class CreateUser extends CreateRecord
         if (!isset($data['tenant_id'])) {
             $data['tenant_id'] = Filament::getTenant()?->id;
         }
+        $this->managedNodes = array_key_exists('managed_nodes', $data) ? (array) $data['managed_nodes'] : null;
+        unset($data['managed_nodes']);
 
         return $data;
+    }
+
+    /** @var array<int,int>|null platform core: managed regions / areas from the form */
+    private ?array $managedNodes = null;
+
+    protected function afterCreate(): void
+    {
+        UserResource::syncManagedNodes($this->record, $this->managedNodes);
     }
 
     protected function getRedirectUrl(): string

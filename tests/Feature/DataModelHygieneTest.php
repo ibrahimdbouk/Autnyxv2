@@ -97,7 +97,7 @@ class DataModelHygieneTest extends TestCase
         $sync->syncTenant($t->id);
         $this->assertSame(0, DB::table('product_nodes')->where('tenant_id', $t->id)->where('type', 'product')->count());
 
-        $this->assertSame(['products' => 0, 'locations' => 0, 'suppliers' => 0], $sync->syncTenant($t->id), 'a second sync changes nothing');
+        $this->assertSame(['products' => 0, 'locations' => 0, 'suppliers' => 0, 'departments' => 0], $sync->syncTenant($t->id), 'a second sync changes nothing');
     }
 
     public function test_db_integrity_reports_and_repairs_derived_duplicates(): void

@@ -572,7 +572,7 @@ class InvestigateInvestigation extends Page
                         Select::make('mentioned_user_ids')
                             ->label('Mention users')
                             ->multiple()
-                            ->options(fn () => User::where('tenant_id', $this->record->tenant_id)->orderBy('name')->pluck('name', 'id'))
+                            ->options(fn () => User::active()->where('tenant_id', $this->record->tenant_id)->orderBy('name')->pluck('name', 'id'))
                             ->searchable(),
                         Select::make('mentioned_team_ids')
                             ->label('Mention teams')

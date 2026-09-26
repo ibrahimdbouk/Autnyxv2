@@ -153,6 +153,11 @@ class AppServiceProvider extends ServiceProvider
             \Illuminate\Auth\Events\Failed::class,
             [\App\Listeners\RecordAuthActivity::class, 'failed'],
         );
+        // Platform core: leavers (deactivated people) receive no e-mail from any feature.
+        \Illuminate\Support\Facades\Event::listen(
+            \Illuminate\Mail\Events\MessageSending::class,
+            [\App\Listeners\DropDeactivatedRecipients::class, 'sending'],
+        );
 
         // Scheduling (WP5.2, audit H3). The nightly analytics no longer run as
         // separate commands at fixed UTC minutes for every tenant: nightly:dispatch

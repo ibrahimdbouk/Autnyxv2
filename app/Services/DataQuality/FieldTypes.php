@@ -38,7 +38,7 @@ class FieldTypes
         // WP3.4 — hardening fields
         'cost_amount' => self::NUMBER, 'safety_stock' => self::NUMBER, 'allocated_qty' => self::NUMBER,
         'in_transit_qty' => self::NUMBER, 'sales_area_sqm' => self::NUMBER, 'min_order_value' => self::NUMBER,
-        'latitude' => self::NUMBER, 'longitude' => self::NUMBER, 'promo_price' => self::NUMBER, 'units_per_case' => self::NUMBER,
+        'latitude' => self::NUMBER, 'longitude' => self::NUMBER, 'geofence_radius_m' => self::INT, 'promo_price' => self::NUMBER, 'units_per_case' => self::NUMBER,
         'discount_pct' => self::PERCENT,
         'expiry_date' => self::DATE, 'opened_on' => self::DATE,
         'tax_rate' => self::PERCENT, 'weight_grams' => self::WEIGHT, 'volume_cm3' => self::VOLUME,
@@ -59,6 +59,7 @@ class FieldTypes
         'brand', 'city', 'region', 'country', 'address', 'format', 'type',
         'specialization', 'reason', 'payment_method', 'pack_size', 'role',
         'department', 'banner', 'channel', 'buyer', 'season', 'condition', 'promotion_name', 'mechanic', 'stores',
+        'area', 'manages',
     ];
 
     /** Types whose canonical form is a plain number (after any unit conversion). */

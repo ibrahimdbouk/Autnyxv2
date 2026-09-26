@@ -1566,6 +1566,9 @@ class ImportProcessorService
             'status'         => $this->optText($data, 'status'),
             'opened_on'      => isset($data['opened_on']) ? $this->parseDateOrNull($data['opened_on'], $row) : null,
             'sales_area_sqm' => $this->optNumber($data, 'sales_area_sqm', 0),
+            // Platform core: the area inside the region, and the on-site radius.
+            'area'              => $this->optText($data, 'area'),
+            'geofence_radius_m' => ($r = $this->optNumber($data, 'geofence_radius_m', 20, 2000)) === null ? null : (int) round($r),
         ]);
 
         // WP3.4: enrich the store the facts already point at — by code, then by
@@ -1748,17 +1751,36 @@ class ImportProcessorService
             'name'      => $this->str($data['name'], 'name', $row),
         ];
 
-        // WP2.3 (audit): an import only changes admin rights when a role column
+        // WP2.3 (audit): an import only changes rights or roles when a role column
         // was actually mapped AND the person who uploaded it may manage users.
-        // (Before: a file without a role column demoted every listed admin, and
-        // an API key with write:ingest could grant admin rights.)
+        // Platform core: the role is read as an operating role (head office, area
+        // manager, store manager, associate) plus, separately, admin rights — so
+        // "Manager" makes a store manager, never an admin. An unrecognised role is
+        // a warning and changes nothing.
         $roleMapped = array_key_exists('role', $data);
         $actor = $import->user_id ? User::find($import->user_id) : null;
-        if ($roleMapped && $actor !== null && $actor->canManageUsers()) {
-            $role = strtolower(trim((string) ($data['role'] ?? '')));
-            $attrs['is_tenant_admin'] = in_array($role, ['admin', 'tenant_admin', 'tenant admin', 'administrator', 'manager'], true);
+        $mayManage = $actor !== null && $actor->canManageUsers();
+        if ($roleMapped && $mayManage) {
+            $parsed = self::parseRole((string) ($data['role'] ?? ''));
+            if ($parsed === null) {
+                $this->warnInvalid();
+                if (! $existing) {
+                    $attrs['is_tenant_admin'] = false;
+                }
+            } else {
+                $attrs['is_tenant_admin'] = $parsed['admin'];
+                if ($parsed['org'] !== null || trim((string) ($data['role'] ?? '')) === '') {
+                    $attrs['org_role'] = $parsed['org'];
+                }
+            }
         } elseif (! $existing) {
             $attrs['is_tenant_admin'] = false;
+        }
+
+        // Platform core: working language (unrecognised → warning, unchanged).
+        if (array_key_exists('language', $data) && trim((string) ($data['language'] ?? '')) !== '') {
+            $locale = self::parseLocale((string) $data['language']);
+            $locale === null ? $this->warnInvalid() : $attrs['locale'] = $locale;
         }
 
         if ($existing) {
@@ -1783,24 +1805,152 @@ class ImportProcessorService
         if (array_key_exists('stores', $data)) {
             $this->syncUserStores($import, $user, (string) ($data['stores'] ?? ''), $row);
         }
+        // Platform core: the region(s) / area(s) this person manages (admin uploads only).
+        if (array_key_exists('manages', $data) && $mayManage) {
+            $this->syncManagedNodes($import, $user, (string) ($data['manages'] ?? ''));
+        }
     }
 
-    /** W12: link a user to stores by code or name; an unknown store is a warning, never a guess. */
+    /**
+     * W12 + platform core: link a user to stores by code or name (case- and
+     * space-insensitive). A blank cell unlinks every store. When every store in
+     * the cell is recognised the links become exactly that list; when any is
+     * not (a typo, "7" for "007"), the recognised ones are added, nothing is
+     * removed, and the row is warned — a bad cell never unlinks anyone.
+     */
     private function syncUserStores(Import $import, User $user, string $value, int $row): void
     {
-        $wanted = array_values(array_filter(array_map('trim', preg_split('/[;,|]/', $value) ?: [])));
+        $tenantId = (int) $import->tenant_id;
+        $wanted = self::splitList($value);
         $ids = [];
+        $unknown = 0;
         foreach ($wanted as $w) {
-            $id = \App\Models\Store::where('tenant_id', $import->tenant_id)
-                ->where(fn ($q) => $q->whereRaw('lower(code) = ?', [mb_strtolower($w)])->orWhereRaw('lower(name) = ?', [mb_strtolower($w)]))
-                ->value('id');
-            if ($id) {
-                $ids[(int) $id] = ['tenant_id' => $import->tenant_id];
+            $store = $this->storeByNormalised($tenantId, 'code', $w) ?? $this->storeByNormalised($tenantId, 'name', $w);
+            if ($store) {
+                $ids[(int) $store->id] = ['tenant_id' => $tenantId];
             } else {
-                $this->warnInvalid();
+                $unknown++;
             }
         }
+        if ($unknown > 0) {
+            $this->warnInvalid();
+            $user->stores()->syncWithoutDetaching($ids);
+
+            return;
+        }
         $user->stores()->sync($ids);
+    }
+
+    /** Same rules as the stores cell, for the regions / areas a person manages. */
+    private function syncManagedNodes(Import $import, User $user, string $value): void
+    {
+        $tenantId = (int) $import->tenant_id;
+        $wanted = self::splitList($value);
+        $resolve = function (string $w) use ($tenantId): ?int {
+            // "Region › Area" / "Region > Area" / "Region / Area" names one area exactly.
+            $parts = preg_split('/\s*(?:›|>|\/)\s*/u', $w) ?: [$w];
+            $q = \App\Models\LocationNode::where('location_nodes.tenant_id', $tenantId);
+            if (count($parts) === 2) {
+                $ids = (clone $q)->where('location_nodes.type', 'area')->whereRaw('lower(location_nodes.name) = ?', [self::norm($parts[1])])
+                    ->join('location_nodes as r', 'r.id', '=', 'location_nodes.parent_id')->whereRaw('lower(r.name) = ?', [self::norm($parts[0])])
+                    ->pluck('location_nodes.id');
+            } else {
+                $ids = (clone $q)->where('type', 'area')->whereRaw('lower(name) = ?', [self::norm($w)])->pluck('id');
+                if ($ids->isEmpty()) {
+                    $ids = (clone $q)->where('type', 'region')->whereRaw('lower(name) = ?', [self::norm($w)])->pluck('id');
+                }
+            }
+
+            return $ids->count() === 1 ? (int) $ids->first() : null; // ambiguous (same area name in two regions) → not guessed
+        };
+
+        $ids = [];
+        $unknown = [];
+        foreach ($wanted as $w) {
+            ($id = $resolve($w)) ? $ids[$id] = ['tenant_id' => $tenantId] : $unknown[] = $w;
+        }
+        if ($unknown !== [] && ! $this->hierarchySynced) {
+            // The store file may have been loaded moments ago: build the tree once and retry.
+            $this->hierarchySynced = true;
+            app(\App\Services\Platform\HierarchySync::class)->syncTenant($tenantId);
+            foreach ($unknown as $k => $w) {
+                if ($id = $resolve($w)) {
+                    $ids[$id] = ['tenant_id' => $tenantId];
+                    unset($unknown[$k]);
+                }
+            }
+        }
+        if ($unknown !== []) {
+            $this->warnInvalid();
+            $user->managedNodes()->syncWithoutDetaching($ids);
+
+            return;
+        }
+        $user->managedNodes()->sync($ids);
+    }
+
+    /** @return array<int,string> the non-empty items of a "a; b, c | d" cell */
+    private static function splitList(string $value): array
+    {
+        return array_values(array_filter(array_map('trim', preg_split('/[;,|]/u', $value) ?: []), fn ($v) => $v !== ''));
+    }
+
+    /**
+     * Platform core: a role cell → admin rights + operating role. Several
+     * roles may be combined ("Admin; Head office"). Null when a part is not
+     * recognised. A blank cell is a plain user with no operating role.
+     *
+     * @return array{admin:bool, org:?string}|null
+     */
+    public static function parseRole(string $raw): ?array
+    {
+        $admin = false;
+        $org = null;
+        foreach (preg_split('/[;,+\/&]|\band\b/u', mb_strtolower($raw)) ?: [] as $part) {
+            $p = trim(preg_replace('/[\s_\-.]+/u', ' ', $part) ?? '');
+            if ($p === '') {
+                continue;
+            }
+            $o = match (true) {
+                in_array($p, ['admin', 'tenant admin', 'administrator', 'system admin', 'sys admin', 'superuser'], true) => 'admin',
+                in_array($p, ['hq', 'head office', 'headoffice', 'head office user', 'hq user', 'corporate', 'ho', 'management', 'executive', 'category manager', 'category team', 'loss prevention', 'lp'], true) => User::ORG_HQ,
+                in_array($p, ['area manager', 'regional manager', 'region manager', 'district manager', 'cluster manager', 'area mgr', 'regional mgr', 'am', 'rm', 'dm', 'operations manager', 'area operations manager'], true) => User::ORG_AREA_MANAGER,
+                in_array($p, ['store manager', 'manager', 'branch manager', 'shop manager', 'outlet manager', 'store mgr', 'sm', 'assistant store manager', 'asm', 'deputy store manager', 'duty manager'], true) => User::ORG_STORE_MANAGER,
+                in_array($p, ['associate', 'store associate', 'staff', 'store staff', 'employee', 'team member', 'crew', 'merchandiser', 'cashier', 'supervisor', 'section supervisor', 'department supervisor', 'picker', 'stock controller', 'user', 'standard', 'standard user', 'member', 'frontline'], true) => User::ORG_ASSOCIATE,
+                default => false,
+            };
+            if ($o === false) {
+                return null;
+            }
+            if ($o === 'admin') {
+                $admin = true;
+            } else {
+                $org = self::higherRole($org, $o);
+            }
+        }
+
+        return ['admin' => $admin, 'org' => $org];
+    }
+
+    private static function higherRole(?string $a, string $b): string
+    {
+        $rank = [User::ORG_ASSOCIATE => 1, User::ORG_STORE_MANAGER => 2, User::ORG_AREA_MANAGER => 3, User::ORG_HQ => 4];
+
+        return $a === null || $rank[$b] > $rank[$a] ? $b : $a;
+    }
+
+    /** Platform core: a language cell → en / ar / ur / hi, or null. */
+    public static function parseLocale(string $raw): ?string
+    {
+        $v = mb_strtolower(trim($raw));
+
+        return match (true) {
+            in_array($v, ['en', 'eng', 'english', 'en-us', 'en-gb', 'en_gb', 'en_us'], true) => 'en',
+            in_array($v, ['ar', 'ara', 'arabic', 'ar-ae', 'ar_ae', 'عربي', 'العربية', 'عربى'], true) => 'ar',
+            in_array($v, ['ur', 'urd', 'urdu', 'اردو'], true) => 'ur',
+            in_array($v, ['hi', 'hin', 'hindi', 'हिन्दी', 'हिंदी'], true) => 'hi',
+            default => null,
+        };
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1887,6 +2037,9 @@ class ImportProcessorService
     {
         return array_filter($attrs, fn ($v) => $v !== null);
     }
+
+    /** Platform core: the location tree has been rebuilt once during this import (users' "manages"). */
+    private bool $hierarchySynced = false;
 
     private function warnInvalid(): void
     {

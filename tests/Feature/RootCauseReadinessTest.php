@@ -135,7 +135,9 @@ class RootCauseReadinessTest extends TestCase
     {
         $t = $this->createTenant();
         $svc = app(\App\Services\Onboarding\OnboardingService::class);
-        $this->assertSame(['done' => 0, 'total' => 11, 'required_left' => 6, 'pct' => 0], $svc->progress($t->id));   // W11: + waste (optional)
+        // Platform core: organisation (5 steps) + Root Cause (8). Required: stores, people, products, sales, stock, detection, investigation.
+        $p0 = $svc->progress($t->id);
+        $this->assertSame([13, 7], [$p0['total'], $p0['required_left']]);
 
         $store = DB::table('stores')->insertGetId(['tenant_id' => $t->id, 'name' => 'S', 'code' => 'S', 'created_at' => now(), 'updated_at' => now()]);
         Product::create(['tenant_id' => $t->id, 'sku' => 'A', 'name' => 'A', 'unit_cost' => 1, 'selling_price' => 2]);
@@ -145,11 +147,11 @@ class RootCauseReadinessTest extends TestCase
         $this->assertTrue($steps['sales']['done']);
         $this->assertStringContainsString('90+ days sharpens it', $steps['sales']['detail']);
         $this->assertFalse($steps['inventory']['done']);
-        $this->assertSame(3, $svc->progress($t->id)['required_left']);
+        $this->assertSame(4, $svc->progress($t->id)['required_left']);   // people, stock, detection, investigation
 
         $this->actingAsTenantAdmin($t);
         $this->get(\App\Filament\Pages\GettingStarted::getUrl(['tenant' => $t]))->assertOk()
-            ->assertSee('3 required step(s) left')->assertSee('Load current stock')->assertSee("mountAction('runDetection'", false);
+            ->assertSee('4 required step(s) left')->assertSee('Load current stock')->assertSee('Your organisation')->assertSee("mountAction('runDetection'", false);
         $csv = $this->get('/import-templates/promotions.csv')->assertOk()->getContent();
         $this->assertSame("promotion_ref,sku,start_date,end_date,location,promotion_name,mechanic,discount_pct,promo_price\n", $csv);
         $this->get('/import-templates/users.csv')->assertNotFound();

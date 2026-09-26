@@ -119,7 +119,7 @@ class NotifyAnomaliesCommand extends Command
         if (! empty($tenant->notification_email) && empty($settings['digest_email_off'])) {
             $out[strtolower($tenant->notification_email)] = [$tenant->notification_email, 'tenant', (int) $tenant->id];
         }
-        foreach (\App\Models\User::where('tenant_id', $tenant->id)->where('digest_opt_in', true)->whereNotNull('email')->get(['id', 'email']) as $u) {
+        foreach (\App\Models\User::active()->where('tenant_id', $tenant->id)->where('digest_opt_in', true)->whereNotNull('email')->get(['id', 'email']) as $u) {
             $out[strtolower($u->email)] ??= [$u->email, 'user', (int) $u->id];
         }
 
