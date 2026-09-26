@@ -942,7 +942,7 @@ if ($selected) {
                 <div class="invs-card-impact">
                     @if($inv->revenue_at_risk)
                     <div class="invs-impact-value">
-                        {{ \App\Support\Money::prefix(\Filament\Facades\Filament::getTenant()?->currency) }}{{ $inv->revenue_at_risk >= 1000000
+                        {{ \App\Support\Money::displayPrefix(\Filament\Facades\Filament::getTenant()?->currency) }}{{ $inv->revenue_at_risk >= 1000000
                             ? number_format($inv->revenue_at_risk/1000000, 1).'M'
                             : number_format($inv->revenue_at_risk/1000, 0).'K' }}
                     </div>
@@ -1054,7 +1054,7 @@ if ($selected) {
                     <div class="invs-kpi-label">Revenue at Risk</div>
                     <div class="invs-kpi-value invs-kpi-red">
                         @if($selected->revenue_at_risk)
-                            {{ \App\Support\Money::prefix(\Filament\Facades\Filament::getTenant()?->currency) }}{{ $selected->revenue_at_risk >= 1000000
+                            {{ \App\Support\Money::displayPrefix(\Filament\Facades\Filament::getTenant()?->currency) }}{{ $selected->revenue_at_risk >= 1000000
                                 ? number_format($selected->revenue_at_risk/1000000,1).'M'
                                 : number_format($selected->revenue_at_risk/1000,0).'K' }}
                         @else —

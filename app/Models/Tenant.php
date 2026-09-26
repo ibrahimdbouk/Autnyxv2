@@ -139,6 +139,12 @@ class Tenant extends Model
         return Money::format($amount, $this->currencyCode(), $decimals);
     }
 
+    /** On-screen amount with the currency sign (cards, headings, charts), e.g. "⃃1,234.56". */
+    public function displayMoney(float|int|null $amount, int $decimals = 2): string
+    {
+        return Money::displayFormat($amount, $this->currencyCode(), $decimals);
+    }
+
     /** P2.2 — the business objective this tenant is optimising toward. */
     public function activeObjective(): string
     {

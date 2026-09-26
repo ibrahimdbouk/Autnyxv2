@@ -124,8 +124,8 @@
                             <td>@if ($f && $f->descriptor)<span class="scv-muted">{{ $f->descriptor }}</span>@else<span class="scv-muted">Not yet profiled</span>@endif</td>
                             <td>@if ($f && $f->price_tier)<span class="{{ $pillClass($f->price_tier) }}">{{ ucfirst($f->price_tier) }}</span>@else—@endif</td>
                             <td>@if ($f && $f->dominant_segment)<span class="scv-pill">{{ ucfirst($f->dominant_segment) }}</span>@else—@endif</td>
-                            <td class="scv-num">{{ $f ? $this->money($f->revenue) : '—' }}</td>
-                            <td class="scv-num">{{ $f ? $this->money($f->avg_basket_value) : '—' }}</td>
+                            <td class="scv-num">{{ $f ? $this->tableMoney($f->revenue) : '—' }}</td>
+                            <td class="scv-num">{{ $f ? $this->tableMoney($f->avg_basket_value) : '—' }}</td>
                         </tr>
                     @endforeach
                 </tbody>

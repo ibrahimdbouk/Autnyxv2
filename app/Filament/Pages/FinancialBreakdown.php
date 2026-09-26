@@ -463,7 +463,7 @@ class FinancialBreakdown extends Page
                 'title'    => $inv->title ?: ('Investigation #' . $inv->id),
                 'sku'      => $inv->primary_sku ?: '—',
                 'meta'     => ucfirst(str_replace('_', ' ', (string) $inv->status)),
-                'amount'   => $this->money((float) ($inv->{$amountField} ?? 0)),
+                'amount'   => $this->tableMoney((float) ($inv->{$amountField} ?? 0)),
             ];
         })->all();
     }
@@ -479,7 +479,7 @@ class FinancialBreakdown extends Page
             $invId = $o->investigation_id;
 
             if ($metaAmountField !== null) {
-                $meta = $this->money((float) ($o->{$metaAmountField} ?? 0));
+                $meta = $this->tableMoney((float) ($o->{$metaAmountField} ?? 0));
             } else {
                 $meta = $o->recovery_method
                     ? ucwords(str_replace('_', ' ', (string) $o->recovery_method))
@@ -492,7 +492,7 @@ class FinancialBreakdown extends Page
                 'title'  => $inv?->title ?: ('Investigation #' . $invId),
                 'sku'    => $inv?->primary_sku ?: '—',
                 'meta'   => $meta,
-                'amount' => $this->money((float) ($o->{$amountField} ?? 0)),
+                'amount' => $this->tableMoney((float) ($o->{$amountField} ?? 0)),
             ];
         })->all();
     }
@@ -520,7 +520,7 @@ class FinancialBreakdown extends Page
                 'title'  => $label . ' #' . $a->id,
                 'sku'    => $scope,
                 'meta'   => $a->resolved_at ? \App\Support\Tenancy\TenantClock::display($a->resolved_at)->format('M j, Y') : '—',
-                'amount' => $this->money((float) ($a->value_at_open ?? 0)),
+                'amount' => $this->tableMoney((float) ($a->value_at_open ?? 0)),
             ];
         })->all();
     }
@@ -535,7 +535,14 @@ class FinancialBreakdown extends Page
         return \App\Filament\Resources\AnomalyResource::getUrl('investigate', ['record' => $anomalyId]);
     }
 
+    /** Cards and breakdown lines: the currency sign. */
     private function money(float $val): string
+    {
+        return \App\Support\Money::displayCompact($val, Filament::getTenant()?->currencyCode());
+    }
+
+    /** The drill-down table: the ISO code. */
+    private function tableMoney(float $val): string
     {
         return \App\Support\Money::compact($val, Filament::getTenant()?->currencyCode());
     }

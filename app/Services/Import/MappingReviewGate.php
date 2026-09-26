@@ -5,7 +5,7 @@ namespace App\Services\Import;
 use App\Filament\Resources\ImportResource\Pages\ReviewMapping;
 use App\Models\Import;
 use App\Models\User;
-use Filament\Notifications\Actions\Action as NotificationAction;
+use Filament\Actions\Action as NotificationAction;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Log;
 
@@ -49,7 +49,7 @@ class MappingReviewGate
 
     private function notifyAdmins(Import $import, string $reason): void
     {
-        $admins = User::where('tenant_id', $import->tenant_id)->where('is_tenant_admin', true)->get();
+        $admins = User::active()->where('tenant_id', $import->tenant_id)->where('is_tenant_admin', true)->get();
         foreach ($admins as $admin) {
             try {
                 $note = Notification::make()

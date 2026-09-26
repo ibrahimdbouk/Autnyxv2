@@ -3,7 +3,7 @@
         $p = $this->getProfile();
         $t = $p['tenant'];
         $ccy = $p['currency'];
-        $mny = fn ($v) => \App\Support\Money::compact((float) $v, $ccy);
+        $mny = fn ($v) => \App\Support\Money::displayCompact((float) $v, $ccy);
         $v = $p['volumes'];
     @endphp
 

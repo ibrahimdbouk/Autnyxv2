@@ -286,14 +286,14 @@ class ActionQueue extends Page
                 'cases'        => count($c['invs']),
                 'high'         => $c['high'],
                 'value'        => $c['value'],
-                'value_fmt'    => Money::compact($c['value'], $currency),
+                'value_fmt'    => Money::displayCompact($c['value'], $currency),
                 'due'          => $sla['due'],
                 'sla_label'    => $sla['label'],
                 'examples'  => array_slice(array_map(function ($e) use ($currency, $nameFor, $storeFor) {
                     return [
                         'sku'     => $nameFor($e['sku']),
                         'store'   => $storeFor($e['store']),
-                        'val_fmt' => Money::compact($e['val'], $currency),
+                        'val_fmt' => Money::displayCompact($e['val'], $currency),
                     ];
                 }, $c['examples']), 0, 3),
             ];
@@ -315,7 +315,7 @@ class ActionQueue extends Page
                 'title'   => self::CAMPAIGNS[$r['campaign']]['rules'] ? $this->incidentTitle($r) : $r['campaign'],
                 'sub'     => $r['campaign'],
                 'sev'     => $r['sev'],
-                'val_fmt' => Money::compact($r['val'], $currency),
+                'val_fmt' => Money::displayCompact($r['val'], $currency),
                 'verb'    => $r['verb'],
             ];
             if (count($uniq) >= 8) break;
@@ -351,14 +351,14 @@ class ActionQueue extends Page
             $detail = [
                 'name'  => $this->campaign,
                 'count' => count($rows),
-                'value' => Money::compact(array_sum(array_column($rows, 'val')), $currency),
+                'value' => Money::displayCompact(array_sum(array_column($rows, 'val')), $currency),
                 'plan'  => $this->planViewModel($this->campaign),
                 'rows'  => array_map(fn ($r) => [
                     'id'      => $r['inv'],
                     'sku'     => $r['sku'],
                     'store'   => $r['store'],
                     'sev'     => $r['sev'],
-                    'val_fmt' => Money::compact($r['val'], $currency),
+                    'val_fmt' => Money::displayCompact($r['val'], $currency),
                     'url'     => $r['inv'] ? $this->investigateUrl($r['inv']) : null,
                 ], array_slice($rows, 0, 200)),
             ];
@@ -378,7 +378,7 @@ class ActionQueue extends Page
             'campaign_count' => count($campaigns),
             'due_count'      => count(array_filter($campaigns, fn ($c) => $c['due'])),
             'act_count'      => count($uniq),
-            'total_value'    => Money::compact($totalValue, $currency),
+            'total_value'    => Money::displayCompact($totalValue, $currency),
             'act_now'        => $uniq,
             'campaigns'      => $campaigns,
             'today'          => $today,
@@ -445,7 +445,7 @@ class ActionQueue extends Page
                 'title'    => $inv->title
                     ?: ($inv->primary_sku ? ($skuNames[$inv->primary_sku] ?? $inv->primary_sku) : ('Investigation #' . $inv->id)),
                 'sub'      => $inv->primary_store_id ? ($storeNames[$inv->primary_store_id] ?? ('Store ' . $inv->primary_store_id)) : null,
-                'val_fmt'  => Money::compact((float) $inv->revenue_at_risk, $currency),
+                'val_fmt'  => Money::displayCompact((float) $inv->revenue_at_risk, $currency),
                 'priority' => $inv->priority,
                 'tag'      => $isNew ? 'new' : 'escalated',
                 'url'      => $this->investigateUrl($inv->id),

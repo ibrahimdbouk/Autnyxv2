@@ -303,7 +303,7 @@ $contribText = count($factorGroups)
     : 'Multiple correlated signals detected across the investigation window.';
 
 /* ── Step 4: business impact (tenant currency, not a hardcoded $) ────────── */
-$curr = \App\Support\Money::symbol(\Filament\Facades\Filament::getTenant()?->currencyCode());
+$curr = \App\Support\Money::displayPrefix(\Filament\Facades\Filament::getTenant()?->currencyCode());
 $impactText = $record->revenue_at_risk
     ? 'Estimated revenue at risk: ' . $curr . number_format($record->revenue_at_risk, 2) . '.'
     : 'Revenue impact not yet quantified.';

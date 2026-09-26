@@ -112,7 +112,7 @@ class InvestigationsByStore extends Page
                 'total'           => (int) $row->total,
                 'open'            => (int) $row->open_count,
                 'urgent'          => (int) $row->urgent,
-                'value_fmt'       => Money::compact((float) $row->value, $currency),
+                'value_fmt'       => Money::displayCompact((float) $row->value, $currency),
                 'investigations'  => $list,
                 'shown'           => count($list),
             ];

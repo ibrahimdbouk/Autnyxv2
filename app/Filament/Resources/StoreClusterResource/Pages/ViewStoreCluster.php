@@ -54,6 +54,16 @@ class ViewStoreCluster extends Page
             return '—';
         }
 
+        return Filament::getTenant()?->displayMoney((float) $amount) ?? number_format((float) $amount, 2);
+    }
+
+    /** Table cells keep the ISO code. */
+    public function tableMoney(float|int|null $amount): string
+    {
+        if ($amount === null) {
+            return '—';
+        }
+
         return Filament::getTenant()?->money((float) $amount) ?? number_format((float) $amount, 2);
     }
 

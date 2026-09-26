@@ -230,16 +230,12 @@ final class Money
     /**
      * Format an amount in a currency, e.g. "AED 1,234.56" or "$1,234.56".
      * A symbol we have a glyph for hugs the number ("$1,234.56"); an ISO-code
-     * "symbol" gets a space ("AED 1,234.56").
+     * "symbol" gets a space ("AED 1,234.56"). Used for data: tables, stored
+     * descriptions, e-mails, exports, AI prompts.
      */
     public static function format(float|int|null $amount, ?string $code = null, int $decimals = 2): string
     {
-        $code   = self::normalize($code);
-        $symbol = self::symbol($code);
-        $n      = number_format((float) ($amount ?? 0), $decimals);
-
-        // Glyph symbols hug the number; ISO-code fallbacks get a separating space.
-        return $symbol === $code ? "{$symbol} {$n}" : "{$symbol}{$n}";
+        return self::glue(self::symbol($code), self::normalize($code), number_format((float) ($amount ?? 0), $decimals), false);
     }
 
     /**
@@ -247,19 +243,76 @@ final class Money
      */
     public static function compact(float|int|null $amount, ?string $code = null): string
     {
-        $v      = (float) ($amount ?? 0);
-        $code   = self::normalize($code);
-        $symbol = self::symbol($code);
-        $glue   = $symbol === $code ? ' ' : '';
+        return self::glue(self::symbol($code), self::normalize($code), self::compactNumber($amount), false);
+    }
 
+    /**
+     * On-screen symbols (dashboard cards, page headers, charts, form inputs —
+     * not tables or documents). Adds the new currency signs that are too
+     * recent for system fonts — the UAE dirham (U+20C3, Unicode 18) and the
+     * Saudi riyal (U+20C1, Unicode 17) — which the panel draws with a small
+     * self-hosted font (public/vendor/currency, see Branding::headAssets).
+     * E-mail, PDF and spreadsheet readers cannot be relied on to have that
+     * font, so documents keep format() / compact() and the ISO code.
+     */
+    private const DISPLAY_SYMBOLS = [
+        'AED' => "\u{20C3}",
+        'SAR' => "\u{20C1}",
+    ];
+
+    public static function displaySymbol(?string $code): string
+    {
+        return self::DISPLAY_SYMBOLS[self::normalize($code)] ?? self::symbol($code);
+    }
+
+    /** Symbol to glue before a raw number on screen (charts): "⃃", "$", or "KWD ". */
+    public static function displayPrefix(?string $code): string
+    {
+        $code = self::normalize($code);
+        $sym  = self::displaySymbol($code);
+
+        return $sym === $code ? $sym . ' ' : $sym . (in_array($sym, self::DISPLAY_SYMBOLS, true) ? "\u{202F}" : '');
+    }
+
+    /** On-screen full amount, e.g. "⃃1,234.56". */
+    public static function displayFormat(float|int|null $amount, ?string $code = null, int $decimals = 2): string
+    {
+        return self::glue(self::displaySymbol($code), self::normalize($code), number_format((float) ($amount ?? 0), $decimals));
+    }
+
+    /** On-screen compact amount, e.g. "⃃1.2M". */
+    public static function displayCompact(float|int|null $amount, ?string $code = null): string
+    {
+        return self::glue(self::displaySymbol($code), self::normalize($code), self::compactNumber($amount));
+    }
+
+    /**
+     * A glyph hugs the number; an ISO-code fallback gets a separating space.
+     * On screen a minus goes before the symbol ("-⃃400"); documents keep the
+     * long-standing "AED -400" so stored text does not change.
+     */
+    private static function glue(string $symbol, string $code, string $number, bool $minusFirst = true): string
+    {
+        $neg = $minusFirst && str_starts_with($number, '-');
+        $n = $neg ? substr($number, 1) : $number;
+
+        // The wide new signs (dirham, riyal) get a narrow no-break space; "$" hugs.
+        $gap = $symbol === $code ? ' ' : (in_array($symbol, self::DISPLAY_SYMBOLS, true) ? "\u{202F}" : '');
+
+        return ($neg ? '-' : '') . $symbol . $gap . $n;
+    }
+
+    private static function compactNumber(float|int|null $amount): string
+    {
+        $v = (float) ($amount ?? 0);
         if (abs($v) >= 1_000_000) {
-            return "{$symbol}{$glue}" . number_format($v / 1_000_000, 1) . 'M';
+            return number_format($v / 1_000_000, 1) . 'M';
         }
         if (abs($v) >= 1_000) {
-            return "{$symbol}{$glue}" . number_format($v / 1_000, 1) . 'K';
+            return number_format($v / 1_000, 1) . 'K';
         }
 
-        return "{$symbol}{$glue}" . number_format($v, 0);
+        return number_format($v, 0);
     }
 
     /**

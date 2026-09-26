@@ -46,7 +46,14 @@ class FreshExpiry extends Page
         return Cache::remember("fresh-expiry:{$t}", 120, fn () => app(FreshExpiryService::class)->summary($t));
     }
 
+    /** Cards and headings: the currency sign (e.g. ⃃). */
     public function money(float $v): string
+    {
+        return Money::displayCompact($v, Money::normalize(Filament::getTenant()?->currency));
+    }
+
+    /** Table cells: the ISO code (e.g. AED). */
+    public function tableMoney(float $v): string
     {
         return Money::compact($v, Money::normalize(Filament::getTenant()?->currency));
     }

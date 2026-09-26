@@ -9,4 +9,4 @@
     $val = (float) $amount;
     $classes = 'ax-money' . ($signed ? ($val > 0 ? ' ax-money--pos' : ($val < 0 ? ' ax-money--neg' : '')) : '');
 @endphp
-<span {{ $attributes->merge(['class' => $classes]) }}>{{ \App\Support\Money::format($val, $cur, (int) $decimals) }}</span>
+<span {{ $attributes->merge(['class' => $classes]) }}>{{ \App\Support\Money::displayFormat($val, $cur, (int) $decimals) }}</span>

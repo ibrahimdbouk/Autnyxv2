@@ -95,13 +95,13 @@
                         <td>@if($r['grade'])<span class="sc-grade sc-{{ $r['grade'] }}">{{ $r['grade'] }}</span> <span class="sc-muted">{{ $r['score'] }}</span>@else<span class="sc-muted">—</span>@endif</td>
                         <td>@if($r['supplier_id'])<a class="sc-link" href="{{ static::getUrl(['days' => $this->days, 'supplier' => $r['supplier_id']]) }}" wire:navigate>{{ $r['name'] }}</a>@else{{ $r['name'] }}@endif</td>
                         <td>{{ number_format($r['lines']) }}</td>
-                        <td>{{ $this->money($r['ordered_value']) }}</td>
+                        <td>{{ $this->tableMoney($r['ordered_value']) }}</td>
                         <td class="{{ $r['fill_rate'] !== null && $r['fill_rate'] < 90 ? 'sc-bad' : '' }}">{{ $r['fill_rate'] !== null ? $r['fill_rate'] . '%' : '—' }}</td>
                         <td class="{{ $r['on_time'] !== null && $r['on_time'] < 80 ? 'sc-bad' : '' }}">{{ $r['on_time'] !== null ? $r['on_time'] . '%' : '—' }}</td>
                         <td>{{ $r['lead_days'] !== null ? $r['lead_days'] . ' d' : '—' }}@if($r['lead_days'] !== null && $r['prev_lead_days'] !== null && $r['lead_days'] - $r['prev_lead_days'] >= 1)<span class="sc-bad"> ▲{{ round($r['lead_days'] - $r['prev_lead_days'], 1) }}</span>@endif</td>
                         <td class="{{ ($r['cost_change'] ?? 0) >= 3 ? 'sc-bad' : '' }}">{{ $r['cost_change'] !== null ? ($r['cost_change'] > 0 ? '+' : '') . $r['cost_change'] . '%' : '—' }}</td>
-                        <td>{{ $r['overdue_lines'] ? $r['overdue_lines'] . ' · ' . $this->money($r['overdue_value']) : '—' }}</td>
-                        <td>{{ $r['stockouts'] ? $r['stockouts'] . ' · ' . $this->money($r['lost_revenue']) : '—' }}</td>
+                        <td>{{ $r['overdue_lines'] ? $r['overdue_lines'] . ' · ' . $this->tableMoney($r['overdue_value']) : '—' }}</td>
+                        <td>{{ $r['stockouts'] ? $r['stockouts'] . ' · ' . $this->tableMoney($r['lost_revenue']) : '—' }}</td>
                     </tr>
                 @endforeach
                 </tbody>

@@ -64,7 +64,8 @@ class DashboardMetricsTest extends TestCase
         $this->assertSame(25.0, $dash['prev']['recovered_mtd']);
 
         $this->actingAsTenantAdmin($t);
-        $figure = \App\Support\Money::compact(140.0, \App\Support\Money::normalize($t->currency));
+        // Cards show the currency sign (⃃ for AED), not the ISO code.
+        $figure = \App\Support\Money::displayCompact(140.0, \App\Support\Money::normalize($t->currency));
         $this->get(\App\Filament\Pages\FinancialBreakdown::getUrl(['metric' => 'recovered_mtd', 'tenant' => $t]))
             ->assertOk()->assertSee($figure, false);   // the drill-down shows the card's figure
         $this->get(Dashboard::getUrl(['tenant' => $t]))

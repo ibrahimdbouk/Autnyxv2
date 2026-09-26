@@ -29,7 +29,21 @@
                 var s = document.createElement('script');
                 s.src = CHART_JS;
                 s.async = true;
-                s.onload = function () { resolve(window.Chart); };
+                s.onload = function () {
+                    // Charts use the panel's font stack, which starts with the
+                    // AxCurrency family (the new dirham / riyal signs). Wait for
+                    // that font so a tooltip never draws an empty box.
+                    try {
+                        window.Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+                    } catch (e) { /* keep Chart.js default */ }
+                    var ready = (document.fonts && document.fonts.load)
+                        ? Promise.race([
+                            document.fonts.load('16px AxCurrency', '\u20C3\u20C1'),
+                            new Promise(function (r) { setTimeout(r, 1500); })
+                        ]).catch(function () {})
+                        : Promise.resolve();
+                    ready.then(function () { resolve(window.Chart); });
+                };
                 s.onerror = function () { chartPromise = null; reject(new Error('Chart.js failed to load')); };
                 document.head.appendChild(s);
             });

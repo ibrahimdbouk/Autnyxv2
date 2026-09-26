@@ -78,7 +78,7 @@
                         <td>{{ $stores[$a->store_id] ?? '—' }}</td>
                         <td>{{ round((float) ($a->context['units_at_risk'] ?? 0)) }}</td>
                         <td>{{ $a->context['first_expiry'] ?? '—' }}</td>
-                        <td>{{ $this->money((float) ($a->context['inventory_value'] ?? 0)) }}</td>
+                        <td>{{ $this->tableMoney((float) ($a->context['inventory_value'] ?? 0)) }}</td>
                         <td>@if($u = $this->investigateUrl($a->id))<a class="fx-link" href="{{ $u }}">Open</a>@endif</td>
                     </tr>
                 @endforeach
@@ -97,7 +97,7 @@
                     <thead><tr><th></th><th>Units</th><th>Value</th></tr></thead>
                     <tbody>
                     @forelse($w[$key] as $row)
-                        <tr><td>{{ ucfirst((string) $row['key']) }}</td><td>{{ number_format($row['units']) }}</td><td>{{ $this->money($row['value']) }}</td></tr>
+                        <tr><td>{{ ucfirst((string) $row['key']) }}</td><td>{{ number_format($row['units']) }}</td><td>{{ $this->tableMoney($row['value']) }}</td></tr>
                     @empty
                         <tr><td colspan="3" class="fx-muted">Nothing in the period.</td></tr>
                     @endforelse

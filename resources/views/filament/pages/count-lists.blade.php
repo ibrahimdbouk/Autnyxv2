@@ -55,7 +55,7 @@
                         <td>{{ $names[$c->sku] ?? '' }}</td>
                         <td class="cl-muted">{{ $c->reasonLabel() }}</td>
                         <td>{{ $c->system_qty !== null ? rtrim(rtrim(number_format($c->system_qty, 2), '0'), '.') : '—' }}</td>
-                        <td>{{ $this->money((float) $c->value_at_risk) }}</td>
+                        <td>{{ $this->tableMoney((float) $c->value_at_risk) }}</td>
                         <td><input type="text" inputmode="decimal" wire:model="counted.{{ $c->id }}" placeholder="qty" aria-label="Counted quantity for {{ $c->sku }}"></td>
                     </tr>
                 @endforeach
@@ -84,7 +84,7 @@
                         <td>{{ rtrim(rtrim(number_format((float) $c->system_qty, 2), '0'), '.') }}</td>
                         <td>{{ rtrim(rtrim(number_format((float) $c->counted_qty, 2), '0'), '.') }}</td>
                         <td class="{{ $c->variance_qty < 0 ? 'cl-var-neg' : ($c->variance_qty > 0 ? 'cl-var-pos' : '') }}">{{ $c->variance_qty > 0 ? '+' : '' }}{{ rtrim(rtrim(number_format((float) $c->variance_qty, 2), '0'), '.') ?: '0' }}</td>
-                        <td>{{ $this->money(abs((float) $c->variance_value)) }}</td>
+                        <td>{{ $this->tableMoney(abs((float) $c->variance_value)) }}</td>
                     </tr>
                 @endforeach
                 </tbody>

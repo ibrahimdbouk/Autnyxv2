@@ -77,7 +77,7 @@
         @php
             $rec = $r['recovery'] ?? [];
             $ccy = \Filament\Facades\Filament::getTenant()?->currencyCode();
-            $mny = fn ($v) => \App\Support\Money::compact((float) $v, $ccy);
+            $mny = fn ($v) => \App\Support\Money::displayCompact((float) $v, $ccy);
         @endphp
         <div class="qc-card">
             <h3>Recovery lifecycle · observed</h3>

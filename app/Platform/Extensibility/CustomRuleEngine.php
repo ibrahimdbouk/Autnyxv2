@@ -175,7 +175,7 @@ final class CustomRuleEngine
         })->all();
     }
 
-    public static function formatValue(int|float|bool|null $v, string $unit, string $currency): string
+    public static function formatValue(int|float|bool|null $v, string $unit, string $currency, bool $display = false): string
     {
         if ($v === null) {
             return '—';
@@ -185,7 +185,7 @@ final class CustomRuleEngine
         }
 
         return match ($unit) {
-            'money'   => \App\Support\Money::compact((float) $v, $currency),
+            'money'   => $display ? \App\Support\Money::displayCompact((float) $v, $currency) : \App\Support\Money::compact((float) $v, $currency),
             'percent' => number_format((float) $v, 1) . '%',
             'days'    => number_format((float) $v, 1) . ' days',
             'count'   => number_format((float) $v, fmod((float) $v, 1.0) == 0.0 ? 0 : 1),

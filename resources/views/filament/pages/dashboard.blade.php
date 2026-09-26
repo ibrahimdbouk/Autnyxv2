@@ -22,7 +22,8 @@ $recurringTop       = $m['insights']['recurring'];
 $storeAlertData     = $m['insights']['store'];
 $categoryTop        = $m['insights']['month_top'];
 
-$dbFormatMoney = static fn (float $val): string => \App\Support\Money::compact($val, $currency);
+$dbFormatMoney = static fn (float $val): string => \App\Support\Money::displayCompact($val, $currency);   // cards: the currency sign
+$dbTableMoney = static fn (float $val): string => \App\Support\Money::compact($val, $currency);          // tables: the ISO code
 
 // Stock cards trend on their inflow (new this week vs the week before);
 // recovery cards on month to date vs the same stretch of last month.
@@ -388,7 +389,7 @@ a.db-kpi:hover::after { opacity:1; }
     @foreach($customKpis as $kpi)
         <div class="db-kpi" title="{{ $kpi['description'] ?? $kpi['label'] }}">
             <div class="db-kpi-label">{{ $kpi['label'] }}</div>
-            <div class="db-kpi-value">{{ \App\Platform\Extensibility\CustomRuleEngine::formatValue($kpi['value'], (string) $kpi['unit'], $currency) }}</div>
+            <div class="db-kpi-value">{{ \App\Platform\Extensibility\CustomRuleEngine::formatValue($kpi['value'], (string) $kpi['unit'], $currency, display: true) }}</div>
             <div class="db-kpi-trend db-trend-flat">{{ \Illuminate\Support\Str::limit($kpi['description'] ?? 'Your formula', 60) }}</div>
         </div>
     @endforeach
@@ -530,7 +531,7 @@ a.db-kpi:hover::after { opacity:1; }
                         {{ $primaryAnomaly ? $dbRuleLabel($primaryAnomaly->rule_type) : '—' }}
                     </td>
                     <td style="font-weight:700;color:var(--ax-danger);white-space:nowrap;font-size:.8rem">
-                        {{ $inv->revenue_at_risk ? $dbFormatMoney((float)$inv->revenue_at_risk) : '—' }}
+                        {{ $inv->revenue_at_risk ? $dbTableMoney((float)$inv->revenue_at_risk) : '—' }}
                     </td>
                     <td><span class="db-badge {{ $stBadge }}">{{ $dbStatusLabel($inv->status) }}</span></td>
                 </tr>
@@ -703,7 +704,7 @@ function initDashboardCharts(Chart) {
         if (existing) existing.destroy();
     });
 
-    const pfx = @json(\App\Support\Money::prefix($currency));
+    const pfx = @json(\App\Support\Money::displayPrefix($currency));
 
     /* ── Check dark mode ─────────────────────────────────────────────── */
     /* Colours come from the design tokens, so dark mode follows autnyx-ui.css. */

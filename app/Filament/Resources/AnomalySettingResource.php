@@ -94,7 +94,7 @@ class AnomalySettingResource extends Resource
     public static function form(Schema $form): Schema
     {
         // Currency symbol for this tenant, for money-valued threshold fields.
-        $currencySymbol = \App\Support\Money::symbol(Filament::getTenant()?->currencyCode());
+        $currencySymbol = \App\Support\Money::displaySymbol(Filament::getTenant()?->currencyCode());
 
         // Rules that expose each threshold type
         $pctRules = [
@@ -166,7 +166,7 @@ class AnomalySettingResource extends Resource
                 ->visible(fn (?AnomalySetting $record) => $record && $record->rule_type === 'overstock'),
 
             TextInput::make('thresholds.min_value')
-                ->label('Minimum tied-up value ($)')
+                ->label('Minimum tied-up value')
                 ->helperText('Materiality floor: only flag when the inventory/shortfall value (qty × unit cost) exceeds this amount. Raise it to shorten the list, lower it for wider recall.')
                 ->numeric()
                 ->minValue(0)
@@ -174,7 +174,7 @@ class AnomalySettingResource extends Resource
                 ->visible(fn (?AnomalySetting $record) => $record && in_array($record->rule_type, $minValueRules)),
 
             TextInput::make('thresholds.min_revenue')
-                ->label('Minimum revenue impact ($)')
+                ->label('Minimum revenue impact')
                 ->helperText('Materiality floor: only flag when the estimated revenue at risk exceeds this amount (0 = surface every hit, ranked by impact). Raise it to cut low-value noise.')
                 ->numeric()
                 ->minValue(0)
