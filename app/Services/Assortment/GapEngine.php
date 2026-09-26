@@ -123,20 +123,19 @@ class GapEngine
     }
 
     /**
-     * The decisions for the stores judged against this group.
+     * What the decisions need across the whole group before any chunk is judged:
+     * the add bar per category (P40 of the group's median share index per
+     * product) and, per judged store, where each carried product ranks in its
+     * category (for delists).
      *
+     * @param  array<string,array<string,mixed>>  $benchmark  sku => benchmark (whole group)
+     * @param  array<int,array<string,float>>  $shares  store => sku => own share index (carried, non-null)
      * @param  array<int,int>  $targets
-     * @param  array<string,array<string,mixed>>  $benchmark
-     * @param  array<string,mixed>  $group  key, label, basis
-     * @return array{gaps: array<int,array<string,mixed>>, counts: array<string,int>}
+     * @return array{bars: array<string,?float>, ranks: array<int,array<string,array<string,mixed>>>}
      */
-    public function evaluate(GroupData $g, array $targets, array $benchmark, array $group): array
+    public function prepare(array $benchmark, array $shares, array $targets): array
     {
-        $cfg    = config('assortment');
-        $gaps   = [];
-        $counts = ['add' => 0, 'delist' => 0, 'stockout_hidden' => 0, 'skipped_no_category_sales' => 0, 'skipped_speculative_delist' => 0, 'capped_delists' => 0];
-
-        // Category bar for adds: the P40 of the group's median share index per product.
+        $cfg = config('assortment');
         $byCategory = [];
         foreach ($benchmark as $sku => $b) {
             $cat = $this->products[$sku]['category'] ?? null;
@@ -144,14 +143,39 @@ class GapEngine
                 $byCategory[$cat][] = $b['share_index_median'];
             }
         }
-        $categoryBar = array_map(fn (array $v) => Stats::percentile($v, (float) $cfg['add_rate_percentile']), $byCategory);
+        $bars = array_map(fn (array $v) => Stats::percentile($v, (float) $cfg['add_rate_percentile']), $byCategory);
+
+        $ranks = [];
+        foreach ($targets as $storeId) {
+            $ranks[$storeId] = $this->ownCategoryRanks($shares[$storeId] ?? []);
+        }
+
+        return ['bars' => $bars, 'ranks' => $ranks];
+    }
+
+    /**
+     * The decisions for the stores judged against this group, for the SKUs of
+     * one chunk.
+     *
+     * @param  array<int,int>  $targets
+     * @param  array<string,array<string,mixed>>  $benchmark  whole group
+     * @param  array{bars: array<string,?float>, ranks: array<int,array<string,array<string,mixed>>>}  $prepared
+     * @param  array<string,mixed>  $group  key, label, basis
+     * @param  array<string,int>  $counts
+     * @return array<int,array<string,mixed>>
+     */
+    public function evaluateChunk(GroupData $g, array $targets, array $benchmark, array $prepared, array $group, array &$counts): array
+    {
+        $cfg  = config('assortment');
+        $gaps = [];
 
         foreach ($targets as $storeId) {
-            $ownRank = $this->ownCategoryRanks($g, $storeId);
+            $ownRank = $prepared['ranks'][$storeId] ?? [];
 
-            foreach ($benchmark as $sku => $b) {
+            foreach ($g->skus as $sku) {
+                $b = $benchmark[$sku] ?? null;
                 $product = $this->products[$sku] ?? null;
-                if ($product === null || $product['category'] === null) {
+                if ($b === null || $product === null || $product['category'] === null) {
                     continue;
                 }
                 $peers = $this->peers($g, $storeId, $sku);
@@ -164,7 +188,7 @@ class GapEngine
                 $catRate = $g->categoryRevenuePerDay[$storeId][$product['category']] ?? 0.0;
 
                 if (! $g->carries($storeId, $sku)) {
-                    $gap = $this->add($g, $storeId, $sku, $product, $b, $peers, $median, $tier, $catRate, $categoryBar[$product['category']] ?? null, $group, $counts);
+                    $gap = $this->add($g, $storeId, $sku, $product, $b, $peers, $median, $tier, $catRate, $prepared['bars'][$product['category']] ?? null, $group, $counts);
                 } else {
                     $gap = $this->stockoutHidden($g, $storeId, $sku, $product, $peers, $shares, $median, $tier, $catRate, $group)
                         ?? $this->delist($g, $storeId, $sku, $product, $peers, $median, $tier, $ownRank, $group, $counts);
@@ -175,28 +199,23 @@ class GapEngine
             }
         }
 
-        // A review is a few calls per shelf, not a cull: keep the most valuable
-        // delists per store × category.
-        $delists = [];
-        foreach ($gaps as $i => $gap) {
-            if ($gap['type'] === AssortmentGap::TYPE_DELIST) {
-                $cat = $this->products[$gap['sku']]['category'] ?? '';
-                $delists[$gap['store_id'] . '|' . $cat][$i] = $gap['value_mid'];
-            }
-        }
-        foreach ($delists as $byValue) {
-            arsort($byValue);
-            foreach (array_slice(array_keys($byValue), $this->maxDelistsPerCategory) as $i) {
-                unset($gaps[$i]);
-                $counts['capped_delists']++;
-            }
-        }
-        $gaps = array_values($gaps);
-        foreach ($gaps as $gap) {
-            $counts[$gap['type']]++;
-        }
+        return $gaps;
+    }
 
-        return ['gaps' => $gaps, 'counts' => $counts, 'health' => $this->health($g, $targets, $benchmark, $gaps, $group)];
+    /**
+     * Range health for the group once every chunk is judged.
+     *
+     * @param  array<string,int>  $stockoutsByCategory
+     * @return array<int,array<string,mixed>>
+     */
+    public function finalize(array $targets, array $benchmark, array $group, array $shares, array $carried, array $stockoutsByCategory): array
+    {
+        return $this->health($targets, $benchmark, $group, $shares, $carried, $stockoutsByCategory);
+    }
+
+    public function categoryOf(string $sku): ?string
+    {
+        return $this->products[$sku]['category'] ?? null;
     }
 
     // ── The three decisions ───────────────────────────────────────────────────
@@ -408,9 +427,9 @@ class GapEngine
      *
      * @return array<int,array<string,mixed>>
      */
-    private function health(GroupData $g, array $targets, array $benchmark, array $gaps, array $group): array
+    private function health(array $targets, array $benchmark, array $group, array $shares, array $carriedSet, array $out): array
     {
-        $core = $carried = $tail = $out = [];
+        $core = $carried = $tail = [];
         foreach ($benchmark as $sku => $b) {
             $cat = $this->products[$sku]['category'] ?? null;
             if ($cat === null) {
@@ -418,24 +437,18 @@ class GapEngine
             }
             $median = $b['share_index_median'];
             foreach ($targets as $storeId) {
-                $has = $g->carries($storeId, $sku);
+                $has = isset($carriedSet[$storeId][$sku]);
                 if ($b['carried_share'] >= 0.5) {
                     $core[$cat][$storeId]['of'] = ($core[$cat][$storeId]['of'] ?? 0) + 1;
                     $core[$cat][$storeId]['has'] = ($core[$cat][$storeId]['has'] ?? 0) + ($has ? 1 : 0);
                 }
                 if ($has) {
                     $carried[$cat] = ($carried[$cat] ?? 0) + 1;
-                    $share = $g->perf[$storeId][$sku]['share'] ?? null;
+                    $share = $shares[$storeId][$sku] ?? null;
                     if ($median && $share !== null && $share < 0.3 * $median) {
                         $tail[$cat] = ($tail[$cat] ?? 0) + 1;
                     }
                 }
-            }
-        }
-        foreach ($gaps as $gap) {
-            if ($gap['type'] === AssortmentGap::TYPE_STOCKOUT_HIDDEN) {
-                $cat = $this->products[$gap['sku']]['category'] ?? null;
-                $out[$cat] = ($out[$cat] ?? 0) + 1;
             }
         }
         $rows = [];
@@ -476,32 +489,35 @@ class GapEngine
      *
      * @return array<string,array{position:int,count:int,bottom:bool,kind_count:int}>
      */
-    private function ownCategoryRanks(GroupData $g, int $storeId): array
+    private function ownCategoryRanks(array $ownShares): array
     {
         $byCat = $kinds = [];
-        foreach ($g->perf[$storeId] ?? [] as $sku => $p) {
+        foreach ($ownShares as $sku => $share) {
             $prod = $this->products[$sku] ?? null;
-            if ($prod === null || $prod['category'] === null || $p['share'] === null) {
+            if ($prod === null || $prod['category'] === null || $share === null) {
                 continue;
             }
-            $byCat[$prod['category']][$sku] = $p['share'];
+            $byCat[$prod['category']][$sku] = $share;
             $kind = $prod['subcategory'] ?: $prod['category'];
             $kinds[$kind] = ($kinds[$kind] ?? 0) + 1;
         }
         $bottomShare = (float) config('assortment.delist_bottom_share', 0.10);
         $out = [];
-        foreach ($byCat as $cat => $shares) {
+        foreach ($byCat as $shares) {
             asort($shares);
             $n = count($shares);
             $cut = max(1, (int) ceil($n * $bottomShare));
             $i = 0;
             foreach (array_keys($shares) as $sku) {
                 $i++;
+                if ($i > $cut || $n < 3) {
+                    break;   // only the bottom of the category can be a delist — keep just those
+                }
                 $prod = $this->products[$sku];
                 $out[(string) $sku] = [
                     'position'   => $i,
                     'count'      => $n,
-                    'bottom'     => $i <= $cut && $n >= 3,
+                    'bottom'     => true,
                     'kind_count' => $kinds[$prod['subcategory'] ?: $prod['category']] ?? 1,
                 ];
             }
@@ -591,8 +607,9 @@ class GapEngine
             'value_high'      => $high,
             'confidence'      => $confidence,
             'confidence_tier' => $tier,
-            'evidence'        => $evidence,
-            'explanation'     => $explanation,
+            // Encoded now: a decision is kept as a compact string until it is saved.
+            'evidence'        => json_encode($evidence, JSON_UNESCAPED_UNICODE),
+            'explanation'     => json_encode($explanation, JSON_UNESCAPED_UNICODE),
         ];
     }
 

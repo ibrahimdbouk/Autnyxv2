@@ -25,10 +25,11 @@ class AvailabilityService
      * some stores only.
      *
      * @param  array<int,int>|null  $storeIds
+     * @param  array<int,string>|null  $skus  limit to these SKUs (callers that chunk)
      * @return array<string,array{store_id:int,sku:string,observations:int,in_stock:int,availability:float,first_observed:string,last_observed:string,last_in_stock:?string}>
      *         keyed "storeId|sku"
      */
-    public function forWindow(int $tenantId, string $from, string $to, ?array $storeIds = null): array
+    public function forWindow(int $tenantId, string $from, string $to, ?array $storeIds = null, ?array $skus = null): array
     {
         $params = [$tenantId, $from, $to];
         $storeFilter = '';
@@ -38,6 +39,13 @@ class AvailabilityService
             }
             $storeFilter = ' AND store_id IN (' . implode(',', array_fill(0, count($storeIds), '?')) . ')';
             array_push($params, ...array_map('intval', $storeIds));
+        }
+        if ($skus !== null) {
+            if ($skus === []) {
+                return [];
+            }
+            $storeFilter .= ' AND sku IN (' . implode(',', array_fill(0, count($skus), '?')) . ')';
+            array_push($params, ...array_map('strval', $skus));
         }
 
         $rows = DB::select(

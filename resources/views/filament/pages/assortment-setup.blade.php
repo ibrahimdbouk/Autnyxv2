@@ -12,7 +12,7 @@
         <x-ui.stat label="Must-stock list" :value="number_format($mustCount) . ' product(s)'" foot="Never proposed for delisting (columns: sku, store optional, reason)" />
         <x-ui.stat label="Guardrails"
             :value="$tier . ' · ' . $guardrails['carried_window_days'] . ' days'"
-            :foot="'Delist confidence · carried window · at most ' . $guardrails['max_delists_per_category'] . ' delist(s) per category per store'" />
+            :foot="'Delist confidence · carried window · at most ' . $guardrails['max_adds_per_category'] . ' add(s) and ' . $guardrails['max_delists_per_category'] . ' delist(s) per category per store'" />
     </div>
 
     <x-ui.card title="Must-stock list">

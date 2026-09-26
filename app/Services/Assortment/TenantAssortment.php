@@ -11,7 +11,7 @@ use App\Models\Tenant;
  *   live_at / gate — when, and the review figures it passed with
  *   shadow_run  — run the engine nightly before the app is switched on (trial)
  *   guardrails  — the few settings a tenant may change (§4.5): delist confidence,
- *                 carried window, and the most delists per category per store
+ *                 carried window, and the most delists / adds per category per store
  */
 final class TenantAssortment
 {
@@ -20,6 +20,7 @@ final class TenantAssortment
         'delist_min_tier'       => ['likely', 'established'],
         'carried_window_days'   => [28, 56, 90],
         'max_delists_per_category' => [1, 2, 3, 5, 10],
+        'max_adds_per_category'    => [3, 5, 10, 20],
     ];
 
     public static function settings(Tenant $tenant): array
@@ -34,7 +35,7 @@ final class TenantAssortment
         return (self::settings($tenant)['live'] ?? false) === true;
     }
 
-    /** @return array{delist_min_tier:string, carried_window_days:int, max_delists_per_category:int} */
+    /** @return array{delist_min_tier:string, carried_window_days:int, max_delists_per_category:int, max_adds_per_category:int} */
     public static function guardrails(Tenant $tenant): array
     {
         $g = self::settings($tenant)['guardrails'] ?? [];
@@ -48,6 +49,7 @@ final class TenantAssortment
             'delist_min_tier'          => $pick('delist_min_tier', (string) config('assortment.delist_min_tier', 'likely')),
             'carried_window_days'      => $pick('carried_window_days', (int) config('assortment.carried_window_days', 56)),
             'max_delists_per_category' => $pick('max_delists_per_category', (int) config('assortment.max_delists_per_category', 3)),
+            'max_adds_per_category'    => $pick('max_adds_per_category', (int) config('assortment.max_adds_per_category', 5)),
         ];
     }
 

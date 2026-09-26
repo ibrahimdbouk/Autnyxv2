@@ -22,6 +22,12 @@ class RunAssortmentCommand extends Command
 
     public function handle(AssortmentEngine $engine): int
     {
+        // The engine reads a peer group in chunks (~165 MB peak on 50 stores ×
+        // 4,000 SKUs); leave headroom on hosts whose CLI default is 256 MB.
+        $limit = ini_get('memory_limit');
+        if ($limit !== '-1' && (int) $limit > 0 && (int) $limit < 512 && str_ends_with(strtoupper((string) $limit), 'M')) {
+            @ini_set('memory_limit', '512M');
+        }
         $tenants = Tenant::query()->where('status', 'active')
             ->when($this->option('tenant'), fn ($q, $id) => $q->whereKey((int) $id))
             ->orderBy('id')->get();

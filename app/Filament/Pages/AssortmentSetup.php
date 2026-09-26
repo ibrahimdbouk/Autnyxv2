@@ -22,8 +22,8 @@ use Illuminate\Support\Facades\Storage;
  * Assortment setup (A6) — the few things a tenant controls:
  *   • the range file (what each store is authorised to carry),
  *   • the must-stock list (never proposed for delisting),
- *   • three guardrails: delist confidence, the "carried" window, and the most
- *     delists per category per store in one run.
+ *   • four guardrails: delist confidence, the "carried" window, and the most
+ *     delists and adds per category per store in one run.
  * Everything else is an Autnyx preset, so results stay comparable.
  */
 class AssortmentSetup extends Page
@@ -105,12 +105,15 @@ class AssortmentSetup extends Page
                         ->options([28 => '28 days', 56 => '56 days (default)', 90 => '90 days']),
                     Select::make('max_delists_per_category')->label('Most delists per category per store in one run')->required()
                         ->options([1 => '1', 2 => '2', 3 => '3 (default)', 5 => '5', 10 => '10']),
+                    Select::make('max_adds_per_category')->label('Most adds per category per store in one run')->required()
+                        ->options([3 => '3', 5 => '5 (default)', 10 => '10', 20 => '20']),
                 ])
                 ->action(function (array $data) use ($tenant) {
                     TenantAssortment::update($tenant, ['guardrails' => [
                         'delist_min_tier'          => (string) $data['delist_min_tier'],
                         'carried_window_days'      => (int) $data['carried_window_days'],
                         'max_delists_per_category' => (int) $data['max_delists_per_category'],
+                        'max_adds_per_category'    => (int) $data['max_adds_per_category'],
                     ]]);
                     Notification::make()->title('Guardrails saved — they apply from the next run')->success()->send();
                 }),

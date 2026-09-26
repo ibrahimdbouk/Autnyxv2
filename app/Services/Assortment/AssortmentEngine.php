@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\DB;
  */
 class AssortmentEngine
 {
+
     public function __construct(
         private RangeModel $ranges,
         private PeerGroups $peerGroups,
@@ -101,7 +102,7 @@ class AssortmentEngine
 
         DB::table('assortment_benchmarks')->where('tenant_id', $tenantId)->delete();
 
-        $counts = ['add' => 0, 'delist' => 0, 'stockout_hidden' => 0, 'skipped_no_category_sales' => 0, 'skipped_speculative_delist' => 0, 'capped_delists' => 0];
+        $counts = ['add' => 0, 'delist' => 0, 'stockout_hidden' => 0, 'skipped_no_category_sales' => 0, 'skipped_speculative_delist' => 0, 'capped_delists' => 0, 'capped_adds' => 0];
         $benchmarks = 0;
         $health = [];
         $found  = [];
@@ -111,18 +112,69 @@ class AssortmentEngine
             if ($targets === []) {
                 continue;
             }
-            $data  = (new GroupData($tenantId, $group['members'], $asOf, $products))->load($this->availability);
-            $bench = $engine->benchmark($data);
-            $benchmarks += $this->saveBenchmarks($tenantId, $group, $bench, $asOf, $data->windowDays);
+            // The group is read one chunk of SKUs at a time, twice: first to build
+            // the benchmark (and each store's own share index), then to judge.
+            $catRev = GroupData::categoryRevenue($tenantId, $group['members'], $asOf);
+            $chunks = array_chunk(GroupData::groupSkus($tenantId, $group['members']), max(1, (int) config('assortment.chunk_skus', 400)));
+            $load   = fn (array $skus) => (new GroupData($tenantId, $group['members'], $asOf, $products, $catRev, $skus))->load($this->availability);
 
-            $result = $engine->evaluate($data, $targets, $bench, $group);
-            foreach ($result['counts'] as $k => $n) {
-                $counts[$k] += $n;
+            $bench = $shares = $carried = [];
+            foreach ($chunks as $skus) {
+                $data = $load($skus);
+                $bench += $engine->benchmark($data);
+                foreach ($targets as $storeId) {
+                    foreach ($data->perf[$storeId] ?? [] as $sku => $p) {
+                        $carried[$storeId][$sku] = true;
+                        if ($p['share'] !== null) {
+                            $shares[$storeId][$sku] = $p['share'];
+                        }
+                    }
+                }
+                unset($data);
             }
-            $fresh = array_values(array_filter($result['gaps'], fn ($g) => ! isset($decided["{$g['store_id']}|{$g['sku']}|{$g['type']}"])));
-            $this->saveGaps($tenantId, $fresh, $asOf, $status);
-            foreach ($result['gaps'] as $g) {
-                $found["{$g['store_id']}|{$g['sku']}|{$g['type']}"] = true;
+            $benchmarks += $this->saveBenchmarks($tenantId, $group, $bench, $asOf, GroupData::window());
+
+            $prepared    = $engine->prepare($bench, $shares, $targets);
+            $groupCounts = array_fill_keys(array_keys($counts), 0);
+            $adds        = new TopPerShelf($guards['max_adds_per_category']);
+            $delists     = new TopPerShelf($guards['max_delists_per_category']);
+            $stockouts   = [];
+            // Stockout-hidden decisions are saved chunk by chunk; adds and delists
+            // keep only the most valuable few per store × category.
+            $keep = function (array $gaps) use ($tenantId, $asOf, $status, $decided, &$found) {
+                foreach ($gaps as $g) {
+                    $found["{$g['store_id']}|{$g['sku']}|{$g['type']}"] = true;
+                }
+                $this->saveGaps($tenantId, array_values(array_filter($gaps, fn ($g) => ! isset($decided["{$g['store_id']}|{$g['sku']}|{$g['type']}"]))), $asOf, $status);
+            };
+            foreach ($chunks as $skus) {
+                $now = [];
+                foreach ($engine->evaluateChunk($load($skus), $targets, $bench, $prepared, $group, $groupCounts) as $gap) {
+                    $shelf = $gap['store_id'] . '|' . $engine->categoryOf($gap['sku']);
+                    match ($gap['type']) {
+                        AssortmentGap::TYPE_ADD    => $adds->offer($shelf, $gap),
+                        AssortmentGap::TYPE_DELIST => $delists->offer($shelf, $gap),
+                        default                    => $now[] = $gap,
+                    };
+                }
+                foreach ($now as $gap) {
+                    $cat = (string) $engine->categoryOf($gap['sku']);
+                    $stockouts[$cat] = ($stockouts[$cat] ?? 0) + 1;
+                }
+                $groupCounts[AssortmentGap::TYPE_STOCKOUT_HIDDEN] += count($now);
+                $keep($now);
+                unset($now);
+            }
+            $keep($adds->all());
+            $keep($delists->all());
+            $groupCounts[AssortmentGap::TYPE_ADD]    += count($adds->all());
+            $groupCounts[AssortmentGap::TYPE_DELIST] += count($delists->all());
+            $groupCounts['capped_adds']              += $adds->dropped();
+            $groupCounts['capped_delists']           += $delists->dropped();
+            $result = ['health' => $engine->finalize($targets, $bench, $group, $shares, $carried, $stockouts)];
+            unset($bench, $shares, $carried, $prepared, $adds, $delists);
+            foreach ($groupCounts as $k => $n) {
+                $counts[$k] += $n;
             }
             array_push($health, ...$result['health']);
             $groupsOut[] = ['key' => $key, 'label' => $group['label'], 'basis' => $group['basis'], 'stores' => count($group['members']), 'judged' => count($targets)];
@@ -256,8 +308,8 @@ class AssortmentEngine
                 'type' => $g['type'], 'status' => $status, 'peer_group' => $g['peer_group'],
                 'value_low' => $g['value_low'], 'value_mid' => $g['value_mid'], 'value_high' => $g['value_high'],
                 'confidence' => $g['confidence'], 'confidence_tier' => $g['confidence_tier'],
-                'evidence' => json_encode($g['evidence'], JSON_UNESCAPED_UNICODE),
-                'explanation' => json_encode($g['explanation'], JSON_UNESCAPED_UNICODE),
+                'evidence' => is_string($g['evidence']) ? $g['evidence'] : json_encode($g['evidence'], JSON_UNESCAPED_UNICODE),
+                'explanation' => is_string($g['explanation']) ? $g['explanation'] : json_encode($g['explanation'], JSON_UNESCAPED_UNICODE),
                 'as_of_date' => $asOf, 'first_detected_at' => $now, 'last_detected_at' => $now,
                 'created_at' => $now, 'updated_at' => $now,
             ];

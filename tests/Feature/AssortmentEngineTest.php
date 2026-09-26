@@ -192,4 +192,21 @@ class AssortmentEngineTest extends TestCase
             ->assertDontSee('Greek yogurt')
             ->assertDontSee('Goat kefir');
     }
+
+    public function test_reading_the_group_in_small_chunks_finds_the_same_decisions(): void
+    {
+        $this->seedEstate();
+        app(AssortmentEngine::class)->run($this->tenant);
+        $whole = AssortmentGap::where('tenant_id', $this->tenant->id)->orderBy('store_id')->orderBy('sku')->orderBy('type')
+            ->get(['store_id', 'sku', 'type', 'value_mid'])->map(fn ($g) => [$g->store_id, $g->sku, $g->type, round($g->value_mid)])->all();
+
+        config()->set('assortment.chunk_skus', 3);
+        AssortmentGap::query()->delete();
+        app(AssortmentEngine::class)->run($this->tenant);
+        $chunked = AssortmentGap::where('tenant_id', $this->tenant->id)->orderBy('store_id')->orderBy('sku')->orderBy('type')
+            ->get(['store_id', 'sku', 'type', 'value_mid'])->map(fn ($g) => [$g->store_id, $g->sku, $g->type, round($g->value_mid)])->all();
+
+        $this->assertNotEmpty($whole);
+        $this->assertSame($whole, $chunked);
+    }
 }

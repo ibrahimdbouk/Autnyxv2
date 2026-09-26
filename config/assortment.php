@@ -30,6 +30,9 @@ return [
     // A product is "carried" if it had stock or a sale in the last N days.
     'carried_window_days' => 56,
 
+    // SKUs read per pass through a peer group — bounds memory whatever the range size.
+    'chunk_skus' => 400,
+
     // Window the peer benchmark and the store's own performance are read over.
     'benchmark_window_days' => 90,
 
@@ -59,6 +62,7 @@ return [
     'delist_min_history_days'   => 182,   // no delists before 26 weeks of history
     'delist_min_tier'           => 'likely',
     'max_delists_per_category'  => 3,     // per store per run: a review is a few calls, not a cull
+    'max_adds_per_category'     => 5,     // the most valuable adds per store × category per run
 
     // Stockout-hidden: the right product, but out of stock this often.
     'stockout_max_availability' => 0.70,

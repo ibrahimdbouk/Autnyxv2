@@ -319,10 +319,10 @@ class AssortmentAppTest extends TestCase
         $this->enter();
 
         \Livewire\Livewire::test(AssortmentSetup::class)
-            ->callAction('guardrails', ['delist_min_tier' => 'established', 'carried_window_days' => 90, 'max_delists_per_category' => 2])
+            ->callAction('guardrails', ['delist_min_tier' => 'established', 'carried_window_days' => 90, 'max_delists_per_category' => 2, 'max_adds_per_category' => 10])
             ->assertHasNoActionErrors();
 
-        $this->assertSame(['delist_min_tier' => 'established', 'carried_window_days' => 90, 'max_delists_per_category' => 2],
+        $this->assertSame(['delist_min_tier' => 'established', 'carried_window_days' => 90, 'max_delists_per_category' => 2, 'max_adds_per_category' => 10],
             TenantAssortment::guardrails($this->tenant->fresh()));
     }
 
