@@ -45,6 +45,8 @@ final class ValueModel
         'slow_moving_capital'        => self::CAPITAL,
         'inventory_shrinkage'        => self::CAPITAL,
         'cumulative_shrink'          => self::CAPITAL,
+        'expiry_risk'                => self::CAPITAL,   // W11: stock that will expire unsold, at cost
+        'waste_rate'                 => self::CAPITAL,   // W11: stock written off, at cost
         'multi_location_imbalance'   => self::CAPITAL,
         'receiving_discrepancy'      => self::CAPITAL,
         'order_plan_variance'        => self::CAPITAL,

@@ -50,6 +50,12 @@ class ThresholdTuningService
             ->whereNotNull('a.investigation_id')
             ->selectRaw("a.rule_type, o.was_false_positive, o.outcome_type, COALESCE((a.context->>'revenue_impact')::numeric, 0) AS impact")
             ->get();
+        // W11: one-click answers count too, where no outcome speaks for the anomaly.
+        $rows = $rows->concat(DB::table('anomalies as a')
+            ->where('a.tenant_id', $tenantId)->whereNotNull('a.feedback')
+            ->whereNotExists(fn ($q) => $q->from('investigation_outcomes as o')->whereColumn('o.investigation_id', 'a.investigation_id'))
+            ->selectRaw("a.rule_type, (a.feedback = 'not_real') AS was_false_positive, 'feedback' AS outcome_type, COALESCE((a.context->>'revenue_impact')::numeric, 0) AS impact")
+            ->get());
 
         if ($rows->isEmpty()) return [];
 
@@ -91,7 +97,7 @@ class ThresholdTuningService
 
             if ($key === 'pct') {
                 $suggested = min(self::PCT_CAP, $current + self::PCT_STEP);
-                $reason = "{$fpPct}% of {$sample} recorded outcomes were false positives — widen the tolerance band to cut the noise.";
+                $reason = "{$fpPct}% of {$sample} answers (outcomes and one-click feedback) said 'not real' — widen the tolerance band to cut the noise.";
             } else {
                 if (count($s['fpImpacts']) < self::MIN_FP_IMPACTS) continue;
                 $medFp   = $this->median($s['fpImpacts']);
@@ -103,7 +109,7 @@ class ThresholdTuningService
                 $suggested = $this->niceRound($target);
 
                 $sep = $medFp < $p25Real ? '' : ' (weak value separation — gentle raise only)';
-                $reason = "{$fpPct}% of {$sample} recorded outcomes were false positives; half the false alarms were under "
+                $reason = "{$fpPct}% of {$sample} answers (outcomes and one-click feedback) said 'not real'; half the false alarms were under "
                     . Money::format($medFp, null, 0) . " of estimated impact{$sep}.";
             }
 

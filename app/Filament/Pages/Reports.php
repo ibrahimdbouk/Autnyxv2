@@ -86,6 +86,12 @@ class Reports extends Page
     {
         return [
             [
+                'type'        => 'value',
+                'label'       => 'Value Delivered',
+                'description' => 'For leadership: what was found, what the team did, and what was measured as recovered — revenue and stock value, with claims kept apart and your team\'s accuracy answers. Sent monthly to admins.',
+                'accent'      => '#0d9488',
+            ],
+            [
                 'type'        => 'recovery',
                 'label'       => 'Recovery & Financial',
                 'description' => 'Revenue at risk, observed recovery, recovery rate and net impact — with breakdowns by cause, store and action, plus response times.',

@@ -158,6 +158,22 @@ class ActionCenter extends Page
         ]);
     }
 
+    /** W11: the team's answer on the findings behind an action (its investigation's live anomalies). */
+    public function feedbackOnAction(int $id, string $verdict): void
+    {
+        $action = $this->getVerifiedAction($id);
+        if (! $action || ! in_array($verdict, [\App\Services\Anomaly\AnomalyFeedback::REAL, \App\Services\Anomaly\AnomalyFeedback::NOT_REAL], true)) {
+            return;
+        }
+        $fb = app(\App\Services\Anomaly\AnomalyFeedback::class);
+        $anomalies = \App\Models\Anomaly::where('tenant_id', Filament::getTenant()?->id)
+            ->where('investigation_id', $action->investigation_id)->active()->whereNull('feedback')->get();
+        foreach ($anomalies as $a) {
+            $fb->record($a, $verdict, auth()->user(), \App\Services\Anomaly\AnomalyFeedback::VIA_ACTION_CENTER);
+        }
+        \Filament\Notifications\Notification::make()->title('Thanks — answer saved')->success()->send();
+    }
+
     public function cancelAction(int $id): void
     {
         $action = $this->getVerifiedAction($id);

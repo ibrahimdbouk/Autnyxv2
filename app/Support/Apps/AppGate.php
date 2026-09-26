@@ -31,6 +31,9 @@ final class AppGate
         Pages\WeeklyBriefing::class,
         Pages\FollowUps::class,
         Pages\SupplierPrep::class,
+        Pages\CountLists::class,          // W11
+        Pages\FreshExpiry::class,         // W11
+        Pages\SupplierScorecard::class,   // W11
         Pages\WatchedInvestigations::class,
         Pages\InvestigationsByStore::class,
         Pages\FinancialBreakdown::class,

@@ -90,7 +90,14 @@
             <div class="sku">{{ $anomaly->sku }}</div>
             @endif
           </td>
-          <td class="desc">{{ $anomaly->description }}</td>
+          <td class="desc">{{ $anomaly->description }}
+            @if($real = $feedbackUrl($anomaly, 'real'))
+            <div style="margin-top:6px;font-size:12px;color:#6b7280;">Real problem?
+              <a href="{{ $real }}" style="color:#16a34a;text-decoration:none;font-weight:600;">👍 Yes</a> ·
+              <a href="{{ $feedbackUrl($anomaly, 'not_real') }}" style="color:#dc2626;text-decoration:none;font-weight:600;">👎 No</a>
+            </div>
+            @endif
+          </td>
         </tr>
         @endforeach
       </tbody>

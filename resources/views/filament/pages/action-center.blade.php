@@ -757,6 +757,16 @@ $acDueLabel = static function(?string $due): string {
                 </button>
                 @endif
             </div>
+
+            {{-- W11: was the finding behind this action real? --}}
+            @php $acUnrated = $selectedAct->investigation?->anomalies->filter(fn ($a) => $a->dismissed_at === null && $a->feedback === null && $a->lifecycle_state !== 'resolved')->count() ?? 0; @endphp
+            @if($acUnrated > 0)
+            <div class="ac-detail-actions" style="margin-top:.5rem;align-items:center;">
+                <span style="font-size:.8rem;color:var(--gray-500,#6b7280);">Was the problem real?</span>
+                <button class="ac-btn ac-btn-secondary" wire:click="feedbackOnAction({{ $selectedAct->id }}, 'real')">👍 Real</button>
+                <button class="ac-btn ac-btn-secondary" wire:click="feedbackOnAction({{ $selectedAct->id }}, 'not_real')" wire:confirm="Dismiss the findings as not real? The rule becomes less sensitive for this item.">👎 Not real</button>
+            </div>
+            @endif
         </div>
         @endif
     </div>

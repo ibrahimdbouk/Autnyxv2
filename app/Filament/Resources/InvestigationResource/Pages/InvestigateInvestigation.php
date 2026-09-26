@@ -410,6 +410,32 @@ class InvestigateInvestigation extends Page
                     Notification::make()->title('Outcome recorded')->success()->send();
                 }),
 
+            // W11: one-click feedback on the investigation's live findings.
+            Action::make('feedback')
+                ->label('Is this real?')
+                ->icon('heroicon-o-hand-thumb-up')
+                ->color('gray')
+                ->visible(fn () => $this->record->anomalies()->active()->whereNull('feedback')->exists())
+                ->modalHeading('Is this a real problem?')
+                ->modalDescription('Your answer is how Autnyx measures its accuracy on your data. "Not real" dismisses the findings and makes the rule less sensitive for this item.')
+                ->modalSubmitActionLabel('Save answer')
+                ->form([
+                    \Filament\Forms\Components\Radio::make('verdict')->hiddenLabel()->required()->options([
+                        \App\Services\Anomaly\AnomalyFeedback::REAL     => 'Real — a genuine problem',
+                        \App\Services\Anomaly\AnomalyFeedback::NOT_REAL => 'Not real — the data does not show a real problem',
+                    ]),
+                ])
+                ->action(function (array $data) {
+                    $fb = app(\App\Services\Anomaly\AnomalyFeedback::class);
+                    $n = 0;
+                    foreach ($this->record->anomalies()->active()->whereNull('feedback')->get() as $a) {
+                        $fb->record($a, (string) $data['verdict'], auth()->user());
+                        $n++;
+                    }
+                    $this->record = $this->record->fresh(['anomalies', 'evidence', 'actions.assignedTo', 'actions.assignedTeam', 'auditLogs.user', 'assignedTeam', 'assignedUser', 'outcome']);
+                    Notification::make()->title('Thanks — answer saved on ' . $n . ' finding' . ($n === 1 ? '' : 's'))->success()->send();
+                }),
+
             // WP7.3: the secondary actions sit in one menu so the header fits a
             // phone screen (it overflowed with fourteen buttons).
             \Filament\Actions\ActionGroup::make([

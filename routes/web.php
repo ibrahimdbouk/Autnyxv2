@@ -29,6 +29,12 @@ Route::prefix('sso')->group(function () {
 Route::get('/digest/unsubscribe/{kind}/{id}', \App\Http\Controllers\DigestUnsubscribeController::class)
     ->middleware('signed')->whereIn('kind', ['user', 'tenant'])->whereNumber('id')->name('digest.unsubscribe');
 
+// W11 — "Real / Not real" from the digest: signed per anomaly, answer and recipient.
+Route::get('/feedback/{anomaly}/{verdict}', [\App\Http\Controllers\AnomalyFeedbackLinkController::class, 'show'])
+    ->middleware(['signed', 'throttle:60,1'])->whereNumber('anomaly')->whereIn('verdict', ['real', 'not_real'])->name('feedback.show');
+Route::post('/feedback/{anomaly}/{verdict}', [\App\Http\Controllers\AnomalyFeedbackLinkController::class, 'store'])
+    ->middleware(['signed', 'throttle:60,1'])->whereNumber('anomaly')->whereIn('verdict', ['real', 'not_real'])->name('feedback.store');
+
 // WP7.4 (D12) — Data Readiness and the AI "Data Quality" page are sections of
 // Data Health now; old links and bookmarks land on the right section.
 Route::get('/admin/{tenant}/data-readiness', fn (string $tenant) => redirect('/admin/' . $tenant . '/data-health#readiness', 301))
@@ -73,7 +79,7 @@ Route::middleware(['auth'])->group(function () {
 
     // Reporting page downloads: /reports/{type}/{format}?tenant=&from=&to=
     Route::get('/reports/{type}/{format}', [ReportController::class, 'download'])
-        ->whereIn('type', ['recovery', 'investigations', 'anomalies', 'data-health'])
+        ->whereIn('type', \App\Services\Reporting\ReportDataService::TYPES)
         ->whereIn('format', ['pdf', 'xlsx'])
         ->name('reports.download');
 });

@@ -52,7 +52,9 @@ class ReportsTest extends TestCase
 
         $labels = collect($payload['kpis'])->pluck('value', 'label');
         $this->assertSame('$10,000.00', $labels['Revenue at Risk']);
-        $this->assertSame('$7,500.00', $labels['Observed Recovery']);
+        // W11: a typed-in figure is a claim; only measured recovery is "recovered".
+        $this->assertSame('$0.00', $labels['Recovered (measured)']);
+        $this->assertSame('$7,500.00', $labels['Claimed, not measured']);
 
         // Detail sheet has the outcome row
         $outcomeSheet = collect($payload['detail_sheets'])->firstWhere('name', 'Outcomes');

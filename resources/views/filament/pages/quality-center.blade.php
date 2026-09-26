@@ -140,7 +140,7 @@
                         <div class="qc-muted">No detections yet.</div>
                     @else
                         <table class="qc-tbl">
-                            <thead><tr><th>Rule</th><th>Detections</th><th>Dismissals</th><th>FP rate</th><th>Investigations</th></tr></thead>
+                            <thead><tr><th>Rule</th><th>Detections</th><th>Dismissals</th><th>FP rate</th><th>Investigations</th><th title="Share of the findings your team answered that it marked real">Precision (your answers)</th></tr></thead>
                             <tbody>
                                 @foreach($rp as $rule)
                                     <tr>
@@ -149,6 +149,7 @@
                                         <td>{{ $rule['dismissals'] }}</td>
                                         <td>{{ $rule['fp_rate'] !== null ? $rule['fp_rate'].'%' : '—' }}</td>
                                         <td>{{ $rule['investigations'] }}</td>
+                                        <td>{{ $rule['precision'] !== null ? $rule['precision'].'% of '.$rule['answered'] : '—' }}</td>
                                     </tr>
                                 @endforeach
                             </tbody>

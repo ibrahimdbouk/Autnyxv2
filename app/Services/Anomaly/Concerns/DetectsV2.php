@@ -175,6 +175,9 @@ trait DetectsV2
     private function v2Rules(int $tenantId, \Closure $t): array
     {
         return [
+            // W11: fresh & expiry.
+            'expiry_risk'                => fn () => $this->detectExpiryRisk($tenantId, $t('expiry_risk')),
+            'waste_rate'                 => fn () => $this->detectWasteRate($tenantId, $t('waste_rate')),
             // W10: the tenant's own rules (one switch in Rules settings).
             'custom_rule'                => fn () => $this->detectCustomRules($tenantId, $t('custom_rule')),
             'sales_spike'                => fn () => $this->salesSwingV2($tenantId, 'sales_spike', $t('sales_spike'), false),
@@ -1370,5 +1373,167 @@ trait DetectsV2
         $failed = $this->customFailed;
 
         return fn (Anomaly $a): bool => ! isset($failed[$a->context['custom_key'] ?? '']);
+    }
+
+    // =========================================================================
+    // W11 — FRESH & EXPIRY
+    // =========================================================================
+
+    /**
+     * Stock that will expire before it sells. Per position, the batches on
+     * hand at its current snapshot are sold first-expiry-first-out at the
+     * position's rate of sale over the last 28 days; whatever a batch cannot
+     * sell by its expiry date is at risk. Only positions with a batch
+     * expiring within the horizon are judged; stock already past its date is
+     * all at risk.
+     */
+    private function detectExpiryRisk(int $tenantId, array $thresholds): void
+    {
+        $horizon  = max(1, (int) ($thresholds['horizon_days'] ?? 14));
+        $minValue = (float) ($thresholds['min_value'] ?? 100);
+        $asOf     = $this->clock('inventory');
+        $sw       = Window::trailing($this->clock('sales'), 28);
+
+        $rows = DB::cursor(
+            "WITH pos AS (
+                SELECT c.store_id, c.sku, c.as_of_date, c.product_id, c.unit_cost
+                  FROM inventory_current c
+                 WHERE c.tenant_id = ? AND c.as_of_date >= ? AND c.on_hand_qty > 0
+                   AND c.earliest_expiry IS NOT NULL AND c.earliest_expiry <= ?::date
+             )
+             SELECT p.store_id, p.sku, p.product_id, p.unit_cost, p.as_of_date::text AS as_of,
+                    l.expiry_date::text AS expiry, SUM(l.on_hand_qty) AS qty,
+                    (SELECT COALESCE(SUM(s.units_sold), 0) FROM sales_daily s
+                      WHERE s.tenant_id = ? AND s.sku = p.sku AND s.store_id IS NOT DISTINCT FROM p.store_id
+                        AND s.date >= ? AND s.date < ?) AS sold28
+               FROM pos p
+               JOIN inventory_levels l ON l.tenant_id = ? AND l.sku = p.sku
+                AND l.store_id IS NOT DISTINCT FROM p.store_id AND l.as_of_date = p.as_of_date
+              WHERE l.expiry_date IS NOT NULL AND l.on_hand_qty > 0
+              GROUP BY p.store_id, p.sku, p.product_id, p.unit_cost, p.as_of_date, l.expiry_date
+              ORDER BY p.store_id, p.sku, l.expiry_date",
+            [$tenantId, $this->inventoryFreshFrom(), $asOf->copy()->addDays($horizon)->toDateString(),
+             $tenantId, $sw->fromDate(), $sw->untilDate(), $tenantId]
+        );
+
+        $stores = Store::where('tenant_id', $tenantId)->pluck('name', 'id');
+        $flush = function (?array $p) use ($tenantId, $minValue, $stores) {
+            if ($p === null) {
+                return;
+            }
+            $rate = (float) $p['sold28'] / 28;
+            $sold = 0.0;
+            $atRisk = 0.0;
+            $firstRisk = null;
+            foreach ($p['batches'] as [$expiry, $qty, $days]) {
+                $capacity = max(0.0, $rate * max(0, $days) - $sold);
+                $sell = min($qty, $capacity);
+                $sold += $sell;
+                if ($qty - $sell > 0.0001) {
+                    $atRisk += $qty - $sell;
+                    $firstRisk ??= [$expiry, $days];
+                }
+            }
+            if ($atRisk < 1 || $firstRisk === null) {
+                return;
+            }
+            $cost = (float) ($p['unit_cost'] ?: $this->unitCost($p['sku']));
+            $value = round($atRisk * $cost, 2);
+            if ($cost > 0 && $value < $minValue) {
+                return;
+            }
+            [$expiry, $days] = $firstRisk;
+            $severity = $days <= 3 && $value >= 5 * $minValue ? 'high' : ($value >= 2.5 * $minValue || $cost <= 0 ? 'medium' : 'low');
+            $where = $p['store_id'] ? ($stores[$p['store_id']] ?? "store #{$p['store_id']}") : 'all stores';
+            $this->flag($tenantId, 'expiry_risk', $severity, $p['sku'], $p['store_id'], $p['product_id'],
+                "SKU {$p['sku']} at {$where}: about " . round($atRisk) . ' unit(s) will not sell before they expire'
+                . ($days < 0 ? ' (already past their date on ' . $expiry . ')' : " (first on {$expiry})")
+                . ' at the current ' . round($rate, 1) . ' a day' . ($value > 0 ? ' — ' . $this->money($value) . ' at cost' : '')
+                . '. Mark down, move to a faster store, or hold the next order.',
+                ['units_at_risk' => round($atRisk, 2), 'first_expiry' => $expiry, 'days_to_expiry' => $days,
+                 'daily_rate' => round($rate, 3), 'unit_cost' => $cost, 'inventory_value' => $value]
+            );
+        };
+
+        $cur = null;
+        foreach ($rows as $r) {
+            $key = ($r->store_id ?? '') . '|' . $r->sku;
+            if ($cur === null || $cur['key'] !== $key) {
+                $flush($cur);
+                $cur = ['key' => $key, 'store_id' => $r->store_id !== null ? (int) $r->store_id : null, 'sku' => (string) $r->sku,
+                    'product_id' => $r->product_id, 'unit_cost' => $r->unit_cost, 'sold28' => (float) $r->sold28, 'batches' => []];
+            }
+            $days = (int) Carbon::parse($r->as_of)->diffInDays(Carbon::parse($r->expiry), false);
+            $cur['batches'][] = [$r->expiry, (float) $r->qty, $days];
+        }
+        $flush($cur);
+    }
+
+    /**
+     * A store wasting a large and rising share of an item: waste ÷ (sold +
+     * waste) over the window, at least `pct`, worth at least `min_value` at
+     * cost, and at least 1.5× its own rate over the eight weeks before (or
+     * twice `pct` when there is no earlier waste to compare with).
+     */
+    private function detectWasteRate(int $tenantId, array $thresholds): void
+    {
+        $days     = max(7, (int) ($thresholds['days'] ?? 28));
+        $pct      = (float) ($thresholds['pct'] ?? 10);
+        $minValue = (float) ($thresholds['min_value'] ?? 200);
+        $last = DB::table('waste_events')->where('tenant_id', $tenantId)->max('date');
+        if (! $last) {
+            return; // no waste feed
+        }
+        $clock = Carbon::parse($last)->startOfDay();
+        $today = Carbon::today();
+        $clock = $clock->gt($today) ? $today : $clock;
+        $w     = Window::trailing($clock, $days);
+        $prior = Window::trailing(Carbon::parse($w->fromDate())->subDay(), 56);
+
+        $rows = DB::select(
+            "WITH w AS (
+                SELECT e.store_id, e.sku,
+                       SUM(e.quantity) FILTER (WHERE e.date >= ? AND e.date < ?) AS wq,
+                       SUM(COALESCE(e.value, e.quantity * COALESCE(p.unit_cost, 0))) FILTER (WHERE e.date >= ? AND e.date < ?) AS wv,
+                       SUM(e.quantity) FILTER (WHERE e.date >= ? AND e.date < ?) AS pq,
+                       MAX(p.id) AS product_id
+                  FROM waste_events e LEFT JOIN products p ON p.tenant_id = e.tenant_id AND p.sku = e.sku
+                 WHERE e.tenant_id = ? AND e.date >= ? AND e.date < ?
+                 GROUP BY e.store_id, e.sku
+             )
+             SELECT w.*,
+                    (SELECT COALESCE(SUM(s.units_sold), 0) FROM sales_daily s WHERE s.tenant_id = ? AND s.sku = w.sku
+                        AND s.store_id IS NOT DISTINCT FROM w.store_id AND s.date >= ? AND s.date < ?) AS sold,
+                    (SELECT COALESCE(SUM(s.units_sold), 0) FROM sales_daily s WHERE s.tenant_id = ? AND s.sku = w.sku
+                        AND s.store_id IS NOT DISTINCT FROM w.store_id AND s.date >= ? AND s.date < ?) AS psold
+               FROM w WHERE w.wv >= ?",
+            [$w->fromDate(), $w->untilDate(), $w->fromDate(), $w->untilDate(), $prior->fromDate(), $prior->untilDate(),
+             $tenantId, $prior->fromDate(), $w->untilDate(),
+             $tenantId, $w->fromDate(), $w->untilDate(), $tenantId, $prior->fromDate(), $prior->untilDate(), $minValue]
+        );
+
+        $stores = Store::where('tenant_id', $tenantId)->pluck('name', 'id');
+        foreach ($rows as $r) {
+            $wq = (float) $r->wq;
+            $rate = $wq + (float) $r->sold > 0 ? 100 * $wq / ($wq + (float) $r->sold) : 0.0;
+            if ($rate < $pct) {
+                continue;
+            }
+            $pq = (float) ($r->pq ?? 0);
+            $priorRate = $pq + (float) $r->psold > 0 ? 100 * $pq / ($pq + (float) $r->psold) : null;
+            if ($priorRate !== null && $priorRate > 0 ? $rate < 1.5 * $priorRate : $rate < 2 * $pct) {
+                continue; // wasting a lot, but no more than it always has — not new
+            }
+            $value = round((float) $r->wv, 2);
+            $where = $r->store_id ? ($stores[$r->store_id] ?? "store #{$r->store_id}") : 'all stores';
+            $severity = $value >= 5 * $minValue || $rate >= 3 * $pct ? 'high' : 'medium';
+            $this->flag($tenantId, 'waste_rate', $severity, (string) $r->sku, $r->store_id !== null ? (int) $r->store_id : null, $r->product_id,
+                "SKU {$r->sku} at {$where}: " . round($wq) . ' unit(s) wasted in the ' . $w->days() . ' days to ' . $w->lastDate()
+                . ' — ' . round($rate, 1) . '% of what went out' . ($priorRate !== null ? ' (was ' . round($priorRate, 1) . '%)' : '')
+                . ', ' . $this->money($value) . ' at cost. Check ordering, rotation and shelf life.',
+                ['waste_units' => $wq, 'waste_pct' => round($rate, 1), 'prior_waste_pct' => $priorRate !== null ? round($priorRate, 1) : null,
+                 'sold_units' => (float) $r->sold, 'value_impact' => $value, 'window_days' => $w->days()]
+            );
+        }
     }
 }

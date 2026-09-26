@@ -215,6 +215,9 @@ class QualityMetricsService
             ->selectRaw('COUNT(*) FILTER (WHERE dismissed_at IS NOT NULL) AS dismissals')
             ->selectRaw('COUNT(*) FILTER (WHERE is_false_positive) AS fp')
             ->selectRaw('COUNT(DISTINCT investigation_id) FILTER (WHERE investigation_id IS NOT NULL) AS investigations')
+            // W11: the team's one-click answers.
+            ->selectRaw("COUNT(*) FILTER (WHERE feedback = 'real') AS fb_real")
+            ->selectRaw("COUNT(*) FILTER (WHERE feedback = 'not_real') AS fb_not_real")
             ->get();
 
         $out = [];
@@ -228,6 +231,10 @@ class QualityMetricsService
                 'false_positives'=> (int) $r->fp,
                 'fp_rate'        => $this->pct((int) $r->fp, (int) $r->detections),
                 'investigations' => (int) $r->investigations,
+                'confirmed_real' => (int) $r->fb_real,
+                'answered'       => (int) $r->fb_real + (int) $r->fb_not_real,
+                // Precision on the tenant's own data: real ÷ answered.
+                'precision'      => $this->pct((int) $r->fb_real, (int) $r->fb_real + (int) $r->fb_not_real),
             ];
         }
         usort($out, fn ($a, $b) => $b['detections'] <=> $a['detections']);

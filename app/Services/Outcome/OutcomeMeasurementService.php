@@ -324,6 +324,9 @@ class OutcomeMeasurementService
         // W10: revenue recovery measured against the counterfactual (capital released is not revenue).
         if ($type === ValueModel::LOST_REVENUE) {
             $payload['measured_recovery'] = $recovered ? $metrics['recovered'] : 0;
+        } else {
+            // W11: stock value released, measured — reported beside recovery, never added to it.
+            $payload['measured_capital'] = $recovered ? (float) ($metrics['capital_released'] ?? 0) : 0;
         }
         $existing = $investigation->outcome()->first();
         if ($type === ValueModel::LOST_REVENUE && $recovered && (! $existing || $existing->observed_recovery === null

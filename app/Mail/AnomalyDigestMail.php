@@ -25,6 +25,7 @@ class AnomalyDigestMail extends Mailable
         public readonly Collection $anomalies,
         public readonly ?int $totalCount = null,
         public readonly ?string $unsubscribeUrl = null,
+        public readonly ?string $recipient = null,   // W11: "user:<id>" | "tenant:<id>", signs the feedback links
     ) {
         $this->highCount   = $anomalies->where('severity', 'high')->count();
         $this->mediumCount = $anomalies->where('severity', 'medium')->count();
@@ -50,7 +51,13 @@ class AnomalyDigestMail extends Mailable
             // WP1.4 (audit H34): Mailables only pass public PROPERTIES to the
             // view, so the template's $ruleLabel(...) was undefined and every
             // send threw. Hand it over explicitly as a closure.
-            with: ['ruleLabel' => fn (string $ruleType): string => $this->ruleLabel($ruleType)],
+            with: [
+                'ruleLabel'   => fn (string $ruleType): string => $this->ruleLabel($ruleType),
+                // W11: one-click feedback per finding (signed for this recipient, 14 days).
+                'feedbackUrl' => fn ($anomaly, string $verdict): ?string => $this->recipient === null ? null
+                    : \Illuminate\Support\Facades\URL::temporarySignedRoute('feedback.show', now()->addDays(14),
+                        ['anomaly' => $anomaly->id, 'verdict' => $verdict, 'r' => $this->recipient]),
+            ],
         );
     }
 

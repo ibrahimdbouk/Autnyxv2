@@ -325,6 +325,9 @@ class CrossTenantMatrixTest extends TestCase
     {
         $foreign = $this->actionFor($this->a, 'Tenant A confidential action');
         $before = $foreign->fresh()->only(['status', 'completion_notes', 'assigned_to', 'assigned_team_id', 'priority']);
+        // W11: the finding behind it must not take tenant B's feedback either.
+        $foreignAnomaly = \App\Models\Anomaly::create(['tenant_id' => $this->a->id, 'investigation_id' => $foreign->investigation_id,
+            'rule_type' => 'stockout_risk', 'severity' => 'high', 'sku' => 'XA', 'description' => 'x', 'detected_at' => now()]);
 
         $this->actingAs($this->adminB);
         $this->inPanel($this->b);
@@ -334,6 +337,7 @@ class CrossTenantMatrixTest extends TestCase
             ->call('markInProgress', $foreign->id)
             ->call('markAcknowledged', $foreign->id)
             ->call('cancelAction', $foreign->id)
+            ->call('feedbackOnAction', $foreign->id, 'not_real')
             ->call('openCompleteModal', $foreign->id)
             ->set('completionNotes', 'hijacked')
             ->call('confirmComplete')
@@ -353,6 +357,8 @@ class CrossTenantMatrixTest extends TestCase
             ->call('bulkEscalateActions');
 
         $this->assertSame($before, $foreign->fresh()->only(array_keys($before)));
+        $this->assertNull($foreignAnomaly->fresh()->feedback);
+        $this->assertNull($foreignAnomaly->fresh()->dismissed_at);
     }
 
     public function test_investigation_list_methods_ignore_another_tenants_investigation(): void

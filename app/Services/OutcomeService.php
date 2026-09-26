@@ -50,6 +50,11 @@ class OutcomeService
                 $investigation->update(['observed_recovery' => $data['observed_recovery']]);
             }
 
+            // W11: a resolved outcome starts the measurement even when nobody
+            // logged the fix as an action — the fix is recorded here, dated
+            // when the person says recovery began (else now).
+            $this->ensureMeasurableFix($investigation, $outcome);
+
             // If marked as false positive, send FP feedback to the detection engine
             if (! empty($data['was_false_positive']) && ! $outcome->rule_feedback_sent) {
                 $this->sendFalsePositiveFeedback($investigation, $outcome);
@@ -104,6 +109,34 @@ class OutcomeService
             'recovery_rate'  => $atRisk > 0 ? round(($recovered / $atRisk) * 100, 1) : null,
             'fp_count'       => (int) ($row->fp_count ?? 0),
         ];
+    }
+
+    /**
+     * W11: measurement starts from a completed action. When an investigation
+     * is resolved with an outcome and no action was ever completed on it, the
+     * fix itself becomes that action ("fix recorded with the outcome").
+     */
+    public function ensureMeasurableFix(Investigation $investigation, InvestigationOutcome $outcome, ?\DateTimeInterface $at = null): ?\App\Models\Action
+    {
+        if ($outcome->outcome_type !== InvestigationOutcome::TYPE_RESOLVED || $outcome->was_false_positive) {
+            return null;
+        }
+        if ($investigation->actions()->where('status', \App\Models\Action::STATUS_COMPLETED)->exists()) {
+            return null;
+        }
+        $when = $at ?? $outcome->recovery_measured_from ?? now();
+
+        return \App\Models\Action::create([
+            'investigation_id' => $investigation->id,
+            'action_type'      => \App\Models\Action::TYPE_FIX_RECORDED,
+            'title'            => 'Fix recorded with the outcome',
+            'description'      => 'Created when the outcome was recorded, so the result can be measured from this date.'
+                . ($outcome->recovery_notes ? ' Notes: ' . $outcome->recovery_notes : ''),
+            'status'           => \App\Models\Action::STATUS_COMPLETED,
+            'priority'         => \App\Models\Action::PRIORITY_MEDIUM,
+            'created_by'       => $outcome->recorded_by,
+            'completed_at'     => $when,
+        ]);
     }
 
     /**

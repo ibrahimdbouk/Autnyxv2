@@ -51,6 +51,11 @@ class AnomalyDismissal
             'dismiss_reason'    => $reason,
             'is_false_positive' => $falsePositive,
         ]);
+        if ($falsePositive && $anomaly->feedback !== AnomalyFeedback::NOT_REAL) {
+            // W11: a false-positive dismissal is the team saying "not real" — one record of it.
+            $anomaly->forceFill(['feedback' => AnomalyFeedback::NOT_REAL, 'feedback_at' => now(), 'feedback_by' => $by?->id,
+                'feedback_via' => $anomaly->feedback_via ?? AnomalyFeedback::VIA_APP])->save();
+        }
 
         AuditLog::create([
             'tenant_id'   => $anomaly->tenant_id,

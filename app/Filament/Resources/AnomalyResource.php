@@ -71,6 +71,12 @@ class AnomalyResource extends Resource
 
         return $table
             ->columns([
+                TextColumn::make('feedback')
+                    ->label('Team says')
+                    ->badge()
+                    ->formatStateUsing(fn (?string $state) => match ($state) { 'real' => 'Real', 'not_real' => 'Not real', default => '' })
+                    ->color(fn (?string $state) => $state === 'real' ? 'success' : 'danger')
+                    ->toggleable(),
                 TextColumn::make('severity')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
@@ -184,6 +190,26 @@ class AnomalyResource extends Resource
                     ->color('primary')
                     ->url(fn (Anomaly $record): string => static::getUrl('investigate', ['record' => $record->getKey()]))
                     ->visible(fn (Anomaly $record) => !$record->isDismissed()),
+
+                // W11: one-click feedback — the team's answers are the precision on real data.
+                Action::make('feedback_real')
+                    ->label('Real')
+                    ->tooltip('This is a genuine problem')
+                    ->icon('heroicon-o-hand-thumb-up')
+                    ->color('success')
+                    ->visible(fn (Anomaly $record) => ! $record->isDismissed() && $record->feedback === null)
+                    ->action(fn (Anomaly $record) => app(\App\Services\Anomaly\AnomalyFeedback::class)
+                        ->record($record, \App\Services\Anomaly\AnomalyFeedback::REAL, auth()->user())),
+                Action::make('feedback_not_real')
+                    ->label('Not real')
+                    ->tooltip('The data does not show a real problem — dismisses it and teaches the detector')
+                    ->icon('heroicon-o-hand-thumb-down')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalDescription('It is dismissed as a false positive, and this rule becomes less sensitive for this item.')
+                    ->visible(fn (Anomaly $record) => ! $record->isDismissed() && $record->feedback === null)
+                    ->action(fn (Anomaly $record) => app(\App\Services\Anomaly\AnomalyFeedback::class)
+                        ->record($record, \App\Services\Anomaly\AnomalyFeedback::NOT_REAL, auth()->user())),
 
                 Action::make('dismiss')
                     ->label('Dismiss')

@@ -76,6 +76,7 @@ class InvestigationOutcome extends Model
         'revenue_at_risk',
         'observed_recovery',
         'measured_recovery', // W10: only the measurement writes this
+        'measured_capital',  // W11: stock value released, as measured (never added to recovery)
         'cost_to_resolve',
         'recovery_method',
         'recovery_measured_from',
@@ -106,6 +107,7 @@ class InvestigationOutcome extends Model
         'revenue_at_risk'        => 'decimal:2',
         'observed_recovery'      => 'decimal:2',
         'measured_recovery'      => 'decimal:2',
+        'measured_capital'       => 'decimal:2',
         'cost_to_resolve'        => 'decimal:2',
         'was_false_positive'     => 'boolean',
         'rule_feedback_sent'     => 'boolean',

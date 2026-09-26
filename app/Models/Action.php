@@ -17,6 +17,8 @@ class Action extends Model
     const TYPE_MONITOR             = 'monitor';
     const TYPE_INVESTIGATE_FURTHER = 'investigate_further';
     const TYPE_OTHER               = 'other';
+    const TYPE_CYCLE_COUNT         = 'cycle_count';    // W11: a count corrected the stock figure
+    const TYPE_FIX_RECORDED        = 'fix_recorded';   // W11: the fix was recorded with the outcome
 
     // ── Status machine ────────────────────────────────────────────────────────
     const STATUS_UNASSIGNED   = 'unassigned';
@@ -52,6 +54,8 @@ class Action extends Model
         self::TYPE_MONITOR             => 'Monitor',
         self::TYPE_INVESTIGATE_FURTHER => 'Investigation',
         self::TYPE_OTHER               => 'Other',
+        self::TYPE_CYCLE_COUNT         => 'Cycle Count',
+        self::TYPE_FIX_RECORDED        => 'Fix (recorded with the outcome)',
     ];
 
     const STATUS_LABELS = [

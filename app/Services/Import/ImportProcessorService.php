@@ -236,6 +236,7 @@ class ImportProcessorService
             Import::TYPE_RETURNS         => \App\Models\SalesReturn::class,
             Import::TYPE_PURCHASE_ORDERS => \App\Models\PurchaseOrder::class,
             Import::TYPE_PROMOTIONS      => \App\Models\Promotion::class,
+            Import::TYPE_WASTE           => \App\Models\WasteEvent::class,
             default                      => null,
         };
 
@@ -1042,6 +1043,7 @@ class ImportProcessorService
             Import::TYPE_USERS           => $this->writeUser($import, $data, $rowNumber),
             Import::TYPE_RETURNS         => $this->writeReturn($import, $data, $rowNumber),
             Import::TYPE_PROMOTIONS      => $this->writePromotion($import, $data, $rowNumber),
+            Import::TYPE_WASTE           => $this->writeWaste($import, $data, $rowNumber),
             default                      => throw new \InvalidArgumentException("Unknown data type: {$import->data_type}"),
         };
     }
@@ -1057,6 +1059,7 @@ class ImportProcessorService
         'inventory_levels' => ['tenant_id', 'store_id', 'sku', 'as_of_date', 'batch_ref'],
         'purchase_orders'  => ['tenant_id', 'po_number', 'sku', 'store_id'],
         'promotions'       => ['tenant_id', 'promotion_ref', 'sku', 'store_id'],   // W10: a re-sent calendar updates
+        'waste_events'     => ['tenant_id', 'date', 'sku', 'store_id', 'reason', 'waste_ref'],   // W11
     ];
     private const NATURAL_KEY_INDEXES = [
         'sales_transactions' => 'sales_tx_receipt_line_unique',
@@ -1064,6 +1067,7 @@ class ImportProcessorService
         'inventory_levels'   => 'inventory_levels_natural_key',
         'purchase_orders'    => 'purchase_orders_natural_key',
         'promotions'         => 'promotions_natural_key',
+        'waste_events'       => 'waste_events_natural_key',
     ];
 
     /** @var array<string,bool> */
@@ -1152,6 +1156,8 @@ class ImportProcessorService
     /** WP3.5: quantities that add up across the parts of one inventory position. */
     private const ADDITIVE = [
         'inventory_levels' => ['on_hand_qty', 'on_order_qty', 'inventory_value', 'allocated_qty', 'in_transit_qty'],
+        // W11: lines of one file that share a key (same SKU, store, day, reason) add up.
+        'waste_events'     => ['quantity', 'value'],
     ];
 
     private function mergePosition(array $a, array $b, array $additive): array
@@ -1182,6 +1188,7 @@ class ImportProcessorService
             Import::TYPE_PURCHASE_ORDERS => 'purchase_orders',
             Import::TYPE_RETURNS         => 'sales_returns',
             Import::TYPE_PROMOTIONS      => 'promotions',
+            Import::TYPE_WASTE           => 'waste_events',
             default                      => null,
         };
     }
@@ -1223,6 +1230,11 @@ class ImportProcessorService
                 // WP3.4
                 'channel' => null, 'condition' => null, 'original_transaction_ref' => null,
             ],
+            'waste_events' => [
+                'tenant_id' => null, 'import_id' => null, 'store_id' => null, 'product_id' => null,
+                'date' => null, 'sku' => null, 'location' => null, 'quantity' => null, 'value' => null,
+                'reason' => null, 'waste_ref' => null,
+            ],
             'promotions' => [
                 'tenant_id' => null, 'import_id' => null, 'store_id' => null, 'product_id' => null,
                 'promotion_ref' => null, 'name' => null, 'sku' => null, 'location' => null,
@@ -1246,6 +1258,7 @@ class ImportProcessorService
             Import::TYPE_PURCHASE_ORDERS => $this->buildPurchaseOrderAttrs($import, $data, $row),
             Import::TYPE_RETURNS         => $this->buildReturnAttrs($import, $data, $row),
             Import::TYPE_PROMOTIONS      => $this->buildPromotionAttrs($import, $data, $row),
+            Import::TYPE_WASTE           => $this->buildWasteAttrs($import, $data, $row),
             default                      => throw new \InvalidArgumentException("Not a batch-insert type: {$import->data_type}"),
         };
     }
@@ -1596,6 +1609,44 @@ class ImportProcessorService
         $now = now();
         $attrs = array_merge($this->insertTemplate('sales_returns'), $this->buildReturnAttrs($import, $data, $row), ['created_at' => $now, 'updated_at' => $now]);
         $this->lastWriteWasDuplicate = $this->writeBatch('sales_returns', [$attrs]) > 0;
+    }
+
+    /** W11: a waste / write-off line (natural key: day, SKU, store, reason, document). */
+    private function writeWaste(Import $import, array $data, int $row): void
+    {
+        $now = now();
+        $attrs = array_merge($this->insertTemplate('waste_events'), $this->buildWasteAttrs($import, $data, $row), ['created_at' => $now, 'updated_at' => $now]);
+        $this->lastWriteWasDuplicate = $this->writeBatch('waste_events', [$attrs]) > 0;
+    }
+
+    private function buildWasteAttrs(Import $import, array $data, int $row): array
+    {
+        $this->requireFields($data, ['date', 'sku', 'quantity'], $row);
+        $location = $data['location'] ?? null;
+        // A write-off is often exported as a negative stock adjustment: the size is what counts.
+        $qty = abs((float) $this->numeric($data['quantity'], 'quantity', $row));
+        $value = $this->optNumber($data, 'value');
+        $reason = $this->optText($data, 'reason');
+
+        $attrs = [
+            'tenant_id' => $import->tenant_id,
+            'import_id' => $import->id,
+            'date'      => $this->parseDate($data['date'], $row),
+            'sku'       => $this->str($data['sku'], 'sku', $row),
+            'location'  => $location,
+            'quantity'  => $qty,
+            'value'     => $value !== null ? abs($value) : null,
+            'reason'    => $reason !== null ? mb_strtolower(mb_substr($reason, 0, 60)) : null,
+            'waste_ref' => ($ref = $this->optText($data, 'waste_ref')) !== null ? mb_substr($ref, 0, 100) : null,
+        ];
+        if ($location) {
+            $attrs['store_id'] = $this->resolveStore($import->tenant_id, $location);
+        }
+        if ($productId = $this->resolveProductId($import->tenant_id, $attrs['sku'])) {
+            $attrs['product_id'] = $productId;
+        }
+
+        return $attrs;
     }
 
     /** W10: a promotion-calendar row (natural key: promotion, SKU, store). */

@@ -27,9 +27,10 @@ use Illuminate\Support\Facades\DB;
  */
 class ReportDataService
 {
-    public const TYPES = ['recovery', 'investigations', 'anomalies', 'data-health'];
+    public const TYPES = ['value', 'recovery', 'investigations', 'anomalies', 'data-health'];
 
     public const TYPE_LABELS = [
+        'value'          => 'Value Delivered',
         'recovery'       => 'Recovery & Financial',
         'investigations' => 'Investigations',
         'anomalies'      => 'Anomalies & Detection',
@@ -107,8 +108,81 @@ class ReportDataService
             'investigations' => $this->investigations($tenantId, $from, $to),
             'anomalies'      => $this->anomalies($tenantId, $from, $to),
             'data-health'    => $this->dataHealth($tenantId, $from, $to),
+            'value'          => $this->value($tenantId, $from, $to),
             default          => $this->recovery($tenantId, $from, $to),
         });
+    }
+
+    // ── Value delivered (W11) ───────────────────────────────────────────────
+
+    private function value(int $tenantId, Carbon $from, Carbon $to): array
+    {
+        $v = app(ValueReportService::class)->build($tenantId, $from, $to);
+        [$f, $a, $m, $c, $q] = [$v['found'], $v['acted'], $v['measured'], $v['counts'], $v['accuracy']];
+
+        return [
+            'note' => 'Recovered = measured: sales after the fix against what the rest of the business did over the same days. '
+                . 'Stock value released is shown beside it, never added. Figures typed in by hand appear as claims until measured.',
+            'kpis' => [
+                ['label' => 'Revenue recovered (measured)', 'value' => $this->money($m['revenue'])],
+                ['label' => 'Stock value released (measured)', 'value' => $this->money($m['capital'])],
+                ['label' => 'Lost revenue identified', 'value' => $this->money($f['lost_revenue'])],
+                ['label' => 'Actions completed', 'value' => number_format($a['actions_completed'])],
+                ['label' => 'Results still being measured', 'value' => number_format($m['monitoring'])],
+                ['label' => 'Accuracy (your answers)', 'value' => $q['precision'] !== null ? $q['precision'] . '% of ' . $q['answered'] : '—'],
+            ],
+            'summary_sections' => [
+                [
+                    'heading' => 'Found',
+                    'columns' => ['', ''],
+                    'rows'    => [
+                        ['Investigations opened', number_format($f['investigations'])],
+                        ['Lost revenue identified', $this->money($f['lost_revenue'])],
+                        ['Capital at cost identified', $this->money($f['capital'])],
+                        ['Findings raised', number_format($f['anomalies'])],
+                    ],
+                ],
+                [
+                    'heading' => 'Acted',
+                    'columns' => ['', ''],
+                    'rows'    => [
+                        ['Actions completed', number_format($a['actions_completed'])],
+                        ['Investigations resolved', number_format($a['investigations_resolved'])],
+                        ['Median time to first action', $a['median_hours_to_action'] !== null ? $a['median_hours_to_action'] . ' h' : '—'],
+                        ['Cycle counts done / stock figures corrected', $c['counted'] . ' / ' . $c['corrected'] . ' (' . $this->money($c['variance_value']) . ' of stock value)'],
+                    ],
+                ],
+                [
+                    'heading' => 'Measured',
+                    'columns' => ['', ''],
+                    'rows'    => [
+                        ['Revenue recovered (measured)', $this->money($m['revenue']) . ' on ' . $m['revenue_count'] . ' investigation(s)'],
+                        ['Stock value released (measured)', $this->money($m['capital']) . ' on ' . $m['capital_count'] . ' investigation(s)'],
+                        ['No material change after the fix', number_format($m['no_change'])],
+                        ['Still being measured (day 3 / 7 / 14)', number_format($m['monitoring'])],
+                        ['Claimed, not measured', $this->money($m['claimed']) . ' on ' . $m['claimed_count'] . ' investigation(s)'],
+                    ],
+                ],
+                [
+                    'heading' => 'Top results',
+                    'columns' => ['Investigation', 'Store / SKU', 'Action', 'Recovered', 'Released'],
+                    'rows'    => array_map(fn ($w) => ['#' . $w['investigation_id'] . ' ' . mb_substr($w['title'], 0, 40), trim($w['store'] . ' ' . $w['sku']),
+                        $w['action'], $this->money($w['revenue']), $this->money($w['capital'])], $v['wins']) ?: [['—', '', '', '', '']],
+                ],
+            ],
+            'detail_sheets' => [
+                [
+                    'name'    => 'Top results',
+                    'columns' => ['Investigation', 'Title', 'Store', 'SKU', 'Action', 'Revenue recovered', 'Stock value released', 'State'],
+                    'rows'    => array_map(fn ($w) => [$w['investigation_id'], $w['title'], $w['store'], $w['sku'], $w['action'], $w['revenue'], $w['capital'], $w['state']], $v['wins']),
+                ],
+                [
+                    'name'    => 'Accuracy by rule',
+                    'columns' => ['Rule', 'Answered', 'Real', 'Not real', 'Precision %'],
+                    'rows'    => collect($q['by_rule'])->map(fn ($r, $rule) => [AnomalySetting::RULES[$rule]['label'] ?? $rule, $r['real'] + $r['not_real'], $r['real'], $r['not_real'], $r['precision']])->values()->all(),
+                ],
+            ],
+        ];
     }
 
     // ── Recovery & Financial ────────────────────────────────────────────────
@@ -121,7 +195,9 @@ class ReportDataService
             ->get();
 
         $atRisk    = round($outcomes->sum(fn ($o) => (float) $o->revenue_at_risk), 2);
-        $recovered = round($outcomes->sum(fn ($o) => (float) $o->observed_recovery), 2);
+        // W10/W11: recovered = measured; typed-in figures are claims, shown apart.
+        $recovered = round($outcomes->sum(fn ($o) => (float) $o->measured_recovery), 2);
+        $claimed   = round($outcomes->filter(fn ($o) => $o->isClaimOnly())->sum(fn ($o) => (float) $o->observed_recovery), 2);
         $cost      = round($outcomes->sum(fn ($o) => (float) $o->cost_to_resolve), 2);
         $net       = round($recovered - $cost, 2);
         $rate      = $atRisk > 0 ? round(($recovered / $atRisk) * 100, 1) : null;
@@ -149,7 +225,8 @@ class ReportDataService
         return [
             'kpis' => [
                 ['label' => 'Revenue at Risk',     'value' => $this->money($atRisk)],
-                ['label' => 'Observed Recovery',   'value' => $this->money($recovered)],
+                ['label' => 'Recovered (measured)', 'value' => $this->money($recovered)],
+                ['label' => 'Claimed, not measured', 'value' => $this->money($claimed)],
                 ['label' => 'Recovery Rate',       'value' => $rate !== null ? $rate . '%' : '—'],
                 ['label' => 'Net Impact',          'value' => $this->money($net)],
                 ['label' => 'Investigations Resolved', 'value' => number_format($resolved)],
@@ -183,7 +260,7 @@ class ReportDataService
             'detail_sheets' => [
                 [
                     'name'    => 'Outcomes',
-                    'columns' => ['Investigation', 'Title', 'SKU', 'Outcome', 'State', 'Revenue at Risk', 'Observed Recovery', 'Cost to Resolve', 'Recovery Method', 'Recorded'],
+                    'columns' => ['Investigation', 'Title', 'SKU', 'Outcome', 'State', 'Revenue at Risk', 'Entered Recovery', 'Measured Recovery', 'Cost to Resolve', 'Recovery Method', 'Recorded'],
                     'rows'    => $outcomes->map(fn ($o) => [
                         $o->investigation_id,
                         $o->investigation?->title ?? '',
@@ -192,6 +269,7 @@ class ReportDataService
                         $o->getOutcomeStateLabel(),
                         (float) $o->revenue_at_risk,
                         (float) $o->observed_recovery,
+                        $o->measured_recovery !== null ? (float) $o->measured_recovery : '',
                         (float) $o->cost_to_resolve,
                         $o->getRecoveryMethodLabel(),
                         $this->ts($o->recorded_at ?? $o->created_at),
@@ -469,7 +547,7 @@ class ReportDataService
         if (! isset($buckets[$key])) {
             $buckets[$key] = ['recovered' => 0.0, 'at_risk' => 0.0, 'count' => 0];
         }
-        $buckets[$key]['recovered'] += (float) $o->observed_recovery;
+        $buckets[$key]['recovered'] += (float) $o->measured_recovery;
         $buckets[$key]['at_risk']   += (float) $o->revenue_at_risk;
         $buckets[$key]['count']++;
     }

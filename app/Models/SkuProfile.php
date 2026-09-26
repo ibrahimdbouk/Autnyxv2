@@ -66,6 +66,8 @@ class SkuProfile extends Model
         // Actual-vs-ingested-plan is measured against the TENANT'S own forecast, so
         // it is never segment-gated — it applies to any SKU the tenant plans.
         'plan_variance', 'order_plan_variance',
+        // W11: expiry and waste matter for every demand pattern — slow sellers most of all.
+        'expiry_risk', 'waste_rate',
     ];
 
     /** Whether a rule is relevant for a given segment (used by detection gating). */

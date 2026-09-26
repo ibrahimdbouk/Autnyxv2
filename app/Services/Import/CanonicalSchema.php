@@ -32,6 +32,7 @@ class CanonicalSchema
             'users'               => self::users(),
             'returns'             => self::returns(),
             'promotions'          => self::promotions(),
+            'waste'               => self::waste(),
             default               => [],
         };
     }
@@ -183,6 +184,20 @@ class CanonicalSchema
             'channel' => ['label' => 'Channel', 'description' => 'Channel the return came through, e.g. store, online', 'required' => false],
             'condition' => ['label' => 'Condition', 'description' => 'Condition of the returned item, e.g. resellable, damaged', 'required' => false],
             'original_transaction_ref' => ['label' => 'Original Receipt', 'description' => 'Receipt / transaction number of the original sale', 'required' => false],
+        ];
+    }
+
+    /** W11 — waste and write-offs: one row per SKU × store × day × reason. */
+    private static function waste(): array
+    {
+        return [
+            'date'      => ['label' => 'Date', 'description' => 'Day the stock was thrown away or written off', 'required' => true],
+            'sku'       => ['label' => 'SKU', 'description' => 'Product SKU, item code, or product ID', 'required' => true],
+            'quantity'  => ['label' => 'Quantity', 'description' => 'Units wasted or written off', 'required' => true],
+            'location'  => ['label' => 'Store', 'description' => 'Store the waste happened at (name or code)', 'required' => false],
+            'value'     => ['label' => 'Value', 'description' => 'Value written off, at cost (else quantity × unit cost)', 'required' => false],
+            'reason'    => ['label' => 'Reason', 'description' => 'Why: expired, damaged, spoiled, recalled, …', 'required' => false],
+            'waste_ref' => ['label' => 'Document', 'description' => 'Write-off document or reference number', 'required' => false],
         ];
     }
 

@@ -30,6 +30,7 @@ class OnboardingService
         $pos = $count('purchase_orders');
         $promos = $count('promotions') + (int) DB::table('sales_transactions')->where('tenant_id', $tenantId)->whereNotNull('promotion_ref')->limit(1)->count();
         $returns = $count('sales_returns');
+        $waste = $count('waste_events');
         $anomalies = (int) DB::table('anomalies')->where('tenant_id', $tenantId)->count();
         $investigations = (int) DB::table('investigations')->where('tenant_id', $tenantId)->count();
         $worked = (int) DB::table('investigations')->where('tenant_id', $tenantId)
@@ -60,6 +61,9 @@ class OnboardingService
             ['key' => 'returns', 'type' => Import::TYPE_RETURNS, 'level' => 'optional', 'done' => $returns > 0,
                 'title' => 'Add returns', 'why' => 'Return-rate spikes point at quality or listing problems.',
                 'detail' => $returns ? number_format($returns) . ' returns' : 'Optional.'],
+            ['key' => 'waste', 'type' => Import::TYPE_WASTE, 'level' => 'optional', 'done' => $waste > 0,
+                'title' => 'Add waste and write-offs', 'why' => 'For fresh and short-life ranges: waste rates by store and item, and what is about to expire.',
+                'detail' => $waste ? number_format($waste) . ' waste lines' : 'Optional — needed for the Fresh & Expiry view.'],
             ['key' => 'detection', 'type' => null, 'level' => 'required', 'done' => $anomalies > 0,
                 'title' => 'Run the first detection', 'why' => 'Runs every night on its own; run it now to see results today.',
                 'detail' => $anomalies ? number_format($anomalies) . ' findings so far' : 'Not run yet.'],

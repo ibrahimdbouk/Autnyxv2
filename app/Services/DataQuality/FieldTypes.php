@@ -48,7 +48,7 @@ class FieldTypes
         'po_number' => self::CODE, 'transaction_id' => self::CODE, 'return_id' => self::CODE,
         'barcode' => self::CODE, 'code' => self::CODE, 'supplier_code' => self::CODE,
         'gtin' => self::CODE, 'postal_code' => self::CODE, 'currency' => self::CODE, 'customer_ref' => self::CODE,
-        'promotion_ref' => self::CODE, 'batch_ref' => self::CODE, 'original_transaction_ref' => self::CODE,
+        'promotion_ref' => self::CODE, 'waste_ref' => self::CODE, 'batch_ref' => self::CODE, 'original_transaction_ref' => self::CODE,
         // email
         'email' => self::EMAIL, 'contact_email' => self::EMAIL,
     ];

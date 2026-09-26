@@ -101,6 +101,7 @@ class ImportQualityResource extends Resource
                         'users'              => 'Users (account setup)',
                         'returns'            => 'Returns / Refunds',
                         'promotions'         => 'Promotions (calendar)',
+                        'waste'              => 'Waste / write-offs',
                     ]),
 
                 TernaryFilter::make('is_duplicate_file')

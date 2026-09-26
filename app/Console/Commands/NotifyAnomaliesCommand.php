@@ -92,7 +92,7 @@ class NotifyAnomaliesCommand extends Command
                 $listed = new \Illuminate\Database\Eloquent\Collection($anomalies->take(self::MAX_LISTED)->all());
                 foreach ($recipients as [$email, $kind, $id]) {
                     $unsubscribe = \Illuminate\Support\Facades\URL::signedRoute('digest.unsubscribe', ['kind' => $kind, 'id' => $id]);
-                    Mail::to($email)->queue(new AnomalyDigestMail($tenant, $listed, $anomalies->count(), $unsubscribe));
+                    Mail::to($email)->queue(new AnomalyDigestMail($tenant, $listed, $anomalies->count(), $unsubscribe, "{$kind}:{$id}"));
                 }
 
                 $sent++;

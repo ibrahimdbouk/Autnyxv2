@@ -135,7 +135,7 @@ class RootCauseReadinessTest extends TestCase
     {
         $t = $this->createTenant();
         $svc = app(\App\Services\Onboarding\OnboardingService::class);
-        $this->assertSame(['done' => 0, 'total' => 10, 'required_left' => 6, 'pct' => 0], $svc->progress($t->id));
+        $this->assertSame(['done' => 0, 'total' => 11, 'required_left' => 6, 'pct' => 0], $svc->progress($t->id));   // W11: + waste (optional)
 
         $store = DB::table('stores')->insertGetId(['tenant_id' => $t->id, 'name' => 'S', 'code' => 'S', 'created_at' => now(), 'updated_at' => now()]);
         Product::create(['tenant_id' => $t->id, 'sku' => 'A', 'name' => 'A', 'unit_cost' => 1, 'selling_price' => 2]);

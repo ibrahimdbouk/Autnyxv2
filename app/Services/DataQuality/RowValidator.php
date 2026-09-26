@@ -27,13 +27,14 @@ class RowValidator
         'products'           => 'sku',
         'returns'            => 'sku',
         'promotions'         => 'sku',
+        'waste'              => 'sku',
         'purchase_orders'    => 'po_number',
         'stores'             => 'name',
         'suppliers'          => 'name',
         'users'              => 'email',
     ];
 
-    private const REFERENTIAL_TYPES = ['sales_transactions', 'inventory_levels', 'returns', 'purchase_orders', 'promotions'];
+    private const REFERENTIAL_TYPES = ['sales_transactions', 'inventory_levels', 'returns', 'purchase_orders', 'promotions', 'waste'];
 
     /** @return array{reason: ?string, warnings: array<int,string>} */
     public function check(string $dataType, array $data, array $ctx): array

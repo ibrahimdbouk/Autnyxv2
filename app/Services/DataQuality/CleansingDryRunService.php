@@ -19,6 +19,7 @@ class CleansingDryRunService
         'purchase_orders'    => 'purchase_orders',
         'returns'            => 'sales_returns',
         'promotions'         => 'promotions',
+        'waste'              => 'waste_events',
         'stores'             => 'stores',
         'suppliers'          => 'suppliers',
         'users'              => 'users',

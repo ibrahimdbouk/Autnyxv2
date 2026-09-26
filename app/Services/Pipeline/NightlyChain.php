@@ -48,7 +48,7 @@ class NightlyChain
         'notify'   => ['anomalies:notify'],
         'watches'  => ['investigations:evaluate-watches'],
         'health'   => ['data:health', 'dq:check'],   // W9: + semantic data checks
-        'outcomes' => ['outcomes:measure'],
+        'outcomes' => ['outcomes:measure', 'counts:generate', 'reports:value-monthly'],   // W11
     ];
 
     /**

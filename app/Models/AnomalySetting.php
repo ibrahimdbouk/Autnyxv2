@@ -145,6 +145,21 @@ class AnomalySetting extends Model
             'tier'               => 'core',   // Requires: multiple inventory_levels snapshots + sales_daily + products.unit_cost
             'default_thresholds' => ['min_value' => 1000, 'min_intervals' => 3],
         ],
+        // ── Fresh & expiry (W11) ──────────────────────────────────────────────
+        'expiry_risk' => [
+            'label'              => 'Expiry Risk',
+            'description'        => 'Stock that will not sell before its expiry date at the current rate of sale (first-expiry-first-out, per batch).',
+            'severity'           => 'medium',
+            'tier'               => 'core',   // Requires: inventory_levels.expiry_date + sales_daily
+            'default_thresholds' => ['horizon_days' => 14, 'min_value' => 100],
+        ],
+        'waste_rate' => [
+            'label'              => 'Waste Rate',
+            'description'        => 'A store is throwing away or writing off a large, rising share of what it sells of an item.',
+            'severity'           => 'medium',
+            'tier'               => 'core',   // Requires: waste_events + sales_daily
+            'default_thresholds' => ['days' => 28, 'pct' => 10, 'min_value' => 200],
+        ],
         'multi_location_imbalance' => [
             'label'              => 'Multi-Location Imbalance',
             'description'        => 'The same SKU is overstocked in one location while at or below reorder point in another.',

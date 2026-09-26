@@ -33,6 +33,10 @@ final class ScreenRegistry
         'weekly_briefing' => ['label' => 'Weekly Briefing',  'group' => 'Intelligence'],
         'follow_ups'      => ['label' => 'Follow-Ups',       'group' => 'Intelligence'],
         'supplier_prep'   => ['label' => 'Supplier Prep',    'group' => 'Intelligence'],
+        // W11
+        'count_lists'        => ['label' => 'Count Lists',        'group' => 'Intelligence'],
+        'fresh_expiry'       => ['label' => 'Fresh & Expiry',     'group' => 'Intelligence'],
+        'supplier_scorecard' => ['label' => 'Supplier Scorecard', 'group' => 'Intelligence'],
         'data_quality'    => ['label' => 'AI data-quality check (on Data Health)', 'group' => 'Data'],
         'watched'         => ['label' => 'Watched',          'group' => 'Intelligence'],
         'replenishment'   => ['label' => 'Replenishment',    'group' => 'Intelligence'],

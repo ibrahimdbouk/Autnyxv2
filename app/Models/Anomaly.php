@@ -59,6 +59,7 @@ class Anomaly extends Model
         'dismissed_by',
         'dismiss_reason',
         'is_false_positive',
+        'feedback', 'feedback_at', 'feedback_by', 'feedback_via',   // W11
         'notified_at',
         // Investigation fields
         'investigation_status',
@@ -99,6 +100,7 @@ class Anomaly extends Model
         'ai_related_anomaly_ids'=> 'array',
         'ai_is_recurring'       => 'boolean',
         'is_false_positive'     => 'boolean',
+        'feedback_at'           => 'datetime',
         'detected_at'           => 'datetime',
         'dismissed_at'          => 'datetime',
         'ai_generated_at'       => 'datetime',
