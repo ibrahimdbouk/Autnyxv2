@@ -20,7 +20,12 @@ final class SyntheticRetailer
      */
     public static function seed(int $t, int $stores, int $skus, int $days, float $density = 0.6, int $signalEvery = 256, bool $benchmark = false): void
     {
-        DB::statement('SELECT setseed(0.4242)');
+        // Every "random" draw is a hash of the row's own identity (store code,
+        // SKU, date) — not Postgres random(), whose sequence follows the order
+        // the planner happens to visit rows. Two tenants seeded alike therefore
+        // get identical data whatever plan each insert runs with (the
+        // DetectionScaleTest compares one tenant's run with another's).
+        $rnd = static fn (string $key): string => "((hashtext({$key}) & 1048575)::float8 / 1048576.0)";
         $m = max(4, $signalEvery) - 1;       // sales signal mask
         $mi = max(8, 2 * $signalEvery) - 1;  // inventory signal mask
         $end   = now()->subDay()->toDateString();
@@ -49,9 +54,9 @@ final class SyntheticRetailer
                     * (CASE WHEN d > ?::date - 7 AND (hashtext(s.code || p.sku) & {$m}) = 1 THEN 0.1
                             WHEN d > ?::date - 7 AND (hashtext(s.code || p.sku) & {$m}) = 2 THEN 4
                             " . ($benchmark ? "WHEN d > '{$end}'::date - 7 AND (hashtext(s.code || p.sku) & {$m}) = 5 THEN 3" : '') . " ELSE 1 END)
-                    * (0.6 + random() * 0.8 + 0 * s.id)))::int AS u
+                    * (0.6 + " . $rnd("s.code || p.sku || d::date::text || 'n'") . " * 0.8)))::int AS u
             ) x
-            WHERE s.tenant_id = ? AND p.tenant_id = ? AND random() < ?",
+            WHERE s.tenant_id = ? AND p.tenant_id = ? AND " . $rnd("s.code || p.sku || d::date::text || 'k'") . " < ?",
             [$t, $now, $now, $start, $end, $end, $end, $t, $t, $density]);
 
         // W10: planted promotions (a 3× lift in the last week) are on the calendar.
@@ -97,15 +102,16 @@ final class SyntheticRetailer
         // Purchase orders on ~10% of positions; some late, some short.
         DB::insert("INSERT INTO purchase_orders (tenant_id, store_id, po_number, supplier, sku, qty_ordered, qty_received, unit_cost, order_date, expected_date, received_date, status, created_at, updated_at)
             SELECT ?, s.id, 'PO-' || s.code || '-' || p.sku, p.supplier, p.sku, 100,
-                   CASE WHEN random() < 0.1 THEN 60 ELSE 100 END, p.unit_cost,
-                   ?::date - 30, ?::date - 20, ?::date - (CASE WHEN random() < 0.15 THEN 5 ELSE 21 END), 'closed', ?, ?
+                   CASE WHEN " . $rnd("s.code || p.sku || 'short'") . " < 0.1 THEN 60 ELSE 100 END, p.unit_cost,
+                   ?::date - 30, ?::date - 20, ?::date - (CASE WHEN " . $rnd("s.code || p.sku || 'late'") . " < 0.15 THEN 5 ELSE 21 END), 'closed', ?, ?
             FROM stores s CROSS JOIN products p
-            WHERE s.tenant_id = ? AND p.tenant_id = ? AND random() < 0.1", [$t, $end, $end, $end, $now, $now, $t, $t]);
+            WHERE s.tenant_id = ? AND p.tenant_id = ? AND " . $rnd("s.code || p.sku || 'po'") . " < 0.1", [$t, $end, $end, $end, $now, $now, $t, $t]);
 
         // Returns on ~1% of sale days.
         DB::insert("INSERT INTO sales_returns (tenant_id, store_id, sku, date, quantity, value, return_id, location, created_at, updated_at)
             SELECT sd.tenant_id, sd.store_id, sd.sku, sd.date, 1, round(sd.revenue / GREATEST(sd.units_sold, 1), 2), 'R' || sd.id, NULL, ?, ?
-            FROM sales_daily sd WHERE sd.tenant_id = ? AND sd.units_sold > 0 AND random() < 0.01", [$now, $now, $t]);
+            FROM sales_daily sd JOIN stores st ON st.id = sd.store_id
+            WHERE sd.tenant_id = ? AND sd.units_sold > 0 AND " . $rnd("st.code || sd.sku || sd.date::text || 'ret'") . " < 0.01", [$now, $now, $t]);
 
         DB::statement('ANALYZE sales_daily');
         DB::statement('ANALYZE sales_transactions');

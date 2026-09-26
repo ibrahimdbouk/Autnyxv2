@@ -75,6 +75,29 @@ class DetectionScaleTest extends TestCase
         $this->assertArrayHasKey('stockout_risk', $runner->lastRuleStats());
     }
 
+    public function test_two_tenants_seeded_alike_get_identical_data(): void
+    {
+        // The bucketed-run comparison above is only fair if both tenants hold the
+        // same data — so the seeder must not depend on the order rows are visited.
+        $fingerprint = function (int $t): array {
+            return [
+                DB::selectOne("SELECT md5(string_agg(s.code || p.sku || sd.date::text || sd.units_sold::text, ',' ORDER BY s.code, sd.sku, sd.date)) AS h
+                    FROM sales_daily sd JOIN stores s ON s.id = sd.store_id JOIN products p ON p.tenant_id = sd.tenant_id AND p.sku = sd.sku
+                    WHERE sd.tenant_id = ?", [$t])->h,
+                DB::selectOne("SELECT md5(string_agg(s.code || po.sku || po.qty_received::text || po.received_date::text, ',' ORDER BY s.code, po.sku)) AS h
+                    FROM purchase_orders po JOIN stores s ON s.id = po.store_id WHERE po.tenant_id = ?", [$t])->h,
+                DB::table('sales_returns')->where('tenant_id', $t)->count(),
+            ];
+        };
+        $a = $this->createTenant(['status' => 'active']);
+        SyntheticRetailer::seed($a->id, stores: 4, skus: 60, days: 60, signalEvery: 8);
+        DB::statement('ANALYZE');   // a second seed under different statistics (and plans)
+        $b = $this->createTenant(['status' => 'active']);
+        SyntheticRetailer::seed($b->id, stores: 4, skus: 60, days: 60, signalEvery: 8);
+
+        $this->assertSame($fingerprint($a->id), $fingerprint($b->id));
+    }
+
     public function test_a_scoped_run_never_clears_a_subject_it_did_not_look_at(): void
     {
         $t = $this->createTenant(['status' => 'active', 'settings' => ['detection_rules_v2' => true]]);
