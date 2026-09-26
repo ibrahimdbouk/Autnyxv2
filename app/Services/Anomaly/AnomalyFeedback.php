@@ -27,6 +27,7 @@ class AnomalyFeedback
     public const VIA_APP           = 'app';
     public const VIA_EMAIL         = 'email';
     public const VIA_ACTION_CENTER = 'action_center';
+    public const VIA_STORE_SHEET   = 'store_sheet';   // W12
 
     public function __construct(private readonly AnomalyDismissal $dismissal) {}
 

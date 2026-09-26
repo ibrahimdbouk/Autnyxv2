@@ -58,7 +58,7 @@ class FieldTypes
         'name', 'product_name', 'location', 'supplier', 'category', 'subcategory',
         'brand', 'city', 'region', 'country', 'address', 'format', 'type',
         'specialization', 'reason', 'payment_method', 'pack_size', 'role',
-        'department', 'banner', 'channel', 'buyer', 'season', 'condition', 'promotion_name', 'mechanic',
+        'department', 'banner', 'channel', 'buyer', 'season', 'condition', 'promotion_name', 'mechanic', 'stores',
     ];
 
     /** Types whose canonical form is a plain number (after any unit conversion). */

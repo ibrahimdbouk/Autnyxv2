@@ -167,6 +167,8 @@ class CanonicalSchema
             'name'  => ['label' => 'Name',  'description' => 'Full name of the user',                                   'required' => true],
             'email' => ['label' => 'Email', 'description' => 'Login email address (must be unique)',                    'required' => true],
             'role'  => ['label' => 'Role',  'description' => 'admin / tenant_admin grants admin rights; anything else is a standard user', 'required' => false],
+            // W12: store managers — the store(s) they run, by code or name, separated by ; or ,
+            'stores' => ['label' => 'Stores', 'description' => 'Store(s) this person runs — codes or names, separated by ; or , (they get that store\'s daily digest)', 'required' => false],
         ];
     }
 

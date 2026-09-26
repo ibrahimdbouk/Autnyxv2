@@ -28,6 +28,8 @@ class User extends Authenticatable implements FilamentUser, HasTenants, HasAppAu
         'is_tenant_admin',
         'visible_screens',
         'teams_aad_user_id',
+        'store_digest',          // W12
+        'store_digest_sent_at',  // W12
     ];
 
     protected $hidden = [
@@ -47,6 +49,8 @@ class User extends Authenticatable implements FilamentUser, HasTenants, HasAppAu
             'is_tenant_admin'   => 'boolean',
             'visible_screens'   => 'array',
             'last_login_at'     => 'datetime',
+            'store_digest'         => 'boolean',   // W12
+            'store_digest_sent_at' => 'datetime',
             // MFA (3b) — encrypted at rest so a DB leak never exposes them.
             'app_authentication_secret'         => 'encrypted',
             'app_authentication_recovery_codes' => 'encrypted:array',
@@ -188,6 +192,28 @@ class User extends Authenticatable implements FilamentUser, HasTenants, HasAppAu
     /**
      * Can manage users (create, edit, assign roles within their scope).
      */
+    /** W12: the store(s) this person runs — their store digest and store sheet cover these only. */
+    public function stores(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(Store::class, 'store_user')->withPivot('tenant_id')->withTimestamps();
+    }
+
+    /**
+     * W12: the stores this user's store-level screens are limited to — null
+     * means every store (admins, and users not linked to any store).
+     *
+     * @return array<int,int>|null
+     */
+    public function storeScope(): ?array
+    {
+        if ($this->is_super_admin || $this->is_tenant_admin) {
+            return null;
+        }
+        $ids = $this->stores()->pluck('stores.id')->map(fn ($id) => (int) $id)->all();
+
+        return $ids === [] ? null : $ids;
+    }
+
     public function canManageUsers(): bool
     {
         return $this->is_super_admin || $this->is_tenant_admin;

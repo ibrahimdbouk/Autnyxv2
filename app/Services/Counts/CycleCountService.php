@@ -170,7 +170,7 @@ class CycleCountService
      *
      * @return array{recorded:int, skipped:array<int,string>}
      */
-    public function importCsv(int $tenantId, string $path, ?int $storeId = null, ?User $by = null): array
+    public function importCsv(int $tenantId, string $path, ?int $storeId = null, ?User $by = null, ?array $onlyStores = null): array
     {
         $fh = fopen($path, 'r');
         if (! $fh) {
@@ -212,6 +212,10 @@ class CycleCountService
                 continue;
             }
             $sid = $findStore($iStore !== null ? ($row[$iStore] ?? null) : null);
+            if ($sid && $onlyStores !== null && ! in_array((int) $sid, $onlyStores, true)) {
+                $skipped[] = "Line {$line}: not one of your stores.";
+                continue;
+            }
             $count = $sid ? CycleCount::where('tenant_id', $tenantId)->where('store_id', $sid)->where('sku', $sku)
                 ->where('status', CycleCount::STATUS_OPEN)->first() : null;
             if (! $count) {

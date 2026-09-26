@@ -391,6 +391,8 @@ PROMPT;
             'mechanic'       => ['mechanic', 'promo_type', 'promotion_type', 'deal_type', 'offer_type'],
             'discount_pct'   => ['discount_pct', 'discount_percent', 'discount_percentage', 'pct_off', 'percent_off'],
             'promo_price'    => ['promo_price', 'promotion_price', 'deal_price', 'offer_price', 'sale_price'],
+            // W12 — store managers (users import).
+            'stores'         => ['stores', 'store', 'store_codes', 'store_code', 'branch', 'branches', 'outlet', 'outlets', 'store_name'],
             // W11 — waste / write-offs.
             'waste_ref'      => ['waste_ref', 'write_off_ref', 'writeoff_no', 'write_off_no', 'waste_document', 'adjustment_no', 'document_no'],
             'original_transaction_ref' => ['original_transaction_ref', 'original_receipt', 'original_receipt_no', 'original_transaction_id', 'original_order_id'],

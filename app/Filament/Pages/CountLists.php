@@ -62,7 +62,9 @@ class CountLists extends Page
     public static function getNavigationBadge(): ?string
     {
         $t = Filament::getTenant()?->id;
-        $n = $t ? CycleCount::where('tenant_id', $t)->where('status', CycleCount::STATUS_OPEN)->count() : 0;
+        $q = CycleCount::where('tenant_id', $t)->where('status', CycleCount::STATUS_OPEN);
+        $scope = auth()->user()?->storeScope();
+        $n = $t ? ($scope === null ? $q : $q->whereIn('store_id', $scope))->count() : 0;
 
         return $n > 0 ? (string) $n : null;
     }
@@ -72,10 +74,18 @@ class CountLists extends Page
         return (int) Filament::getTenant()?->id;
     }
 
+    /** W12: a store manager sees and counts their own store(s) only; admins every store. */
+    private function scoped($query)
+    {
+        $scope = auth()->user()?->storeScope();
+
+        return $scope === null ? $query : $query->whereIn('store_id', $scope);
+    }
+
     /** @return array<int,array{id:int,name:string,open:int,value:float}> stores with open counts */
     public function stores(): array
     {
-        $rows = CycleCount::where('tenant_id', $this->tenantId())->where('status', CycleCount::STATUS_OPEN)
+        $rows = $this->scoped(CycleCount::where('tenant_id', $this->tenantId())->where('status', CycleCount::STATUS_OPEN))
             ->selectRaw('store_id, COUNT(*) AS n, SUM(value_at_risk) AS v')->groupBy('store_id')->get()->keyBy('store_id');
         $names = Store::where('tenant_id', $this->tenantId())->whereIn('id', $rows->keys())->pluck('name', 'id');
 
@@ -87,7 +97,9 @@ class CountLists extends Page
     {
         $stores = $this->stores();
         $ids = array_column($stores, 'id');
-        if ($this->store !== '' && $this->store !== null && Store::where('tenant_id', $this->tenantId())->whereKey((int) $this->store)->exists()) {
+        $scope = auth()->user()?->storeScope();
+        if ($this->store !== '' && $this->store !== null && ($scope === null || in_array((int) $this->store, $scope, true))
+            && Store::where('tenant_id', $this->tenantId())->whereKey((int) $this->store)->exists()) {
             return (int) $this->store;
         }
 
@@ -109,7 +121,7 @@ class CountLists extends Page
     /** @return \Illuminate\Support\Collection<int,CycleCount> */
     public function recentCounts()
     {
-        return CycleCount::where('tenant_id', $this->tenantId())->where('status', CycleCount::STATUS_COUNTED)
+        return $this->scoped(CycleCount::where('tenant_id', $this->tenantId())->where('status', CycleCount::STATUS_COUNTED))
             ->when($this->currentStoreId(), fn ($q, $sid) => $q->where('store_id', $sid))
             ->where('counted_at', '>=', now()->subDays(30))->orderByDesc('counted_at')->limit(50)->get();
     }
@@ -137,7 +149,7 @@ class CountLists extends Page
             if ($qty === null || $qty === '' || ! is_scalar($qty)) {
                 continue;
             }
-            $count = CycleCount::where('tenant_id', $this->tenantId())->where('status', CycleCount::STATUS_OPEN)->find((int) $id);
+            $count = $this->scoped(CycleCount::where('tenant_id', $this->tenantId())->where('status', CycleCount::STATUS_OPEN))->find((int) $id);
             if (! $count) {
                 continue;
             }
@@ -190,7 +202,7 @@ class CountLists extends Page
                 ->action(function (array $data) {
                     $path = Storage::disk('local')->path((string) $data['file']);
                     try {
-                        $r = app(CycleCountService::class)->importCsv($this->tenantId(), $path, $this->currentStoreId(), auth()->user());
+                        $r = app(CycleCountService::class)->importCsv($this->tenantId(), $path, $this->currentStoreId(), auth()->user(), auth()->user()?->storeScope());
                         $n = Notification::make()->title($r['recorded'] . ' count(s) recorded')
                             ->body($r['skipped'] ? implode("\n", array_slice($r['skipped'], 0, 10)) : null);
                         ($r['skipped'] ? $n->warning() : $n->success())->send();

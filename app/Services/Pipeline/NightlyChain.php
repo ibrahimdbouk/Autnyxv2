@@ -45,7 +45,7 @@ class NightlyChain
         'narrate'  => ['investigations:narrate'],
         'escalate' => ['investigations:escalate'],
         'tidy'     => ['queue:tidy-tail'],
-        'notify'   => ['anomalies:notify'],
+        'notify'   => ['anomalies:notify', 'digest:stores'],   // W12: + each store manager's own digest
         'watches'  => ['investigations:evaluate-watches'],
         'health'   => ['data:health', 'dq:check'],   // W9: + semantic data checks
         'outcomes' => ['outcomes:measure', 'counts:generate', 'reports:value-monthly'],   // W11

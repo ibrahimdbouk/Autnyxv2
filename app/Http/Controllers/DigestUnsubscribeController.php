@@ -18,6 +18,8 @@ class DigestUnsubscribeController extends Controller
     {
         if ($kind === 'user') {
             User::whereKey($id)->update(['digest_opt_in' => false]);
+        } elseif ($kind === 'store') {
+            User::whereKey($id)->update(['store_digest' => false]);   // W12
         } elseif ($kind === 'tenant' && ($tenant = Tenant::find($id))) {
             $settings = (array) ($tenant->settings ?? []);
             $settings['digest_email_off'] = true;

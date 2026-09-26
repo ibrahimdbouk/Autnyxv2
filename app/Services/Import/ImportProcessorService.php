@@ -1761,13 +1761,37 @@ class ImportProcessorService
                 throw new \InvalidArgumentException("Row {$row}: '{$email}' is a platform administrator and cannot be changed by an import.");
             }
             $existing->update($attrs);
+            $user = $existing;
         } else {
             // Random password — imported users must have one set by an admin
             // (no self-service reset until MAIL_* is configured).
             $attrs['email']    = $email;
             $attrs['password'] = Str::random(40);
-            User::create($attrs);
+            $user = User::create($attrs);
         }
+
+        // W12: the store(s) this person runs, when the column is mapped (a blank cell unlinks).
+        if (array_key_exists('stores', $data)) {
+            $this->syncUserStores($import, $user, (string) ($data['stores'] ?? ''), $row);
+        }
+    }
+
+    /** W12: link a user to stores by code or name; an unknown store is a warning, never a guess. */
+    private function syncUserStores(Import $import, User $user, string $value, int $row): void
+    {
+        $wanted = array_values(array_filter(array_map('trim', preg_split('/[;,|]/', $value) ?: [])));
+        $ids = [];
+        foreach ($wanted as $w) {
+            $id = \App\Models\Store::where('tenant_id', $import->tenant_id)
+                ->where(fn ($q) => $q->whereRaw('lower(code) = ?', [mb_strtolower($w)])->orWhereRaw('lower(name) = ?', [mb_strtolower($w)]))
+                ->value('id');
+            if ($id) {
+                $ids[(int) $id] = ['tenant_id' => $import->tenant_id];
+            } else {
+                $this->warnInvalid();
+            }
+        }
+        $user->stores()->sync($ids);
     }
 
     // ─────────────────────────────────────────────────────────────────────────

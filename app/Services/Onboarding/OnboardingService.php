@@ -71,7 +71,8 @@ class OnboardingService
                 'title' => 'Work your first investigation', 'why' => 'Assign it, start it, resolve it — that is what turns a finding into recovered money.',
                 'detail' => $investigations ? number_format($investigations) . ' investigations, ' . $worked . ' being worked' : 'None yet.'],
             ['key' => 'team', 'type' => null, 'level' => 'recommended', 'done' => $users > 1 && ! empty($tenant?->notification_email),
-                'title' => 'Invite your team and set the alert address', 'why' => 'Findings reach the people who can act on them.',
+                'title' => 'Invite your team, link store managers to their stores, set the alert address',
+                'why' => 'Findings reach the people who can act on them: each store manager gets a daily digest of their own store (Users → Stores, or a Stores column in the users file).',
                 'detail' => $users . ' user(s)' . (empty($tenant?->notification_email) ? '; no notification address yet (ask your Autnyx contact)' : '; alerts go to ' . $tenant->notification_email)],
         ];
     }

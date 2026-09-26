@@ -127,6 +127,24 @@ class UserResource extends Resource
                     ->visible(fn () => auth()->user()?->isOwner() ?? false),
             ]),
 
+            // W12 — the store(s) this person runs: they get a daily digest of those
+            // stores only, with a login-free store sheet to confirm findings and count.
+            Section::make('Stores')
+                ->description('Link a store manager to their store(s). They get a daily digest of those stores only — findings to confirm and stock to count — by e-mail (and Teams when connected).')
+                ->schema([
+                    \Filament\Forms\Components\Select::make('stores')
+                        ->label('Runs these stores')
+                        ->multiple()
+                        ->searchable()
+                        ->preload()
+                        ->relationship('stores', 'name', fn (Builder $query) => $query->where('stores.tenant_id', Filament::getTenant()?->id))
+                        ->pivotData(fn () => ['tenant_id' => Filament::getTenant()?->id]),
+                    Toggle::make('store_digest')
+                        ->label('Send the daily store digest')
+                        ->default(true)
+                        ->inline(false),
+                ])->columns(2),
+
             // 1a — screen visibility. Only meaningful for a plain "user"; admins
             // always see everything, so this is hidden the moment either admin
             // toggle is on. Tick the screens this user may see; unticking all
@@ -167,6 +185,12 @@ class UserResource extends Resource
                         'Tenant Admin'  => 'warning',
                         default         => 'gray',
                     }),
+
+                TextColumn::make('stores.name')
+                    ->label('Stores')
+                    ->badge()
+                    ->limitList(3)
+                    ->toggleable(),
 
                 TextColumn::make('created_at')
                     ->label('Joined')

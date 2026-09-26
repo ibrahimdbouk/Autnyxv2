@@ -27,7 +27,13 @@ Route::prefix('sso')->group(function () {
 
 // WP5.4 — signed, login-free unsubscribe link in every anomaly digest.
 Route::get('/digest/unsubscribe/{kind}/{id}', \App\Http\Controllers\DigestUnsubscribeController::class)
-    ->middleware('signed')->whereIn('kind', ['user', 'tenant'])->whereNumber('id')->name('digest.unsubscribe');
+    ->middleware('signed')->whereIn('kind', ['user', 'tenant', 'store'])->whereNumber('id')->name('digest.unsubscribe');
+
+// W12 — a store manager's sheet: their stores' findings and counts, signed for them (7 days), no login.
+Route::get('/store-sheet/{user}', [\App\Http\Controllers\StoreSheetController::class, 'show'])
+    ->middleware(['signed', 'throttle:60,1'])->whereNumber('user')->name('store-sheet.show');
+Route::post('/store-sheet/{user}', [\App\Http\Controllers\StoreSheetController::class, 'store'])
+    ->middleware(['signed', 'throttle:60,1'])->whereNumber('user')->name('store-sheet.store');
 
 // W11 — "Real / Not real" from the digest: signed per anomaly, answer and recipient.
 Route::get('/feedback/{anomaly}/{verdict}', [\App\Http\Controllers\AnomalyFeedbackLinkController::class, 'show'])
