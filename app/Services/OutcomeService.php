@@ -124,7 +124,11 @@ class OutcomeService
         if ($investigation->actions()->where('status', \App\Models\Action::STATUS_COMPLETED)->exists()) {
             return null;
         }
-        $when = $at ?? $outcome->recovery_measured_from ?? now();
+        $when = \Illuminate\Support\Carbon::parse($at ?? $outcome->recovery_measured_from ?? now());
+        // Never before the investigation existed: a fix can't predate the finding it fixes.
+        if ($investigation->opened_at && $when->lt($investigation->opened_at)) {
+            $when = \Illuminate\Support\Carbon::parse($investigation->opened_at);
+        }
 
         return \App\Models\Action::create([
             'investigation_id' => $investigation->id,

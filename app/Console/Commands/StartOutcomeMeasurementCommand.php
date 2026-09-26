@@ -36,7 +36,11 @@ class StartOutcomeMeasurementCommand extends Command
             if (! $inv) {
                 continue;
             }
-            $at = $o->recovery_measured_from ?? $inv->resolved_at ?? $o->recorded_at ?? now();
+            // When it was resolved (a typed "recovery from" date is a claim, and can predate the finding).
+            $at = \Illuminate\Support\Carbon::parse($inv->resolved_at ?? $o->recorded_at ?? now());
+            if ($inv->opened_at && $at->lt($inv->opened_at)) {
+                $at = \Illuminate\Support\Carbon::parse($inv->opened_at);
+            }
             $this->line("  tenant {$o->tenant_id} · investigation {$inv->id} · measured from " . \Illuminate\Support\Carbon::parse($at)->toDateString());
             if ($this->option('apply')) {
                 $outcomes->ensureMeasurableFix($inv, $o, $at);

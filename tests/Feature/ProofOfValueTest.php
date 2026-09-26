@@ -102,9 +102,11 @@ class ProofOfValueTest extends TestCase
 
     public function test_old_resolved_outcomes_get_a_measurable_fix_by_command(): void
     {
-        $inv = Investigation::factory()->create(['tenant_id' => $this->tenant->id, 'status' => Investigation::STATUS_RESOLVED, 'resolved_at' => now()->subDays(5)]);
+        $inv = Investigation::factory()->create(['tenant_id' => $this->tenant->id, 'status' => Investigation::STATUS_RESOLVED,
+            'opened_at' => now()->subDays(6), 'resolved_at' => now()->subDays(5)]);
         InvestigationOutcome::create(['investigation_id' => $inv->id, 'tenant_id' => $this->tenant->id,
-            'outcome_type' => InvestigationOutcome::TYPE_RESOLVED, 'observed_recovery' => 100, 'recorded_at' => now()->subDays(5)]);
+            'outcome_type' => InvestigationOutcome::TYPE_RESOLVED, 'observed_recovery' => 100, 'recorded_at' => now()->subDays(5),
+            'recovery_measured_from' => now()->subDays(30)]);   // a typed date before the finding existed
         $fp = Investigation::factory()->create(['tenant_id' => $this->tenant->id, 'status' => Investigation::STATUS_RESOLVED]);
         InvestigationOutcome::create(['investigation_id' => $fp->id, 'tenant_id' => $this->tenant->id,
             'outcome_type' => InvestigationOutcome::TYPE_FALSE_POSITIVE, 'was_false_positive' => true, 'recorded_at' => now()]);
@@ -114,7 +116,12 @@ class ProofOfValueTest extends TestCase
 
         $this->artisan('outcomes:start-measurement', ['--tenant' => $this->tenant->id, '--apply' => true])->assertSuccessful();
         $this->assertSame(1, $inv->actions()->where('action_type', Action::TYPE_FIX_RECORDED)->count());
-        $this->assertSame('2026-09-15', $inv->actions()->first()->completed_at->toDateString(), 'dated when it was resolved');
+        $this->assertSame('2026-09-15', $inv->actions()->first()->completed_at->toDateString(), 'dated when it was resolved, not the typed date');
+
+        // Recorded now with a "recovery from" date before the investigation opened: clamped to the opening.
+        $late = Investigation::factory()->create(['tenant_id' => $this->tenant->id, 'status' => Investigation::STATUS_RESOLVED, 'opened_at' => now()->subDays(2)]);
+        app(OutcomeService::class)->record($late, ['outcome_type' => InvestigationOutcome::TYPE_RESOLVED, 'recovery_measured_from' => now()->subDays(20)->toDateString()]);
+        $this->assertSame('2026-09-18', $late->actions()->sole()->completed_at->toDateString());
         $this->assertSame(0, $fp->actions()->count(), 'a false positive is not measured');
     }
 
