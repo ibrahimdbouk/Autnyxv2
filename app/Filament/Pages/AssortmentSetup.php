@@ -90,6 +90,34 @@ class AssortmentSetup extends Page
             });
     }
 
+    /** v1.5 — one category's strategy: role, objective, room to grow, sales floor, most products. */
+    public function strategyAction(): Action
+    {
+        return Action::make('strategy')->label('Edit')->size('xs')->color('gray')->outlined()
+            ->modalHeading(fn (array $arguments) => 'Strategy for ' . ($arguments['category'] ?? 'this category'))
+            ->modalDescription('How range plans treat this category. Applies from the next run.')
+            ->fillForm(function (array $arguments) {
+                $s = \App\Services\Assortment\CategoryStrategy::for(Filament::getTenant(), (string) ($arguments['category'] ?? ''));
+
+                return ['role' => $s['role'], 'objective' => $s['objective'], 'room' => (string) (float) $s['room'],
+                    'sales_floor' => $s['sales_floor'] === null ? '' : (string) (float) $s['sales_floor'], 'max_size' => $s['max_size']];
+            })
+            ->form([
+                Select::make('role')->label('Role')->required()->options(\App\Services\Assortment\CategoryStrategy::ROLES),
+                Select::make('objective')->label('Objective')->required()
+                    ->options(collect(\App\Services\Assortment\CategoryStrategy::OBJECTIVES)->map(fn ($o) => $o['label'])->all()),
+                Select::make('room')->label('Room to grow the range')->required()->options(\App\Services\Assortment\CategoryStrategy::ROOM_OPTIONS),
+                Select::make('sales_floor')->label('Sales floor')->options(\App\Services\Assortment\CategoryStrategy::SALES_FLOORS)->placeholder('No floor'),
+                TextInput::make('max_size')->label('Most products per store (optional)')->numeric()->minValue(1)->maxValue(5000)
+                    ->helperText('Leave empty to use today\'s count plus the room above.'),
+            ])
+            ->action(function (array $data, array $arguments) {
+                abort_unless(static::canAccess(), 403);
+                \App\Services\Assortment\CategoryStrategy::save(Filament::getTenant(), (string) ($arguments['category'] ?? ''), $data);
+                Notification::make()->title('Saved — plans use it from the next run')->success()->send();
+            });
+    }
+
     protected function getHeaderActions(): array
     {
         $uploads = app(AssortmentUploads::class);
@@ -167,6 +195,14 @@ class AssortmentSetup extends Page
             'names'      => DB::table('products')->where('tenant_id', $tenantId)
                 ->whereIn('sku', AssortmentMustStock::where('tenant_id', $tenantId)->limit(500)->pluck('sku'))->pluck('name', 'sku'),
             'listing'    => $listing,
+            'categories' => collect(DB::select(
+                "SELECT TRIM(p.category) AS cat, COUNT(DISTINCT r.sku) AS skus
+                   FROM assortment_store_ranges r JOIN products p ON p.tenant_id = r.tenant_id AND p.sku = r.sku
+                  WHERE r.tenant_id = ? AND r.carried AND p.category IS NOT NULL AND TRIM(p.category) <> ''
+               GROUP BY 1 ORDER BY 1 LIMIT 300",
+                [$tenantId],
+            ))->map(fn ($r) => ['category' => (string) $r->cat, 'skus' => (int) $r->skus]
+                + \App\Services\Assortment\CategoryStrategy::for(Filament::getTenant(), (string) $r->cat))->all(),
         ];
     }
 }

@@ -27,7 +27,7 @@ class DecisionService
         private AssortmentNotifier $notifier,
     ) {}
 
-    public function accept(AssortmentGap $gap, User $by, ?int $assigneeId = null, ?string $dueAt = null, ?string $note = null): void
+    public function accept(AssortmentGap $gap, User $by, ?int $assigneeId = null, ?string $dueAt = null, ?string $note = null, bool $notify = true): void
     {
         $this->assertActionable($gap, [AssortmentGap::STATUS_OPEN]);
 
@@ -44,7 +44,7 @@ class DecisionService
 
         $this->audit($gap, $by, 'assortment.accepted', 'Accepted: ' . $gap->headline());
         $this->learning->decided($gap, accepted: true);
-        if ($gap->assignee_id && (int) $gap->assignee_id !== (int) $by->id) {
+        if ($notify && $gap->assignee_id && (int) $gap->assignee_id !== (int) $by->id) {
             $this->notifier->taskAssigned($gap);
         }
     }

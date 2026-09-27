@@ -12,6 +12,8 @@ use App\Models\Tenant;
  *   shadow_run  — run the engine nightly before the app is switched on (trial)
  *   guardrails  — the few settings a tenant may change (§4.5): delist confidence,
  *                 carried window, and the most delists / adds per category per store
+ *   plans_live  — v1.5: the range-plan review passed (plans are proposed, not draft)
+ *   categories  — v1.5: per category role, objective, room, sales floor, max size (CategoryStrategy)
  */
 final class TenantAssortment
 {
@@ -33,6 +35,12 @@ final class TenantAssortment
     public static function isLive(Tenant $tenant): bool
     {
         return (self::settings($tenant)['live'] ?? false) === true;
+    }
+
+    /** v1.5 — range plans are shown once their own review has passed (and decisions are live). */
+    public static function plansLive(Tenant $tenant): bool
+    {
+        return self::isLive($tenant) && (self::settings($tenant)['plans_live'] ?? false) === true;
     }
 
     /** @return array{delist_min_tier:string, carried_window_days:int, max_delists_per_category:int, max_adds_per_category:int} */

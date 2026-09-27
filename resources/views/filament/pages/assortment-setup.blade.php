@@ -15,6 +15,32 @@
             :foot="'Delist confidence · carried window · at most ' . $guardrails['max_adds_per_category'] . ' add(s) and ' . $guardrails['max_delists_per_category'] . ' delist(s) per category per store'" />
     </div>
 
+    <x-ui.card title="Category strategy">
+        @if(empty($categories))
+            <x-ui.empty title="No categories yet">Categories appear after the first run.</x-ui.empty>
+        @else
+            <div class="ax-scroll-x">
+                <table class="ax-table">
+                    <thead><tr><th>Category</th><th>Role</th><th>Objective</th><th>Room to grow</th><th>Sales floor</th><th class="ax-num">Most products</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach($categories as $cs)
+                            <tr wire:key="cat-{{ md5($cs['category']) }}">
+                                <td class="ax-fw-600">{{ $cs['category'] }} <span class="ax-faint ax-text-xs">{{ number_format($cs['skus']) }} products</span></td>
+                                <td>{{ \App\Services\Assortment\CategoryStrategy::roleLabel($cs['role']) }}@if(! $cs['set']) <span class="ax-faint ax-text-xs">default</span>@endif</td>
+                                <td>{{ \App\Services\Assortment\CategoryStrategy::objectiveLabel($cs['objective']) }}</td>
+                                <td>{{ $cs['room'] > 0 ? '+' . (int) round($cs['room'] * 100) . '%' : 'Hold the count' }}</td>
+                                <td>{{ $cs['sales_floor'] === null ? '—' : '−' . rtrim(rtrim(number_format(abs($cs['sales_floor']) * 100, 1), '0'), '.') . '%' }}</td>
+                                <td class="ax-num">{{ $cs['max_size'] ?? '—' }}</td>
+                                <td>{{ ($this->strategyAction)(['category' => $cs['category']]) }}</td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+            <p class="ax-faint ax-text-xs ax-mt-2">The one strategy choice per category. The role sets how wide the range should be (destination: wide, and delists need twice the case; convenience: a tight range, no room to grow). The objective decides how range plans rank changes; "room" is how far the range may grow until real shelf space is known — hold the count and every add must be paid for by a delist.</p>
+        @endif
+    </x-ui.card>
+
     <x-ui.card title="Must-stock list">
         @if($mustStock->isEmpty())
             <x-ui.empty title="Nothing on the list">Add strategic, private-label, contract or regulatory products so they are never proposed for delisting.</x-ui.empty>

@@ -335,6 +335,8 @@ class GapEngine
             'expected_units_per_day'         => $unitsDay !== null ? round($unitsDay, 3) : null,
             'value_basis'          => $basis,
             'gross_per_year'       => round($annual, 2),
+            'gross_sales_per_year' => round($annualRevenue, 2),
+            'margin_rate'          => $this->marginRate($product),
             'taken_per_year'       => $this->takenRange($annual, $transfer),
             // In sales, the unit the result is measured in: the category's sales should rise by this much.
             'expected_sales_change_per_year' => $transfer['mid'] === null ? null : round($annualRevenue * (1 - $transfer['mid']), 2),
@@ -422,6 +424,9 @@ class GapEngine
             'peer_share_index'  => round($median, 6),
             'value_basis'       => $basis,
             'gross_per_year'    => round($grossMid, 2),
+            'gross_sales_per_year' => round($revenueMid, 2),
+            'margin_rate'       => $this->marginRate($product),
+            'expected_units_per_day' => round(Stats::median(array_column($peers, 'units_per_day')) ?? 0, 3),
             'moved_per_year'    => $transfer['mid'] === null ? null : [round($grossMid * $transfer['low'], 2), round($grossMid * $transfer['high'], 2)],
             // Measured on the product's own sales: kept in stock, all of its out-of-stock demand comes back to it
             // (the moved part from substitutes, the lost part new to the store).
@@ -517,6 +522,8 @@ class GapEngine
             'category_rank'     => $rank['position'] . ' of ' . $rank['count'],
             'stock_value'       => round($capital, 2),
             'current_per_year'  => round($ownAnnual, 2),
+            'current_sales_per_year' => round($ownAnnualRevenue, 2),
+            'margin_rate'       => $this->marginRate($product),
             // The category's sales should fall only by what does not move to the shelf.
             'expected_sales_change_per_year' => $transfer['mid'] === null ? null : round(-$ownAnnualRevenue * (1 - $transfer['mid']), 2),
             'moved_per_year'    => $transfer['mid'] === null ? null : [round($ownAnnual * $transfer['low'], 2), round($ownAnnual * $transfer['high'], 2)],
@@ -685,6 +692,15 @@ class GapEngine
         }
 
         return ['revenue', $annualRevenue];
+    }
+
+    /** Gross margin as a share of the selling price, or null when price or cost is missing. */
+    private function marginRate(array $product): ?float
+    {
+        $price = (float) ($product['price'] ?? 0);
+        $cost  = (float) ($product['cost'] ?? 0);
+
+        return $price > 0 && $cost > 0 && $price > $cost ? round(($price - $cost) / $price, 4) : null;
     }
 
     private function inactive(array $product): bool

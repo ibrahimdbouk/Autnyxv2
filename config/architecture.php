@@ -288,6 +288,7 @@ return [
             'app/Models/AssortmentGap.php',
             'app/Models/AssortmentMustStock.php',
             'app/Models/AssortmentRun.php',
+            'app/Models/AssortmentPlan.php',
         ],
 
         'Apps\\RootCause' => [

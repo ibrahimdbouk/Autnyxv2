@@ -104,7 +104,10 @@ class AssortmentDashboard implements AppDashboard
                 ['label' => 'Adds to decide', 'value' => (string) (int) ($sums[AssortmentGap::TYPE_ADD]->n ?? 0), 'foot' => 'Products similar stores sell that this store does not', 'url' => $list(AssortmentGap::TYPE_ADD), 'color' => 'success'],
                 ['label' => 'Delists to decide', 'value' => (string) (int) ($sums[AssortmentGap::TYPE_DELIST]->n ?? 0), 'foot' => 'Slow sellers that are usually in stock', 'url' => $list(AssortmentGap::TYPE_DELIST), 'color' => 'warning'],
                 ['label' => 'Keep running out', 'value' => (string) (int) ($sums[AssortmentGap::TYPE_STOCKOUT_HIDDEN]->n ?? 0), 'foot' => 'Right product, empty shelf', 'url' => $list(AssortmentGap::TYPE_STOCKOUT_HIDDEN), 'color' => 'danger'],
-                ['label' => 'Accepted this month', 'value' => (string) (clone $accepted)->where('decided_at', '>=', $monthStart)->count(), 'foot' => (clone $accepted)->where('task_status', AssortmentGap::TASK_TO_DO)->count() . ' task(s) to do', 'url' => AssortmentOutcomes::getUrl(), 'color' => null],
+                \App\Services\Assortment\TenantAssortment::plansLive($tenant)
+                    ? ['label' => 'Range plans to decide', 'value' => (string) \App\Filament\Pages\AssortmentPlans::scoped()->where('status', \App\Models\AssortmentPlan::STATUS_PROPOSED)->count(),
+                        'foot' => 'Each store and category, its changes chosen together', 'url' => \App\Filament\Pages\AssortmentPlans::getUrl(), 'color' => 'info']
+                    : ['label' => 'Accepted this month', 'value' => (string) (clone $accepted)->where('decided_at', '>=', $monthStart)->count(), 'foot' => (clone $accepted)->where('task_status', AssortmentGap::TASK_TO_DO)->count() . ' task(s) to do', 'url' => AssortmentOutcomes::getUrl(), 'color' => null],
                 ['label' => 'Measured result a year', 'value' => $measured->isEmpty() ? '—' : \App\Support\Money::displayCompact((float) $measured->sum(fn ($g) => (float) ($g->measurement['uplift_per_year'] ?? 0)), $tenant->currencyCode()),
                     'foot' => $measured->count() . ' measured against similar stores', 'url' => AssortmentOutcomes::getUrl(), 'color' => null],
             ],

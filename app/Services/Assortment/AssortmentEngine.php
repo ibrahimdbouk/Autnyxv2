@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\DB;
  *
  *   range model (A1) → lifecycle (platform) → peer groups → per group:
  *   benchmark (A2, promotion-clean) → transferable demand (platform) → decisions (A3)
+ *   → range plans per store × category (v1.5 Phase 2, RangePlanner + RangeOptimizer)
  *
  * Decisions are stored with status 'shadow' while `assortment.shadow` is on:
  * computed, explainable, reviewable with `assortment:review`, but not shown to
@@ -36,6 +37,7 @@ class AssortmentEngine
         private ProductLifecycleService $lifecycle,
         private DemandTransferService $transfers,
         private AssortmentNotifier $notifier,
+        private RangePlanner $planner,
     ) {}
 
     public static function enabledFor(Tenant $tenant): bool
@@ -220,6 +222,12 @@ class AssortmentEngine
 
         $coverage = $this->availability->coverage($tenantId);
 
+        // v1.5 Phase 2 — the engine's decisions, chosen together per store × category.
+        $plans = $this->planner->build($tenant, $asOf, $products);
+        if (TenantAssortment::plansLive($tenant)) {
+            $this->notifier->newPlans($tenant, $plans['new']);
+        }
+
         // Live tenants hear about decisions found for the first time in this run.
         if ($live) {
             $new = AssortmentGap::query()->where('tenant_id', $tenantId)->where('status', AssortmentGap::STATUS_OPEN)
@@ -242,6 +250,7 @@ class AssortmentEngine
             'delists_allowed' => $allowDelists,
             'data_quality'   => ['factor' => $factor, 'reasons' => $reasons],
             'lifecycle'      => $life,
+            'plans'          => $plans,
             'promotion_data' => $hasPromotionData,
             'transfers'      => $transferStats + ['version' => DemandTransferService::VERSION],
         ];

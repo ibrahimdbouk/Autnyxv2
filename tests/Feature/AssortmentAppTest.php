@@ -137,7 +137,7 @@ class AssortmentAppTest extends TestCase
         $this->get(AssortmentOutcomes::getUrl(tenant: $this->tenant))->assertOk()->assertSee('No accepted decisions yet');
         $this->get(AssortmentValidation::getUrl(tenant: $this->tenant))->assertOk()->assertSee('Assortment is live');
         $this->get(AssortmentValidation::getUrl(['type' => AssortmentGap::TYPE_DELIST], tenant: $this->tenant))
-            ->assertOk()->assertSee('Goat kefir')->assertDontSee('Greek yogurt');
+            ->assertOk()->assertSee('Goat kefir')->assertDontSee('Similar stores that carry it sell');
         $this->get(AssortmentSetup::getUrl(tenant: $this->tenant))->assertOk()->assertSee('Must-stock list');
         $this->get(Dashboard::getUrl(['app' => Tenant::APP_ASSORTMENT], tenant: $this->tenant))
             ->assertOk()->assertSee('Worth deciding now')->assertSee('Greek yogurt')->assertSee('Range health');

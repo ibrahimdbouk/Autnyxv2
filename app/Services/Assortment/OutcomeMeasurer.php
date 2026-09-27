@@ -68,7 +68,61 @@ class OutcomeMeasurer
             $measured++;
         }
 
+        // v1.5 — range plans, measured as a whole on the category's sales at the store.
+        foreach (\App\Models\AssortmentPlan::where('tenant_id', $tenantId)->where('status', \App\Models\AssortmentPlan::STATUS_IN_PROGRESS)
+            ->whereNull('measured_at')->whereNotNull('measure_after')->get() as $plan) {
+            if ($plan->measure_after->toDateString() > $asOf) {
+                $waiting++;
+
+                continue;
+            }
+            $plan->forceFill(['measurement' => $this->measurePlan($plan, $days), 'measured_at' => now(),
+                'status' => \App\Models\AssortmentPlan::STATUS_MEASURED])->save();
+            ($this->learning ?? app(DecisionLearning::class))->planMeasured($plan);
+            $measured++;
+        }
+
         return ['measured' => $measured, 'waiting' => $waiting];
+    }
+
+    /** A plan's result: the category's sales at the store against peer stores that did not reset the same category. */
+    public function measurePlan(\App\Models\AssortmentPlan $plan, int $days): array
+    {
+        $done = Carbon::parse($plan->done_at)->startOfDay();
+        $pre  = [$done->copy()->subDays($days)->toDateString(), $done->copy()->subDay()->toDateString()];
+        $post = [$done->copy()->addDay()->toDateString(), $done->copy()->addDays($days)->toDateString()];
+        $skus = DB::table('products')->where('tenant_id', $plan->tenant_id)->whereRaw('TRIM(category) = ?', [$plan->category])->pluck('sku')->all();
+        $changed = \App\Models\AssortmentPlan::where('tenant_id', $plan->tenant_id)->where('category', $plan->category)->whereKeyNot($plan->id)
+            ->whereIn('status', [\App\Models\AssortmentPlan::STATUS_ACCEPTED, \App\Models\AssortmentPlan::STATUS_IN_PROGRESS, \App\Models\AssortmentPlan::STATUS_MEASURED])
+            ->pluck('store_id')->map(fn ($id) => (int) $id)->all();
+        $controls = array_values(array_diff($this->storesOf((int) $plan->tenant_id, (string) $plan->peer_group), [(int) $plan->store_id], $changed));
+
+        $sum = function (array $stores, array $range) use ($plan, $skus): float {
+            if ($stores === [] || $skus === []) {
+                return 0.0;
+            }
+
+            return (float) DB::table('sales_daily')->where('tenant_id', $plan->tenant_id)->whereIn('store_id', $stores)->whereIn('sku', $skus)
+                ->whereBetween('date', $range)->selectRaw('COALESCE(SUM(CASE WHEN revenue > 0 THEN revenue ELSE 0 END), 0) AS r')->value('r');
+        };
+        $tPre = $sum([(int) $plan->store_id], $pre);
+        $tPost = $sum([(int) $plan->store_id], $post);
+        $cPre = $sum($controls, $pre);
+        $cPost = $sum($controls, $post);
+        $ratio = $cPre > 0 ? $cPost / $cPre : 1.0;
+        $uplift = $tPost - $tPre * $ratio;
+        $year = round($uplift * 365 / max(1, $days), 2);
+        $expected = isset($plan->impact['sales'][1]) ? (float) $plan->impact['sales'][1] : null;
+        $strength = count($controls) >= 3 ? 'measured' : 'weak';
+
+        return [
+            'metric' => 'category_sales', 'category' => $plan->category, 'days' => $days, 'before' => $pre, 'after' => $post,
+            'treated_before' => round($tPre, 2), 'treated_after' => round($tPost, 2), 'control_stores' => count($controls),
+            'control_ratio' => round($ratio, 4), 'expected_after' => round($tPre * $ratio, 2), 'uplift' => round($uplift, 2),
+            'uplift_per_year' => $year, 'strength' => $strength, 'expected_per_year' => $expected,
+            'error_per_year' => $expected === null ? null : round($year - $expected, 2), 'optimizer_version' => $plan->optimizer_version,
+            'verdict' => $this->verdict($expected !== null && $expected < 0 ? AssortmentGap::TYPE_DELIST : AssortmentGap::TYPE_ADD, $year, $expected, $strength),
+        ];
     }
 
     /** @return array<string,mixed> */
@@ -151,7 +205,12 @@ class OutcomeMeasurer
     /** The stores of the decision's peer group (cluster:<id> or format:<slug>). */
     private function peerStores(AssortmentGap $gap): array
     {
-        [$basis, $key] = array_pad(explode(':', (string) $gap->peer_group, 2), 2, null);
+        return $this->storesOf((int) $gap->tenant_id, (string) $gap->peer_group);
+    }
+
+    private function storesOf(int $tenantId, string $peerGroup): array
+    {
+        [$basis, $key] = array_pad(explode(':', $peerGroup, 2), 2, null);
         if ($basis === 'cluster' && is_numeric($key)) {
             $cluster = StoreCluster::with('stores:id')->find((int) $key);
             if ($cluster) {
@@ -159,7 +218,7 @@ class OutcomeMeasurer
             }
         }
         if ($basis === 'format' && $key !== null) {
-            return Store::where('tenant_id', $gap->tenant_id)->get(['id', 'format'])
+            return Store::where('tenant_id', $tenantId)->get(['id', 'format'])
                 ->filter(fn ($s) => (Str::slug(trim((string) $s->format)) ?: 'unspecified') === $key)
                 ->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
         }

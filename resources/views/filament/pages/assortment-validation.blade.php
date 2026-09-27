@@ -31,6 +31,44 @@
         @endforeach
     </div>
 
+    <x-ui.card title="Range plans">
+        @php $pg = $planGate; @endphp
+        <p class="ax-m-0 ax-text-sm">
+            @if($pg['live'])
+                Range plans are open to everyone with access.
+            @elseif(! $pg['decisions_live'])
+                Plans are reviewed after the decisions go live. Until then they are built every night and kept in review.
+            @else
+                Go through the top {{ $pg['needed'] }} plans with your category manager: each one changes a store's category as a whole. When at least {{ (int) round($pass * 100) }}% make sense, <strong>Open range plans</strong> shows them to everyone.
+            @endif
+        </p>
+        <p class="ax-faint ax-text-xs ax-mt-1">{{ $pg['total'] }} plan(s) · {{ $pg['reviewed'] }} of {{ $pg['needed'] }} reviewed · {{ $pct($pg['rate']) }} sensible{{ $pg['passed'] ? ' — passed' : '' }}</p>
+        @if($planSample->isNotEmpty())
+            <div class="ax-scroll-x ax-mt-3">
+                <table class="ax-table">
+                    <thead><tr><th>#</th><th>Plan</th><th class="ax-num">Category sales a year</th><th>Makes sense?</th></tr></thead>
+                    <tbody>
+                        @foreach($planSample as $n => $pl)
+                            @php $s = $pl->impact['sales'] ?? [0, 0, 0]; @endphp
+                            <tr wire:key="plan-rev-{{ $pl->id }}">
+                                <td class="ax-faint">{{ $n + 1 }}</td>
+                                <td style="min-width:15rem">
+                                    <a class="ax-fw-600" href="{{ \App\Filament\Pages\AssortmentPlanPage::getUrl(['plan' => $pl->id]) }}" wire:navigate>{{ $pl->headline() }}</a>
+                                    <div class="ax-muted ax-text-xs">{{ collect($pl->actionable())->map(fn ($c) => (\App\Models\AssortmentPlan::CHANGE_LABELS[$c['kind']] ?? $c['kind']) . ' ' . ($c['kind'] === 'swap' ? $c['out_name'] . ' → ' . $c['name'] : $c['name']))->implode(' · ') }}</div>
+                                </td>
+                                <td class="ax-num" style="white-space:nowrap">{{ \App\Support\Money::compact(min($s[0], $s[2]), $currency) }} to {{ \App\Support\Money::compact(max($s[0], $s[2]), $currency) }}</td>
+                                <td style="white-space:nowrap">
+                                    <x-filament::button size="xs" :color="$pl->review_verdict === 'sensible' ? 'success' : 'gray'" :outlined="$pl->review_verdict !== 'sensible'" wire:click="reviewPlan({{ $pl->id }}, 'sensible')">Yes</x-filament::button>
+                                    <x-filament::button size="xs" :color="$pl->review_verdict === 'not_sensible' ? 'danger' : 'gray'" :outlined="$pl->review_verdict !== 'not_sensible'" wire:click="reviewPlan({{ $pl->id }}, 'not_sensible')">No</x-filament::button>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        @endif
+    </x-ui.card>
+
     <x-ui.card title="How the rules are doing">
         <div class="ax-scroll-x">
             <table class="ax-table">

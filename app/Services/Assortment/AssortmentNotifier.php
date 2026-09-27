@@ -50,6 +50,24 @@ class AssortmentNotifier
             $this->decisionUrl($gap), 'heroicon-o-clipboard-document-check', personal: true);
     }
 
+    public function newPlans(Tenant $tenant, int $count): void
+    {
+        if ($count <= 0) {
+            return;
+        }
+        $this->send($this->headOffice($tenant), $count === 1 ? '1 new range plan' : "{$count} new range plans",
+            'Each plan shows a store and category as it is and as proposed, the changes chosen together, and what they are expected to do.',
+            $this->plansUrl($tenant), 'heroicon-o-rectangle-stack');
+    }
+
+    public function planAssigned(\App\Models\AssortmentPlan $plan): void
+    {
+        $n = count(array_filter($plan->actionable(), fn ($c) => $c['ticked'] ?? true));
+        $this->send([(int) $plan->assignee_id], 'Range reset for you: ' . $plan->headline(),
+            "{$n} change(s) to make, due " . ($plan->due_at?->format('j M') ?? 'soon') . '. Mark the plan done when the shelf is reset; the result is measured 8 weeks later.',
+            $this->planUrl($plan), 'heroicon-o-clipboard-document-check', personal: true);
+    }
+
     /** @return array{due_soon:int, overdue:int} */
     public function remind(int $tenantId): array
     {
@@ -116,6 +134,24 @@ class AssortmentNotifier
     {
         try {
             return \App\Filament\Pages\AssortmentDecision::getUrl(['decision' => $gap->id, 'tenant' => $gap->tenant], panel: 'admin');
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function planUrl(\App\Models\AssortmentPlan $plan): ?string
+    {
+        try {
+            return \App\Filament\Pages\AssortmentPlanPage::getUrl(['plan' => $plan->id, 'tenant' => $plan->tenant], panel: 'admin');
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function plansUrl(Tenant $tenant): ?string
+    {
+        try {
+            return \App\Filament\Pages\AssortmentPlans::getUrl(['tenant' => $tenant], panel: 'admin');
         } catch (\Throwable) {
             return null;
         }

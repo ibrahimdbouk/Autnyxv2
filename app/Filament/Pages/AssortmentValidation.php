@@ -60,9 +60,17 @@ class AssortmentValidation extends Page
         app(ValidationGate::class)->review($gap, auth()->user(), $verdict);
     }
 
+    /** v1.5 — mark a sampled range plan sensible or not (the plan review). */
+    public function reviewPlan(int $id, string $verdict): void
+    {
+        $plan = \App\Models\AssortmentPlan::where('tenant_id', $this->tenant()->id)->findOrFail($id);
+        app(\App\Services\Assortment\PlanService::class)->review($plan, auth()->user(), $verdict);
+    }
+
     protected function getHeaderActions(): array
     {
         $gate = app(ValidationGate::class);
+        $plans = app(\App\Services\Assortment\PlanService::class);
 
         return [
             Action::make('run')->label('Run now')->icon('heroicon-o-arrow-path')->color('gray')
@@ -82,6 +90,24 @@ class AssortmentValidation extends Page
                     $ok
                         ? Notification::make()->title('Assortment is live')->success()->send()
                         : Notification::make()->title('The review has not passed yet')->warning()->send();
+                }),
+            Action::make('plans_live')->label('Open range plans')->icon('heroicon-o-rectangle-stack')->color('success')
+                ->visible(fn () => TenantAssortment::isLive($this->tenant()) && ! TenantAssortment::plansLive($this->tenant()))
+                ->disabled(fn () => ! $plans->gate($this->tenant())['passed'])
+                ->requiresConfirmation()
+                ->modalDescription('Everyone with access to Assortment will see the range plans and can accept or reject them.')
+                ->action(function () use ($plans) {
+                    $plans->goLive($this->tenant(), auth()->user())
+                        ? Notification::make()->title('Range plans are open')->success()->send()
+                        : Notification::make()->title('The plan review has not passed yet')->warning()->send();
+                }),
+            Action::make('plans_pause')->label('Plans back to review')->icon('heroicon-o-pause')->color('gray')
+                ->visible(fn () => TenantAssortment::plansLive($this->tenant()))
+                ->requiresConfirmation()
+                ->modalDescription('Proposed range plans are hidden from users again. Accepted ones are kept.')
+                ->action(function () use ($plans) {
+                    $plans->pause($this->tenant(), auth()->user());
+                    Notification::make()->title('Range plans hidden again')->success()->send();
                 }),
             Action::make('pause')->label('Back to checking')->icon('heroicon-o-pause')->color('gray')
                 ->visible(fn () => TenantAssortment::isLive($this->tenant()))
@@ -110,6 +136,8 @@ class AssortmentValidation extends Page
             'currency' => $tenant->currencyCode(),
             'pass'     => (float) config('assortment.gate_pass', 0.70),
             'rules'    => app(\App\Services\Assortment\DecisionLearning::class)->performance((int) $tenant->id),
+            'planGate' => app(\App\Services\Assortment\PlanService::class)->gate($tenant),
+            'planSample' => app(\App\Services\Assortment\PlanService::class)->sample($tenant),
         ];
     }
 }

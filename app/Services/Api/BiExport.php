@@ -40,6 +40,7 @@ class BiExport
             'products'           => ['label' => 'Products', 'description' => 'Product dimension: SKU, name, department, category, brand, cost and price.'],
             'supplier_scorecard' => ['label' => 'Supplier scorecard', 'description' => 'Fill rate, on-time, lead time, cost change, score and grade per supplier (last 90 days).', 'computed' => true],
             'value_by_month'     => ['label' => 'Value by month', 'description' => 'Per month: findings, money found, measured recovery and capital released, actions completed.', 'computed' => true],
+            'range_plans'        => ['label' => 'Range plans', 'description' => 'Assortment: one plan per store and category once plans are open — current and proposed product count, changes, expected sales and margin change (low/mid/high), objective, decision, reset task and the measured result.'],
             'range_decisions'    => ['label' => 'Range decisions', 'description' => 'Assortment: add, delist and stockout-hidden decisions once live — value range, confidence, transferable-demand share, decision, task, and the measured result beside the estimate.'],
         ];
     }
@@ -80,6 +81,9 @@ class BiExport
                 'cost_change', 'overdue_lines', 'overdue_value', 'stockouts', 'lost_revenue', 'score', 'grade'],
             'value_by_month' => ['month', 'findings', 'investigations_opened', 'lost_revenue_found', 'capital_found', 'measured_recovery',
                 'measured_capital', 'actions_completed'],
+            'range_plans' => ['id', 'store_id', 'category', 'status', 'role', 'objective', 'feasible', 'current_count', 'proposed_count', 'changes',
+                'sales_low', 'sales_mid', 'sales_high', 'margin_mid', 'stock_change', 'confidence_tier', 'optimizer_version', 'as_of_date',
+                'decided_at', 'decided_by', 'assignee_id', 'due_at', 'done_at', 'measured_at', 'measured_sales_change_per_year', 'verdict', 'updated_at'],
             'range_decisions' => ['id', 'store_id', 'sku', 'type', 'status', 'confidence_tier', 'value_low', 'value_mid', 'value_high', 'value_basis',
                 'transfer_basis', 'transfer_share_mid', 'lifecycle', 'as_of_date', 'first_detected_at', 'decided_at', 'decided_by', 'task_status',
                 'assignee_id', 'due_at', 'done_at', 'measured_at', 'expected_sales_change_per_year', 'measured_sales_change_per_year',
@@ -104,6 +108,18 @@ class BiExport
             'sales_monthly' => DB::table('sales_monthly')->where('tenant_id', $tenantId)->select($cols),
             'stores' => DB::table('stores')->where('tenant_id', $tenantId)->select($cols),
             'products' => DB::table('products')->where('tenant_id', $tenantId)->select($cols),
+            // Plans in review (draft) are never exported.
+            'range_plans' => DB::table('assortment_plans')->where('tenant_id', $tenantId)->where('status', '<>', 'draft')
+                ->select(['id', 'store_id', 'category', 'status', 'role', 'objective', 'feasible', 'current_count', 'proposed_count', 'confidence_tier',
+                    'optimizer_version', 'as_of_date', 'decided_at', 'decided_by', 'assignee_id', 'due_at', 'done_at', 'measured_at', 'updated_at'])
+                ->selectRaw("jsonb_array_length(CAST(changes AS jsonb)) AS changes")
+                ->selectRaw("CAST(impact AS jsonb)->'sales'->>0 AS sales_low")
+                ->selectRaw("CAST(impact AS jsonb)->'sales'->>1 AS sales_mid")
+                ->selectRaw("CAST(impact AS jsonb)->'sales'->>2 AS sales_high")
+                ->selectRaw("CAST(impact AS jsonb)->'margin'->>1 AS margin_mid")
+                ->selectRaw("CAST(impact AS jsonb)->>'stock' AS stock_change")
+                ->selectRaw("CAST(measurement AS jsonb)->>'uplift_per_year' AS measured_sales_change_per_year")
+                ->selectRaw("CAST(measurement AS jsonb)->>'verdict' AS verdict"),
             // Shadow decisions (before the validation gate) are never exported.
             'range_decisions' => DB::table('assortment_gaps')->where('tenant_id', $tenantId)->where('status', '<>', 'shadow')
                 ->select(['id', 'store_id', 'sku', 'type', 'status', 'confidence_tier', 'value_low', 'value_mid', 'value_high', 'as_of_date',

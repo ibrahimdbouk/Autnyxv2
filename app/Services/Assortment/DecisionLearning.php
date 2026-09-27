@@ -75,6 +75,49 @@ class DecisionLearning
         }
     }
 
+    /** A range plan decided as a whole (intent range_plan; the expected change is the category's sales a year). */
+    public function planDecided(\App\Models\AssortmentPlan $plan, bool $accepted): void
+    {
+        try {
+            $impact = $plan->impact ?? [];
+            $rec = new Recommendation(
+                tenantId: (int) $plan->tenant_id,
+                intentType: 'range_plan',
+                storeId: (int) $plan->store_id,
+                expectedValue: (float) ($impact['sales'][1] ?? $plan->value_mid),
+                confidence: (float) $plan->confidence,
+                risk: round(1 - (float) $plan->confidence, 4),
+                rationale: $plan->headline(),
+                objective: $plan->objective,
+                source: 'assortment',
+            );
+            $this->recorder->record(
+                $rec,
+                situation: ['app' => 'assortment', 'type' => 'plan', 'category' => $plan->category, 'role' => $plan->role,
+                    'objective' => $plan->objective, 'tier' => $plan->confidence_tier],
+                evidence: ['impact' => $impact, 'changes' => array_map(fn ($c) => array_intersect_key($c, array_flip(['kind', 'sku', 'out_sku', 'sales', 'ticked'])), $plan->actionable()),
+                    'optimizer_version' => $plan->optimizer_version, 'constraints' => array_diff_key($plan->constraints ?? [], ['left_out' => 1])],
+                decision: $accepted ? DecisionCase::DECISION_ADOPTED : DecisionCase::DECISION_REJECTED,
+                actionRef: 'assortment_plan:' . $plan->id,
+            );
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    public function planMeasured(\App\Models\AssortmentPlan $plan): void
+    {
+        try {
+            $case = DecisionCase::where('tenant_id', $plan->tenant_id)->where('action_ref', 'assortment_plan:' . $plan->id)->latest('id')->first();
+            $m = $plan->measurement ?? [];
+            if ($case && $m !== []) {
+                $this->recorder->recordOutcome($case, (string) ($m['verdict'] ?? DecisionCase::OUTCOME_PARTIAL), (float) ($m['uplift_per_year'] ?? 0), $m);
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
     /** Write the measured result back to the decision's case. */
     public function measured(AssortmentGap $gap): void
     {
