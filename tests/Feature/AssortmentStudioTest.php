@@ -306,6 +306,7 @@ class AssortmentStudioTest extends TestCase
             ->set('objective', 'margin')->assertHasNoErrors()
             ->call('remove', 'OUTAGE')->assertSee('Not applied')
             ->call('add', 'DUD')->assertSet('picks', [['kind' => 'delist', 'sku' => 'OUTAGE']], 'taking it back undoes the pick')
+            ->call('more')->assertSet('limit', 140)
             ->call('loadPreset', 'sales')
             ->assertSet('loaded', 'Sales max');
         $this->assertContains(['kind' => 'add', 'sku' => 'ADD-ME'], $lw->get('picks'));

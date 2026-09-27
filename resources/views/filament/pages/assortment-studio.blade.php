@@ -112,11 +112,11 @@
                         @foreach($columns as $col)
                             <td class="ax-num">
                                 @if($col['kind'] === 'preset')
-                                    <x-filament::button size="xs" color="gray" outlined wire:click="loadPreset('{{ $col['key'] }}')">Load</x-filament::button>
+                                    <button type="button" class="ax-btn" wire:click="loadPreset('{{ $col['key'] }}')">Load</button>
                                 @elseif($col['kind'] === 'saved')
-                                    <x-filament::button size="xs" color="gray" outlined wire:click="loadScenario({{ $col['id'] }})">Load</x-filament::button>
+                                    <button type="button" class="ax-btn" wire:click="loadScenario({{ $col['id'] }})">Load</button>
                                     @if($col['mine'])
-                                        <x-filament::button size="xs" color="gray" wire:click="deleteScenario({{ $col['id'] }})" wire:confirm="Delete this scenario?">Delete</x-filament::button>
+                                        <button type="button" class="ax-btn" wire:click="deleteScenario({{ $col['id'] }})" wire:confirm="Delete this scenario?">Delete</button>
                                     @endif
                                 @endif
                             </td>
@@ -181,7 +181,7 @@
         <div class="ax-row ax-wrap ax-mt-3" style="gap:.35rem">
             <span class="ax-text-xs ax-faint">Start from the optimiser's plan:</span>
             @foreach(\App\Services\Assortment\StudioService::PRESETS as $k => $p)
-                <x-filament::button size="xs" color="gray" outlined wire:click="loadPreset('{{ $k }}')" :tooltip="$p['about']">{{ $p['label'] }}</x-filament::button>
+                <button type="button" class="ax-btn" wire:click="loadPreset('{{ $k }}')" title="{{ $p['about'] }}">{{ $p['label'] }}</button>
             @endforeach
         </div>
         <p class="ax-faint ax-text-xs ax-mt-2">Shelf space is counted in products until shelf metres and facings are loaded. The optimiser only uses the engine's decisions; changes you make yourself are valued the same way and labelled as yours.</p>
@@ -207,7 +207,7 @@
                                         </td>
                                         <td class="ax-text-sm ax-muted">{{ $ch['why'] }}</td>
                                         <td class="ax-num">{{ $range($ch['sales']) }}</td>
-                                        <td>@if($idx !== false)<x-filament::button size="xs" color="gray" outlined wire:click="undo({{ $idx }})" aria-label="Undo {{ $ch['name'] }}">Undo</x-filament::button>@endif</td>
+                                        <td>@if($idx !== false)<button type="button" class="ax-btn" wire:click="undo({{ $idx }})" aria-label="Undo {{ $ch['name'] }}">Undo</button>@endif</td>
                                     </tr>
                                 @endforeach
                                 @foreach($fixes as $ch)
@@ -215,7 +215,7 @@
                                         <td><x-ui.badge color="danger">{{ $labels['recover'] }}</x-ui.badge><div class="ax-fw-600 ax-mt-1"><button type="button" class="ax-ink" wire:click="focusOn(@js($ch['sku']))">{{ $ch['name'] }}</button></div></td>
                                         <td class="ax-text-sm ax-muted">{{ $ch['why'] }}</td>
                                         <td class="ax-num">{{ $range($ch['sales']) }}</td>
-                                        <td><x-filament::button size="xs" color="gray" outlined wire:click="toggleSkip({{ \Illuminate\Support\Js::from($ch['sku']) }})">Leave out</x-filament::button></td>
+                                        <td><button type="button" class="ax-btn" wire:click="toggleSkip({{ \Illuminate\Support\Js::from($ch['sku']) }})">Leave out</button></td>
                                     </tr>
                                 @endforeach
                             </tbody>
@@ -249,14 +249,14 @@
                                     </td>
                                     <td style="white-space:nowrap">
                                         @if($row['new'] || $row['off'])
-                                            <x-filament::button size="xs" color="gray" outlined wire:click="{{ $row['new'] ? 'remove' : 'add' }}({{ \Illuminate\Support\Js::from($row['sku']) }})">Put back</x-filament::button>
+                                            <button type="button" class="ax-btn" wire:click="{{ $row['new'] ? 'remove' : 'add' }}({{ \Illuminate\Support\Js::from($row['sku']) }})">Put back</button>
                                         @elseif($row['protected'])
                                             @if($row['default_protected'] || in_array($row['sku'], $protect, true))
-                                                <x-filament::button size="xs" color="gray" wire:click="toggleProtect({{ \Illuminate\Support\Js::from($row['sku']) }})" :tooltip="'Allow it to be taken off in this scenario'">Unprotect</x-filament::button>
+                                                <button type="button" class="ax-btn" wire:click="toggleProtect({{ \Illuminate\Support\Js::from($row['sku']) }})" title="{{ 'Allow it to be taken off in this scenario' }}">Unprotect</button>
                                             @endif
                                         @else
-                                            <x-filament::button size="xs" color="gray" outlined wire:click="remove({{ \Illuminate\Support\Js::from($row['sku']) }})" aria-label="Take {{ $row['name'] }} off the range">Take off</x-filament::button>
-                                            <x-filament::button size="xs" color="gray" wire:click="toggleProtect({{ \Illuminate\Support\Js::from($row['sku']) }})">{{ in_array($row['sku'], $unprotect, true) ? 'Protect again' : 'Protect' }}</x-filament::button>
+                                            <button type="button" class="ax-btn" wire:click="remove({{ \Illuminate\Support\Js::from($row['sku']) }})" aria-label="Take {{ $row['name'] }} off the range">Take off</button>
+                                            <button type="button" class="ax-btn" wire:click="toggleProtect({{ \Illuminate\Support\Js::from($row['sku']) }})">{{ in_array($row['sku'], $unprotect, true) ? 'Protect again' : 'Protect' }}</button>
                                         @endif
                                     </td>
                                 </tr>
@@ -266,8 +266,8 @@
                         </tbody>
                     </table>
                 </div>
-                @if(! $showAll && $total > count($rows))
-                    <div class="ax-mt-2"><x-filament::button size="xs" color="gray" outlined wire:click="$set('showAll', true)">Show all {{ number_format($total) }}</x-filament::button></div>
+                @if($total > count($rows) && trim($search) === '')
+                    <div class="ax-mt-2"><button type="button" class="ax-btn" wire:click="more">Show {{ min(100, $total - count($rows)) }} more (of {{ number_format($total) }})</button> <span class="ax-faint ax-text-xs">or find a product above</span></div>
                 @endif
             </x-ui.card>
         </div>
@@ -278,7 +278,7 @@
                 <x-ui.card :title="$product['name']">
                     <div class="ax-between ax-wrap ax-mb-2">
                         <span class="ax-faint ax-text-xs">{{ collect([$product['facts']['subcategory'], $product['facts']['brand'], $product['facts']['pack_size']])->filter()->implode(' · ') }}{{ $product['facts']['price'] > 0 ? ' · ' . $money($product['facts']['price']) : '' }}</span>
-                        <x-filament::button size="xs" color="gray" wire:click="focusOn(null)" aria-label="Close the product">Close</x-filament::button>
+                        <button type="button" class="ax-btn" wire:click="focusOn(null)" aria-label="Close the product">Close</button>
                     </div>
                     <div class="ax-stack ax-text-sm">
                         @if($product['on_today'])
@@ -345,13 +345,13 @@
 
                         <div class="ax-row ax-wrap" style="gap:.35rem">
                             @if($product['on_today'] && $product['on_now'] && ! $product['protected'])
-                                <x-filament::button size="xs" color="gray" outlined wire:click="remove({{ \Illuminate\Support\Js::from($product['sku']) }})">Take off the range</x-filament::button>
+                                <button type="button" class="ax-btn" wire:click="remove({{ \Illuminate\Support\Js::from($product['sku']) }})">Take off the range</button>
                             @elseif($product['on_today'] && ! $product['on_now'])
-                                <x-filament::button size="xs" color="gray" outlined wire:click="add({{ \Illuminate\Support\Js::from($product['sku']) }})">Put it back</x-filament::button>
+                                <button type="button" class="ax-btn" wire:click="add({{ \Illuminate\Support\Js::from($product['sku']) }})">Put it back</button>
                             @elseif(! $product['on_today'] && ! $product['on_now'] && ($product['engine'] || $product['offered']))
-                                <x-filament::button size="xs" color="success" wire:click="add({{ \Illuminate\Support\Js::from($product['sku']) }})">Add to the range</x-filament::button>
+                                <button type="button" class="ax-btn ax-btn--success" wire:click="add({{ \Illuminate\Support\Js::from($product['sku']) }})">Add to the range</button>
                             @elseif(! $product['on_today'] && $product['on_now'])
-                                <x-filament::button size="xs" color="gray" outlined wire:click="remove({{ \Illuminate\Support\Js::from($product['sku']) }})">Leave it out again</x-filament::button>
+                                <button type="button" class="ax-btn" wire:click="remove({{ \Illuminate\Support\Js::from($product['sku']) }})">Leave it out again</button>
                             @endif
                         </div>
                     </div>
@@ -365,7 +365,7 @@
                         <div class="ax-between" wire:key="op-{{ md5($o['sku']) }}">
                             <div><button type="button" class="ax-ink" wire:click="focusOn(@js($o['sku']))">{{ $o['name'] }}</button>
                                 <div class="ax-faint ax-text-xs">{{ $money($o['gross_sales']) }} a year · {{ $o['taken']['mid'] === null ? 'where its sales come from is not known' : 'about ' . $share($o['taken']['mid']) . ' from the shelf' }} · {{ ucfirst($o['tier']) }}</div></div>
-                            <x-filament::button size="xs" color="success" outlined wire:click="add({{ \Illuminate\Support\Js::from($o['sku']) }})">Add</x-filament::button>
+                            <button type="button" class="ax-btn ax-btn--success" wire:click="add({{ \Illuminate\Support\Js::from($o['sku']) }})">Add</button>
                         </div>
                     @empty
                         <p class="ax-m-0 ax-muted">No adds proposed for this shelf{{ collect($ctx['engine'])->where('kind', 'delist')->count() ? '; delists are marked in the range.' : '.' }}</p>
@@ -377,7 +377,7 @@
                             <div class="ax-between" wire:key="rc-{{ md5($o['sku']) }}">
                                 <div><button type="button" class="ax-ink" wire:click="focusOn(@js($o['sku']))">{{ $o['name'] }}</button>
                                     <div class="ax-faint ax-text-xs">{{ $money($o['gross_sales']) }} a year of sales when in stock · fixed, never delisted</div></div>
-                                <x-filament::button size="xs" color="gray" outlined wire:click="toggleSkip({{ \Illuminate\Support\Js::from($o['sku']) }})">{{ $o['skipped'] ? 'Include' : 'Leave out' }}</x-filament::button>
+                                <button type="button" class="ax-btn" wire:click="toggleSkip({{ \Illuminate\Support\Js::from($o['sku']) }})">{{ $o['skipped'] ? 'Include' : 'Leave out' }}</button>
                             </div>
                         @endforeach
                     @endif
@@ -389,7 +389,7 @@
                             <div class="ax-between" wire:key="ot-{{ md5($o['sku']) }}">
                                 <div><button type="button" class="ax-ink" wire:click="focusOn(@js($o['sku']))">{{ $o['name'] }}</button>
                                     <div class="ax-faint ax-text-xs">{{ $money($o['gross_sales']) }} a year · {{ $o['taken']['mid'] === null ? 'source unknown' : 'about ' . $share($o['taken']['mid']) . ' from the shelf' }}</div></div>
-                                <x-filament::button size="xs" color="gray" outlined wire:click="add({{ \Illuminate\Support\Js::from($o['sku']) }})">Add</x-filament::button>
+                                <button type="button" class="ax-btn" wire:click="add({{ \Illuminate\Support\Js::from($o['sku']) }})">Add</button>
                             </div>
                         @endforeach
                     @endif

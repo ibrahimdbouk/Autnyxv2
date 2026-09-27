@@ -225,6 +225,11 @@ a.ax-stat:hover { box-shadow: var(--ax-shadow-md); transform: translateY(-1px); 
 }
 /* Phase 3 Studio: a product taken off the shelf in the scenario; the honest label on a figure. */
 .ax-off { opacity: .5; text-decoration: line-through; }
+.ax-btn { display: inline-flex; align-items: center; gap: .25rem; font-size: var(--ax-fs-xs); font-weight: 600; line-height: 1.4;
+  padding: .2rem .55rem; border-radius: var(--ax-radius-sm); border: 1px solid var(--ax-line); background: var(--ax-bg); color: var(--ax-text); cursor: pointer; white-space: nowrap; }
+.ax-btn:hover { background: var(--ax-panel); }
+.ax-btn:focus-visible { outline: none; box-shadow: var(--ax-ring); }
+.ax-btn--success { border-color: var(--ax-success-line); color: var(--ax-success-fg); }
 .ax-badge--observed { background: var(--ax-neutral-soft); color: var(--ax-teal); }
 .ax-divider { height: 1px; background: var(--ax-line-2); margin: var(--ax-3) 0; border: 0; }
 .ax-muted { color: var(--ax-muted); }

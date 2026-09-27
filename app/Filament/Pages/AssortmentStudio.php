@@ -82,7 +82,7 @@ class AssortmentStudio extends Page
 
     public string $search = '';
 
-    public bool $showAll = false;
+    public int $limit = self::ROWS;
 
     public ?string $loaded = null;
 
@@ -158,6 +158,7 @@ class AssortmentStudio extends Page
         $this->maxSize = $this->minSize = null;
         $this->picks = $this->protect = $this->unprotect = $this->skip = [];
         $this->focus = $this->loaded = null;
+        $this->limit = self::ROWS;
         $this->ctxMemo = $this->resultMemo = null;
     }
 
@@ -209,6 +210,11 @@ class AssortmentStudio extends Page
     {
         $this->skip = in_array($sku, $this->skip, true) ? array_values(array_diff($this->skip, [$sku])) : [...$this->skip, $sku];
         $this->changed();
+    }
+
+    public function more(): void
+    {
+        $this->limit = min(2000, $this->limit + 100);
     }
 
     public function focusOn(?string $sku): void
@@ -379,8 +385,8 @@ class AssortmentStudio extends Page
         usort($rows, fn ($a, $b) => [! ($a['picked'] || $a['new']), $a['flag'] === null, -(float) $a['sales'], $a['sku']]
             <=> [! ($b['picked'] || $b['new']), $b['flag'] === null, -(float) $b['sales'], $b['sku']]);
         $total = count($rows);
-        if (! $this->showAll && $term === '') {
-            $rows = array_slice($rows, 0, self::ROWS);
+        if ($term === '') {
+            $rows = array_slice($rows, 0, max(self::ROWS, $this->limit));
         }
 
         // Opportunities not yet taken, valued on the shelf as it now stands.
