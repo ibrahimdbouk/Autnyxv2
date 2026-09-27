@@ -217,6 +217,15 @@ a.ax-stat:hover { box-shadow: var(--ax-shadow-md); transform: translateY(-1px); 
   .ax-grid-3 { grid-template-columns: repeat(3, 1fr); }
   .ax-grid-4 { grid-template-columns: repeat(4, 1fr); }
 }
+.ax-grid-5 { grid-template-columns: repeat(2, 1fr); }
+.ax-split { display: grid; gap: var(--ax-4); grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 1024px) {
+  .ax-grid-5 { grid-template-columns: repeat(5, 1fr); }
+  .ax-split { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+}
+/* Phase 3 Studio: a product taken off the shelf in the scenario; the honest label on a figure. */
+.ax-off { opacity: .5; text-decoration: line-through; }
+.ax-badge--observed { background: var(--ax-neutral-soft); color: var(--ax-teal); }
 .ax-divider { height: 1px; background: var(--ax-line-2); margin: var(--ax-3) 0; border: 0; }
 .ax-muted { color: var(--ax-muted); }
 .ax-faint { color: var(--ax-faint); }

@@ -43,12 +43,16 @@ class AssortmentPlan extends Model
         self::PROTECT => 'Protected',
     ];
 
+    /** Where a plan came from: the nightly optimiser, or a person in the Decision Studio. */
+    public const SOURCE_ENGINE = 'engine';
+    public const SOURCE_STUDIO = 'studio';
+
     protected $fillable = [
         'tenant_id', 'store_id', 'category', 'peer_group', 'status', 'role', 'objective', 'feasible', 'infeasible_reason',
         'current_count', 'proposed_count', 'changes', 'impact', 'constraints', 'value_mid', 'confidence', 'confidence_tier',
         'fingerprint', 'optimizer_version', 'as_of_date', 'review_verdict', 'reviewed_by', 'reviewed_at',
         'decided_by', 'decided_at', 'decision_note', 'assignee_id', 'due_at', 'done_at', 'done_by',
-        'measure_after', 'measured_at', 'measurement',
+        'measure_after', 'measured_at', 'measurement', 'source', 'scenario_id', 'created_by',
     ];
 
     protected $casts = [
@@ -81,6 +85,21 @@ class AssortmentPlan extends Model
     public function assignee(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assignee_id');
+    }
+
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function scenario(): BelongsTo
+    {
+        return $this->belongsTo(AssortmentScenario::class, 'scenario_id');
+    }
+
+    public function fromStudio(): bool
+    {
+        return $this->source === self::SOURCE_STUDIO;
     }
 
     public function decider(): BelongsTo

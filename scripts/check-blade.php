@@ -106,6 +106,20 @@ foreach (rglob($root . '/resources/views', '.blade.php') as $file) {
     }
 }
 
+/* ---------- BLD-002: a Blade directive inside a component tag's attributes */
+// Component attributes (<x-… wire:click="add(@js($sku))">) are not compiled for
+// directives: the browser gets "@js(...)" literally and Livewire throws a
+// SyntaxError on click. Use {{ \Illuminate\Support\Js::from($v) }} there.
+foreach (rglob($root . '/resources/views', '.blade.php') as $file) {
+    $src = file_get_contents($file);
+    if (preg_match_all('/<x-[\w.:-]+\b[^>]*?@(js|json)\(/s', $src, $mm, PREG_OFFSET_CAPTURE)) {
+        foreach ($mm[0] as $hit) {
+            $problems[] = '[BLD-002] ' . rel($file, $root) . ' (line ' . lineOf($src, $hit[1]) . '): @' . $mm[1][0][0]
+                . '(...) inside a component tag is not compiled — use {{ \\Illuminate\\Support\\Js::from(...) }}.';
+        }
+    }
+}
+
 /* ---------- 3: MaxWidth enum path (Blade + PHP) ----------------------- */
 $scanMaxWidth = array_merge(
     rglob($root . '/resources/views', '.blade.php'),

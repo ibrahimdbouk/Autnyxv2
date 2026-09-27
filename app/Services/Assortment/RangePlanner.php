@@ -22,6 +22,8 @@ use Illuminate\Support\Facades\DB;
  *     change set keeps its review verdict; a rejected change set is not
  *     proposed again; a shelf with an accepted plan in progress is left alone.
  *   - Decisions already accepted or rejected one by one are not candidates.
+ *   - Phase 3: a plan a person made in the Decision Studio is theirs — the
+ *     nightly rebuild leaves that shelf alone until it is accepted or rejected.
  */
 class RangePlanner
 {
@@ -38,15 +40,19 @@ class RangePlanner
         $status = TenantAssortment::plansLive($tenant) ? AssortmentPlan::STATUS_PROPOSED : AssortmentPlan::STATUS_DRAFT;
 
         // Verdicts to keep, change sets not to propose again, shelves not to touch.
-        $verdicts = AssortmentPlan::where('tenant_id', $tenantId)->whereIn('status', [AssortmentPlan::STATUS_DRAFT, AssortmentPlan::STATUS_PROPOSED])
+        $open = [AssortmentPlan::STATUS_DRAFT, AssortmentPlan::STATUS_PROPOSED];
+        $verdicts = AssortmentPlan::where('tenant_id', $tenantId)->whereIn('status', $open)->where('source', AssortmentPlan::SOURCE_ENGINE)
             ->whereNotNull('review_verdict')->get(['fingerprint', 'review_verdict', 'reviewed_by', 'reviewed_at'])->keyBy('fingerprint');
         $rejected = AssortmentPlan::where('tenant_id', $tenantId)->where('status', AssortmentPlan::STATUS_REJECTED)
             ->pluck('fingerprint')->flip()->all();
-        $busy = AssortmentPlan::where('tenant_id', $tenantId)->whereIn('status', [AssortmentPlan::STATUS_ACCEPTED, AssortmentPlan::STATUS_IN_PROGRESS])
+        // Left alone: shelves with a plan being carried out, and shelves where a person made the plan in the Studio.
+        $busy = AssortmentPlan::where('tenant_id', $tenantId)
+            ->where(fn ($q) => $q->whereIn('status', [AssortmentPlan::STATUS_ACCEPTED, AssortmentPlan::STATUS_IN_PROGRESS])
+                ->orWhere(fn ($q) => $q->whereIn('status', $open)->where('source', AssortmentPlan::SOURCE_STUDIO)))
             ->get(['store_id', 'category'])->mapWithKeys(fn ($p) => [$p->store_id . '|' . $p->category => true])->all();
-        $before = AssortmentPlan::where('tenant_id', $tenantId)->whereIn('status', [AssortmentPlan::STATUS_DRAFT, AssortmentPlan::STATUS_PROPOSED])
+        $before = AssortmentPlan::where('tenant_id', $tenantId)->whereIn('status', $open)->where('source', AssortmentPlan::SOURCE_ENGINE)
             ->pluck('fingerprint')->flip()->all();
-        AssortmentPlan::where('tenant_id', $tenantId)->whereIn('status', [AssortmentPlan::STATUS_DRAFT, AssortmentPlan::STATUS_PROPOSED])->delete();
+        AssortmentPlan::where('tenant_id', $tenantId)->whereIn('status', $open)->where('source', AssortmentPlan::SOURCE_ENGINE)->delete();
 
         $gaps = AssortmentGap::where('tenant_id', $tenantId)
             ->whereIn('status', [AssortmentGap::STATUS_SHADOW, AssortmentGap::STATUS_OPEN])
@@ -60,28 +66,18 @@ class RangePlanner
             }
         }
 
-        $must = [];
-        foreach (DB::table('assortment_must_stock')->where('tenant_id', $tenantId)->get(['sku', 'store_id', 'reason']) as $r) {
-            $must[($r->store_id ?? '*') . '|' . $r->sku] = 'Must-stock' . ($r->reason ? ': ' . $r->reason : '');
-        }
-        $life = [];
-        foreach (DB::table('product_lifecycles')->where('tenant_id', $tenantId)->whereNull('store_id')
-            ->whereIn('state', ['new', 'emerging', 'seasonal'])->get(['sku', 'state']) as $r) {
-            $life[(string) $r->sku] = ucfirst((string) $r->state) . ' product';
-        }
+        $protections = $this->protections($tenantId);
 
         $out = ['plans' => 0, 'new' => 0, 'infeasible' => 0, 'shelves' => 0];
         $rows = [];
         foreach ($byShelf as $storeId => $categories) {
-            $shelves = $this->shelves($tenantId, (int) $storeId, array_keys($categories), $asOf, $products);
+            $shelves = $this->shelvesFor($tenantId, (int) $storeId, array_keys($categories), $asOf, $products);
             foreach ($categories as $cat => $list) {
                 $out['shelves']++;
                 $shelf = $shelves[$cat] ?? ['skus' => [], 'baseline' => ['sales' => 0.0, 'margin' => 0.0, 'stock' => 0.0, 'count' => 0]];
-                foreach ($shelf['skus'] as $sku => $p) {
-                    $shelf['skus'][$sku]['protected'] = $must[$storeId . '|' . $sku] ?? $must['*|' . $sku] ?? $life[$sku] ?? null;
-                }
+                $shelf = $this->protect($shelf, (int) $storeId, $protections);
                 $pool = (string) ($list[0]->peer_group ?? '');
-                $candidates = array_values(array_filter(array_map(fn ($g) => $this->candidate($g, $products), $list)));
+                $candidates = array_values(array_filter(array_map(fn ($g) => $this->candidateFrom($g, $products), $list)));
                 $observed = $this->transfers->observed($tenantId, $pool, array_column($candidates, 'sku'));
                 $transfer = fn (string $sku, array $onShelf) => $this->estimator->estimate($sku, $onShelf, $products, $observed[$sku] ?? []);
 
@@ -127,8 +123,40 @@ class RangePlanner
         return $out;
     }
 
+    /**
+     * What may not leave a shelf: must-stock (per store or every store), and
+     * new, emerging and seasonal products.
+     *
+     * @return array{must: array<string,string>, life: array<string,string>}
+     */
+    public function protections(int $tenantId): array
+    {
+        $must = [];
+        foreach (DB::table('assortment_must_stock')->where('tenant_id', $tenantId)->get(['sku', 'store_id', 'reason']) as $r) {
+            $must[($r->store_id ?? '*') . '|' . $r->sku] = 'Must-stock' . ($r->reason ? ': ' . $r->reason : '');
+        }
+        $life = [];
+        foreach (DB::table('product_lifecycles')->where('tenant_id', $tenantId)->whereNull('store_id')
+            ->whereIn('state', ['new', 'emerging', 'seasonal'])->get(['sku', 'state']) as $r) {
+            $life[(string) $r->sku] = ucfirst((string) $r->state) . ' product';
+        }
+
+        return ['must' => $must, 'life' => $life];
+    }
+
+    /** The shelf with each product's protection reason (or null). */
+    public function protect(array $shelf, int $storeId, array $protections): array
+    {
+        foreach ($shelf['skus'] as $sku => $p) {
+            $shelf['skus'][$sku]['protected'] = $protections['must'][$storeId . '|' . $sku] ?? $protections['must']['*|' . $sku]
+                ?? $protections['life'][$sku] ?? null;
+        }
+
+        return $shelf;
+    }
+
     /** One engine decision as an optimiser candidate. */
-    private function candidate(AssortmentGap $g, array $products): ?array
+    public function candidateFrom(AssortmentGap $g, array $products): ?array
     {
         $e = $g->evidence ?? [];
         $p = $products[$g->sku] ?? [];
@@ -155,6 +183,7 @@ class RangePlanner
             'stock_value'   => (float) ($e['stock_value'] ?? 0),
             'units_per_day' => (float) ($e['expected_units_per_day'] ?? 0),
             'cost'          => (float) ($p['cost'] ?? 0),
+            'source'        => 'engine',
         ];
     }
 
@@ -164,7 +193,7 @@ class RangePlanner
      *
      * @return array<string,array{skus:array,baseline:array}>
      */
-    private function shelves(int $tenantId, int $storeId, array $categories, string $asOf, array $products): array
+    public function shelvesFor(int $tenantId, int $storeId, array $categories, string $asOf, array $products): array
     {
         $from = Carbon::parse($asOf)->subDays(89)->toDateString();
         $marks = implode(',', array_fill(0, count($categories), '?'));

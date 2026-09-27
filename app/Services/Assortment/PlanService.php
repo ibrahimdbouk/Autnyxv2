@@ -19,6 +19,10 @@ use Illuminate\Support\Facades\DB;
  *   done     the reset is done: every task of the plan is marked done, and the
  *            plan is measured 8 weeks later on the category's sales
  *
+ *   Plans made in the Decision Studio (source studio) are accepted the same
+ *   way; their changes picked by a person carry no engine decision, so the
+ *   plan is their task.
+ *
  *   review   Validation → Plans: the top 20 plans are marked sensible or not;
  *            plans go live (proposed) when at least 70% are sensible and every
  *            sampled plan is reviewed. Decisions must be live first.
@@ -59,7 +63,10 @@ class PlanService
                     }
                 }
             }
-            abort_if($firstGap === null && collect($changes)->where('ticked', true)->where('kind', '<>', AssortmentPlan::PROTECT)->isNotEmpty(), 422,
+            // Stale only when every ticked change rests on an engine decision and none of those is open any more.
+            // (A change picked in the Decision Studio has no decision behind it: the plan itself is its task.)
+            $ticked = collect($changes)->where('ticked', true)->where('kind', '<>', AssortmentPlan::PROTECT);
+            abort_if($firstGap === null && $ticked->isNotEmpty() && $ticked->every(fn ($c) => ! empty($c['gap_id'])), 422,
                 'The decisions behind this plan are no longer open — rebuild it with Run now.');
 
             $base = $plan->impact['baseline'] ?? ['sales' => 0, 'margin' => 0, 'stock' => 0, 'count' => $plan->current_count];
@@ -68,7 +75,8 @@ class PlanService
             });
             $plan->forceFill([
                 'changes'        => $changes,
-                'impact'         => $this->optimiser->impact($changes, $base, $count) + ['margin_known' => $plan->impact['margin_known'] ?? false],
+                'impact'         => array_merge($this->optimiser->impact($changes, $base, $count),
+                    ['margin_known' => $plan->impact['margin_known'] ?? false, 'basis' => $plan->impact['basis'] ?? 'estimated']),
                 'proposed_count' => $count,
                 'status'         => AssortmentPlan::STATUS_ACCEPTED,
                 'decided_by'     => $by->id,

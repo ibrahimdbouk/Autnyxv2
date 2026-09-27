@@ -16,6 +16,7 @@
     $labels = \App\Models\AssortmentPlan::CHANGE_LABELS;
     $decision = static fn ($id) => $id ? \App\Filament\Pages\AssortmentDecision::getUrl(['decision' => $id]) : null;
     $bound = $c['bound'] ?? [];
+    $basis = ($i['basis'] ?? 'estimated') === 'simulated' ? 'Simulated' : 'Estimated';
 @endphp
 
 <div class="ax-stack">
@@ -29,7 +30,9 @@
             <x-ui.badge :color="$p->confidence_tier === 'established' ? 'success' : ($p->confidence_tier === 'likely' ? 'info' : null)">Confidence: {{ ucfirst($p->confidence_tier) }}</x-ui.badge>
         </div>
         <h2 class="ax-text-lg ax-fw-700 ax-ink ax-m-0">{{ $p->headline() }}</h2>
-        <p class="ax-muted ax-text-sm ax-mt-1">Built from data up to {{ $p->as_of_date?->format('j M Y') }} · the range decisions for this store and category, chosen together</p>
+        <p class="ax-muted ax-text-sm ax-mt-1">Built from data up to {{ $p->as_of_date?->format('j M Y') }} · {{ $p->fromStudio()
+            ? 'made in the Decision Studio' . ($p->creator ? ' by ' . $p->creator->name : '') . ($p->scenario ? ' (“' . $p->scenario->name . '”)' : '')
+            : 'the range decisions for this store and category, chosen together' }}@if($studioUrl) · <a href="{{ $studioUrl }}" wire:navigate>Open in the Decision Studio</a>@endif</p>
         @if(! $p->feasible)
             <p class="ax-text-sm ax-mt-3" style="color:var(--ax-danger-fg)"><strong>{{ $p->infeasible_reason }}</strong></p>
             <p class="ax-faint ax-text-xs ax-mt-1">Change the category's limits in Assortment → Range &amp; Must-Stock, or the must-stock list, and run again. Nothing is proposed while a limit cannot be met.</p>
@@ -39,11 +42,11 @@
     <div class="ax-grid ax-grid-4">
         <x-ui.stat label="Products" :value="$p->current_count . ' → ' . $p->proposed_count"
             :foot="'Limit ' . ($c['min_size'] ?? '—') . '–' . ($c['max_size'] ?? '—') . ' · shelf ' . ($pct($i['space_pct'] ?? 0) ?? '0%')" />
-        <x-ui.stat label="Category sales a year" :value="$range($i['sales'] ?? null)" :foot="'Estimated · ' . ($pctRange($i['sales_pct'] ?? null) ?? '—') . ' of today'" />
+        <x-ui.stat label="Category sales a year" :value="$range($i['sales'] ?? null)" :foot="$basis . ' · ' . ($pctRange($i['sales_pct'] ?? null) ?? '—') . ' of today'" />
         <x-ui.stat :label="($i['margin_known'] ?? false) ? 'Gross margin a year' : 'Margin a year (no cost prices: sales)'" :value="$range($i['margin'] ?? null)"
-            :foot="'Estimated' . (($i['margin_pct'] ?? null) ? ' · ' . $pctRange($i['margin_pct']) . ' of today' : '')" />
+            :foot="$basis . (($i['margin_pct'] ?? null) ? ' · ' . $pctRange($i['margin_pct']) . ' of today' : '')" />
         <x-ui.stat label="Stock tied up, at cost" :value="$signed($i['stock'] ?? 0)"
-            :foot="'Estimated' . (($i['stock_pct'] ?? null) !== null ? ' · ' . $pct($i['stock_pct']) . ' of today' : '') . ' · a minus frees cash'" />
+            :foot="$basis . (($i['stock_pct'] ?? null) !== null ? ' · ' . $pct($i['stock_pct']) . ' of today' : '') . ' · a minus frees cash'" />
     </div>
 
     @if(! empty($p->actionable()))

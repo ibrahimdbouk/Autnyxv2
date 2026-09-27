@@ -53,7 +53,7 @@ class AssortmentPlanPage extends Page
 
     public function record(): ?AssortmentPlan
     {
-        return $this->plan ? AssortmentPlans::scoped()->with(['decider:id,name'])->find($this->plan) : null;
+        return $this->plan ? AssortmentPlans::scoped()->with(['decider:id,name', 'creator:id,name', 'scenario:id,name'])->find($this->plan) : null;
     }
 
     public function mount(): void
@@ -131,6 +131,7 @@ class AssortmentPlanPage extends Page
             'currency' => $tenant?->currencyCode(),
             'live'     => $tenant ? TenantAssortment::plansLive($tenant) : false,
             'backUrl'  => AssortmentPlans::getUrl(),
+            'studioUrl' => $plan && AssortmentStudio::canAccess() && AssortmentStudio::opensFor() ? AssortmentStudio::getUrl(['store' => $plan->store_id, 'category' => $plan->category]) : null,
         ];
     }
 }

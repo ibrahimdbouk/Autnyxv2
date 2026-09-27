@@ -70,6 +70,15 @@ class AssortmentPlans extends Page
         return $q;
     }
 
+    protected function getHeaderActions(): array
+    {
+        return [
+            \Filament\Actions\Action::make('studio')->label('Open the Decision Studio')->icon('heroicon-o-adjustments-horizontal')->color('gray')
+                ->url(fn () => AssortmentStudio::getUrl())
+                ->visible(fn () => AssortmentStudio::canAccess() && AssortmentStudio::opensFor()),
+        ];
+    }
+
     protected function getViewData(): array
     {
         $tenant = Filament::getTenant();

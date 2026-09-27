@@ -36,7 +36,7 @@
                             @endphp
                             <tr wire:key="plan-{{ $p->id }}">
                                 <td style="min-width:13rem">
-                                    <a class="ax-fw-600" href="{{ \App\Filament\Pages\AssortmentPlanPage::getUrl(['plan' => $p->id]) }}" wire:navigate>{{ $p->store?->name }} · {{ $p->category }}</a>
+                                    <a class="ax-fw-600" href="{{ \App\Filament\Pages\AssortmentPlanPage::getUrl(['plan' => $p->id]) }}" wire:navigate>{{ $p->store?->name }} · {{ $p->category }}</a>@if($p->source === 'studio') <x-ui.badge color="accent">Studio</x-ui.badge>@endif
                                     <div class="ax-faint ax-text-xs">{{ \App\Services\Assortment\CategoryStrategy::roleLabel($p->role) }}</div>
                                 </td>
                                 <td class="ax-num" style="white-space:nowrap">{{ $p->current_count }} → {{ $p->proposed_count }}</td>

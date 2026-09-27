@@ -54,9 +54,7 @@ final class RangeOptimizer
     {
         $base = $shelf['baseline'];
         $n0 = (int) $base['count'];
-        $room = (int) ceil($n0 * (float) $strategy['room']);
-        $maxN = $strategy['max_size'] ?? ($n0 + $room);
-        $minN = max(1, $n0 - (int) ceil(0.2 * $n0));
+        [$maxN, $minN] = $this->limits($n0, $strategy);
         $weights = CategoryStrategy::OBJECTIVES[$strategy['objective']]['weights'] ?? CategoryStrategy::OBJECTIVES['balanced']['weights'];
         $factors = CategoryStrategy::ROLE_FACTORS[$strategy['role']] ?? ['add' => 1.0, 'delist' => 1.0];
         $floor = $strategy['sales_floor'];
@@ -205,28 +203,10 @@ final class RangeOptimizer
                 }
             }
         }
-        foreach ($shelf['skus'] as $sku => $p) {
-            if (! empty($p['protected'])) {
-                $protectedList[] = ['kind' => AssortmentPlan::PROTECT, 'key' => 'protect:' . $sku, 'sku' => (string) $sku,
-                    'name' => (string) ($p['name'] ?? $sku), 'why' => (string) $p['protected'], 'ticked' => false];
-            }
-        }
-
         // ── Recoveries: always in; a stock fix, not a range change ────────────
-        $recoverRows = [];
-        foreach ($recovers as $r) {
-            $t = $this->share($transfer($r['sku'], array_values(array_diff($state['shelf'], [$r['sku']]))));
-            $m = $r['margin_rate'] ?? $marginShelf;
-            $sales = $this->range($r['gross_sales'], 1 - $t[2], 1 - $t[1], 1 - $t[0]);
-            $recoverRows[] = [
-                'kind' => AssortmentPlan::RECOVER, 'key' => 'recover:' . $r['sku'], 'gap_id' => $r['gap_id'], 'sku' => $r['sku'], 'name' => $r['name'],
-                'sales' => $sales, 'margin' => array_map(fn ($v) => round($v * $m, 2), $sales), 'stock' => 0.0, 'availability' => round((float) $r['gross_sales'], 2),
-                'tier' => $r['tier'], 'confidence' => (float) $r['confidence'], 'ticked' => true,
-                'why' => 'Keeps running out: fixing the stock recovers the sales its buyers do not take elsewhere. Always part of the plan — never a delist.',
-            ];
-        }
+        $recoverRows = $this->recoverRows($recovers, $state['shelf'], $marginShelf, $transfer);
 
-        $changes = array_merge(array_map(fn ($m) => $this->change($m, $base), $moves), $recoverRows, $protectedList ?? []);
+        $changes = array_merge(array_map(fn ($m) => $this->change($m, $base), $moves), $recoverRows, $this->protectedRows($shelf));
         $impact = $this->impact($changes, $base, $finalCount);
 
         $acting = array_filter($changes, fn ($c) => $c['kind'] !== AssortmentPlan::PROTECT);
@@ -251,6 +231,194 @@ final class RangeOptimizer
             'margin_known'    => $knownMargin !== null,
             'version'         => self::VERSION,
         ];
+    }
+
+    /**
+     * Phase 3 — the Decision Studio: the changes a PERSON picked, in the order
+     * picked, each valued on the shelf as it stands after the ones before it,
+     * with the same transferable-demand figures and objective score the
+     * optimiser uses. Nothing is chosen for them. Limits that would be broken
+     * are reported (a what-if may explore past them); a plan cannot be made
+     * from a result that breaks one.
+     *
+     * @param  array<int,array<string,mixed>>  $moves  ordered candidates (kind add | delist), shaped as for optimise()
+     * @param  array<int,array<string,mixed>>  $recovers  stockout fixes kept in the plan
+     * @return array<string,mixed>  the optimise() shape, plus violations and skipped
+     */
+    public function evaluate(array $shelf, array $moves, array $recovers, array $strategy, callable $transfer): array
+    {
+        $base = $shelf['baseline'];
+        $n0 = (int) $base['count'];
+        [$maxN, $minN] = $this->limits($n0, $strategy);
+        $weights = CategoryStrategy::OBJECTIVES[$strategy['objective']]['weights'] ?? CategoryStrategy::OBJECTIVES['balanced']['weights'];
+        $factors = CategoryStrategy::ROLE_FACTORS[$strategy['role']] ?? ['add' => 1.0, 'delist' => 1.0];
+        $knownMargin = $this->shelfMargin($shelf['skus']);
+        $marginShelf = $knownMargin ?? 1.0;
+
+        $shelfNow = array_map('strval', array_keys($shelf['skus']));
+        $count = $n0;
+        $rows = $skipped = [];
+        foreach ($moves as $mv) {
+            $sku = (string) $mv['sku'];
+            $on = in_array($sku, $shelfNow, true);
+            if ($mv['kind'] === AssortmentPlan::ADD) {
+                if ($on) {
+                    $skipped[] = ['sku' => $sku, 'why' => 'Already on the shelf.'];
+
+                    continue;
+                }
+                $o = $this->option([$mv], [], $shelfNow, $base, $weights, $factors, $marginShelf, $transfer);
+                $shelfNow[] = $sku;
+                $count++;
+            } else {
+                if (! $on) {
+                    $skipped[] = ['sku' => $sku, 'why' => 'Not on the shelf.'];
+
+                    continue;
+                }
+                if (! empty($shelf['skus'][$sku]['protected'])) {
+                    $skipped[] = ['sku' => $sku, 'why' => 'Protected: ' . $shelf['skus'][$sku]['protected'] . '.'];
+
+                    continue;
+                }
+                $o = $this->option([], [$mv], $shelfNow, $base, $weights, $factors, $marginShelf, $transfer);
+                $shelfNow = array_values(array_diff($shelfNow, [$sku]));
+                $count--;
+            }
+            $o['step'] = count($rows) + 1;
+            $o['forced'] = false;
+            $o['user'] = true;
+            $rows[] = $this->change($o, $base);
+        }
+
+        $recovers = array_values(array_filter($recovers, fn ($r) => in_array((string) $r['sku'], $shelfNow, true)));
+        $changes = array_merge($rows, $this->recoverRows($recovers, $shelfNow, $marginShelf, $transfer), $this->protectedRows($shelf));
+        $impact = $this->impact($changes, $base, $count);
+
+        $floor = $strategy['sales_floor'] ?? null;
+        $violations = [];
+        if ($count > $maxN) {
+            $violations[] = ['key' => 'max_size', 'why' => "The range would hold {$count} products; its limit is {$maxN}."];
+        }
+        if ($count < $minN) {
+            $violations[] = ['key' => 'min_size', 'why' => "The range would hold {$count} products; it may not go below {$minN}."];
+        }
+        if ($floor !== null && (float) $base['sales'] > 0 && $impact['sales_pct'][1] < (float) $floor - self::EPS) {
+            $violations[] = ['key' => 'sales_floor', 'why' => 'Category sales would fall below the floor set for this category ('
+                . number_format((float) $floor * 100, 0) . '%).'];
+        }
+
+        $acting = array_filter($changes, fn ($c) => $c['kind'] !== AssortmentPlan::PROTECT);
+        $tiers = array_column($acting, 'tier');
+        $rank = ['established' => 3, 'likely' => 2, 'speculative' => 1];
+        usort($tiers, fn ($x, $y) => ($rank[$x] ?? 1) <=> ($rank[$y] ?? 1));
+
+        return [
+            'feasible'        => true,
+            'reason'          => null,
+            'current_count'   => $n0,
+            'proposed_count'  => $count,
+            'changes'         => array_values($changes),
+            'left_out'        => [],
+            'impact'          => $impact,
+            'constraints'     => [
+                'current_count' => $n0, 'max_size' => $maxN, 'min_size' => $minN, 'room' => (float) $strategy['room'],
+                'set_max' => $strategy['max_size'], 'set_min' => $strategy['min_size'] ?? null, 'sales_floor' => $floor,
+                'objective' => $strategy['objective'], 'role' => $strategy['role'], 'bound' => array_column($violations, 'key'),
+            ],
+            'violations'      => $violations,
+            'skipped'         => $skipped,
+            'shelf'           => $shelfNow,
+            'confidence'      => $acting === [] ? 0.0 : min(array_column($acting, 'confidence')),
+            'confidence_tier' => $tiers[0] ?? 'speculative',
+            'value_mid'       => $impact['sales'][1],
+            'margin_known'    => $knownMargin !== null,
+            'version'         => self::VERSION,
+        ];
+    }
+
+    /**
+     * The figures a scenario is compared on (Studio → Compare): size, sales,
+     * margin, availability, stock, space, sales lost and sales gained by the
+     * changes, and confidence.
+     */
+    public function summary(array $result): array
+    {
+        $i = $result['impact'];
+        $lost = $gained = [0.0, 0.0, 0.0];
+        $changes = 0;
+        foreach ($result['changes'] as $c) {
+            if (in_array($c['kind'], [AssortmentPlan::PROTECT], true) || ! ($c['ticked'] ?? true)) {
+                continue;
+            }
+            $changes += $c['kind'] === AssortmentPlan::RECOVER ? 0 : 1;
+            $s = $c['sales'];
+            if ($s[1] < 0) {
+                $lost = $this->plus($lost, $s);
+            } else {
+                $gained = $this->plus($gained, $s);
+            }
+        }
+
+        return [
+            'current_count' => (int) $result['current_count'],
+            'count'         => (int) $result['proposed_count'],
+            'changes'       => $changes,
+            'recovers'      => count(array_filter($result['changes'], fn ($c) => $c['kind'] === AssortmentPlan::RECOVER)),
+            'sales'         => $i['sales'], 'sales_pct' => $i['sales_pct'],
+            'margin'        => $i['margin'], 'margin_pct' => $i['margin_pct'],
+            'availability'  => $i['availability'],
+            'stock'         => $i['stock'], 'stock_pct' => $i['stock_pct'],
+            'space_pct'     => $i['space_margin_pct'] ?? null,
+            'lost'          => array_map(fn ($v) => round($v, 2), $lost),
+            'gained'        => array_map(fn ($v) => round($v, 2), $gained),
+            'confidence'    => round((float) $result['confidence'], 4),
+            'confidence_tier' => $result['confidence_tier'],
+            'feasible'      => (bool) $result['feasible'],
+            'reason'        => $result['reason'] ?? null,
+            'violations'    => array_column($result['violations'] ?? [], 'why'),
+            'margin_known'  => (bool) ($result['margin_known'] ?? false),
+        ];
+    }
+
+    /** @return array{0:int,1:int} most and fewest products the shelf may hold */
+    public function limits(int $n0, array $strategy): array
+    {
+        $maxN = $strategy['max_size'] ?? ($n0 + (int) ceil($n0 * (float) $strategy['room']));
+        $minN = $strategy['min_size'] ?? max(1, $n0 - (int) ceil(0.2 * $n0));
+
+        return [(int) $maxN, (int) max(1, min($minN, $maxN))];
+    }
+
+    private function recoverRows(array $recovers, array $shelfNow, float $marginShelf, callable $transfer): array
+    {
+        $rows = [];
+        foreach ($recovers as $r) {
+            $t = $this->share($transfer($r['sku'], array_values(array_diff($shelfNow, [$r['sku']]))));
+            $m = $r['margin_rate'] ?? $marginShelf;
+            $sales = $this->range($r['gross_sales'], 1 - $t[2], 1 - $t[1], 1 - $t[0]);
+            $rows[] = [
+                'kind' => AssortmentPlan::RECOVER, 'key' => 'recover:' . $r['sku'], 'gap_id' => $r['gap_id'], 'sku' => $r['sku'], 'name' => $r['name'],
+                'sales' => $sales, 'margin' => array_map(fn ($v) => round($v * $m, 2), $sales), 'stock' => 0.0, 'availability' => round((float) $r['gross_sales'], 2),
+                'tier' => $r['tier'], 'confidence' => (float) $r['confidence'], 'ticked' => true, 'source' => 'engine',
+                'why' => 'Keeps running out: fixing the stock recovers the sales its buyers do not take elsewhere. Always part of the plan — never a delist.',
+            ];
+        }
+
+        return $rows;
+    }
+
+    private function protectedRows(array $shelf): array
+    {
+        $rows = [];
+        foreach ($shelf['skus'] as $sku => $p) {
+            if (! empty($p['protected'])) {
+                $rows[] = ['kind' => AssortmentPlan::PROTECT, 'key' => 'protect:' . $sku, 'sku' => (string) $sku,
+                    'name' => (string) ($p['name'] ?? $sku), 'why' => (string) $p['protected'], 'ticked' => false];
+            }
+        }
+
+        return $rows;
     }
 
     // ── Scoring one move ──────────────────────────────────────────────────────
@@ -356,7 +524,12 @@ final class RangeOptimizer
                 $bits[] = "{$name}: about " . (int) round($p['moved'][1] * 100) . '% of its buyers move to the rest of the shelf';
             }
         }
-        $why = ($m['forced'] ? 'Needed to bring the shelf within its limit. ' : 'Step ' . $m['step'] . ': the best move left. ')
+        $lead = match (true) {
+            $m['user'] ?? false => 'Change ' . $m['step'] . ($m['score'] > self::EPS ? ' (helps the objective): ' : ' (works against the objective): '),
+            $m['forced']        => 'Needed to bring the shelf within its limit. ',
+            default             => 'Step ' . $m['step'] . ': the best move left. ',
+        };
+        $why = $lead
             . implode('; ', $bits) . '. Category sales ' . $pct($objective['sales']) . ', margin ' . $pct($objective['margin']) . '.'
             . (isset($m['swapped_for']) ? ' Chosen over ' . $m['swapped_for'] . ', which added less.' : '');
 
@@ -372,6 +545,8 @@ final class RangeOptimizer
             'ticked'     => true,
         ];
         $items = array_merge($m['adds'], $m['delists']);
+        // A change the engine did not propose (picked in the Studio from the shelf or from what similar stores carry).
+        $row['source'] = collect($items)->contains(fn ($i) => ($i['source'] ?? 'engine') === 'user') ? 'user' : 'engine';
         $row['tier'] = collect($items)->sortBy(fn ($i) => ['established' => 3, 'likely' => 2][$i['tier']] ?? 1)->first()['tier'];
         $row['confidence'] = min(array_map(fn ($i) => (float) $i['confidence'], $items));
         if ($isSwap) {
@@ -434,6 +609,8 @@ final class RangeOptimizer
             'availability_pct' => round($avail / $bs, 4),
             'count'        => $count,
             'space_pct'    => round(($count - $n0) / $n0, 4),
+            // Space productivity until shelf metres are loaded: margin (or sales) per product on the shelf.
+            'space_margin_pct' => round(((($bm ?? $bs) + $margin[1]) / max(1, $count)) / (($bm ?? $bs) / $n0) - 1, 4),
             'basis'        => 'estimated',
         ];
     }
