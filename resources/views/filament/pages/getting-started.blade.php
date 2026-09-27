@@ -60,6 +60,10 @@
                             <a href="{{ \App\Filament\Resources\StoreResource::getUrl('index') }}">Open a store to add zones</a>
                         @elseif($s['key'] === 'detection')
                             {{ $this->runDetectionAction }}
+                        @elseif($s['key'] === 'range_file' && \App\Filament\Pages\AssortmentSetup::canAccess())
+                            <a href="{{ \App\Filament\Pages\AssortmentSetup::getUrl() }}">Assortment setup</a>
+                        @elseif(in_array($s['key'], ['range_run', 'range_review', 'range_live'], true) && \App\Filament\Pages\AssortmentValidation::canAccess())
+                            <a href="{{ \App\Filament\Pages\AssortmentValidation::getUrl() }}">Open Validation</a>
                         @elseif($s['key'] === 'investigate' && \App\Filament\Pages\ActionQueue::canAccess())
                             <a href="{{ \App\Filament\Pages\ActionQueue::getUrl() }}">Open the action queue</a>
                         @endif

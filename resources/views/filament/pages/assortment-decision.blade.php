@@ -7,6 +7,11 @@
     $typeColor = match ($gap->type) { 'add' => 'success', 'delist' => 'warning', default => 'danger' };
     $pct = static fn ($v) => $v === null ? '—' : (int) round($v * 100) . '%';
     $m = $gap->measurement;
+    $t = $e['transfer'] ?? null;
+    $money = static fn ($v) => $v === null ? '—' : \App\Support\Money::compact((float) $v, $currency);
+    $moneyRange = static fn ($r) => is_array($r) ? ($money($r[0]) . '–' . $money($r[1])) : '—';
+    $share = static fn ($r) => is_array($r) ? ((int) round($r[0] * 100) === (int) round($r[2] * 100) ? (int) round($r[1] * 100) . '%' : (int) round($r[0] * 100) . '–' . (int) round($r[2] * 100) . '%') : '—';
+    $life = $e['lifecycle'] ?? null;
 @endphp
 
 <div class="ax-stack">
@@ -17,6 +22,9 @@
             <x-ui.badge :color="$typeColor">{{ \App\Models\AssortmentGap::TYPES[$gap->type] ?? $gap->type }}</x-ui.badge>
             <x-ui.badge :color="$tierColor">Confidence: {{ ucfirst($gap->confidence_tier) }}</x-ui.badge>
             <x-ui.badge>{{ ucfirst(str_replace('_', ' ', $gap->status)) }}</x-ui.badge>
+            @if($life && $life !== 'established')
+                <x-ui.badge :color="$life === 'emerging' ? 'info' : null">{{ $lifecycleLabels[$life] ?? ucfirst($life) }}</x-ui.badge>
+            @endif
         </div>
         <h2 class="ax-text-lg ax-fw-700 ax-ink ax-m-0">{{ $gap->headline() }}</h2>
         <p class="ax-muted ax-text-sm ax-mt-1">{{ $gap->product?->name }} · {{ $gap->sku }} · {{ $gap->product?->category ?? 'No category' }} · {{ $gap->store?->name }}</p>
@@ -40,9 +48,79 @@
             <p class="ax-faint ax-text-xs ax-mt-3">{{ implode(' · ', $x['reasons']) }}</p>
         @endif
         @if($gap->type === 'stockout_hidden')
-            <p class="ax-text-sm ax-mt-3">This is a stock problem, not a range problem: work it as a stock issue (in Root Cause if you have it), not as a delist.</p>
+            <p class="ax-text-sm ax-mt-3">This is a stock problem, not a range problem: work it as a stock issue, not as a delist.</p>
+            @if(! empty($links))
+                <ul class="ax-list ax-mt-2">
+                    @foreach($links as $l)
+                        <li>Open in Root Cause:
+                            @if($l['url'])<a href="{{ $l['url'] }}">{{ $l['label'] }}</a>@else{{ $l['label'] }}@endif
+                            <span class="ax-faint">({{ str_replace('_', ' ', (string) $l['status']) }})</span></li>
+                    @endforeach
+                </ul>
+            @elseif($rootCause)
+                <p class="ax-faint ax-text-xs ax-mt-2">Root Cause has no open investigation on it at this store. Accepting makes a store task to fix the stock.</p>
+            @else
+                <p class="ax-faint ax-text-xs ax-mt-2">Accepting makes a store task to fix the stock.</p>
+            @endif
         @endif
     </x-ui.card>
+
+    @if($t)
+        <x-ui.card :title="$gap->type === 'add' ? 'Where its sales would come from' : 'Where its buyers would go'">
+            <div class="ax-grid ax-grid-3">
+                @if($gap->type === 'add')
+                    <x-ui.stat label="Gross, a year" :value="$money($e['gross_per_year'] ?? null)" foot="Estimated: if every sale were new" />
+                    <x-ui.stat label="Taken from the shelf" :value="$moneyRange($e['taken_per_year'] ?? null)" :foot="'Estimated: ' . $share($t['share'] ?? null) . ' of its sales'" />
+                    <x-ui.stat label="New to the store" :value="$gap->valueRange($currency)" foot="Estimated, after what it takes" />
+                @elseif($gap->type === 'delist')
+                    <x-ui.stat label="Its sales now, a year" :value="$money($e['current_per_year'] ?? null)" foot="Observed, as margin or sales" />
+                    <x-ui.stat label="Moves to the shelf" :value="$moneyRange($e['moved_per_year'] ?? null)" :foot="'Estimated: ' . $share($t['share'] ?? null) . ' of its buyers'" />
+                    <x-ui.stat label="Lost" :value="$moneyRange($e['lost_per_year'] ?? null)" foot="Estimated: buyers who buy nothing instead" />
+                @else
+                    <x-ui.stat label="Sales missed while out" :value="$money($e['gross_per_year'] ?? null)" foot="Estimated from similar stores" />
+                    <x-ui.stat label="Bought as something else" :value="$moneyRange($e['moved_per_year'] ?? null)" :foot="'Estimated: ' . $share($t['share'] ?? null) . ' of its buyers'" />
+                    <x-ui.stat label="Lost" :value="$gap->valueRange($currency)" foot="Estimated, a year" />
+                @endif
+            </div>
+            @if(($t['basis'] ?? null) === 'insufficient')
+                <p class="ax-text-sm ax-mt-3">Insufficient evidence to estimate substitution. {{ $t['note'] }} The value is shown before substitution, as the top of the range.</p>
+            @elseif(! empty($t['pairs']))
+                <div class="ax-scroll-x ax-mt-3">
+                    <table class="ax-table">
+                        <thead><tr><th>Product on the shelf</th><th class="ax-num">Share of its demand</th><th>Based on</th></tr></thead>
+                        <tbody>
+                            @foreach($t['pairs'] as $p)
+                                <tr>
+                                    <td>{{ $p['name'] ?? $p['sku'] }} <span class="ax-faint">{{ $p['sku'] }}</span></td>
+                                    <td class="ax-num">{{ $share($p['share'] ?? null) }}</td>
+                                    <td class="ax-text-sm">
+                                        @if(($p['basis'] ?? '') === 'observed')
+                                            Observed: {{ collect([
+                                                ($p['store_days'] ?? 0) ? number_format($p['store_days']) . ' store-days of stockouts' : null,
+                                                ($p['events'] ?? 0) ? number_format($p['events']) . ' range changes' : null,
+                                            ])->filter()->implode(' and ') }} across {{ $p['stores'] ?? 0 }} stores
+                                        @else
+                                            Assumed: same {{ implode(', ', $p['shared'] ?? ['category']) }}
+                                        @endif
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+                <p class="ax-faint ax-text-xs ax-mt-2">
+                    @if(($t['basis'] ?? '') === 'observed')
+                        Estimated from stockouts and range changes at comparable stores (confidence: {{ $t['tier'] }}). It shows where buyers went, not proof of why.
+                    @else
+                        Assumed from product similarity — not yet observed in stockouts or range changes. It becomes observed as evidence builds up.
+                    @endif
+                    @if($gap->type === 'add') Assumes buyers here switch the way they do at the stores that carry it. @endif
+                </p>
+            @elseif(! empty($t['note']))
+                <p class="ax-text-sm ax-mt-3">{{ $t['note'] }}</p>
+            @endif
+        </x-ui.card>
+    @endif
 
     <x-ui.card title="The stores behind it">
         <div class="ax-scroll-x">
@@ -87,10 +165,13 @@
                     <div>
                         <div class="ax-faint ax-text-xs">Result</div>
                         @if($m)
-                            <div class="ax-fw-600">{{ \App\Support\Money::displayCompact((float) ($m['uplift_per_year'] ?? 0), $currency) }} a year</div>
+                            <div class="ax-fw-600">Measured: {{ \App\Support\Money::displayCompact((float) ($m['uplift_per_year'] ?? 0), $currency) }} a year</div>
                             <div class="ax-muted ax-text-sm">
                                 {{ $m['metric'] === 'category_sales' ? 'Category sales' : 'Product sales' }} against {{ $m['control_stores'] }} similar stores that did not change{{ ($m['strength'] ?? '') === 'weak' ? ' (few comparison stores — treat as indicative)' : '' }}
                             </div>
+                            @if(isset($m['expected_per_year']))
+                                <div class="ax-faint ax-text-xs ax-mt-1">Estimated when decided: {{ \App\Support\Money::displayCompact((float) $m['expected_per_year'], $currency) }} a year · {{ match($m['verdict'] ?? '') { 'success' => 'worked', 'partial' => 'worked in part', 'failure' => 'did not work', default => '' } }}</div>
+                            @endif
                         @elseif($gap->measure_after)
                             <div class="ax-fw-600">Measured after {{ $gap->measure_after->format('j M Y') }}</div>
                             <div class="ax-muted ax-text-sm">8 weeks after it was done</div>

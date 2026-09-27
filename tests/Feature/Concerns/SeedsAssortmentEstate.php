@@ -27,6 +27,8 @@ trait SeedsAssortmentEstate
 
     protected string $asOf = '2026-09-20';
 
+    protected bool $withPromotionData = true;
+
     protected function seedEstate(int $storeCount = 6, int $days = 200): void
     {
         $t = $this->tenant->id;
@@ -79,6 +81,16 @@ trait SeedsAssortmentEstate
                 DB::table('inventory_current')->insert(['tenant_id' => $t, 'store_id' => $storeId, 'sku' => $sku,
                     'on_hand_qty' => 50, 'unit_cost' => 6, 'as_of_date' => $this->asOf, 'created_at' => now(), 'updated_at' => now()]);
             }
+        }
+
+        // The tenant sends a promotion calendar (one small, far-off promotion), so
+        // decisions are not held a tier lower for missing promotion data.
+        if ($this->withPromotionData) {
+            DB::table('promotions')->insert([
+                'tenant_id' => $t, 'promotion_ref' => 'P-TEST', 'name' => 'Test promo', 'sku' => 'BASE-8', 'store_id' => end($this->stores),
+                'starts_on' => $end->copy()->subDays(150)->toDateString(), 'ends_on' => $end->copy()->subDays(144)->toDateString(),
+                'created_at' => now(), 'updated_at' => now(),
+            ]);
         }
 
         app(ClusterService::class)->rebuild($t, 'attribute');

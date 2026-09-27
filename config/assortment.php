@@ -49,10 +49,20 @@ return [
     'min_qualifying_peers'  => 3,
     'add_rate_percentile'   => 0.40,
 
-    // Share of an added product's sales that is new to the store (the rest is taken
-    // from similar products already on the shelf) — a range until outcomes calibrate it.
+    // v1 only (kept for reference): the flat share of an added product's sales assumed
+    // new to the store. Since v1.5 the share comes from transferable demand (platform
+    // DemandTransferService + TransferEstimator): observed stockouts and range changes,
+    // or the stated similarity assumption — never this flat figure.
     'incremental_share_low'  => 0.30,
     'incremental_share_high' => 0.70,
+
+    // Promotion-clean demand: a (store, product) rate needs this many days in the
+    // window that were not promotion days, or it is not used.
+    'min_clean_days' => 14,
+
+    // Transferable demand is measured over this many days of stockouts (range
+    // changes over the whole history).
+    'transfer_window_days' => 182,
 
     // Delist: carried long enough, usually in stock, far below peers, bottom of its category.
     'delist_min_carried_days'   => 90,

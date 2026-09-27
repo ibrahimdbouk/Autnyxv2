@@ -31,6 +31,27 @@
         @endforeach
     </div>
 
+    <x-ui.card title="How the rules are doing">
+        <div class="ax-scroll-x">
+            <table class="ax-table">
+                <thead><tr><th>Rule</th><th class="ax-num">Judged sensible in review</th><th class="ax-num">Accepted</th><th class="ax-num">Measured</th><th class="ax-num">Worked</th><th class="ax-num">Estimated vs measured, a year</th></tr></thead>
+                <tbody>
+                    @foreach($rules as $typeKey => $r)
+                        <tr>
+                            <td>{{ $labels[$typeKey] }}</td>
+                            <td class="ax-num">{{ $r['reviewed'] ? $pct($r['sensible_rate']) . ' of ' . $r['reviewed'] : '—' }}</td>
+                            <td class="ax-num">{{ $r['decided'] ? $pct($r['accept_rate']) . ' of ' . $r['decided'] : '—' }}</td>
+                            <td class="ax-num">{{ $r['measured'] ?: '—' }}</td>
+                            <td class="ax-num">{{ $r['measured'] ? $pct($r['worked_rate']) : '—' }}</td>
+                            <td class="ax-num">{{ $r['measured'] ? \App\Support\Money::displayCompact($r['expected'], $currency) . ' vs ' . \App\Support\Money::displayCompact($r['realized'], $currency) : '—' }}</td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+        <p class="ax-faint ax-text-xs ax-mt-2">From decision memory: every accept and reject is recorded with the figures it was made on, and each measured result is written back. "Worked" means sales moved at least half as much as estimated (for a delist: fell no more than estimated). The rules are only changed by a reviewed, versioned update — never silently.</p>
+    </x-ui.card>
+
     <nav aria-label="Decision type">
         <x-filament::tabs>
             @foreach($labels as $key => $label)

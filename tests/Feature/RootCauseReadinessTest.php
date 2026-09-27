@@ -274,7 +274,7 @@ class RootCauseReadinessTest extends TestCase
                 'units_sold' => $u, 'revenue' => $u * 10, 'transaction_count' => 1, 'created_at' => now(), 'updated_at' => now()]);
         }
 
-        $cal = \App\Services\Detection\PromotionCalendar::load($t->id, '2026-09-01', '2026-09-30');
+        $cal = \App\Platform\Intelligence\Promotions\PromotionCalendar::load($t->id, '2026-09-01', '2026-09-30');
         $this->assertNotNull($cal->overlapping('BIG', $store, '2026-09-08', '2026-09-12'));
         $this->assertNull($cal->overlapping('COUPON', $store, '2026-09-08', '2026-09-12'), 'one coupon line is not a promotion');
         $this->assertNull($cal->overlapping('BIG', $store, '2026-09-11', '2026-09-20'));

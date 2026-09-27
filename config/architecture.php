@@ -264,6 +264,12 @@ return [
             'app/Models/AuditLog.php',
         ],
 
+        // v1.5 — cross-app links about a subject (store × product): apps register
+        // providers for their own records; other apps ask through the platform.
+        'Platform\\Linking' => [
+            'app/Platform/Linking/',
+        ],
+
         // Cross-cutting delivery of notifications. App-neutral fan-out.
         'Platform\\Notifications' => [
             'app/Services/NotificationDispatcher.php',
