@@ -7,13 +7,18 @@ use App\Models\AssortmentRun;
 use App\Models\DataContract;
 use App\Models\Tenant;
 use App\Platform\Intelligence\Availability\AvailabilityService;
+use App\Platform\Intelligence\Lifecycle\ProductLifecycleService;
+use App\Platform\Intelligence\Promotions\PromotionCalendar;
+use App\Platform\Intelligence\Substitution\DemandTransferService;
 use App\Platform\Trust\DataConfidence;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
  * Assortment Intelligence — one tenant's run, end to end:
  *
- *   range model (A1) → peer groups → per group: benchmark (A2) → decisions (A3)
+ *   range model (A1) → lifecycle (platform) → peer groups → per group:
+ *   benchmark (A2, promotion-clean) → transferable demand (platform) → decisions (A3)
  *
  * Decisions are stored with status 'shadow' while `assortment.shadow` is on:
  * computed, explainable, reviewable with `assortment:review`, but not shown to
@@ -28,6 +33,9 @@ class AssortmentEngine
         private PeerGroups $peerGroups,
         private AvailabilityService $availability,
         private DataConfidence $trust,
+        private ProductLifecycleService $lifecycle,
+        private DemandTransferService $transfers,
+        private AssortmentNotifier $notifier,
     ) {}
 
     public static function enabledFor(Tenant $tenant): bool
@@ -76,10 +84,15 @@ class AssortmentEngine
 
         $guards   = TenantAssortment::guardrails($tenant);
         $range    = $this->ranges->rebuild($tenantId, $asOf, $guards['carried_window_days']);
+        $life     = $this->lifecycle->rebuild($tenantId, $asOf);
         $peers    = $this->peerGroups->build($tenantId);
         $products = $this->products($tenantId);
         [$factor, $reasons] = $this->dataQuality($tenantId);
         $allowDelists = $range['history_days'] >= (int) config('assortment.delist_min_history_days', 182);
+        // Promotions from the calendar and the sales lines; a year back tells whether the tenant sends any at all.
+        $promos = PromotionCalendar::load($tenantId, Carbon::parse($asOf)->subDays(400)->toDateString(), $asOf);
+        $hasPromotionData = ! $promos->isEmpty();
+        $transferFrom = Carbon::parse($asOf)->subDays(max(28, (int) config('assortment.transfer_window_days', 182)) - 1)->toDateString();
 
         $engine = (new GapEngine($products))->withContext(
             mustStock: $this->mustStock($tenantId),
@@ -91,6 +104,8 @@ class AssortmentEngine
             currency: $tenant->currencyCode(),
             delistMinTier: $guards['delist_min_tier'],
             maxDelistsPerCategory: $guards['max_delists_per_category'],
+            lifecycle: $this->lifecycle->chain($tenantId),
+            hasPromotionData: $hasPromotionData,
         );
         $live   = TenantAssortment::isLive($tenant) || ! config('assortment.shadow', true);
         $status = $live ? AssortmentGap::STATUS_OPEN : AssortmentGap::STATUS_SHADOW;
@@ -102,7 +117,9 @@ class AssortmentEngine
 
         DB::table('assortment_benchmarks')->where('tenant_id', $tenantId)->delete();
 
-        $counts = ['add' => 0, 'delist' => 0, 'stockout_hidden' => 0, 'skipped_no_category_sales' => 0, 'skipped_speculative_delist' => 0, 'capped_delists' => 0, 'capped_adds' => 0];
+        $counts = ['add' => 0, 'delist' => 0, 'stockout_hidden' => 0, 'skipped_no_category_sales' => 0, 'skipped_speculative_delist' => 0,
+            'skipped_lifecycle' => 0, 'capped_delists' => 0, 'capped_adds' => 0];
+        $transferStats = ['pairs' => 0, 'from_stockouts' => 0, 'from_range_changes' => 0, 'seconds' => 0];
         $benchmarks = 0;
         $health = [];
         $found  = [];
@@ -116,7 +133,7 @@ class AssortmentEngine
             // the benchmark (and each store's own share index), then to judge.
             $catRev = GroupData::categoryRevenue($tenantId, $group['members'], $asOf);
             $chunks = array_chunk(GroupData::groupSkus($tenantId, $group['members']), max(1, (int) config('assortment.chunk_skus', 400)));
-            $load   = fn (array $skus) => (new GroupData($tenantId, $group['members'], $asOf, $products, $catRev, $skus))->load($this->availability);
+            $load   = fn (array $skus) => (new GroupData($tenantId, $group['members'], $asOf, $products, $catRev, $skus, $promos))->load($this->availability);
 
             $bench = $shares = $carried = [];
             foreach ($chunks as $skus) {
@@ -134,7 +151,16 @@ class AssortmentEngine
             }
             $benchmarks += $this->saveBenchmarks($tenantId, $group, $bench, $asOf, GroupData::window());
 
+            // Where each product's buyers go when it is not on the shelf, measured across the group.
+            $clock = microtime(true);
+            $t = $this->transfers->rebuild($tenantId, $key, $group['members'], $transferFrom, $asOf, $promos);
+            foreach (['pairs', 'from_stockouts', 'from_range_changes'] as $k) {
+                $transferStats[$k] += $t[$k];
+            }
+            $transferStats['seconds'] += (int) round(microtime(true) - $clock);
+
             $prepared    = $engine->prepare($bench, $shares, $targets);
+            $prepared['shelf'] = $engine->shelves($carried);
             $groupCounts = array_fill_keys(array_keys($counts), 0);
             $adds        = new TopPerShelf($guards['max_adds_per_category']);
             $delists     = new TopPerShelf($guards['max_delists_per_category']);
@@ -149,6 +175,7 @@ class AssortmentEngine
             };
             foreach ($chunks as $skus) {
                 $now = [];
+                $engine->withTransfers($this->transfers->observed($tenantId, $key, $skus));
                 foreach ($engine->evaluateChunk($load($skus), $targets, $bench, $prepared, $group, $groupCounts) as $gap) {
                     $shelf = $gap['store_id'] . '|' . $engine->categoryOf($gap['sku']);
                     match ($gap['type']) {
@@ -193,6 +220,13 @@ class AssortmentEngine
 
         $coverage = $this->availability->coverage($tenantId);
 
+        // Live tenants hear about decisions found for the first time in this run.
+        if ($live) {
+            $new = AssortmentGap::query()->where('tenant_id', $tenantId)->where('status', AssortmentGap::STATUS_OPEN)
+                ->where('first_detected_at', '>=', $started);
+            $this->notifier->newDecisions($tenant, (clone $new)->count(), (float) (clone $new)->sum('value_mid'));
+        }
+
         return [
             'as_of'          => $asOf,
             'shadow'         => ! $live,
@@ -207,6 +241,9 @@ class AssortmentEngine
             'removed'        => $removed,
             'delists_allowed' => $allowDelists,
             'data_quality'   => ['factor' => $factor, 'reasons' => $reasons],
+            'lifecycle'      => $life,
+            'promotion_data' => $hasPromotionData,
+            'transfers'      => $transferStats + ['version' => DemandTransferService::VERSION],
         ];
     }
 
@@ -215,7 +252,7 @@ class AssortmentEngine
     {
         $out = [];
         foreach (DB::table('products')->where('tenant_id', $tenantId)
-            ->get(['id', 'sku', 'name', 'category', 'subcategory', 'selling_price', 'unit_cost', 'status', 'season']) as $p) {
+            ->get(['id', 'sku', 'name', 'category', 'subcategory', 'brand', 'pack_size', 'selling_price', 'unit_cost', 'status', 'season']) as $p) {
             $cat = trim((string) $p->category);
             $sub = trim((string) $p->subcategory);
             $out[(string) $p->sku] = [
@@ -223,6 +260,8 @@ class AssortmentEngine
                 'name'        => (string) ($p->name ?? ''),
                 'category'    => $cat !== '' ? $cat : null,
                 'subcategory' => $sub !== '' ? $sub : null,
+                'brand'       => trim((string) $p->brand) ?: null,
+                'pack_size'   => trim((string) $p->pack_size) ?: null,
                 'price'       => (float) ($p->selling_price ?? 0),
                 'cost'        => (float) ($p->unit_cost ?? 0),
                 'status'      => $p->status,

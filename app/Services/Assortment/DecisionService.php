@@ -21,7 +21,11 @@ use App\Services\Org\OrgDirectory;
  */
 class DecisionService
 {
-    public function __construct(private OrgDirectory $org) {}
+    public function __construct(
+        private OrgDirectory $org,
+        private DecisionLearning $learning,
+        private AssortmentNotifier $notifier,
+    ) {}
 
     public function accept(AssortmentGap $gap, User $by, ?int $assigneeId = null, ?string $dueAt = null, ?string $note = null): void
     {
@@ -39,6 +43,10 @@ class DecisionService
         ])->save();
 
         $this->audit($gap, $by, 'assortment.accepted', 'Accepted: ' . $gap->headline());
+        $this->learning->decided($gap, accepted: true);
+        if ($gap->assignee_id && (int) $gap->assignee_id !== (int) $by->id) {
+            $this->notifier->taskAssigned($gap);
+        }
     }
 
     public function reject(AssortmentGap $gap, User $by, string $reason): void
@@ -53,6 +61,7 @@ class DecisionService
         ])->save();
 
         $this->audit($gap, $by, 'assortment.rejected', 'Rejected: ' . $gap->headline());
+        $this->learning->decided($gap, accepted: false);
     }
 
     public function markDone(AssortmentGap $gap, User $by, ?string $note = null, ?string $doneOn = null): void

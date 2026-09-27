@@ -48,7 +48,7 @@ class NightlyChain
         'notify'   => ['anomalies:notify', 'digest:stores', 'webhooks:findings'],   // W12: + store digests; W13: + finding.opened webhooks
         'watches'  => ['investigations:evaluate-watches'],
         'health'   => ['data:health', 'dq:check'],   // W9: + semantic data checks
-        'outcomes' => ['outcomes:measure', 'counts:generate', 'reports:value-monthly', 'assortment:run', 'assortment:measure'],   // W11; + Assortment (enabled tenants only)
+        'outcomes' => ['outcomes:measure', 'counts:generate', 'reports:value-monthly', 'assortment:run', 'assortment:measure', 'assortment:remind'],   // W11; + Assortment (enabled tenants only)
     ];
 
     /**

@@ -41,6 +41,11 @@ class OnboardingService
                 'intro' => 'Your data feeds, then the first detection run and the first investigation.',
                 'steps' => $this->rootCauseSteps($tenantId)];
         }
+        if ($tenant?->hasApp(Tenant::APP_ASSORTMENT)) {
+            $sections[] = ['key' => Tenant::APP_ASSORTMENT, 'title' => Tenant::APP_LABELS[Tenant::APP_ASSORTMENT],
+                'intro' => 'Range decisions need the same products selling in several similar stores; then a first run, a review with your category manager, and go live.',
+                'steps' => $this->assortmentSteps($tenantId, $tenant)];
+        }
         if ($tasks) {
             $sections[] = ['key' => Tenant::APP_TASK_EXECUTION, 'title' => Tenant::APP_LABELS[Tenant::APP_TASK_EXECUTION],
                 'intro' => 'Where work happens in each store, and who does it.',
@@ -141,6 +146,66 @@ class OnboardingService
             ['key' => 'investigate', 'type' => null, 'level' => 'required', 'done' => $worked,
                 'title' => 'Work your first investigation', 'why' => 'Assign it, start it, resolve it — that is what turns a finding into recovered money.',
                 'detail' => $worked ? 'Investigations are being worked' : ($investigations ? 'Investigations are waiting' : 'None yet.')],
+        ];
+    }
+
+    private function assortmentSteps(int $tenantId, Tenant $tenant): array
+    {
+        $p = DB::selectOne(
+            "SELECT COUNT(*) AS n,
+                    COUNT(*) FILTER (WHERE NULLIF(TRIM(subcategory), '') IS NOT NULL) AS sub,
+                    COUNT(*) FILTER (WHERE NULLIF(TRIM(brand), '') IS NOT NULL) AS brand,
+                    COUNT(*) FILTER (WHERE NULLIF(TRIM(pack_size), '') IS NOT NULL) AS pack
+               FROM products WHERE tenant_id = ?",
+            [$tenantId],
+        );
+        $n = max(1, (int) $p->n);
+        $pct = fn ($x) => (int) round(100 * (int) $x / $n);
+        $o = DB::selectOne(
+            'SELECT COUNT(*) AS skus, COUNT(*) FILTER (WHERE stores >= 3) AS shared
+               FROM (SELECT sku, COUNT(*) AS stores FROM assortment_store_ranges WHERE tenant_id = ? AND carried GROUP BY sku) x',
+            [$tenantId],
+        );
+        $skus = (int) $o->skus;
+        $shared = (int) $o->shared;
+        $enough = $skus > 0 && $shared >= max(1, (int) ceil(0.2 * $skus));   // a fifth of the range, at least
+        $promos = $this->exists('promotions', $tenantId) || $this->exists('sales_transactions', $tenantId, fn ($q) => $q->whereNotNull('promotion_ref'));
+        $listing = $this->exists('assortment_store_ranges', $tenantId, fn ($q) => $q->where('source', 'listing'));
+        $mustStock = $this->exists('assortment_must_stock', $tenantId);
+        $ran = $this->exists('assortment_runs', $tenantId, fn ($q) => $q->where('status', 'success'));
+        $live = \App\Services\Assortment\TenantAssortment::isLive($tenant);
+        $gate = $ran ? app(\App\Services\Assortment\ValidationGate::class)->status($tenant) : null;
+        $types = $gate['types'] ?? [];
+        $reviewed = $live || (bool) ($gate['passed'] ?? false);
+
+        return [
+            ['key' => 'range_overlap', 'type' => Import::TYPE_SALES, 'level' => 'required', 'done' => $enough,
+                'title' => 'Sales and stock from several stores for the same products',
+                'why' => 'Every range decision compares a store with similar stores that carry the same product. A product sold in one store only has nothing to compare with.',
+                'detail' => $skus ? number_format($shared) . ' of ' . number_format($skus) . ' carried products are in 3 or more stores' . ($enough ? '' : ' — too few to compare; send the full range, not a sample')
+                    : 'Checked after the first run.'],
+            ['key' => 'range_products', 'type' => Import::TYPE_PRODUCTS, 'level' => 'recommended', 'done' => (int) $p->n > 0 && $pct($p->sub) >= 80 && max($pct($p->brand), $pct($p->pack)) >= 50,
+                'title' => 'Product file with subcategory, brand and pack size',
+                'why' => 'Tells which products are alike, so an add is valued net of the sales it takes from similar products, and a delist by what moves to them.',
+                'detail' => (int) $p->n ? $pct($p->sub) . '% have a subcategory, ' . $pct($p->brand) . '% a brand, ' . $pct($p->pack) . '% a pack size' : 'No products yet.'],
+            ['key' => 'range_promotions', 'type' => Import::TYPE_PROMOTIONS, 'level' => 'recommended', 'done' => $promos,
+                'title' => 'Add your promotion calendar',
+                'why' => 'Promotional sales are kept out of everyday demand. Without promotion data every decision is one confidence level lower.',
+                'detail' => $promos ? 'Promotions known' : 'Not loaded — decisions are held one confidence level lower.'],
+            ['key' => 'range_file', 'type' => null, 'level' => 'optional', 'done' => $listing || $mustStock,
+                'title' => 'Range file and must-stock list',
+                'why' => 'What each store is meant to carry, and products that must never be proposed for delisting (contracts, own label). Without them the range is read from sales and stock.',
+                'detail' => $listing || $mustStock ? trim(($listing ? 'Range file loaded. ' : '') . ($mustStock ? 'Must-stock list loaded.' : '')) : 'Optional.'],
+            ['key' => 'range_run', 'type' => null, 'level' => 'required', 'done' => $ran,
+                'title' => 'Run the first range analysis', 'why' => 'Runs every night; run it now from Validation to see the first decisions (kept private until you go live).',
+                'detail' => $ran ? 'Run done' : 'Not run yet.'],
+            ['key' => 'range_review', 'type' => null, 'level' => 'required', 'done' => $reviewed,
+                'title' => 'Review the top decisions with your category manager',
+                'why' => 'Mark the top 50 of each type Yes or No. At least 70% of each type must make sense before anyone else sees them.',
+                'detail' => $types === [] ? 'After the first run.' : collect($types)->map(fn ($t, $k) => \App\Models\AssortmentGap::TYPES[$k] . ': ' . ($t['needed'] === 0 ? 'none' : $t['reviewed'] . '/' . $t['needed']))->implode(' · ')],
+            ['key' => 'range_live', 'type' => null, 'level' => 'required', 'done' => $live,
+                'title' => 'Go live', 'why' => 'Opens the decisions to everyone with access, and starts notifications and store tasks.',
+                'detail' => $live ? 'Live' : 'Not live — decisions are in review.'],
         ];
     }
 

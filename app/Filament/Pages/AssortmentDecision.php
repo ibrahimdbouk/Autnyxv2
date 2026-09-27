@@ -84,6 +84,12 @@ class AssortmentDecision extends Page
             'peers'    => $gap ? app(PeerDetail::class)->for($gap) : [],
             'currency' => Filament::getTenant()?->currencyCode(),
             'backUrl'  => AssortmentDecisionResource::getUrl('index'),
+            // Stockout-hidden is a stock problem: what other apps (Root Cause) have open on it, through the platform.
+            'links'    => $gap->type === AssortmentGap::TYPE_STOCKOUT_HIDDEN
+                ? app(\App\Platform\Linking\SubjectLinks::class)->for((int) $gap->tenant_id, (int) $gap->store_id, $gap->sku, exceptApp: Tenant::APP_ASSORTMENT)
+                : [],
+            'rootCause' => Filament::getTenant()?->hasApp(Tenant::APP_ROOT_CAUSE) ?? false,
+            'lifecycleLabels' => \App\Platform\Intelligence\Lifecycle\ProductLifecycleService::STATES,
         ];
     }
 }

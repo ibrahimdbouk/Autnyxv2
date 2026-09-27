@@ -53,7 +53,7 @@ trait DetectsV2
     /** @var array<int,true> stores present in the sales feed over the demand window */
     private array $storesWithSales = [];
 
-    private ?\App\Services\Detection\PromotionCalendar $promos = null;
+    private ?\App\Platform\Intelligence\Promotions\PromotionCalendar $promos = null;
 
     /** @var array<string,int> */
     private array $promoSuppressedByRule = [];
@@ -71,7 +71,7 @@ trait DetectsV2
         }
         if ($this->promos === null) {
             $end = $this->clock('sales');
-            $this->promos = \App\Services\Detection\PromotionCalendar::load($tenantId, $end->copy()->subDays(400)->toDateString(), $end->toDateString());
+            $this->promos = \App\Platform\Intelligence\Promotions\PromotionCalendar::load($tenantId, $end->copy()->subDays(400)->toDateString(), $end->toDateString());
         }
         $hit = $this->promos->overlapping($sku, $storeId, $from, $to);
         if ($hit !== null) {

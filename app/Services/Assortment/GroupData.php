@@ -3,6 +3,7 @@
 namespace App\Services\Assortment;
 
 use App\Platform\Intelligence\Availability\AvailabilityService;
+use App\Platform\Intelligence\Promotions\PromotionCalendar;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -18,6 +19,13 @@ use Illuminate\Support\Facades\DB;
  *                    stock history has no observation)
  *   rate           = units (and revenue) per in-stock day
  *   share index    = revenue per in-stock day ÷ the store's category revenue per day
+ *
+ * Promotion-clean (v1.5): days a product was on promotion at a store (the
+ * platform promotion calendar: the calendar file and promotion lines on sales)
+ * are left out of its rate — their sales and their days — so a peer that sold
+ * 500 units on promotion is not read as strong everyday demand. In-stock days
+ * on promotion are taken pro rata (availability is not split by day). A
+ * position with fewer than `min_clean_days` clean days has no usable rate.
  */
 class GroupData
 {
@@ -47,6 +55,7 @@ class GroupData
         private readonly array $products,
         public readonly array $categoryRevenuePerDay = [],
         public readonly array $skus = [],
+        private readonly ?PromotionCalendar $promos = null,
     ) {
         $this->windowDays = self::window();
         $this->from = Carbon::parse($asOf)->subDays($this->windowDays - 1)->toDateString();
@@ -140,7 +149,10 @@ class GroupData
             $sales[(int) $r->store_id][$sku] = [$units, $rev];
         }
 
+        [$promoSales, $promoDays] = $this->promotions($in, $skuMarks);
+
         $this->availability = $availability->forWindow($this->tenantId, $this->from, $this->asOf, $this->members, $this->skus);
+        $minClean = max(1, (int) config('assortment.min_clean_days', 14));
 
         $asOf = Carbon::parse($this->asOf);
         foreach ($this->ranges as $storeId => $skus) {
@@ -153,26 +165,115 @@ class GroupData
                 $windowDays  = min($this->windowDays, $carriedDays);
                 $av          = $this->availability[$storeId . '|' . $sku] ?? null;
                 $avail       = $av['availability'] ?? null;
-                $inStockDays = max(1.0, $windowDays * ($avail ?? 1.0));
                 [$units, $rev] = $sales[$storeId][$sku] ?? [0.0, 0.0];
+                [$pUnits, $pRev] = $promoSales[$storeId][$sku] ?? [0.0, 0.0];
+                $onPromo     = $promoDays !== [] ? $this->promoDayCount($promoDays[$sku] ?? [], $storeId, $asOf->copy()->subDays($windowDays - 1)->toDateString()) : 0;
+                $cleanDays   = max(0, $windowDays - $onPromo);
+                $inStockDays = max(1.0, $cleanDays * ($avail ?? 1.0));
+                $cleanUnits  = max(0.0, $units - $pUnits);
+                $cleanRev    = max(0.0, $rev - $pRev);
                 $cat         = $this->products[$sku]['category'] ?? null;
                 $catPerDay   = $cat !== null ? ($this->categoryRevenuePerDay[$storeId][$cat] ?? 0.0) : 0.0;
-                $revPerDay   = $rev / $inStockDays;
+                $revPerDay   = $cleanRev / $inStockDays;
+                $usable      = $cleanDays >= $minClean;
 
                 $this->perf[$storeId][$sku] = [
                     'carried_days'   => $carriedDays,
                     'window_days'    => $windowDays,
                     'availability'   => $avail,
                     'observations'   => (int) ($av['observations'] ?? 0),
-                    'units_per_day'  => $units / $inStockDays,
+                    'units_per_day'  => $cleanUnits / $inStockDays,
                     'rev_per_day'    => $revPerDay,
-                    'share'          => $catPerDay > 0 ? $revPerDay / $catPerDay : null,
+                    'share'          => $usable && $catPerDay > 0 ? $revPerDay / $catPerDay : null,
+                    'promo_days'     => $onPromo,
+                    'clean_days'     => $cleanDays,
+                    'promo_share'    => $units > 0 ? round($pUnits / $units, 4) : null,
                 ];
             }
         }
         $this->availability = [];   // folded into perf; free it
 
         return $this;
+    }
+
+    /**
+     * Sales on promotion days per (store, SKU) in the window, and the promotion
+     * periods per SKU — empty when the tenant has no promotion data.
+     *
+     * @return array{0: array<int,array<string,array{0:float,1:float}>>, 1: array<string,array<int,array{0:?int,1:string,2:string}>>}
+     */
+    private function promotions(string $in, string $skuMarks): array
+    {
+        if ($this->promos === null || $this->promos->isEmpty()) {
+            return [[], []];
+        }
+        $json = $this->promos->json($this->skus, $this->from, $this->asOf);
+        $periods = [];
+        foreach ((array) json_decode($json, true) as $p) {
+            $periods[(string) $p['sku']][] = [$p['st'] !== null ? (int) $p['st'] : null, (string) $p['f'], (string) $p['t']];
+        }
+        if ($periods === []) {
+            return [[], []];
+        }
+
+        $sales = [];
+        foreach (DB::select(
+            "WITH p AS MATERIALIZED (SELECT * FROM jsonb_to_recordset(CAST(? AS jsonb)) AS x(sku text, st bigint, f date, t date))
+             SELECT sd.store_id, sd.sku, SUM(sd.units_sold) AS units, SUM(sd.revenue) AS revenue
+               FROM sales_daily sd
+              WHERE sd.tenant_id = ? AND sd.store_id IN ({$in}) AND sd.sku IN ({$skuMarks}) AND sd.date BETWEEN ? AND ?
+                AND EXISTS (SELECT 1 FROM p WHERE p.sku = sd.sku AND (p.st IS NULL OR p.st = sd.store_id) AND sd.date BETWEEN p.f AND p.t)
+           GROUP BY sd.store_id, sd.sku",
+            [$json, $this->tenantId, ...$this->skus, $this->from, $this->asOf],
+        ) as $r) {
+            $sku   = (string) $r->sku;
+            $units = (float) $r->units;
+            $rev   = (float) $r->revenue;
+            if ($rev <= 0 && $units > 0) {
+                $rev = $units * (float) ($this->products[$sku]['price'] ?? 0);
+            }
+            $sales[(int) $r->store_id][$sku] = [$units, $rev];
+        }
+
+        return [$sales, $periods];
+    }
+
+    /**
+     * Days in [from, asOf] the SKU was on promotion at the store (its own
+     * periods and chain-wide ones, overlaps counted once).
+     *
+     * @param  array<int,array{0:?int,1:string,2:string}>  $periods
+     */
+    private function promoDayCount(array $periods, int $storeId, string $from): int
+    {
+        $spans = [];
+        foreach ($periods as [$st, $f, $t]) {
+            if ($st !== null && $st !== $storeId) {
+                continue;
+            }
+            $f = max($f, $from);
+            $t = min($t, $this->asOf);
+            if ($f <= $t) {
+                $spans[] = [$f, $t];
+            }
+        }
+        if ($spans === []) {
+            return 0;
+        }
+        sort($spans);
+        $days = 0;
+        [$cf, $ct] = $spans[0];
+        foreach (array_slice($spans, 1) as [$f, $t]) {
+            if ($f <= Carbon::parse($ct)->addDay()->toDateString()) {
+                $ct = max($ct, $t);
+
+                continue;
+            }
+            $days += Carbon::parse($cf)->diffInDays(Carbon::parse($ct)) + 1;
+            [$cf, $ct] = [$f, $t];
+        }
+
+        return (int) ($days + Carbon::parse($cf)->diffInDays(Carbon::parse($ct)) + 1);
     }
 
     public function carries(int $storeId, string $sku): bool

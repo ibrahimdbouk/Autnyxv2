@@ -4,6 +4,8 @@ namespace App\Services\Assortment;
 
 use App\Models\AssortmentGap;
 use App\Platform\Explainability\ExplanationBuilder;
+use App\Platform\Intelligence\Lifecycle\ProductLifecycleService as Lifecycle;
+use App\Platform\Intelligence\Substitution\TransferEstimator;
 use App\Platform\Recommendation\Recommendation;
 use App\Support\Money;
 
@@ -23,6 +25,19 @@ use App\Support\Money;
  *
  * Peers are the OTHER stores of the group that qualify (carried ≥ 28 days,
  * in stock ≥ 80%) — the store being judged is never its own benchmark.
+ *
+ * v1.5 (Phase 0 + 1), on top of those rules, never instead of them:
+ *   - rates are promotion-clean (GroupData); with no promotion data at all,
+ *     confidence is one tier lower and every decision says why;
+ *   - the product's lifecycle (platform): a new, declining or finished product
+ *     is never an add; a new, emerging, seasonal or finished one never a delist;
+ *     an emerging add is a "watch" at the lowest confidence;
+ *   - transferable demand (platform): an add is worth its sales LESS what it
+ *     takes from the store's shelf; a delist loses only what does not move to
+ *     the shelf; a stockout loses only what its buyers do not buy instead. The
+ *     share comes from observed stockouts and range changes, or the stated
+ *     similarity assumption; with neither, the gross value is shown as the top
+ *     of the range and the decision is one tier less sure.
  */
 class GapEngine
 {
@@ -48,6 +63,16 @@ class GapEngine
 
     private int $maxDelistsPerCategory = 3;
 
+    /** @var array<string,array{state:string,reason:?string}> sku => chain-wide lifecycle */
+    private array $lifecycle = [];
+
+    private bool $hasPromotionData = true;
+
+    /** @var array<string,array<string,array<string,mixed>>> from_sku => to_sku => observed transfer (current chunk) */
+    private array $observed = [];
+
+    private ?TransferEstimator $transfers = null;
+
     /** @param array<string,array<string,mixed>> $products sku => facts */
     public function __construct(private readonly array $products) {}
 
@@ -62,7 +87,12 @@ class GapEngine
         string $currency,
         string $delistMinTier = 'likely',
         int $maxDelistsPerCategory = 3,
+        array $lifecycle = [],
+        bool $hasPromotionData = true,
     ): self {
+        $this->lifecycle             = $lifecycle;
+        $this->hasPromotionData      = $hasPromotionData;
+        $this->transfers             = new TransferEstimator();
         $this->delistMinTier         = $delistMinTier;
         $this->maxDelistsPerCategory = max(1, $maxDelistsPerCategory);
         $this->mustStock      = $mustStock;
@@ -150,7 +180,37 @@ class GapEngine
             $ranks[$storeId] = $this->ownCategoryRanks($shares[$storeId] ?? []);
         }
 
-        return ['bars' => $bars, 'ranks' => $ranks];
+        return ['bars' => $bars, 'ranks' => $ranks, 'shelf' => []];
+    }
+
+    /**
+     * What each judged store carries, by category — the shelf that demand moves
+     * to (or is taken from).
+     *
+     * @param  array<int,array<string,true>>  $carried  store => sku => true
+     * @return array<int,array<string,array<int,string>>>
+     */
+    public function shelves(array $carried): array
+    {
+        $out = [];
+        foreach ($carried as $storeId => $skus) {
+            foreach (array_keys($skus) as $sku) {
+                $cat = $this->products[$sku]['category'] ?? null;
+                if ($cat !== null) {
+                    $out[$storeId][$cat][] = (string) $sku;
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /** Observed transfers for the products of the chunk being judged. */
+    public function withTransfers(array $observed): self
+    {
+        $this->observed = $observed;
+
+        return $this;
     }
 
     /**
@@ -187,11 +247,12 @@ class GapEngine
                 $tier    = $this->tier($shares);
                 $catRate = $g->categoryRevenuePerDay[$storeId][$product['category']] ?? 0.0;
 
+                $shelf = $prepared['shelf'][$storeId][$product['category']] ?? [];
                 if (! $g->carries($storeId, $sku)) {
-                    $gap = $this->add($g, $storeId, $sku, $product, $b, $peers, $median, $tier, $catRate, $prepared['bars'][$product['category']] ?? null, $group, $counts);
+                    $gap = $this->add($g, $storeId, $sku, $product, $b, $peers, $median, $tier, $catRate, $prepared['bars'][$product['category']] ?? null, $group, $counts, $shelf);
                 } else {
-                    $gap = $this->stockoutHidden($g, $storeId, $sku, $product, $peers, $shares, $median, $tier, $catRate, $group)
-                        ?? $this->delist($g, $storeId, $sku, $product, $peers, $median, $tier, $ownRank, $group, $counts);
+                    $gap = $this->stockoutHidden($g, $storeId, $sku, $product, $peers, $shares, $median, $tier, $catRate, $group, $shelf, $counts)
+                        ?? $this->delist($g, $storeId, $sku, $product, $peers, $median, $tier, $ownRank, $group, $counts, $shelf);
                 }
                 if ($gap !== null) {
                     $gaps[] = $gap;
@@ -220,11 +281,17 @@ class GapEngine
 
     // ── The three decisions ───────────────────────────────────────────────────
 
-    private function add(GroupData $g, int $storeId, string $sku, array $product, array $b, array $peers, float $median, string $tier, float $catRate, ?float $bar, array $group, array &$counts): ?array
+    private function add(GroupData $g, int $storeId, string $sku, array $product, array $b, array $peers, float $median, string $tier, float $catRate, ?float $bar, array $group, array &$counts, array $shelf = []): ?array
     {
         $cfg = config('assortment');
         if ($this->inactive($product)) {
             return null;
+        }
+        $life = $this->lifecycle[$sku]['state'] ?? null;
+        if (in_array($life, [Lifecycle::NEW, Lifecycle::DECLINING, Lifecycle::END_OF_LIFE], true)) {
+            $counts['skipped_lifecycle'] = ($counts['skipped_lifecycle'] ?? 0) + 1;
+
+            return null;   // too new to judge, fading everywhere, or finished
         }
         $others   = max(1, count($g->members) - 1);
         $carrying = $b['carrying'];   // the store does not carry it, so these are all others
@@ -244,10 +311,15 @@ class GapEngine
         $availability     = Stats::median(array_filter(array_column($peers, 'availability'), fn ($v) => $v !== null)) ?? 1.0;
         $annualRevenue    = $expectedRevDay * 365 * $availability;
         [$basis, $annual] = $this->valueBasis($annualRevenue, $product);
-        $low  = $annual * (float) $cfg['incremental_share_low'];
-        $high = $annual * (float) $cfg['incremental_share_high'];
-        $mid  = ($low + $high) / 2;
+        // What it takes from the shelf is not new money: incremental = gross × (1 − taken).
+        $transfer = $this->transfer($sku, $shelf);
+        [$low, $mid, $high] = $this->net($annual, $transfer);
         $unitsDay = $product['price'] > 0 ? $expectedRevDay / $product['price'] : null;
+        [$tier, $caps] = $this->capTier($tier, $transfer);
+        if ($life === Lifecycle::EMERGING) {
+            $tier = AssortmentGap::TIER_SPECULATIVE;
+            $caps[] = 'Still growing across the chain: a watch, at the lowest confidence.';
+        }
 
         $evidence = [
             'peer_group'           => $group['label'],
@@ -262,7 +334,14 @@ class GapEngine
             'expected_revenue_per_day'       => round($expectedRevDay, 2),
             'expected_units_per_day'         => $unitsDay !== null ? round($unitsDay, 3) : null,
             'value_basis'          => $basis,
-            'incremental_share'    => [(float) $cfg['incremental_share_low'], (float) $cfg['incremental_share_high']],
+            'gross_per_year'       => round($annual, 2),
+            'taken_per_year'       => $this->takenRange($annual, $transfer),
+            // In sales, the unit the result is measured in: the category's sales should rise by this much.
+            'expected_sales_change_per_year' => $transfer['mid'] === null ? null : round($annualRevenue * (1 - $transfer['mid']), 2),
+            'transfer'             => $this->compactTransfer($transfer),
+            'incremental_share'    => $transfer['mid'] === null ? null : [round(1 - $transfer['high'], 4), round(1 - $transfer['low'], 4)],
+            'lifecycle'            => $life,
+            'promo_share_peers'    => $this->peerPromoShare($peers),
             'window_days'          => $g->windowDays,
         ];
 
@@ -274,16 +353,24 @@ class GapEngine
             $unitsDay !== null
                 ? "This store's {$product['category']} sales suggest about " . $this->num($unitsDay) . ' a day here.'
                 : "Expected from this store's {$product['category']} sales.",
-            'Worth ' . $this->range($low, $high) . ' a year in ' . ($basis === 'margin' ? 'gross margin' : 'sales') . ' after sales taken from similar products.',
+            $this->takenLine($annual, $transfer, $basis),
+            'Worth ' . $this->range($low, $high) . ' a year in ' . ($basis === 'margin' ? 'gross margin' : 'sales')
+                . ($transfer['mid'] === null ? ' before substitution.' : ' after sales taken from similar products.'),
         ];
+        if ($life === Lifecycle::EMERGING) {
+            $lines[] = 'Still growing across the chain (' . ($this->lifecycle[$sku]['reason'] ?? 'under 26 weeks old') . '): treat it as a watch.';
+        }
 
         return $this->gap($storeId, $sku, $product, AssortmentGap::TYPE_ADD, $group, [$low, $mid, $high], $tier, $evidence,
-            "Add {$name} at {$store}", $lines, 'range_add');
+            ($life === Lifecycle::EMERGING ? 'Watch: add ' : 'Add ') . "{$name} at {$store}", $lines, 'range_add', $caps);
     }
 
-    private function stockoutHidden(GroupData $g, int $storeId, string $sku, array $product, array $peers, array $shares, float $median, string $tier, float $catRate, array $group): ?array
+    private function stockoutHidden(GroupData $g, int $storeId, string $sku, array $product, array $peers, array $shares, float $median, string $tier, float $catRate, array $group, array $shelf = [], array &$counts = []): ?array
     {
         $cfg = config('assortment');
+        if (($this->lifecycle[$sku]['state'] ?? null) === Lifecycle::END_OF_LIFE) {
+            return null;   // a finished product is not expected on the shelf
+        }
         $own = $g->perf[$storeId][$sku] ?? null;
         if ($own === null || $own['availability'] === null) {
             return null;   // no stock history — cannot say it is out
@@ -299,15 +386,27 @@ class GapEngine
         $annualise = 365 / max(1, $own['window_days']);
 
         $vals = [];
+        $revenueMid = 0.0;
         foreach ([0.25, 0.5, 0.75] as $p) {
             $annualRevenue = $expected(Stats::percentile($shares, $p)) * $oosDays * $annualise;
             $vals[] = $this->valueBasis($annualRevenue, $product);
+            if ($p === 0.5) {
+                $revenueMid = $annualRevenue;
+            }
         }
         $basis = $vals[1][0];
-        [$low, $mid, $high] = [$vals[0][1], $vals[1][1], $vals[2][1]];
+        [$grossLow, $grossMid, $grossHigh] = [$vals[0][1], $vals[1][1], $vals[2][1]];
+        // While it is out, part of its demand is bought as something else on the shelf: only the rest is lost.
+        $transfer = $this->transfer($sku, array_values(array_diff($shelf, [$sku])));
+        if ($transfer['mid'] === null) {
+            [$low, $mid, $high] = [0.0, $grossMid / 2, $grossHigh];
+        } else {
+            [$low, $mid, $high] = [$grossLow * (1 - $transfer['high']), $grossMid * (1 - $transfer['mid']), $grossHigh * (1 - $transfer['low'])];
+        }
         if ($mid <= 0) {
             return null;
         }
+        [$tier, $caps] = $this->capTier($tier, $transfer);
 
         $pctOut = (int) round((1 - $own['availability']) * 100);
         $evidence = [
@@ -322,6 +421,13 @@ class GapEngine
             'own_units_per_day' => round($own['units_per_day'], 3),
             'peer_share_index'  => round($median, 6),
             'value_basis'       => $basis,
+            'gross_per_year'    => round($grossMid, 2),
+            'moved_per_year'    => $transfer['mid'] === null ? null : [round($grossMid * $transfer['low'], 2), round($grossMid * $transfer['high'], 2)],
+            // Measured on the product's own sales: kept in stock, all of its out-of-stock demand comes back to it
+            // (the moved part from substitutes, the lost part new to the store).
+            'expected_sales_change_per_year' => round($revenueMid, 2),
+            'transfer'          => $this->compactTransfer($transfer),
+            'lifecycle'         => $this->lifecycle[$sku]['state'] ?? null,
             'handoff'           => 'root_cause',
         ];
 
@@ -330,19 +436,25 @@ class GapEngine
         $lines = [
             "Out of stock about {$pctOut}% of the time over the last {$own['window_days']} days (" . $this->num($oosDays) . ' days).',
             count($peers) . ' similar stores keep it in stock and sell ' . $this->num($evidence['peer_units_per_day']) . ' a day.',
-            'Losing ' . $this->range($low, $high) . ' a year in ' . ($basis === 'margin' ? 'gross margin' : 'sales') . ' while it is off the shelf.',
+            $this->movedLine($transfer, 'while it is out'),
+            'Losing ' . $this->range($low, $high) . ' a year in ' . ($basis === 'margin' ? 'gross margin' : 'sales') . ' while it is off the shelf'
+                . ($transfer['mid'] === null ? ' (before substitution).' : ', after what its buyers take instead.'),
             'The range is right; the stock is not — this is a stock problem, not a delist.',
         ];
 
         return $this->gap($storeId, $sku, $product, AssortmentGap::TYPE_STOCKOUT_HIDDEN, $group, [$low, $mid, $high], $tier, $evidence,
-            "{$name} at {$store} is the right product but keeps running out", $lines, 'restore_availability');
+            "{$name} at {$store} is the right product but keeps running out", array_values(array_filter($lines)), 'restore_availability', $caps);
     }
 
-    private function delist(GroupData $g, int $storeId, string $sku, array $product, array $peers, float $median, string $tier, array $ownRank, array $group, array &$counts): ?array
+    private function delist(GroupData $g, int $storeId, string $sku, array $product, array $peers, float $median, string $tier, array $ownRank, array $group, array &$counts, array $shelf = []): ?array
     {
         $cfg = config('assortment');
         if (! $this->allowDelists) {
             return null;
+        }
+        $life = $this->lifecycle[$sku]['state'] ?? null;
+        if (in_array($life, [Lifecycle::NEW, Lifecycle::EMERGING, Lifecycle::SEASONAL, Lifecycle::END_OF_LIFE], true)) {
+            return null;   // too young, judged in season, or already finished (clean-up, not a delist)
         }
         $own = $g->perf[$storeId][$sku] ?? null;
         if ($own === null || $own['share'] === null || $median <= 0) {
@@ -371,6 +483,8 @@ class GapEngine
         if (trim((string) ($product['season'] ?? '')) !== '') {
             return null;   // seasonal — judged in season, not v1
         }
+        $transfer = $this->transfer($sku, array_values(array_diff($shelf, [$sku])));
+        [$tier, $caps] = $this->capTier($tier, $transfer);
         if ($this->tierRank($tier) < $this->tierRank($this->delistMinTier)) {
             $counts['skipped_speculative_delist']++;   // delists need more certainty than adds
 
@@ -380,9 +494,10 @@ class GapEngine
         $capital = $this->stockValue["{$storeId}|{$sku}"] ?? 0.0;
         $ownAnnualRevenue = $own['rev_per_day'] * 365 * $own['availability'];
         [$basis, $ownAnnual] = $this->valueBasis($ownAnnualRevenue, $product);
-        // What is lost is the part of its sales that does NOT move to similar products.
-        $lostLow  = $ownAnnual * (float) $cfg['incremental_share_low'];
-        $lostHigh = $ownAnnual * (float) $cfg['incremental_share_high'];
+        // What is lost is the part of its sales that does NOT move to the rest of the shelf.
+        [$lostLow, $lostHigh] = $transfer['mid'] === null
+            ? [0.0, $ownAnnual]
+            : [$ownAnnual * (1 - $transfer['high']), $ownAnnual * (1 - $transfer['low'])];
         $low  = $capital - $lostHigh;
         $high = $capital - $lostLow;
         $mid  = ($low + $high) / 2;
@@ -401,7 +516,14 @@ class GapEngine
             'carried_days'      => $own['carried_days'],
             'category_rank'     => $rank['position'] . ' of ' . $rank['count'],
             'stock_value'       => round($capital, 2),
+            'current_per_year'  => round($ownAnnual, 2),
+            // The category's sales should fall only by what does not move to the shelf.
+            'expected_sales_change_per_year' => $transfer['mid'] === null ? null : round(-$ownAnnualRevenue * (1 - $transfer['mid']), 2),
+            'moved_per_year'    => $transfer['mid'] === null ? null : [round($ownAnnual * $transfer['low'], 2), round($ownAnnual * $transfer['high'], 2)],
             'lost_per_year'     => [round($lostLow, 2), round($lostHigh, 2)],
+            'transfer'          => $this->compactTransfer($transfer),
+            'lifecycle'         => $life,
+            'promo_share'       => $own['promo_share'] ?? null,
             'value_basis'       => $basis,
         ];
 
@@ -410,12 +532,15 @@ class GapEngine
         $lines = [
             'Sells at ' . $this->num($ratio) . '× the rate of ' . count($peers) . ' similar stores while in stock (in stock ' . (int) round($own['availability'] * 100) . '% of the time).',
             "Ranks {$rank['position']} of {$rank['count']} {$product['category']} products at this store.",
+            $this->movedLine($transfer, 'if it goes'),
             'Frees ' . Money::compact($capital, $this->currency) . ' of stock; loses ' . $this->range($lostLow, $lostHigh) . ' a year in '
-                . ($basis === 'margin' ? 'gross margin' : 'sales') . ' that does not move to similar products.',
+                . ($basis === 'margin' ? 'gross margin' : 'sales') . ($transfer['mid'] === null
+                    ? ' at most (where its buyers would go could not be estimated).'
+                    : ' that does not move to similar products.'),
         ];
 
         return $this->gap($storeId, $sku, $product, AssortmentGap::TYPE_DELIST, $group, [$low, $mid, $high], $tier, $evidence,
-            "Consider delisting {$name} at {$store}", $lines, 'range_delist');
+            "Consider delisting {$name} at {$store}", array_values(array_filter($lines)), 'range_delist', $caps);
     }
 
     /**
@@ -569,7 +694,7 @@ class GapEngine
         return $status !== '' && in_array($status, config('assortment.inactive_statuses', []), true);
     }
 
-    private function gap(int $storeId, string $sku, array $product, string $type, array $group, array $values, string $tier, array $evidence, string $headline, array $lines, string $intent): array
+    private function gap(int $storeId, string $sku, array $product, string $type, array $group, array $values, string $tier, array $evidence, string $headline, array $lines, string $intent, array $caps = []): array
     {
         [$low, $mid, $high] = array_map(fn ($v) => round((float) $v, 2), $values);
         $base       = (float) config("assortment.tiers.{$tier}.confidence", 0.4);
@@ -591,6 +716,7 @@ class GapEngine
             ->addEvidence(...$lines)
             ->addReasons(array_merge(
                 ["Confidence: {$tier} (" . ($evidence['qualifying_peers'] ?? 0) . ' comparable stores)'],
+                $caps,
                 $this->qualityReasons,
             ))
             ->build()
@@ -611,6 +737,147 @@ class GapEngine
             'evidence'        => json_encode($evidence, JSON_UNESCAPED_UNICODE),
             'explanation'     => json_encode($explanation, JSON_UNESCAPED_UNICODE),
         ];
+    }
+
+    // ── Transferable demand (v1.5) ────────────────────────────────────────────
+
+    /** Where this product's buyers go on the store's shelf (or come from, for an add). */
+    private function transfer(string $sku, array $shelf): array
+    {
+        return ($this->transfers ??= new TransferEstimator())->estimate($sku, $shelf, $this->products, $this->observed[$sku] ?? []);
+    }
+
+    /** Net of what is taken from the shelf; gross as the top of the range when that cannot be estimated. */
+    private function net(float $gross, array $t): array
+    {
+        if ($t['mid'] === null) {
+            return [0.0, $gross / 2, $gross];
+        }
+
+        return [$gross * (1 - $t['high']), $gross * (1 - $t['mid']), $gross * (1 - $t['low'])];
+    }
+
+    private function takenRange(float $gross, array $t): ?array
+    {
+        return $t['mid'] === null ? null : [round($gross * $t['low'], 2), round($gross * $t['high'], 2)];
+    }
+
+    /**
+     * One tier lower (never below speculative) for each thing that makes the
+     * figure less sure, with the reason in words.
+     *
+     * @return array{0:string,1:array<int,string>}
+     */
+    private function capTier(string $tier, array $transfer): array
+    {
+        $caps = [];
+        if (! $this->hasPromotionData) {
+            $caps[] = 'No promotion data: promotional sales may be counted as everyday demand.';
+        }
+        if ($transfer['mid'] === null) {
+            $caps[] = 'Substitution could not be estimated: ' . rtrim((string) $transfer['note'], '.') . '.';
+        }
+        foreach ($caps as $_) {
+            $tier = match ($tier) {
+                AssortmentGap::TIER_ESTABLISHED => AssortmentGap::TIER_LIKELY,
+                default                         => AssortmentGap::TIER_SPECULATIVE,
+            };
+        }
+
+        return [$tier, $caps];
+    }
+
+    /** The transfer figures kept with the decision (the learning record uses them later). */
+    private function compactTransfer(array $t): array
+    {
+        return [
+            'basis'      => $t['basis'],
+            'share'      => $t['mid'] === null ? null : [$t['low'], $t['mid'], $t['high']],
+            'tier'       => $t['tier'],
+            'stores'     => $t['stores'],
+            'store_days' => $t['store_days'],
+            'events'     => $t['events'],
+            'pairs'      => array_map(fn ($p) => array_filter([
+                'sku' => $p['sku'], 'name' => $p['name'], 'share' => [$p['low'], $p['mid'], $p['high']],
+                'basis' => $p['basis'], 'evidence' => $p['evidence'] ?? null, 'shared' => $p['shared'] ?? null,
+                'stores' => $p['stores'] ?: null, 'store_days' => $p['store_days'] ?: null, 'events' => $p['events'] ?: null,
+            ], fn ($v) => $v !== null), $t['pairs']),
+            'note'       => $t['note'],
+            'version'    => $t['version'],
+        ];
+    }
+
+    private function takenLine(float $gross, array $t, string $basis): ?string
+    {
+        $what = $basis === 'margin' ? 'gross margin' : 'sales';
+        if ($t['mid'] === null) {
+            return 'Gross ' . Money::compact($gross, $this->currency) . " a year in {$what}; how much of it would come from products already on the shelf could not be estimated.";
+        }
+        if ($t['mid'] <= 0) {
+            return 'Nothing similar is on this shelf, so its sales would be new to the store.';
+        }
+
+        return 'About ' . $this->pct($t['low'], $t['high']) . ' of its sales would come from products already on the shelf'
+            . $this->mostly($t) . ' — ' . $this->source($t) . '.';
+    }
+
+    private function movedLine(array $t, string $when): ?string
+    {
+        if ($t['mid'] === null) {
+            return null;
+        }
+        if ($t['mid'] <= 0) {
+            return "Nothing similar is on this shelf: its buyers have nothing to switch to {$when}.";
+        }
+
+        return 'About ' . $this->pct($t['low'], $t['high']) . " of its buyers would switch to other products {$when}"
+            . $this->mostly($t) . ' — ' . $this->source($t) . '.';
+    }
+
+    private function mostly(array $t): string
+    {
+        $names = array_slice(array_column($t['pairs'], 'name'), 0, 2);
+
+        return $names === [] ? '' : ' (mostly ' . implode(' and ', $names) . ')';
+    }
+
+    private function source(array $t): string
+    {
+        if ($t['basis'] === TransferEstimator::BASIS_OBSERVED) {
+            $bits = [];
+            if ($t['store_days'] > 0) {
+                $bits[] = number_format($t['store_days']) . ' store-days of stockouts';
+            }
+            if ($t['events'] > 0) {
+                $bits[] = number_format($t['events']) . ' range changes';
+            }
+
+            return 'estimated from ' . implode(' and ', $bits) . ' across ' . $t['stores'] . ' comparable stores';
+        }
+        $shared = $t['pairs'][0]['shared'] ?? [];
+
+        return 'assumed from product similarity' . ($shared !== [] ? ' (same ' . $this->joinWords($shared) . ')' : '') . ', not yet observed';
+    }
+
+    private function pct(float $low, float $high): string
+    {
+        $lo = (int) round($low * 100);
+        $hi = (int) round($high * 100);
+
+        return $lo === $hi ? "{$lo}%" : "{$lo}–{$hi}%";
+    }
+
+    private function joinWords(array $w): string
+    {
+        return count($w) <= 1 ? implode('', $w) : implode(', ', array_slice($w, 0, -1)) . ' and ' . end($w);
+    }
+
+    /** The median share of peers' units sold on promotion (evidence only). */
+    private function peerPromoShare(array $peers): ?float
+    {
+        $v = array_values(array_filter(array_column($peers, 'promo_share'), fn ($x) => $x !== null));
+
+        return $v === [] ? null : round((float) Stats::median($v), 4);
     }
 
     private function range(float $low, float $high): string

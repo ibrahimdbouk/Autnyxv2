@@ -40,6 +40,7 @@ class BiExport
             'products'           => ['label' => 'Products', 'description' => 'Product dimension: SKU, name, department, category, brand, cost and price.'],
             'supplier_scorecard' => ['label' => 'Supplier scorecard', 'description' => 'Fill rate, on-time, lead time, cost change, score and grade per supplier (last 90 days).', 'computed' => true],
             'value_by_month'     => ['label' => 'Value by month', 'description' => 'Per month: findings, money found, measured recovery and capital released, actions completed.', 'computed' => true],
+            'range_decisions'    => ['label' => 'Range decisions', 'description' => 'Assortment: add, delist and stockout-hidden decisions once live — value range, confidence, transferable-demand share, decision, task, and the measured result beside the estimate.'],
         ];
     }
 
@@ -79,6 +80,10 @@ class BiExport
                 'cost_change', 'overdue_lines', 'overdue_value', 'stockouts', 'lost_revenue', 'score', 'grade'],
             'value_by_month' => ['month', 'findings', 'investigations_opened', 'lost_revenue_found', 'capital_found', 'measured_recovery',
                 'measured_capital', 'actions_completed'],
+            'range_decisions' => ['id', 'store_id', 'sku', 'type', 'status', 'confidence_tier', 'value_low', 'value_mid', 'value_high', 'value_basis',
+                'transfer_basis', 'transfer_share_mid', 'lifecycle', 'as_of_date', 'first_detected_at', 'decided_at', 'decided_by', 'task_status',
+                'assignee_id', 'due_at', 'done_at', 'measured_at', 'expected_sales_change_per_year', 'measured_sales_change_per_year',
+                'measurement_strength', 'verdict', 'updated_at'],
         };
     }
 
@@ -99,6 +104,18 @@ class BiExport
             'sales_monthly' => DB::table('sales_monthly')->where('tenant_id', $tenantId)->select($cols),
             'stores' => DB::table('stores')->where('tenant_id', $tenantId)->select($cols),
             'products' => DB::table('products')->where('tenant_id', $tenantId)->select($cols),
+            // Shadow decisions (before the validation gate) are never exported.
+            'range_decisions' => DB::table('assortment_gaps')->where('tenant_id', $tenantId)->where('status', '<>', 'shadow')
+                ->select(['id', 'store_id', 'sku', 'type', 'status', 'confidence_tier', 'value_low', 'value_mid', 'value_high', 'as_of_date',
+                    'first_detected_at', 'decided_at', 'decided_by', 'task_status', 'assignee_id', 'due_at', 'done_at', 'measured_at', 'updated_at'])
+                ->selectRaw("CAST(evidence AS jsonb)->>'value_basis' AS value_basis")
+                ->selectRaw("CAST(evidence AS jsonb)->'transfer'->>'basis' AS transfer_basis")
+                ->selectRaw("CAST(evidence AS jsonb)->'transfer'->'share'->>1 AS transfer_share_mid")
+                ->selectRaw("CAST(evidence AS jsonb)->>'lifecycle' AS lifecycle")
+                ->selectRaw("CAST(evidence AS jsonb)->>'expected_sales_change_per_year' AS expected_sales_change_per_year")
+                ->selectRaw("CAST(measurement AS jsonb)->>'uplift_per_year' AS measured_sales_change_per_year")
+                ->selectRaw("CAST(measurement AS jsonb)->>'strength' AS measurement_strength")
+                ->selectRaw("CAST(measurement AS jsonb)->>'verdict' AS verdict"),
         };
 
         return $q->when($since, fn ($q) => $q->where('updated_at', '>=', $since))->orderBy('id');

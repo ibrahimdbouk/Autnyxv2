@@ -109,6 +109,7 @@ class AssortmentValidation extends Page
             'lastRun'  => AssortmentRun::where('tenant_id', $tenant->id)->latest('id')->first(),
             'currency' => $tenant->currencyCode(),
             'pass'     => (float) config('assortment.gate_pass', 0.70),
+            'rules'    => app(\App\Services\Assortment\DecisionLearning::class)->performance((int) $tenant->id),
         ];
     }
 }

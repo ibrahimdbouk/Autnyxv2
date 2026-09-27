@@ -25,9 +25,20 @@ use Illuminate\Support\Str;
  *   uplift      treated store's "after" − expected   (per 8 weeks, and per year)
  *
  * Fewer than 3 controls → recorded, flagged "weak".
+ *
+ * Learning record (v1.5): the measurement keeps the change in sales a year that
+ * was EXPECTED when the decision was made (and the transferable-demand model
+ * version behind it), the error, and a verdict — worked / partly / did not —
+ * which is written back to the platform decision memory. Measured is never
+ * mixed up with expected: both are stored, labelled, side by side.
  */
 class OutcomeMeasurer
 {
+    public function __construct(
+        private ?DecisionLearning $learning = null,
+        private ?AssortmentNotifier $notifier = null,
+    ) {}
+
     /** @return array{measured:int, waiting:int} */
     public function measureDue(int $tenantId): array
     {
@@ -52,6 +63,8 @@ class OutcomeMeasurer
                 continue;
             }
             $gap->forceFill(['measurement' => $this->measure($gap, $days), 'measured_at' => now()])->save();
+            ($this->learning ?? app(DecisionLearning::class))->measured($gap);
+            ($this->notifier ?? app(AssortmentNotifier::class))->measured($gap);
             $measured++;
         }
 
@@ -92,6 +105,10 @@ class OutcomeMeasurer
         $expected    = $treatedPre * $ratio;
         $uplift      = $treatedPost - $expected;
 
+        $upliftYear = round($uplift * 365 / max(1, $days), 2);
+        $expectedYear = isset($gap->evidence['expected_sales_change_per_year']) ? (float) $gap->evidence['expected_sales_change_per_year'] : null;
+        $strength = count($controls) >= 3 ? 'measured' : 'weak';
+
         return [
             'metric'          => $byCategory ? 'category_sales' : 'product_sales',
             'category'        => $product?->category,
@@ -104,9 +121,31 @@ class OutcomeMeasurer
             'control_ratio'   => round($ratio, 4),
             'expected_after'  => round($expected, 2),
             'uplift'          => round($uplift, 2),
-            'uplift_per_year' => round($uplift * 365 / max(1, $days), 2),
-            'strength'        => count($controls) >= 3 ? 'measured' : 'weak',
+            'uplift_per_year' => $upliftYear,
+            'strength'        => $strength,
+            'expected_per_year' => $expectedYear,
+            'error_per_year'  => $expectedYear === null ? null : round($upliftYear - $expectedYear, 2),
+            'transfer_version' => $gap->evidence['transfer']['version'] ?? null,
+            'verdict'         => $this->verdict($gap->type, $upliftYear, $expectedYear, $strength),
         ];
+    }
+
+    /**
+     * Did it work? An add or a recovered stockout worked when category (or
+     * product) sales rose by at least half of what was expected, partly when
+     * they rose at all. A delist worked when sales fell no more than expected,
+     * partly when no more than twice that. Few comparison stores → at best partly.
+     */
+    public function verdict(string $type, float $uplift, ?float $expected, string $strength): string
+    {
+        if ($type === AssortmentGap::TYPE_DELIST) {
+            $loss = $expected !== null ? min(0.0, $expected) : 0.0;
+            $v = $uplift >= $loss ? 'success' : ($uplift >= 2 * $loss ? 'partial' : 'failure');
+        } else {
+            $v = $expected !== null && $expected > 0 && $uplift >= 0.5 * $expected ? 'success' : ($uplift > 0 ? 'partial' : 'failure');
+        }
+
+        return $strength === 'weak' && $v === 'success' ? 'partial' : $v;
     }
 
     /** The stores of the decision's peer group (cluster:<id> or format:<slug>). */

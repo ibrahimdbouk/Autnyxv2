@@ -59,6 +59,15 @@ class AppServiceProvider extends ServiceProvider
         // P1.4 — the governed metric registry (apps register their metrics into it).
         $this->app->singleton(\App\Platform\Metrics\MetricRegistry::class);
 
+        // v1.5 — cross-app links about a store × product (platform contract). Root
+        // Cause answers with its open investigations; Assortment asks, never imports.
+        $this->app->singleton(\App\Platform\Linking\SubjectLinks::class, function () {
+            $links = new \App\Platform\Linking\SubjectLinks();
+            $links->register(\App\Models\Tenant::APP_ROOT_CAUSE, new \App\Services\Recovery\OpenInvestigationLinks());
+
+            return $links;
+        });
+
         // P2.2 — the objective registry (apps register objectives + weights into it).
         $this->app->singleton(\App\Platform\Objectives\ObjectiveRegistry::class);
     }
