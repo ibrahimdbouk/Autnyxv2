@@ -65,6 +65,14 @@ class AssortmentDashboard implements AppDashboard
                 'foot'  => 'Used to tell slow sellers from products that keep running out',
                 'color' => ((int) ($s['stock_history']['days'] ?? 0)) >= 28 ? 'success' : 'warning',
             ],
+            [
+                'label' => 'Seasons',
+                'value' => isset($s['seasons']) && $s['seasons'] !== [] ? count(array_filter($s['seasons'], fn ($v) => $v['applied'])) . ' of ' . count($s['seasons']) : '—',
+                'foot'  => isset($s['seasons']) && $s['seasons'] !== []
+                    ? 'Categories whose year is adjusted for the season of the last weeks'
+                    : 'A year of sales is needed to read each category\'s season',
+                'color' => isset($s['seasons']) && $s['seasons'] !== [] ? 'success' : null,
+            ],
         ] : [];
 
         $live = $tenant && TenantAssortment::isLive($tenant);

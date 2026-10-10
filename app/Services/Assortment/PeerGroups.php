@@ -11,6 +11,10 @@ use Illuminate\Support\Str;
 /**
  * Assortment — which stores a store is compared with.
  *
+ * v2.4: when an admin has approved demand-based store groups (StoreGroupings),
+ * those are the groups, versioned in their key; stores outside them fall back
+ * to their format.
+ *
  * A store is judged against its cluster (the platform's peer groups) when the
  * cluster has at least `min_peer_group` stores; otherwise against every store of
  * the same format; if that is still too small, it is not judged at all (a gap
@@ -46,8 +50,21 @@ class PeerGroups
         $groups = [];
         $assignment = [];
 
+        // v2.4: approved demand-based store groups come first; the platform clusters otherwise.
+        $grouping = StoreGroupings::active($tenantId);
+        foreach ((array) ($grouping?->groups ?? []) as $key => $g) {
+            $members = array_values(array_intersect(array_map('intval', (array) $g['members']), array_keys($formatOf)));
+            if (count($members) < $min) {
+                continue;
+            }
+            $groups[$key] = ['key' => $key, 'basis' => AssortmentBenchmark::BASIS_RANGE, 'label' => (string) $g['label'], 'members' => $members];
+            foreach ($members as $id) {
+                $assignment[$id] = $key;
+            }
+        }
+
         $method = $this->clusters->activeMethod($tenantId);
-        foreach ($this->clusters->clustersFor($tenantId, $method, StoreCluster::OBJECTIVE_GENERAL) as $cluster) {
+        foreach ($grouping ? [] : $this->clusters->clustersFor($tenantId, $method, StoreCluster::OBJECTIVE_GENERAL) as $cluster) {
             $members = $cluster->stores->pluck('id')->map(fn ($id) => (int) $id)->all();
             if (count($members) < $min) {
                 continue;

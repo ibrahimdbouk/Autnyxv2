@@ -61,7 +61,7 @@
         :sub="$asOf ? 'Based on data up to ' . \Illuminate\Support\Carbon::parse($asOf)->format('j M Y') : null" />
 
     @if($checks !== [])
-        <div class="ax-grid ax-grid-4">
+        <div class="ax-grid ax-grid-5">
             @foreach($checks as $c)
                 <x-ui.stat :label="$c['label']" :value="$c['value']" :color="$c['color']" :foot="$c['foot']" />
             @endforeach

@@ -9,6 +9,7 @@ class AssortmentBenchmark extends Model
 {
     public const BASIS_CLUSTER = 'cluster';
     public const BASIS_FORMAT  = 'format';
+    public const BASIS_RANGE   = 'range';   // v2.4: approved demand-based store groups
 
     protected $fillable = [
         'tenant_id', 'peer_group', 'peer_basis', 'sku', 'product_id', 'group_size', 'carrying', 'qualifying',

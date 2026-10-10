@@ -292,6 +292,10 @@ return [
             'app/Models/AssortmentScenario.php',
             'app/Models/AssortmentCalibration.php',
             'app/Models/AssortmentBriefing.php',
+            'app/Models/AssortmentConstraint.php',
+            'app/Models/AssortmentNewRange.php',
+            'app/Models/AssortmentProgramme.php',
+            'app/Models/AssortmentGrouping.php',
         ],
 
         'Apps\\RootCause' => [

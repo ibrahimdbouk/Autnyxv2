@@ -31,6 +31,8 @@ class AssortmentUsage
         'studio_plans'       => 'Plans made in the Decision Studio',
         'results_measured'   => 'Results measured (decisions and plans)',
         'briefings'          => 'Weekly briefings built',
+        'new_ranges'         => 'New-store and remodel ranges built',
+        'programmes'         => 'Tail clean-up programmes accepted',
     ];
 
     public function __construct(private MeteringService $meters) {}
@@ -67,6 +69,9 @@ class AssortmentUsage
             'studio_plans'       => $in((clone $plans)->where('source', AssortmentPlan::SOURCE_STUDIO), 'created_at')->count(),
             'results_measured'   => $in(clone $gaps, 'measured_at')->count() + $in(clone $plans, 'measured_at')->count(),
             'briefings'          => $in(\App\Models\AssortmentBriefing::where('tenant_id', $tenantId), 'created_at')->count(),
+            'new_ranges'         => $in(\App\Models\AssortmentNewRange::where('tenant_id', $tenantId), 'created_at')->count(),
+            'programmes'         => $in(\App\Models\AssortmentProgramme::where('tenant_id', $tenantId)->whereNotNull('decided_at')
+                ->whereIn('status', [\App\Models\AssortmentProgramme::ACCEPTED, \App\Models\AssortmentProgramme::DONE]), 'decided_at')->count(),
         ];
     }
 }

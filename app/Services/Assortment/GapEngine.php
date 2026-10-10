@@ -79,6 +79,49 @@ class GapEngine
     /** @param array<string,array<string,mixed>> $products sku => facts */
     public function __construct(private readonly array $products) {}
 
+    /** @var array<int,array<int,array>> v2.2: store id => the commercial deals that apply there */
+    private array $deals = [];
+
+    /** @var array<int,array{low:float,high:float,n:int}> deal id => the delists it held back, valued */
+    private array $kept = [];
+
+    /** v2.2 — commercial deals (CommercialConstraints::byStore): hard limits on delists. */
+    public function withDeals(array $byStore): self
+    {
+        $this->deals = $byStore;
+
+        return $this;
+    }
+
+    /** @return array<int,array{low:float,high:float,n:int}> */
+    public function kept(): array
+    {
+        return $this->kept;
+    }
+
+    /** @var array<string,array> v2.2: category seasonal curves (SeasonalIndex), empty = no season known */
+    private array $seasons = [];
+
+    /** v2.2 — a year's figure from the window is adjusted by the category's season. */
+    public function withSeasons(array $seasons): self
+    {
+        $this->seasons = $seasons;
+
+        return $this;
+    }
+
+    private function season(?string $category): float
+    {
+        return SeasonalIndex::factor($this->seasons, $category);
+    }
+
+    private function seasonEvidence(?string $category): ?float
+    {
+        $s = $category !== null ? ($this->seasons[$category] ?? null) : null;
+
+        return $s !== null && $s['applied'] ? $s['index'] : null;
+    }
+
     /** Phase 5: apply an approved calibration (CalibrationService::active); null = the rules as built. */
     public function withCalibration(?array $calibration): self
     {
@@ -320,7 +363,7 @@ class GapEngine
 
         $expectedRevDay   = $median * $catRate;
         $availability     = Stats::median(array_filter(array_column($peers, 'availability'), fn ($v) => $v !== null)) ?? 1.0;
-        $annualRevenue    = $expectedRevDay * 365 * $availability;
+        $annualRevenue    = $expectedRevDay * 365 * $availability * $this->season($product['category'] ?? null);
         // Phase 5: an approved calibration scales the estimate by what measured adds delivered.
         $annualRevenue   *= $this->scale(AssortmentGap::TYPE_ADD);
         [$basis, $annual] = $this->valueBasis($annualRevenue, $product);
@@ -358,6 +401,7 @@ class GapEngine
             'lifecycle'            => $life,
             'promo_share_peers'    => $this->peerPromoShare($peers),
             'window_days'          => $g->windowDays,
+            'season_index'         => $this->seasonEvidence($product['category'] ?? null),
         ];
 
         $store = $this->storeNames[$storeId] ?? "store #{$storeId}";
@@ -371,7 +415,9 @@ class GapEngine
             $this->takenLine($annual, $transfer, $basis),
             'Worth ' . $this->range($low, $high) . ' a year in ' . ($basis === 'margin' ? 'gross margin' : 'sales')
                 . ($transfer['mid'] === null ? ' before substitution.' : ' after sales taken from similar products.'),
+            SeasonalIndex::line($this->seasons, $product['category'] ?? null),
         ];
+        $lines = array_values(array_filter($lines));
         if ($life === Lifecycle::EMERGING) {
             $lines[] = 'Still growing across the chain (' . ($this->lifecycle[$sku]['reason'] ?? 'under 26 weeks old') . '): treat it as a watch.';
         }
@@ -403,7 +449,8 @@ class GapEngine
         $vals = [];
         $revenueMid = 0.0;
         foreach ([0.25, 0.5, 0.75] as $p) {
-            $annualRevenue = $expected(Stats::percentile($shares, $p)) * $oosDays * $annualise * $this->scale(AssortmentGap::TYPE_STOCKOUT_HIDDEN);
+            $annualRevenue = $expected(Stats::percentile($shares, $p)) * $oosDays * $annualise * $this->scale(AssortmentGap::TYPE_STOCKOUT_HIDDEN)
+                * $this->season($product['category'] ?? null);
             $vals[] = $this->valueBasis($annualRevenue, $product);
             if ($p === 0.5) {
                 $revenueMid = $annualRevenue;
@@ -448,6 +495,7 @@ class GapEngine
             'transfer'          => $this->compactTransfer($transfer),
             'lifecycle'         => $this->lifecycle[$sku]['state'] ?? null,
             'handoff'           => 'root_cause',
+            'season_index'      => $this->seasonEvidence($product['category'] ?? null),
         ];
 
         $store = $this->storeNames[$storeId] ?? "store #{$storeId}";
@@ -459,6 +507,7 @@ class GapEngine
             'Losing ' . $this->range($low, $high) . ' a year in ' . ($basis === 'margin' ? 'gross margin' : 'sales') . ' while it is off the shelf'
                 . ($transfer['mid'] === null ? ' (before substitution).' : ', after what its buyers take instead.'),
             'The range is right; the stock is not — this is a stock problem, not a delist.',
+            SeasonalIndex::line($this->seasons, $product['category'] ?? null),
         ];
 
         return $this->gap($storeId, $sku, $product, AssortmentGap::TYPE_STOCKOUT_HIDDEN, $group, [$low, $mid, $high], $tier, $evidence,
@@ -502,6 +551,8 @@ class GapEngine
         if (trim((string) ($product['season'] ?? '')) !== '') {
             return null;   // seasonal — judged in season, not v1
         }
+        // v2.2: a commercial deal keeps it — valued as usual, added to the deal's cost, not proposed.
+        $deal = CommercialConstraints::keeps($this->deals[$storeId] ?? [], $sku, $shelf, $this->products);
         $transfer = $this->transfer($sku, array_values(array_diff($shelf, [$sku])));
         [$tier, $caps] = $this->capTier($tier, $transfer, AssortmentGap::TYPE_DELIST);
         if ($this->tierRank($tier) < $this->tierRank($this->delistMinTier)) {
@@ -511,7 +562,7 @@ class GapEngine
         }
 
         $capital = $this->stockValue["{$storeId}|{$sku}"] ?? 0.0;
-        $ownAnnualRevenue = $own['rev_per_day'] * 365 * $own['availability'];
+        $ownAnnualRevenue = $own['rev_per_day'] * 365 * $own['availability'] * $this->season($product['category'] ?? null);
         [$basis, $ownAnnual] = $this->valueBasis($ownAnnualRevenue, $product);
         // What is lost is the part of its sales that does NOT move to the rest of the shelf.
         [$lostLow, $lostHigh] = $transfer['mid'] === null
@@ -522,6 +573,13 @@ class GapEngine
         $mid  = ($low + $high) / 2;
         [$low, $mid, $high] = $this->widen([$low, $mid, $high], AssortmentGap::TYPE_DELIST);
         if ($mid <= 0) {
+            return null;
+        }
+        if ($deal !== null) {
+            $k = $this->kept[$deal['id']] ?? ['low' => 0.0, 'high' => 0.0, 'n' => 0];
+            $this->kept[$deal['id']] = ['low' => $k['low'] + $low, 'high' => $k['high'] + $high, 'n' => $k['n'] + 1];
+            $counts['kept_by_deal'] = ($counts['kept_by_deal'] ?? 0) + 1;
+
             return null;
         }
 
@@ -547,6 +605,7 @@ class GapEngine
             'lifecycle'         => $life,
             'promo_share'       => $own['promo_share'] ?? null,
             'value_basis'       => $basis,
+            'season_index'      => $this->seasonEvidence($product['category'] ?? null),
         ];
 
         $store = $this->storeNames[$storeId] ?? "store #{$storeId}";
@@ -559,6 +618,7 @@ class GapEngine
                 . ($basis === 'margin' ? 'gross margin' : 'sales') . ($transfer['mid'] === null
                     ? ' at most (where its buyers would go could not be estimated).'
                     : ' that does not move to similar products.'),
+            SeasonalIndex::line($this->seasons, $product['category'] ?? null),
         ];
 
         return $this->gap($storeId, $sku, $product, AssortmentGap::TYPE_DELIST, $group, [$low, $mid, $high], $tier, $evidence,

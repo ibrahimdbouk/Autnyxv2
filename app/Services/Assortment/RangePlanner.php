@@ -152,14 +152,23 @@ class RangePlanner
             $life[(string) $r->sku] = ucfirst((string) $r->state) . ' product';
         }
 
-        return ['must' => $must, 'life' => $life];
+        // v2.2: commercial deals in force today, by store, with the product facts their floors need.
+        $active = CommercialConstraints::active($tenantId, now()->toDateString());
+        $deals = CommercialConstraints::byStore($tenantId, $active);
+
+        return ['must' => $must, 'life' => $life, 'deals' => $deals,
+            'facts' => $active === [] ? [] : ProductFacts::load($tenantId)];
     }
 
     /** The shelf with each product's protection reason (or null). */
     public function protect(array $shelf, int $storeId, array $protections): array
     {
+        $onShelf = array_map('strval', array_keys($shelf['skus']));
+        $rules = $protections['deals'][$storeId] ?? [];
+        $sales = $rules === [] ? [] : array_map(fn ($p) => (float) ($p['sales'] ?? 0), $shelf['skus']);
         foreach ($shelf['skus'] as $sku => $p) {
             $shelf['skus'][$sku]['protected'] = $protections['must'][$storeId . '|' . $sku] ?? $protections['must']['*|' . $sku]
+                ?? ($rules !== [] ? CommercialConstraints::keeps($rules, (string) $sku, $onShelf, $protections['facts'] ?? [], $sales)['why'] ?? null : null)
                 ?? $protections['life'][$sku] ?? null;
         }
 
@@ -226,13 +235,14 @@ class RangePlanner
         );
 
         $out = [];
+        $seasons = app(SeasonalIndex::class)->forTenant($tenantId, $asOf, 90);   // v2.2: a year adjusted by the category's season
         foreach ($rows as $r) {
             $sku = (string) $r->sku;
             $pr = $products[$sku] ?? [];
             $price = (float) ($pr['price'] ?? 0);
             $cost = (float) ($pr['cost'] ?? 0);
             $rate = $price > 0 && $cost > 0 && $price > $cost ? ($price - $cost) / $price : null;
-            $sales = (float) $r->rev * 365 / 90;
+            $sales = (float) $r->rev * 365 / 90 * SeasonalIndex::factor($seasons, (string) $r->cat);
             $out[$r->cat]['skus'][$sku] = ['sales' => $sales, 'margin_rate' => $rate, 'stock' => (float) $r->stock, 'protected' => null,
                 'name' => (string) (($pr['name'] ?? '') ?: $sku)];
         }

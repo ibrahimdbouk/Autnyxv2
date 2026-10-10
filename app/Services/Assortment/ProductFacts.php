@@ -19,7 +19,7 @@ final class ProductFacts
             $q->whereRaw('TRIM(category) = ?', [$category]);
         }
         $out = [];
-        foreach ($q->get(['id', 'sku', 'name', 'category', 'subcategory', 'brand', 'pack_size', 'selling_price', 'unit_cost', 'status', 'season']) as $p) {
+        foreach ($q->get(['id', 'sku', 'name', 'category', 'subcategory', 'brand', 'pack_size', 'selling_price', 'unit_cost', 'status', 'season', 'supplier']) as $p) {
             $cat = trim((string) $p->category);
             $sub = trim((string) $p->subcategory);
             $out[(string) $p->sku] = [
@@ -33,6 +33,7 @@ final class ProductFacts
                 'cost'        => (float) ($p->unit_cost ?? 0),
                 'status'      => $p->status,
                 'season'      => $p->season,
+                'supplier'    => trim((string) $p->supplier) ?: null,
             ];
         }
 

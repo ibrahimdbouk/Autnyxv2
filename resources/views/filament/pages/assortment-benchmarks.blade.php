@@ -139,7 +139,7 @@
                     <li><strong>Niche</strong>: fewer than half — local or optional.</li>
                     <li>A product being in the expected range is not a decision on its own: an add is proposed only when the store's own category sales say it would sell, net of what it takes from the shelf.</li>
                 </ul>
-                <p class="ax-faint ax-text-xs ax-mt-2">Groups are the platform's store clusters, or stores of the same format when a cluster is too small. A group needs at least {{ (int) config('assortment.min_peer_group', 5) }} stores to be compared.</p>
+                <p class="ax-faint ax-text-xs ax-mt-2">Groups are the approved store groups (Assortment → Store Groups) when there are some, else the platform's store clusters, or stores of the same format when a cluster is too small. A group needs at least {{ (int) config('assortment.min_peer_group', 5) }} stores to be compared.</p>
             </x-ui.card>
         </div>
     </div>

@@ -97,7 +97,10 @@ class AssortmentEngine
         $transferFrom = Carbon::parse($asOf)->subDays(max(28, (int) config('assortment.transfer_window_days', 182)) - 1)->toDateString();
 
         $calibration = CalibrationService::active($tenantId);   // Phase 5: an approved calibration, or the rules as built
-        $engine = (new GapEngine($products))->withCalibration($calibration)->withContext(
+        $seasons = app(SeasonalIndex::class)->forTenant($tenantId, $asOf);   // v2.2: empty under a year of history
+        $deals = CommercialConstraints::active($tenantId, $asOf);   // v2.2: hard limits; their cost is recorded after the run
+        $engine = (new GapEngine($products))->withCalibration($calibration)->withSeasons($seasons)
+            ->withDeals(CommercialConstraints::byStore($tenantId, $deals))->withContext(
             mustStock: $this->mustStock($tenantId),
             stockValue: $this->stockValue($tenantId),
             storeNames: DB::table('stores')->where('tenant_id', $tenantId)->pluck('name', 'id')->map(fn ($n) => (string) $n)->all(),
@@ -121,7 +124,7 @@ class AssortmentEngine
         DB::table('assortment_benchmarks')->where('tenant_id', $tenantId)->delete();
 
         $counts = ['add' => 0, 'delist' => 0, 'stockout_hidden' => 0, 'skipped_no_category_sales' => 0, 'skipped_speculative_delist' => 0,
-            'skipped_lifecycle' => 0, 'capped_delists' => 0, 'capped_adds' => 0];
+            'skipped_lifecycle' => 0, 'capped_delists' => 0, 'capped_adds' => 0, 'kept_by_deal' => 0];
         $transferStats = ['pairs' => 0, 'from_stockouts' => 0, 'from_range_changes' => 0, 'seconds' => 0];
         $benchmarks = 0;
         $health = [];
@@ -223,6 +226,8 @@ class AssortmentEngine
 
         $coverage = $this->availability->coverage($tenantId);
 
+        CommercialConstraints::recordCosts($tenantId, $engine->kept(), $asOf);
+
         // v1.5 Phase 2 — the engine's decisions, chosen together per store × category.
         $plans = $this->planner->build($tenant, $asOf, $products);
         if (TenantAssortment::plansLive($tenant)) {
@@ -254,6 +259,8 @@ class AssortmentEngine
             'plans'          => $plans,
             'promotion_data' => $hasPromotionData,
             'transfers'      => $transferStats + ['version' => DemandTransferService::VERSION],
+            'grouping'       => StoreGroupings::active($tenantId)?->version,
+            'seasons'        => collect($seasons)->map(fn ($v) => ['index' => $v['index'], 'applied' => $v['applied']])->all(),
         ];
     }
 

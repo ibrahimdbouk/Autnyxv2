@@ -244,6 +244,9 @@ class OutcomeMeasurer
 
     private function storesOf(int $tenantId, string $peerGroup): array
     {
+        if (str_starts_with($peerGroup, 'range:')) {
+            return StoreGroupings::members($tenantId, $peerGroup);   // v2.4: the version the decision was judged in
+        }
         [$basis, $key] = array_pad(explode(':', $peerGroup, 2), 2, null);
         if ($basis === 'cluster' && is_numeric($key)) {
             $cluster = StoreCluster::with('stores:id')->find((int) $key);

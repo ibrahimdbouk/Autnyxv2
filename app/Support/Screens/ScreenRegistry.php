@@ -50,6 +50,8 @@ final class ScreenRegistry
         'assortment_categories' => ['label' => 'Category review',       'group' => 'Assortment'],
         'assortment_stores'     => ['label' => 'Store range profiles',  'group' => 'Assortment'],
         'assortment_outcomes'   => ['label' => 'Range outcomes',        'group' => 'Assortment'],
+        'assortment_new_stores' => ['label' => 'New stores & remodels', 'group' => 'Assortment'],
+        'assortment_cleanup'    => ['label' => 'Tail clean-up',         'group' => 'Assortment'],
         // Data
         'products'        => ['label' => 'Products',         'group' => 'Data'],
         'sales'           => ['label' => 'Sales',            'group' => 'Data'],

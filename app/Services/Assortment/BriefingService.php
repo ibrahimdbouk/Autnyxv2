@@ -232,18 +232,40 @@ PROMPT;
         return [['headline' => mb_substr($headline, 0, 240), 'summary' => mb_substr($summary, 0, 800)], $r->model];
     }
 
-    /** Every number in the text must appear in the facts (as a count or a formatted amount). */
+    /**
+     * Every number in the text must be one the facts state: a count, a formatted
+     * amount, a date part — exactly, as a whole token (record ids do not count).
+     */
     public function onlyKnownNumbers(string $text, array $content): bool
     {
-        $known = json_encode([$content['facts'], $content['top'], $content['plans']], JSON_UNESCAPED_UNICODE);
-        preg_match_all('/\d[\d.,]*\s?[kKmM]?/u', $text, $m);
-        foreach ($m[0] as $n) {
-            $n = trim(rtrim(trim($n), '.,'));
-            if ($n !== '' && ! str_contains($known, $n) && ! str_contains($known, '"' . (int) $n . '"') && ! preg_match('/[:,]' . preg_quote($n, '/') . '[,}]/', $known)) {
+        $sources = [];
+        array_walk_recursive($content['facts'], function ($v) use (&$sources) {
+            $sources[] = (string) $v;
+        });
+        foreach (array_merge($content['top'], $content['plans']) as $row) {
+            $sources[] = (string) ($row['headline'] ?? '');
+            $sources[] = (string) ($row['value'] ?? '');
+        }
+        $known = [];
+        foreach ($sources as $src) {
+            foreach (self::numbers($src) as $n) {
+                $known[$n] = true;
+            }
+        }
+        foreach (self::numbers($text) as $n) {
+            if (! isset($known[$n])) {
                 return false;
             }
         }
 
         return true;
+    }
+
+    /** @return array<int,string> numbers as whole tokens, normalised: "AED 4.4K" → "4.4k", "1,200" → "1200" */
+    private static function numbers(string $s): array
+    {
+        preg_match_all('/(?<![\\w.])\\d+(?:[.,]\\d+)*(?:\\s?[kKmM](?![a-zA-Z]))?/u', $s, $m);
+
+        return array_map(fn ($n) => strtolower(str_replace([',', ' '], '', $n)), $m[0]);
     }
 }

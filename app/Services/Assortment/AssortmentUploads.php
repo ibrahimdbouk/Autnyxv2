@@ -125,6 +125,90 @@ class AssortmentUploads
         return ['added' => $added, 'skipped' => $skipped];
     }
 
+    /**
+     * v2.2 — commercial constraints. One row per deal: kind (keep, brand, supplier),
+     * the product, brand or supplier, an optional category, store or format (blank
+     * = every store), the fewest products for a floor, an end date and a note.
+     *
+     * @return array{added:int, skipped:array<int,string>}
+     */
+    public function importConstraints(int $tenantId, string $path): array
+    {
+        [$rows, $skipped] = $this->read($path, ['kind'], ['sku', 'brand', 'supplier', 'category', 'store', 'format', 'min', 'until', 'reason']);
+        $stores = $this->storeLookup($tenantId);
+        $known = DB::table('products')->where('tenant_id', $tenantId)->pluck('sku')->flip();
+        $added = 0;
+        foreach ($rows as $line => $r) {
+            $k = $this->key($r['kind'] ?? '');
+            $kind = match (true) {
+                str_contains($k, 'brand') || str_contains($k, 'label') => \App\Models\AssortmentConstraint::BRAND_MIN,
+                str_contains($k, 'supplier') || str_contains($k, 'vendor') => \App\Models\AssortmentConstraint::SUPPLIER_MIN,
+                str_contains($k, 'keep') || str_contains($k, 'line') || str_contains($k, 'contract') || str_contains($k, 'listing') => \App\Models\AssortmentConstraint::KEEP,
+                default => null,
+            };
+            if ($kind === null) {
+                $skipped[] = "Row {$line}: kind \"{$r['kind']}\" is not keep, brand or supplier";
+
+                continue;
+            }
+            $sku = trim((string) ($r['sku'] ?? ''));
+            $brand = trim((string) ($r['brand'] ?? ''));
+            $supplier = trim((string) ($r['supplier'] ?? ''));
+            $min = (int) ($this->number($r['min'] ?? null) ?? 0);
+            if ($kind === \App\Models\AssortmentConstraint::KEEP && ($sku === '' || ! isset($known[$sku]))) {
+                $skipped[] = "Row {$line}: product \"{$sku}\" not found";
+
+                continue;
+            }
+            if ($kind === \App\Models\AssortmentConstraint::BRAND_MIN && ($brand === '' || $min < 1)) {
+                $skipped[] = "Row {$line}: a brand floor needs a brand and at least 1 product";
+
+                continue;
+            }
+            if ($kind === \App\Models\AssortmentConstraint::SUPPLIER_MIN && ($supplier === '' || $min < 1)) {
+                $skipped[] = "Row {$line}: a supplier floor needs a supplier and at least 1 product";
+
+                continue;
+            }
+            $storeId = null;
+            if (trim((string) ($r['store'] ?? '')) !== '') {
+                $storeId = $stores[$this->key($r['store'])] ?? null;
+                if ($storeId === null) {
+                    $skipped[] = "Row {$line}: store \"{$r['store']}\" not found";
+
+                    continue;
+                }
+            }
+            $until = null;
+            if (trim((string) ($r['until'] ?? '')) !== '') {
+                try {
+                    $until = is_numeric($r['until'])
+                        ? \Carbon\Carbon::instance(\PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float) $r['until']))->toDateString()
+                        : \Carbon\Carbon::parse((string) $r['until'])->toDateString();
+                } catch (\Throwable) {
+                    $skipped[] = "Row {$line}: date \"{$r['until']}\" not understood";
+
+                    continue;
+                }
+            }
+            \App\Models\AssortmentConstraint::create([
+                'tenant_id' => $tenantId, 'kind' => $kind,
+                'sku' => $kind === \App\Models\AssortmentConstraint::KEEP ? $sku : null,
+                'brand' => $kind === \App\Models\AssortmentConstraint::BRAND_MIN ? mb_substr($brand, 0, 160) : null,
+                'supplier' => $kind === \App\Models\AssortmentConstraint::SUPPLIER_MIN ? mb_substr($supplier, 0, 160) : null,
+                'category' => trim((string) ($r['category'] ?? '')) ?: null,
+                'store_id' => $storeId,
+                'format' => $storeId === null && trim((string) ($r['format'] ?? '')) !== '' ? ShelfSpace::formatSlug($r['format']) : null,
+                'min_count' => $kind === \App\Models\AssortmentConstraint::KEEP ? null : $min,
+                'until' => $until,
+                'note' => trim((string) ($r['reason'] ?? '')) !== '' ? mb_substr(trim((string) $r['reason']), 0, 240) : null,
+            ]);
+            $added++;
+        }
+
+        return ['added' => $added, 'skipped' => $skipped];
+    }
+
     public function addMustStock(int $tenantId, string $sku, ?int $storeId, ?string $reason): AssortmentMustStock
     {
         return AssortmentMustStock::updateOrCreate(
@@ -290,6 +374,12 @@ class AssortmentUploads
             'facings' => ['facings', 'current facings', 'current_facings', 'faces', 'facing'],
             'min_facings' => ['min facings', 'min_facings', 'minimum facings', 'minimum_facings', 'fewest facings', 'min'],
             'max_facings' => ['max facings', 'max_facings', 'maximum facings', 'maximum_facings', 'most facings', 'max'],
+            // v2.2 commercial constraints
+            'kind'     => ['kind', 'type', 'deal', 'constraint', 'rule'],
+            'brand'    => ['brand', 'brand name', 'brand_name', 'own label', 'own_label', 'private label'],
+            'supplier' => ['supplier', 'supplier name', 'supplier_name', 'vendor', 'vendor name'],
+            'min'      => ['min', 'minimum', 'at least', 'min products', 'min_products', 'min lines', 'min_lines', 'count', 'products'],
+            'until'    => ['until', 'end', 'end date', 'end_date', 'valid until', 'valid_until', 'expires', 'to'],
         ];
         $header = array_map(fn ($h) => strtolower(trim((string) $h)), (array) array_shift($sheet));
         $cols = [];
