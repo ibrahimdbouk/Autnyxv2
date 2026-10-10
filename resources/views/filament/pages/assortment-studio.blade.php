@@ -35,7 +35,7 @@
     {{-- The shelf --}}
     <x-ui.card>
         <div class="ax-grid ax-grid-2">
-            <label class="ax-stack" style="gap:.25rem">
+            <label class="ax-gap-1 ax-stack">
                 <span class="ax-text-xs ax-faint">Store</span>
                 <select class="fi-select-input" wire:model.live="store" aria-label="Store">
                     @foreach($stores as $id => $name)
@@ -43,7 +43,7 @@
                     @endforeach
                 </select>
             </label>
-            <label class="ax-stack" style="gap:.25rem">
+            <label class="ax-gap-1 ax-stack">
                 <span class="ax-text-xs ax-faint">Category</span>
                 <select class="fi-select-input" wire:model.live="category" aria-label="Category">
                     @foreach($categories as $cat)
@@ -52,7 +52,7 @@
                 </select>
             </label>
         </div>
-        <div class="ax-row ax-wrap ax-mt-3" style="gap:.5rem">
+        <div class="ax-gap-2 ax-row ax-wrap ax-mt-3">
             <x-ui.badge color="info">{{ \App\Services\Assortment\CategoryStrategy::roleLabel($strategy['role']) }}</x-ui.badge>
             <x-ui.badge>Objective: {{ \App\Services\Assortment\CategoryStrategy::objectiveLabel($strategy['objective']) }}</x-ui.badge>
             @if($ctx['peer_size'])
@@ -65,7 +65,7 @@
         </div>
     </x-ui.card>
 
-    <div class="ax-row ax-wrap" role="tablist" style="gap:.25rem">
+    <div class="ax-gap-1 ax-row ax-wrap" role="tablist">
         @foreach(['workspace' => 'Workspace', 'compare' => 'Compare scenarios'] as $k => $l)
             <x-filament::button size="sm" :color="$tab === $k ? 'primary' : 'gray'" :outlined="$tab !== $k" wire:click="$set('tab', '{{ $k }}')" role="tab" aria-selected="{{ $tab === $k ? 'true' : 'false' }}">{{ $l }}</x-filament::button>
         @endforeach
@@ -80,9 +80,9 @@
                     <tr>
                         <th></th>
                         @foreach($columns as $col)
-                            <th class="ax-num" style="min-width:9.5rem">
+                            <th class="ax-minw-10 ax-num">
                                 <span class="ax-ink">{{ $col['label'] }}</span><br>
-                                <span class="ax-faint ax-text-xs" style="font-weight:400;text-transform:none;letter-spacing:0">{{ $col['about'] }}</span>
+                                <span class="ax-plain ax-faint ax-text-xs">{{ $col['about'] }}</span>
                             </th>
                         @endforeach
                     </tr>
@@ -138,7 +138,7 @@
         <p class="ax-text-sm ax-muted">Loaded: <strong class="ax-ink">{{ $loaded }}</strong> — change anything; the figures follow.</p>
     @endif
     @foreach($r['violations'] ?? [] as $v)
-        <div class="ax-card ax-card--soft" role="alert" style="border-color:var(--ax-danger-line)"><div class="ax-card-body ax-text-sm ax-between ax-wrap" style="color:var(--ax-danger-fg)">
+        <div class="ax-border-danger ax-card ax-card--soft" role="alert"><div class="ax-danger-text ax-card-body ax-text-sm ax-between ax-wrap">
             <span><strong>Breaks a limit.</strong> {{ $v['why'] }} It can be explored, but not made the plan.</span>
             @if($v['key'] === 'metres' && ($r['room_cuts'] ?? null) !== null)
                 <button type="button" class="ax-btn" wire:click="makeRoom">Make room: cut over-spaced facings</button>
@@ -170,7 +170,7 @@
 
     <x-ui.card title="How the range is judged">
         <div class="ax-grid ax-grid-4">
-            <label class="ax-stack" style="gap:.25rem">
+            <label class="ax-gap-1 ax-stack">
                 <span class="ax-text-xs ax-faint">Objective</span>
                 <select class="fi-select-input" wire:model.live="objective" aria-label="Objective">
                     <option value="">Category's own ({{ \App\Services\Assortment\CategoryStrategy::objectiveLabel($ctx['strategy']['objective']) }})</option>
@@ -179,7 +179,7 @@
                     @endforeach
                 </select>
             </label>
-            <label class="ax-stack" style="gap:.25rem">
+            <label class="ax-gap-1 ax-stack">
                 <span class="ax-text-xs ax-faint">Room to grow</span>
                 <select class="fi-select-input" wire:model.live="room" aria-label="Room to grow">
                     <option value="">Category's own ({{ $ctx['strategy']['room'] > 0 ? '+' . (int) round($ctx['strategy']['room'] * 100) . '%' : 'hold the count' }})</option>
@@ -188,26 +188,26 @@
                     @endforeach
                 </select>
             </label>
-            <label class="ax-stack" style="gap:.25rem">
+            <label class="ax-gap-1 ax-stack">
                 <span class="ax-text-xs ax-faint">Most products</span>
                 <input type="number" min="1" class="fi-input" wire:model.live.debounce.500ms="maxSize" placeholder="{{ $c['max_size'] }}" aria-label="Most products">
             </label>
-            <label class="ax-stack" style="gap:.25rem">
+            <label class="ax-gap-1 ax-stack">
                 <span class="ax-text-xs ax-faint">Fewest products</span>
                 <input type="number" min="1" class="fi-input" wire:model.live.debounce.500ms="minSize" placeholder="{{ $c['min_size'] }}" aria-label="Fewest products">
             </label>
         </div>
-        <div class="ax-row ax-wrap ax-mt-3" style="gap:.35rem">
+        <div class="ax-gap-1 ax-row ax-wrap ax-mt-3">
             <span class="ax-text-xs ax-faint">Start from the optimiser's plan:</span>
             @foreach(\App\Services\Assortment\StudioService::PRESETS as $k => $p)
                 <button type="button" class="ax-btn" wire:click="loadPreset('{{ $k }}')" title="{{ $p['about'] }}">{{ $p['label'] }}</button>
             @endforeach
         </div>
         @if($metresMode)
-            <div class="ax-row ax-wrap ax-mt-3" style="gap:.5rem">
-                <label class="ax-row" style="gap:.5rem">
+            <div class="ax-gap-2 ax-row ax-wrap ax-mt-3">
+                <label class="ax-gap-2 ax-row">
                     <span class="ax-text-xs ax-faint">Shelf metres</span>
-                    <input type="number" min="0.1" step="0.1" class="fi-input" style="max-width:8rem" wire:model.live.debounce.500ms="metres" placeholder="{{ number_format((float) ($ctx['shelf']['space']['metres'] ?? 0), 2) }}" aria-label="Shelf metres">
+                    <input type="number" min="0.1" step="0.1" class="ax-maxw-8 fi-input" wire:model.live.debounce.500ms="metres" placeholder="{{ number_format((float) ($ctx['shelf']['space']['metres'] ?? 0), 2) }}" aria-label="Shelf metres">
                 </label>
                 <span class="ax-text-xs ax-faint">{{ \App\Services\Assortment\ShelfSpace::LABELS[$space['basis']] }}{{ ($ctx['shelf']['space']['metres_source'] ?? null) === 'format' ? ' (the store format\'s metres)' : '' }}.{{ ($space['note'] ?? null) ? ' ' . $space['note'] : '' }}</span>
             </div>
@@ -217,6 +217,12 @@
         @endif
     </x-ui.card>
 
+    @if($strip)
+        <x-ui.card title="The shelf, today and in this workspace">
+            <x-ui.shelf-strip :strip="$strip" plan-label="Workspace" />
+        </x-ui.card>
+    @endif
+
     <div class="ax-split">
         <div class="ax-stack">
             <x-ui.card title="The changes being tried, in order">
@@ -225,7 +231,7 @@
                 @else
                     <div class="ax-scroll-x">
                         <table class="ax-table">
-                            <thead><tr><th style="min-width:9rem">Change</th><th>What it does</th><th class="ax-num">Category sales a year</th><th></th></tr></thead>
+                            <thead><tr><th class="ax-minw-9">Change</th><th>What it does</th><th class="ax-num">Category sales a year</th><th></th></tr></thead>
                             <tbody>
                                 @foreach($mine as $ch)
                                     @php $idx = collect($picks)->search(fn ($p) => $p['sku'] === $ch['sku'] || $p['sku'] === ($ch['out_sku'] ?? null)); @endphp
@@ -260,12 +266,12 @@
 
             <x-ui.card title="The range today">
                 <div class="ax-between ax-wrap ax-mb-2">
-                    <input type="search" class="fi-input" style="max-width:18rem" wire:model.live.debounce.300ms="search" placeholder="Find a product" aria-label="Find a product">
+                    <input type="search" class="ax-maxw-18 fi-input" wire:model.live.debounce.300ms="search" placeholder="Find a product" aria-label="Find a product">
                     <span class="ax-faint ax-text-xs">{{ number_format($ctx['shelf']['baseline']['count']) }} products · sales a year from the last 90 days <x-ui.badge color="observed">Observed</x-ui.badge></span>
                 </div>
                 <div class="ax-scroll-x">
                     <table class="ax-table">
-                        <thead><tr><th style="min-width:12rem">Product</th><th class="ax-num">Sales a year</th><th class="ax-num">Margin</th>@if($metresMode)<th class="ax-num">{{ $facingsMode ? 'Facings' : 'Width' }}</th>@endif<th>Note</th><th></th></tr></thead>
+                        <thead><tr><th class="ax-minw-12">Product</th><th class="ax-num">Sales a year</th><th class="ax-num">Margin</th>@if($metresMode)<th class="ax-num">{{ $facingsMode ? 'Facings' : 'Width' }}</th>@endif<th>Note</th><th></th></tr></thead>
                         <tbody>
                             @forelse($rows as $row)
                                 <tr wire:key="rg-{{ md5($row['sku']) }}" @class(['ax-row-hl' => $focus === $row['sku']])>
@@ -276,7 +282,7 @@
                                     <td class="ax-num">{{ $row['sales'] === null ? '—' : $money($row['sales']) }}</td>
                                     <td class="ax-num">{{ $row['margin_rate'] === null ? '—' : $share($row['margin_rate']) }}</td>
                                     @if($metresMode)
-                                        <td class="ax-num" style="white-space:nowrap">
+                                        <td class="ax-nowrap ax-num">
                                             @if($facingsMode && ! $row['off'] && ! $row['new'] && $row['facings'] !== null)
                                                 <button type="button" class="ax-btn" wire:click="facing(@js($row['sku']), -1)" aria-label="One facing fewer for {{ $row['name'] }}" @disabled($row['facings'] <= (int) round((float) ($row['min_facings'] ?? 1)))>−</button>
                                                 <span @class(['ax-fw-700' => $row['facings'] !== $row['facings_today']])>{{ $row['facings'] }}</span>
@@ -294,7 +300,7 @@
                                         @if($row['flag'] && ! $row['new'])<x-ui.badge :color="$row['flag'] === 'recover' ? 'danger' : 'warning'">{{ $flagLabel[$row['flag']] ?? $row['flag'] }}</x-ui.badge>@endif
                                         @if($row['protected'])<span class="ax-muted">{{ $row['protected'] }}</span>@endif
                                     </td>
-                                    <td style="white-space:nowrap">
+                                    <td class="ax-nowrap">
                                         @if($row['new'] || $row['off'])
                                             <button type="button" class="ax-btn" wire:click="{{ $row['new'] ? 'remove' : 'add' }}({{ \Illuminate\Support\Js::from($row['sku']) }})">Put back</button>
                                         @elseif($row['protected'])
@@ -395,7 +401,7 @@
                             @endif
                         </div>
 
-                        <div class="ax-row ax-wrap" style="gap:.35rem">
+                        <div class="ax-gap-1 ax-row ax-wrap">
                             @if($product['on_today'] && $product['on_now'] && ! $product['protected'])
                                 <button type="button" class="ax-btn" wire:click="remove({{ \Illuminate\Support\Js::from($product['sku']) }})">Take off the range</button>
                             @elseif($product['on_today'] && ! $product['on_now'])

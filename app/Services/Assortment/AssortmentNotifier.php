@@ -73,6 +73,22 @@ class AssortmentNotifier
             count($cal->reasons) . ' change(s) proposed from measured results. Nothing changes until you approve it.', $url, 'heroicon-o-academic-cap');
     }
 
+    /** v2.1 — the weekly briefing, to head office (once a week). */
+    public function briefing(\App\Models\AssortmentBriefing $b): void
+    {
+        $tenant = $b->tenant;
+        if ($tenant === null) {
+            return;
+        }
+        $url = null;
+        try {
+            $url = \App\Filament\Pages\AssortmentBriefingPage::getUrl(['tenant' => $tenant], panel: 'admin');
+        } catch (\Throwable) {
+        }
+        $this->send($this->headOffice($tenant), 'Assortment briefing: ' . $b->headline(), (string) $b->summary(), $url, 'heroicon-o-newspaper');
+        $b->forceFill(['sent_at' => now()])->save();
+    }
+
     public function planAssigned(\App\Models\AssortmentPlan $plan): void
     {
         $n = count(array_filter($plan->actionable(), fn ($c) => $c['ticked'] ?? true));

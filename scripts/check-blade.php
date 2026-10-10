@@ -120,6 +120,25 @@ foreach (rglob($root . '/resources/views', '.blade.php') as $file) {
     }
 }
 
+/* ---------- BLD-003: no inline CSS in the Assortment app's views ------- */
+// Every look lives in public/css/autnyx-ui.css (one place to change it, light
+// and dark). A value that must vary (a bar's length) is an SVG attribute.
+$classOnly = array_merge(
+    glob($root . '/resources/views/filament/pages/assortment-*.blade.php') ?: [],
+    glob($root . '/resources/views/filament/dashboards/assortment*.blade.php') ?: [],
+    rglob($root . '/resources/views/filament/assortment', '.blade.php'),
+    rglob($root . '/resources/views/filament/ops/usage', '.blade.php'),
+    rglob($root . '/resources/views/components/ui', '.blade.php'),
+);
+foreach ($classOnly as $file) {
+    $src = file_get_contents($file);
+    if (preg_match_all('/\sstyle\s*=\s*["\']/', $src, $mm, PREG_OFFSET_CAPTURE)) {
+        foreach ($mm[0] as $hit) {
+            $problems[] = '[BLD-003] ' . rel($file, $root) . ' (line ' . lineOf($src, $hit[1]) . '): inline style="" — use an .ax-* class from public/css/autnyx-ui.css.';
+        }
+    }
+}
+
 /* ---------- 3: MaxWidth enum path (Blade + PHP) ----------------------- */
 $scanMaxWidth = array_merge(
     rglob($root . '/resources/views', '.blade.php'),

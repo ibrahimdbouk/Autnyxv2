@@ -52,12 +52,12 @@
                             @php $s = $pl->impact['sales'] ?? [0, 0, 0]; @endphp
                             <tr wire:key="plan-rev-{{ $pl->id }}">
                                 <td class="ax-faint">{{ $n + 1 }}</td>
-                                <td style="min-width:15rem">
+                                <td class="ax-minw-15">
                                     <a class="ax-fw-600" href="{{ \App\Filament\Pages\AssortmentPlanPage::getUrl(['plan' => $pl->id]) }}" wire:navigate>{{ $pl->headline() }}</a>
                                     <div class="ax-muted ax-text-xs">{{ collect($pl->actionable())->map(fn ($c) => (\App\Models\AssortmentPlan::CHANGE_LABELS[$c['kind']] ?? $c['kind']) . ' ' . ($c['kind'] === 'swap' ? $c['out_name'] . ' → ' . $c['name'] : $c['name']))->implode(' · ') }}</div>
                                 </td>
-                                <td class="ax-num" style="white-space:nowrap">{{ \App\Support\Money::compact(min($s[0], $s[2]), $currency) }} to {{ \App\Support\Money::compact(max($s[0], $s[2]), $currency) }}</td>
-                                <td style="white-space:nowrap">
+                                <td class="ax-nowrap ax-num">{{ \App\Support\Money::compact(min($s[0], $s[2]), $currency) }} to {{ \App\Support\Money::compact(max($s[0], $s[2]), $currency) }}</td>
+                                <td class="ax-nowrap">
                                     <x-filament::button size="xs" :color="$pl->review_verdict === 'sensible' ? 'success' : 'gray'" :outlined="$pl->review_verdict !== 'sensible'" wire:click="reviewPlan({{ $pl->id }}, 'sensible')">Yes</x-filament::button>
                                     <x-filament::button size="xs" :color="$pl->review_verdict === 'not_sensible' ? 'danger' : 'gray'" :outlined="$pl->review_verdict !== 'not_sensible'" wire:click="reviewPlan({{ $pl->id }}, 'not_sensible')">No</x-filament::button>
                                 </td>
@@ -111,13 +111,13 @@
                         @foreach($sample as $i => $g)
                             <tr wire:key="rev-{{ $g->id }}">
                                 <td class="ax-faint">{{ $i + 1 }}</td>
-                                <td style="min-width:15rem">
+                                <td class="ax-minw-15">
                                     <div class="ax-fw-600">{{ $g->product?->name ?? $g->sku }}</div>
                                     <div class="ax-muted ax-text-xs">{{ $g->store?->name }} · {{ $g->product?->category }} · {{ ucfirst($g->confidence_tier) }}</div>
                                     <div class="ax-text-sm ax-mt-1">{{ implode(' ', $g->explanation['evidence'] ?? []) }}</div>
                                 </td>
-                                <td class="ax-num" style="white-space:nowrap">{{ $g->valueRange($currency) }}</td>
-                                <td style="white-space:nowrap">
+                                <td class="ax-nowrap ax-num">{{ $g->valueRange($currency) }}</td>
+                                <td class="ax-nowrap">
                                     <x-filament::button size="xs" :color="$g->review_verdict === 'sensible' ? 'success' : 'gray'"
                                         :outlined="$g->review_verdict !== 'sensible'" wire:click="review({{ $g->id }}, 'sensible')">Yes</x-filament::button>
                                     <x-filament::button size="xs" :color="$g->review_verdict === 'not_sensible' ? 'danger' : 'gray'"

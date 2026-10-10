@@ -246,6 +246,49 @@ a.ax-stat:hover { box-shadow: var(--ax-shadow-md); transform: translateY(-1px); 
 .ax-fw-600 { font-weight: 600; } .ax-fw-700 { font-weight: 700; }
 .ax-ink { color: var(--ax-ink); }
 .ax-lh { line-height: 1.5; }
+/* v2.1 — the rest of what used to be inline: views stay class-only (check-blade BLD-003). */
+.ax-gap-1 { gap: var(--ax-1); } .ax-gap-2 { gap: var(--ax-2); } .ax-gap-3 { gap: var(--ax-3); }
+.ax-nowrap { white-space: nowrap; }
+.ax-center { text-align: center; }
+.ax-w-2 { width: 2rem; }
+.ax-minw-9 { min-width: 9rem; } .ax-minw-10 { min-width: 9.5rem; } .ax-minw-12 { min-width: 12rem; } .ax-minw-13 { min-width: 13rem; }
+.ax-minw-15 { min-width: 15rem; } .ax-minw-16 { min-width: 16rem; }
+.ax-maxw-8 { max-width: 8rem; } .ax-maxw-16 { max-width: 16rem; } .ax-maxw-18 { max-width: 18rem; } .ax-maxw-24 { max-width: 24rem; }
+.ax-dim, .ax-table tr.ax-dim td { opacity: .45; }
+.ax-plain { font-weight: 400; text-transform: none; letter-spacing: 0; }
+.ax-danger-text { color: var(--ax-danger-fg); }
+.ax-border-danger { border-color: var(--ax-danger-line); }
+
+/* v2.1 — schematic shelf strip (SVG; every colour a token, light and dark). */
+.ax-strip { display: block; width: 100%; min-width: 40rem; height: auto; }   /* scrolls sideways on a phone rather than shrinking */
+.ax-strip-label { fill: var(--ax-muted); font-size: 12px; font-weight: 600; }
+.ax-strip-sub { fill: var(--ax-faint); font-size: 11px; }
+.ax-strip-name { fill: var(--ax-text); font-size: 11px; pointer-events: none; }
+.ax-strip-shelf { fill: none; stroke: var(--ax-line); stroke-width: 1; }
+.ax-strip-block { fill: var(--ax-panel); stroke: var(--ax-line); stroke-width: 1; }
+.ax-strip-block--add { fill: var(--ax-accent-soft); stroke: var(--ax-accent); stroke-width: 2; }
+.ax-strip-block--delist { fill: var(--ax-danger-soft); stroke: var(--ax-danger); }
+.ax-strip-block--cut { fill: var(--ax-warning-soft); stroke: var(--ax-warning); }
+.ax-strip-block--grow { fill: var(--ax-info-soft); stroke: var(--ax-info); }
+.ax-strip-hatch { stroke: var(--ax-danger); stroke-width: 1.5; }
+.ax-strip-free { fill: none; stroke: var(--ax-faint); stroke-dasharray: 4 3; }
+.ax-strip-over { fill: var(--ax-danger-soft); stroke: none; }
+.ax-strip-end { stroke: var(--ax-danger); stroke-width: 2; }
+.ax-strip-key { display: inline-block; width: .8rem; height: .8rem; border-radius: 2px; vertical-align: -1px; border: 1px solid var(--ax-line); background: var(--ax-panel); }
+.ax-strip-key--add { background: var(--ax-accent-soft); border: 2px solid var(--ax-accent); }
+.ax-strip-key--delist { background: var(--ax-danger-soft); border-color: var(--ax-danger); }
+.ax-strip-key--cut { background: var(--ax-warning-soft); border-color: var(--ax-warning); }
+.ax-strip-key--grow { background: var(--ax-info-soft); border-color: var(--ax-info); }
+.ax-strip-key--free { background: none; border: 1px dashed var(--ax-faint); }
+.ax-strip-key--over { background: var(--ax-danger-soft); border-color: var(--ax-danger); }
+
+/* Meter as SVG: the fill's length is an attribute, not inline CSS. */
+.ax-meter-svg { display: block; width: 100%; height: .4rem; }
+.ax-meter-svg .ax-meter-track { fill: var(--ax-line); }
+.ax-meter-svg .ax-meter-bar { fill: var(--ax-accent); }
+.ax-meter-svg .ax-meter-bar--success { fill: var(--ax-success); }
+.ax-meter-svg .ax-meter-bar--warning { fill: var(--ax-warning); }
+.ax-meter-svg .ax-meter-bar--danger { fill: var(--ax-danger); }
 
 /* ---- Brand logo in the top bar (sized cleanly whatever the file) ---- */
 .fi-logo img, .fi-logo svg { max-height: 1.75rem; width: auto; }

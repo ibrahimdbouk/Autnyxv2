@@ -42,6 +42,7 @@ final class ScreenRegistry
         'replenishment'   => ['label' => 'Replenishment',    'group' => 'Root Cause'],
         'reports'         => ['label' => 'Reports',          'group' => 'Root Cause'],
         // Assortment
+        'assortment_briefing'   => ['label' => 'Assortment briefing',   'group' => 'Assortment'],
         'assortment_studio'     => ['label' => 'Decision Studio',       'group' => 'Assortment'],
         'assortment_plans'      => ['label' => 'Range plans',           'group' => 'Assortment'],
         'assortment_benchmarks' => ['label' => 'Benchmarks',            'group' => 'Assortment'],

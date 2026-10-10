@@ -3,7 +3,7 @@
     @if($options === [])
         <x-ui.card><x-ui.empty title="No stores">There are no stores you can see yet.</x-ui.empty></x-ui.card>
     @else
-        <div style="max-width:24rem">
+        <div class="ax-maxw-24">
             <label class="ax-text-sm ax-muted" for="ax-store-pick">Store</label>
             <x-filament::input.wrapper>
                 <x-filament::input.select id="ax-store-pick" wire:model.live="store">
@@ -46,7 +46,7 @@
                                             <td><a class="ax-fw-600" href="{{ \App\Filament\Pages\AssortmentDecision::getUrl(['decision' => $g->id]) }}" wire:navigate>{{ $g->product?->name ?? $g->sku }}</a>
                                                 <div class="ax-faint ax-text-xs">{{ $g->product?->category }}</div></td>
                                             <td class="ax-text-sm">{{ $g->explanation['evidence'][0] ?? '' }}</td>
-                                            <td class="ax-num" style="white-space:nowrap">{{ $g->valueRange($currency) }}</td>
+                                            <td class="ax-nowrap ax-num">{{ $g->valueRange($currency) }}</td>
                                         </tr>
                                     @endforeach
                                 </tbody>

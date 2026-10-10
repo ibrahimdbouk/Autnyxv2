@@ -23,7 +23,7 @@
                             <td class="ax-num">{{ \App\Support\Money::compact($r['open_value'], $currency) }}</td>
                             <td class="ax-num">{{ $r['accepted'] ?: '—' }}</td>
                             <td class="ax-num">{{ $r['measured'] != 0 ? \App\Support\Money::compact($r['measured'], $currency) : '—' }}</td>
-                            <td style="white-space:nowrap">
+                            <td class="ax-nowrap">
                                 <x-filament::button size="xs" color="gray" outlined icon="heroicon-o-arrow-down-tray"
                                     wire:click="downloadPackAt({{ $i }})">Review pack</x-filament::button>
                             </td>

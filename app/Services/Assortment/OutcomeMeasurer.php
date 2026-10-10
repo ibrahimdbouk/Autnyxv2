@@ -96,6 +96,7 @@ class OutcomeMeasurer
             ->whereIn('status', [\App\Models\AssortmentPlan::STATUS_ACCEPTED, \App\Models\AssortmentPlan::STATUS_IN_PROGRESS, \App\Models\AssortmentPlan::STATUS_MEASURED])
             ->pluck('store_id')->map(fn ($id) => (int) $id)->all();
         $controls = array_values(array_diff($this->storesOf((int) $plan->tenant_id, (string) $plan->peer_group), [(int) $plan->store_id], $changed));
+        // v2.1: the held-back stores are measured on their own (below); the peer figure is every untouched similar store.
 
         $sum = function (array $stores, array $range) use ($plan, $skus): float {
             if ($stores === [] || $skus === []) {
@@ -114,15 +115,46 @@ class OutcomeMeasurer
         $year = round($uplift * 365 / max(1, $days), 2);
         $expected = isset($plan->impact['sales'][1]) ? (float) $plan->impact['sales'][1] : null;
         $strength = count($controls) >= 3 ? 'measured' : 'weak';
+        $type = $expected !== null && $expected < 0 ? AssortmentGap::TYPE_DELIST : AssortmentGap::TYPE_ADD;
+
+        // v2.1 — against the stores held back for this plan, too. A held-back store that changed a
+        // product of the category in the window anyway is left out. With 3 or more clean holdouts,
+        // the held-back stores are the result; otherwise they are shown beside it.
+        $holdout = null;
+        $held = $plan->holdoutIds();
+        if ($held !== []) {
+            $touched = AssortmentGap::where('tenant_id', $plan->tenant_id)->whereIn('store_id', $held)->whereIn('sku', $skus)
+                ->where('status', AssortmentGap::STATUS_ACCEPTED)->whereNotNull('done_at')->whereBetween('done_at', [$pre[0], $post[1] . ' 23:59:59'])
+                ->pluck('store_id')->map(fn ($id) => (int) $id)->unique()->all();
+            $clean = array_values(array_diff($held, $touched, $changed));
+            $hPre = $sum($clean, $pre);
+            $hPost = $sum($clean, $post);
+            $hRatio = $hPre > 0 ? $hPost / $hPre : 1.0;
+            $hUplift = $tPost - $tPre * $hRatio;
+            $holdout = [
+                'stores' => count($clean), 'held' => count($held), 'left_out' => count($held) - count($clean),
+                'control_ratio' => round($hRatio, 4), 'expected_after' => round($tPre * $hRatio, 2), 'uplift' => round($hUplift, 2),
+                'uplift_per_year' => round($hUplift * 365 / max(1, $days), 2),
+            ];
+        }
+        $byHoldouts = $holdout !== null && $holdout['stores'] >= 3;
+        $peers = ['control_stores' => count($controls), 'control_ratio' => round($ratio, 4), 'expected_after' => round($tPre * $ratio, 2),
+            'uplift' => round($uplift, 2), 'uplift_per_year' => $year];
+        $primary = $byHoldouts
+            ? ['control_stores' => $holdout['stores'], 'control_ratio' => $holdout['control_ratio'], 'expected_after' => $holdout['expected_after'],
+                'uplift' => $holdout['uplift'], 'uplift_per_year' => $holdout['uplift_per_year']]
+            : $peers;
+        $strength = $byHoldouts ? 'measured' : $strength;
 
         return [
             'metric' => 'category_sales', 'category' => $plan->category, 'days' => $days, 'before' => $pre, 'after' => $post,
-            'treated_before' => round($tPre, 2), 'treated_after' => round($tPost, 2), 'control_stores' => count($controls),
-            'control_ratio' => round($ratio, 4), 'expected_after' => round($tPre * $ratio, 2), 'uplift' => round($uplift, 2),
-            'uplift_per_year' => $year, 'strength' => $strength, 'expected_per_year' => $expected,
-            'error_per_year' => $expected === null ? null : round($year - $expected, 2), 'optimizer_version' => $plan->optimizer_version,
+            'treated_before' => round($tPre, 2), 'treated_after' => round($tPost, 2),
+            ...$primary,
+            'control_basis' => $byHoldouts ? 'holdouts' : 'peers', 'peers' => $peers, 'holdout' => $holdout,
+            'strength' => $strength, 'expected_per_year' => $expected,
+            'error_per_year' => $expected === null ? null : round($primary['uplift_per_year'] - $expected, 2), 'optimizer_version' => $plan->optimizer_version,
             'calibration_version' => $plan->constraints['calibration'] ?? null,
-            'verdict' => $this->verdict($expected !== null && $expected < 0 ? AssortmentGap::TYPE_DELIST : AssortmentGap::TYPE_ADD, $year, $expected, $strength),
+            'verdict' => $this->verdict($type, $primary['uplift_per_year'], $expected, $strength),
         ];
     }
 

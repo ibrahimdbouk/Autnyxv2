@@ -18,7 +18,7 @@
     <a href="{{ $backUrl }}" class="ax-text-sm ax-muted" wire:navigate>← All decisions</a>
 
     <x-ui.card>
-        <div class="ax-row ax-wrap ax-mb-2" style="gap:.5rem">
+        <div class="ax-gap-2 ax-row ax-wrap ax-mb-2">
             <x-ui.badge :color="$typeColor">{{ \App\Models\AssortmentGap::TYPES[$gap->type] ?? $gap->type }}</x-ui.badge>
             <x-ui.badge :color="$tierColor">Confidence: {{ ucfirst($gap->confidence_tier) }}</x-ui.badge>
             <x-ui.badge>{{ ucfirst(str_replace('_', ' ', $gap->status)) }}</x-ui.badge>

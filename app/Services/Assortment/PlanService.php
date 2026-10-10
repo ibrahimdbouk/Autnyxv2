@@ -38,12 +38,25 @@ class PlanService
         private RangeOptimizer $optimiser,
     ) {}
 
-    /** @param array<int,string> $untick change keys the person unticked */
-    public function accept(AssortmentPlan $plan, User $by, ?int $assigneeId = null, ?string $dueAt = null, ?string $note = null, array $untick = []): void
+    /**
+     * @param  array<int,string>  $untick  change keys the person unticked
+     * @param  array<int,int>  $holdouts  v2.1: similar stores held back from this category as the plan's comparison
+     */
+    public function accept(AssortmentPlan $plan, User $by, ?int $assigneeId = null, ?string $dueAt = null, ?string $note = null, array $untick = [], array $holdouts = []): void
     {
         abort_unless($plan->status === AssortmentPlan::STATUS_PROPOSED && $plan->feasible, 422, 'Only a proposed, feasible plan can be accepted.');
+        if (($held = $this->heldBy($plan)) !== null) {
+            abort(422, $this->heldMessage($plan, $held));
+        }
+        $eligible = collect($this->holdoutCandidates($plan, 50))->keyBy('store_id');
+        $holdouts = array_values(array_unique(array_map('intval', $holdouts)));
+        abort_if(count($holdouts) > self::MAX_HOLDOUTS, 422, 'Hold back at most ' . self::MAX_HOLDOUTS . ' stores.');
+        foreach ($holdouts as $id) {
+            abort_unless($eligible->has($id), 422, 'A store picked to hold back is not one of the similar stores free to hold back.');
+        }
+        $holdoutRows = array_map(fn ($id) => ['store_id' => $id, 'name' => $eligible[$id]['name'], 'why' => $eligible[$id]['why']], $holdouts);
 
-        DB::transaction(function () use ($plan, $by, $assigneeId, $dueAt, $note, $untick) {
+        DB::transaction(function () use ($plan, $by, $assigneeId, $dueAt, $note, $untick, $holdoutRows) {
             $changes = $plan->changes ?? [];
             $firstGap = null;
             foreach ($changes as $i => $c) {
@@ -88,6 +101,7 @@ class PlanService
                 'impact'         => array_merge($this->optimiser->impact($changes, $base, $count, $space),
                     ['margin_known' => $plan->impact['margin_known'] ?? false, 'basis' => $plan->impact['basis'] ?? 'estimated']),
                 'proposed_count' => $count,
+                'holdouts'       => $holdoutRows === [] ? null : $holdoutRows,
                 'status'         => AssortmentPlan::STATUS_ACCEPTED,
                 'decided_by'     => $by->id,
                 'decided_at'     => now(),
@@ -103,6 +117,114 @@ class PlanService
         if ($plan->assignee_id && (int) $plan->assignee_id !== (int) $by->id) {
             $this->notifier->planAssigned($plan);
         }
+    }
+
+    // ── v2.1 Holdout stores ───────────────────────────────────────────────────
+
+    public const MAX_HOLDOUTS = 3;
+
+    /**
+     * Similar stores that can be held back as this plan's comparison: the same
+     * peer group, not resetting this category now, not already held back for it.
+     * Best match first: category sales and trend over the last 8 weeks closest
+     * to the plan's store.
+     *
+     * @return array<int, array{store_id:int, name:string, why:string, score:float}>
+     */
+    public function holdoutCandidates(AssortmentPlan $plan, int $limit = 6): array
+    {
+        $key = $plan->id . ':' . $plan->updated_at?->timestamp;
+
+        return array_slice($this->candidates[$key] ??= $this->rankHoldouts($plan), 0, $limit);
+    }
+
+    /** @var array<string,array> per plan, for one request */
+    private array $candidates = [];
+
+    private function rankHoldouts(AssortmentPlan $plan): array
+    {
+        $groups = app(PeerGroups::class)->build((int) $plan->tenant_id);
+        $members = $groups['groups'][(string) $plan->peer_group]['members'] ?? [];
+        $busy = AssortmentPlan::where('tenant_id', $plan->tenant_id)->where('category', $plan->category)->whereKeyNot($plan->id)
+            ->whereIn('status', [AssortmentPlan::STATUS_ACCEPTED, AssortmentPlan::STATUS_IN_PROGRESS])->get(['store_id', 'holdouts', 'status']);
+        $exclude = array_merge([(int) $plan->store_id], $busy->pluck('store_id')->map(fn ($id) => (int) $id)->all(),
+            ...$busy->map(fn (AssortmentPlan $p) => $p->holdoutIds())->all());
+        $ids = array_values(array_diff(array_map('intval', $members), $exclude));
+        if ($ids === []) {
+            return [];
+        }
+
+        $asOf = ($plan->as_of_date ?? now())->copy();
+        $recent = [$asOf->copy()->subDays(55)->toDateString(), $asOf->toDateString()];
+        $prior = [$asOf->copy()->subDays(111)->toDateString(), $asOf->copy()->subDays(56)->toDateString()];
+        $all = array_merge($ids, [(int) $plan->store_id]);
+        $sum = fn (array $range) => DB::table('sales_daily as s')->join('products as p', fn ($j) => $j->on('p.tenant_id', '=', 's.tenant_id')->on('p.sku', '=', 's.sku'))
+            ->where('s.tenant_id', $plan->tenant_id)->whereIn('s.store_id', $all)->whereRaw('TRIM(p.category) = ?', [$plan->category])
+            ->whereBetween('s.date', $range)->groupBy('s.store_id')
+            ->selectRaw('s.store_id, COALESCE(SUM(CASE WHEN s.revenue > 0 THEN s.revenue ELSE 0 END), 0) AS r')->pluck('r', 'store_id');
+        $now = $sum($recent);
+        $before = $sum($prior);
+        $trend = fn (int $id) => (float) ($before[$id] ?? 0) > 0 ? (float) ($now[$id] ?? 0) / (float) $before[$id] - 1 : null;
+        $base = (float) ($now[(int) $plan->store_id] ?? 0);
+        $baseTrend = $trend((int) $plan->store_id);
+        $names = DB::table('stores')->where('tenant_id', $plan->tenant_id)->whereIn('id', $ids)->pluck('name', 'id');
+
+        $out = [];
+        foreach ($ids as $id) {
+            $s = (float) ($now[$id] ?? 0);
+            if ($s <= 0 || $base <= 0) {
+                continue;   // a store that does not sell the category cannot show what it would have done
+            }
+            $t = $trend($id);
+            $gap = abs(log($s / $base));
+            $tGap = $t !== null && $baseTrend !== null ? abs($t - $baseTrend) : 0.5;
+            $out[] = [
+                'store_id' => $id,
+                'name'     => (string) ($names[$id] ?? 'store #' . $id),
+                'why'      => sprintf('%s sales %d%% of this store\'s in the last 8 weeks%s', $plan->category, (int) round($s / $base * 100),
+                    $t !== null && $baseTrend !== null ? '; trend ' . self::trendWords($t) . ' against ' . self::trendWords($baseTrend) . ' here' : ''),
+                'score'    => round($gap + $tGap, 4),
+            ];
+        }
+        usort($out, fn ($a, $b) => [$a['score'], $a['store_id']] <=> [$b['score'], $b['store_id']]);
+
+        return $out;
+    }
+
+    private static function trendWords(float $t): string
+    {
+        $p = (int) round($t * 100);
+
+        return $p === 0 ? 'flat' : ($p > 0 ? '+' : '−') . abs($p) . '%';
+    }
+
+    /** The plan holding this plan's store back in its category, if any. */
+    public function heldBy(AssortmentPlan $plan): ?AssortmentPlan
+    {
+        return AssortmentPlan::where('tenant_id', $plan->tenant_id)->where('category', $plan->category)->whereKeyNot($plan->id)
+            ->whereIn('status', [AssortmentPlan::STATUS_ACCEPTED, AssortmentPlan::STATUS_IN_PROGRESS])->whereNotNull('holdouts')
+            ->get()->first(fn (AssortmentPlan $p) => in_array((int) $plan->store_id, $p->holdoutIds(), true));
+    }
+
+    public function heldMessage(AssortmentPlan $plan, AssortmentPlan $held): string
+    {
+        return ($plan->store?->name ?? 'This store') . ' is held back in ' . $plan->category . ' as the comparison for range plan #' . $held->id
+            . ' (' . ($held->store?->name ?? 'store #' . $held->store_id) . ') until that plan is measured'
+            . ($held->measure_after ? ', after ' . $held->measure_after->format('j M Y') : '') . '. Release it from that plan to change it now.';
+    }
+
+    /** Stop holding stores back: the plan is then measured against the other similar stores only. */
+    public function release(AssortmentPlan $plan, User $by, array $storeIds): void
+    {
+        abort_unless($plan->holding(), 422, 'This plan holds no stores back.');
+        $ids = array_map('intval', $storeIds);
+        $left = array_values(array_filter((array) $plan->holdouts, fn ($h) => ! in_array((int) $h['store_id'], $ids, true)));
+        $gone = array_values(array_filter((array) $plan->holdouts, fn ($h) => in_array((int) $h['store_id'], $ids, true)));
+        if ($gone === []) {
+            return;
+        }
+        $plan->forceFill(['holdouts' => $left === [] ? null : $left])->save();
+        $this->audit($plan, $by, 'assortment.plan_holdouts_released', 'Released ' . implode(', ', array_column($gone, 'name')) . ' from range plan #' . $plan->id);
     }
 
     public function reject(AssortmentPlan $plan, User $by, string $reason): void

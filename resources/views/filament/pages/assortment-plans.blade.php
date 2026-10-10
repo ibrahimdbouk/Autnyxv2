@@ -35,14 +35,14 @@
                                 $i = $p->impact ?? [];
                             @endphp
                             <tr wire:key="plan-{{ $p->id }}">
-                                <td style="min-width:13rem">
+                                <td class="ax-minw-13">
                                     <a class="ax-fw-600" href="{{ \App\Filament\Pages\AssortmentPlanPage::getUrl(['plan' => $p->id]) }}" wire:navigate>{{ $p->store?->name }} · {{ $p->category }}</a>@if($p->source === 'studio') <x-ui.badge color="accent">Studio</x-ui.badge>@endif
                                     <div class="ax-faint ax-text-xs">{{ \App\Services\Assortment\CategoryStrategy::roleLabel($p->role) }}</div>
                                 </td>
-                                <td class="ax-num" style="white-space:nowrap">{{ $p->current_count }} → {{ $p->proposed_count }}</td>
+                                <td class="ax-nowrap ax-num">{{ $p->current_count }} → {{ $p->proposed_count }}</td>
                                 <td class="ax-text-sm">
                                     @if(! $p->feasible)
-                                        <span style="color:var(--ax-danger-fg)">No feasible range under the limits</span>
+                                        <span class="ax-danger-text">No feasible range under the limits</span>
                                     @else
                                         {{ collect([
                                             ($kinds['add'] ?? 0) ? $kinds['add'] . ' add' : null,
@@ -52,7 +52,7 @@
                                         ])->filter()->implode(' · ') }}
                                     @endif
                                 </td>
-                                <td class="ax-num" style="white-space:nowrap">
+                                <td class="ax-nowrap ax-num">
                                     @if(isset($p->measurement['uplift_per_year']))
                                         Measured {{ $money($p->measurement['uplift_per_year']) }}
                                     @else

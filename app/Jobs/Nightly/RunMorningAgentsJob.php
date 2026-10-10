@@ -14,7 +14,7 @@ use Illuminate\Support\Str;
 /**
  * WP5.2 — the morning agents for one tenant, at its local morning and only
  * after its night finished: follow-ups and the daily briefing every day; the
- * weekly briefing and the data-quality check on its Monday.
+ * weekly briefing, the data-quality check and the assortment briefing on its Monday.
  */
 class RunMorningAgentsJob implements ShouldQueue
 {
@@ -32,7 +32,7 @@ class RunMorningAgentsJob implements ShouldQueue
     {
         $commands = ['agents:action-followup', 'agents:daily-briefing'];
         if ($this->monday) {
-            array_push($commands, 'agents:data-quality', 'agents:weekly-briefing');
+            array_push($commands, 'agents:data-quality', 'agents:weekly-briefing', 'assortment:briefing');
         }
 
         foreach ($commands as $command) {

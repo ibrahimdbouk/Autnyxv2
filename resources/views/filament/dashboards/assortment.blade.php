@@ -20,11 +20,11 @@
                     <tbody>
                         @foreach($queue as $g)
                             <tr>
-                                <td style="white-space:nowrap"><x-ui.badge :color="match($g->type) { 'add' => 'success', 'delist' => 'warning', default => 'danger' }">{{ \App\Models\AssortmentGap::TYPES[$g->type] }}</x-ui.badge></td>
+                                <td class="ax-nowrap"><x-ui.badge :color="match($g->type) { 'add' => 'success', 'delist' => 'warning', default => 'danger' }">{{ \App\Models\AssortmentGap::TYPES[$g->type] }}</x-ui.badge></td>
                                 <td><a class="ax-fw-600" href="{{ \App\Filament\Pages\AssortmentDecision::getUrl(['decision' => $g->id]) }}" wire:navigate>{{ $g->product?->name ?? $g->sku }}</a>
                                     <div class="ax-faint ax-text-xs">{{ $g->store?->name }} · {{ $g->product?->category }}</div></td>
                                 <td class="ax-text-sm ax-muted">{{ $g->explanation['evidence'][0] ?? '' }}</td>
-                                <td class="ax-num" style="white-space:nowrap">{{ $g->valueRange($currency) }}</td>
+                                <td class="ax-nowrap ax-num">{{ $g->valueRange($currency) }}</td>
                             </tr>
                         @endforeach
                     </tbody>
@@ -82,7 +82,7 @@
                 Recommendations to add products, drop slow sellers and fix products that keep running out are prepared every night. They appear here once they have been reviewed with your team.
             </x-ui.empty>
             @if($gate && $validationUrl)
-                <p class="ax-text-sm ax-mt-3" style="text-align:center">
+                <p class="ax-center ax-text-sm ax-mt-3">
                     Review so far:
                     @foreach($gate['types'] as $typeKey => $t)
                         {{ \App\Models\AssortmentGap::TYPES[$typeKey] }} {{ $t['needed'] === 0 ? 'none' : $t['reviewed'] . '/' . $t['needed'] }}@if(! $loop->last) · @endif

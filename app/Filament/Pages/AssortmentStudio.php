@@ -485,6 +485,13 @@ class AssortmentStudio extends Page
             'rooms'         => CategoryStrategy::ROOM_OPTIONS,
             'canPlan'       => $svc->canMakePlan($tenant, auth()->user()),
             'space'         => $result['constraints']['space'] ?? ['basis' => 'count'],
+            // v2.1 — the shelf drawn: today against the workspace (schematic).
+            'strip'         => (function () use ($svc, $ctx, $result) {
+                $shelf = $svc->shelf($ctx, $this->inputs());
+
+                return \App\Services\Assortment\ShelfStrip::build($shelf, $ctx['products'], $result['shelf'] ?? [],
+                    ($shelf['space']['basis'] ?? 'count') === \App\Services\Assortment\ShelfSpace::BASIS_FACINGS ? (array) ($result['facings_now'] ?? []) : []);
+            })(),
             'decisionUrl'   => fn ($id) => $id ? AssortmentDecision::getUrl(['decision' => $id]) : null,
         ];
     }

@@ -39,7 +39,7 @@
             <ul class="ax-list ax-text-sm ax-mt-2">
                 @foreach((array) $cal->reasons as $r)<li>{{ $r }}</li>@endforeach
             </ul>
-            <div class="ax-row ax-mt-3" style="gap:.5rem">
+            <div class="ax-gap-2 ax-row ax-mt-3">
                 {{ ($this->approveAction)(['id' => $cal->id]) }}
                 {{ ($this->rejectAction)(['id' => $cal->id]) }}
             </div>

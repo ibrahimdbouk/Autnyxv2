@@ -26,7 +26,7 @@
     <a href="{{ $backUrl }}" class="ax-text-sm ax-muted" wire:navigate>← All range plans</a>
 
     <x-ui.card>
-        <div class="ax-row ax-wrap ax-mb-2" style="gap:.5rem">
+        <div class="ax-gap-2 ax-row ax-wrap ax-mb-2">
             <x-ui.badge>{{ \App\Models\AssortmentPlan::STATUSES[$p->status] ?? $p->status }}</x-ui.badge>
             <x-ui.badge color="info">{{ \App\Services\Assortment\CategoryStrategy::roleLabel($p->role) }}</x-ui.badge>
             <x-ui.badge>Objective: {{ \App\Services\Assortment\CategoryStrategy::objectiveLabel($p->objective) }}</x-ui.badge>
@@ -37,10 +37,17 @@
             ? 'made in the Decision Studio' . ($p->creator ? ' by ' . $p->creator->name : '') . ($p->scenario ? ' (“' . $p->scenario->name . '”)' : '')
             : 'the range decisions for this store and category, chosen together' }}@if($studioUrl) · <a href="{{ $studioUrl }}" wire:navigate>Open in the Decision Studio</a>@endif</p>
         @if(! $p->feasible)
-            <p class="ax-text-sm ax-mt-3" style="color:var(--ax-danger-fg)"><strong>{{ $p->infeasible_reason }}</strong></p>
+            <p class="ax-danger-text ax-text-sm ax-mt-3"><strong>{{ $p->infeasible_reason }}</strong></p>
             <p class="ax-faint ax-text-xs ax-mt-1">Change the category's limits in Assortment → Range &amp; Must-Stock, or the must-stock list, and run again. Nothing is proposed while a limit cannot be met.</p>
         @endif
     </x-ui.card>
+
+    @if($heldBy)
+        <div class="ax-border-danger ax-card ax-card--soft" role="status"><div class="ax-card-body ax-text-sm">
+            <strong>Held back for comparison.</strong> {{ app(\App\Services\Assortment\PlanService::class)->heldMessage($p, $heldBy) }}
+            <a href="{{ \App\Filament\Pages\AssortmentPlanPage::getUrl(['plan' => $heldBy->id]) }}" wire:navigate>Open that plan</a>
+        </div></div>
+    @endif
 
     <div @class(['ax-grid', 'ax-grid-5' => $metres, 'ax-grid-4' => ! $metres])>
         <x-ui.stat label="Products" :value="$p->current_count . ' → ' . $p->proposed_count"
@@ -56,19 +63,25 @@
             :foot="$basis . (($i['stock_pct'] ?? null) !== null ? ' · ' . $pct($i['stock_pct']) . ' of today' : '') . ' · a minus frees cash'" />
     </div>
 
+    @if($strip)
+        <x-ui.card title="The shelf, today and with the plan">
+            <x-ui.shelf-strip :strip="$strip" />
+        </x-ui.card>
+    @endif
+
     @if(! empty($p->actionable()))
         <x-ui.card title="The changes, in the order they were chosen">
             <div class="ax-scroll-x">
                 <table class="ax-table">
-                    <thead><tr>@if($canTick)<th style="width:2rem"></th>@endif<th>Change</th><th>Why this one</th><th class="ax-num">Category sales a year</th><th class="ax-num">Margin a year</th><th>Confidence</th></tr></thead>
+                    <thead><tr>@if($canTick)<th class="ax-w-2"></th>@endif<th>Change</th><th>Why this one</th><th class="ax-num">Category sales a year</th><th class="ax-num">Margin a year</th><th>Confidence</th></tr></thead>
                     <tbody>
                         @foreach($p->actionable() as $ch)
                             @php $off = $canTick ? in_array($ch['key'], $this->unticked, true) : ! ($ch['ticked'] ?? true); @endphp
-                            <tr wire:key="ch-{{ $ch['key'] }}" @if($off) style="opacity:.45" @endif>
+                            <tr wire:key="ch-{{ $ch['key'] }}" @class(['ax-dim' => $off])>
                                 @if($canTick)
                                     <td><input type="checkbox" aria-label="Keep {{ $ch['name'] }} in the plan" @checked(! $off) wire:click="toggle(@js($ch['key']))"></td>
                                 @endif
-                                <td style="min-width:12rem">
+                                <td class="ax-minw-12">
                                     <x-ui.badge :color="$kindColor[$ch['kind']] ?? null">{{ $labels[$ch['kind']] ?? $ch['kind'] }}</x-ui.badge>
                                     @if($ch['kind'] === 'swap')
                                         <div class="ax-fw-600 ax-mt-1">Out: @if($decision($ch['out_gap_id'] ?? null))<a href="{{ $decision($ch['out_gap_id']) }}" wire:navigate>{{ $ch['out_name'] }}</a>@else{{ $ch['out_name'] }}@endif</div>
@@ -80,9 +93,9 @@
                                     @if(isset($ch['metres']) && $ch['kind'] !== 'facings')<div class="ax-faint ax-text-xs">{{ $ch['metres'] >= 0 ? '+' : '−' }}{{ $m2(abs($ch['metres'])) }} of shelf</div>@endif
                                     @if($off)<div class="ax-faint ax-text-xs">Left out of the plan</div>@endif
                                 </td>
-                                <td class="ax-text-sm" style="min-width:16rem">{{ $ch['why'] }}</td>
-                                <td class="ax-num" style="white-space:nowrap">{{ $range($ch['sales'] ?? null) }}</td>
-                                <td class="ax-num" style="white-space:nowrap">{{ $range($ch['margin'] ?? null) }}</td>
+                                <td class="ax-minw-16 ax-text-sm">{{ $ch['why'] }}</td>
+                                <td class="ax-nowrap ax-num">{{ $range($ch['sales'] ?? null) }}</td>
+                                <td class="ax-nowrap ax-num">{{ $range($ch['margin'] ?? null) }}</td>
                                 <td>{{ $ch['kind'] === 'facings' ? 'Assumed' : ucfirst($ch['tier'] ?? '') }}</td>
                             </tr>
                         @endforeach
@@ -136,6 +149,19 @@
         </x-ui.card>
     </div>
 
+    @if(! empty($p->holdouts))
+        <x-ui.card title="Held back for comparison">
+            <p class="ax-muted ax-text-sm ax-m-0">{{ $p->holding()
+                ? 'These similar stores leave ' . $p->category . ' as it is until the plan is measured' . ($p->measure_after ? ' (after ' . $p->measure_after->format('j M Y') . ')' : '') . ', so its result is read against stores that did not change.'
+                : 'These similar stores were held back while the plan was measured.' }}</p>
+            <ul class="ax-list ax-text-sm ax-mt-2">
+                @foreach($p->holdouts as $h)
+                    <li><span class="ax-fw-600">{{ $h['name'] }}</span> <span class="ax-faint">— {{ $h['why'] }}</span></li>
+                @endforeach
+            </ul>
+        </x-ui.card>
+    @endif
+
     @if($p->decided_at)
         <x-ui.card title="What happened">
             <div class="ax-grid ax-grid-3">
@@ -154,7 +180,15 @@
                         <div class="ax-faint ax-text-xs">Result</div>
                         @if($m)
                             <div class="ax-fw-600">Measured: {{ $signed($m['uplift_per_year'] ?? 0) }} a year</div>
-                            <div class="ax-muted ax-text-sm">Category sales against {{ $m['control_stores'] }} similar stores that did not reset it{{ ($m['strength'] ?? '') === 'weak' ? ' (few comparison stores — indicative)' : '' }}</div>
+                            <div class="ax-muted ax-text-sm">Category sales against {{ ($m['control_basis'] ?? 'peers') === 'holdouts' ? 'the ' . $m['control_stores'] . ' stores held back for it' : $m['control_stores'] . ' similar stores that did not reset it' }}{{ ($m['strength'] ?? '') === 'weak' ? ' (few comparison stores — indicative)' : '' }}</div>
+                            @if(($m['control_basis'] ?? 'peers') === 'holdouts' && isset($m['peers']))
+                                <div class="ax-faint ax-text-xs ax-mt-1">Against all {{ $m['peers']['control_stores'] }} similar stores that did not change: {{ $signed($m['peers']['uplift_per_year']) }} a year</div>
+                            @elseif(! empty($m['holdout']) && $m['holdout']['stores'] > 0)
+                                <div class="ax-faint ax-text-xs ax-mt-1">Against the {{ $m['holdout']['stores'] }} store(s) held back: {{ $signed($m['holdout']['uplift_per_year']) }} a year — too few to be the result</div>
+                            @endif
+                            @if(! empty($m['holdout']['left_out']))
+                                <div class="ax-faint ax-text-xs">{{ $m['holdout']['left_out'] }} held-back store(s) left out: they changed the category anyway</div>
+                            @endif
                             @if(isset($m['expected_per_year']))<div class="ax-faint ax-text-xs ax-mt-1">Estimated when accepted: {{ $signed($m['expected_per_year']) }} a year · {{ match($m['verdict'] ?? '') { 'success' => 'worked', 'partial' => 'worked in part', 'failure' => 'did not work', default => '' } }}</div>@endif
                         @elseif($p->measure_after)
                             <div class="ax-fw-600">Measured after {{ $p->measure_after->format('j M Y') }}</div>

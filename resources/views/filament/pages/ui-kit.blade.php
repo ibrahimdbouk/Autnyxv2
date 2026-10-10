@@ -42,7 +42,7 @@
                 <span class="ax-chain-arrow">→</span><span class="ax-chain-node">Sales drop</span>
             </div>
             <x-ui.badge color="success">verified · 84%</x-ui.badge>
-            <x-ui.meter :value="84" color="success" style="margin-top:.6rem" />
+            <x-ui.meter :value="84" color="success" class="ax-mt-2" />
         </x-ui.card>
     </div>
 

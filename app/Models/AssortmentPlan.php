@@ -54,7 +54,7 @@ class AssortmentPlan extends Model
         'current_count', 'proposed_count', 'changes', 'impact', 'constraints', 'value_mid', 'confidence', 'confidence_tier',
         'fingerprint', 'optimizer_version', 'as_of_date', 'review_verdict', 'reviewed_by', 'reviewed_at',
         'decided_by', 'decided_at', 'decision_note', 'assignee_id', 'due_at', 'done_at', 'done_by',
-        'measure_after', 'measured_at', 'measurement', 'source', 'scenario_id', 'created_by',
+        'measure_after', 'measured_at', 'measurement', 'source', 'scenario_id', 'created_by', 'holdouts',
     ];
 
     protected $casts = [
@@ -72,6 +72,7 @@ class AssortmentPlan extends Model
         'measure_after' => 'date',
         'measured_at'   => 'datetime',
         'measurement'   => 'array',
+        'holdouts'      => 'array',
     ];
 
     public function tenant(): BelongsTo
@@ -113,6 +114,18 @@ class AssortmentPlan extends Model
     public function actionable(): array
     {
         return array_values(array_filter($this->getAttribute('changes') ?? [], fn ($c) => ($c['kind'] ?? '') !== self::PROTECT));
+    }
+
+    /** v2.1 — the stores held back from this category while the plan is measured. @return array<int,int> */
+    public function holdoutIds(): array
+    {
+        return array_values(array_map(fn ($h) => (int) $h['store_id'], (array) ($this->holdouts ?? [])));
+    }
+
+    /** A plan holds its stores back from the time it is accepted until it is measured. */
+    public function holding(): bool
+    {
+        return $this->holdoutIds() !== [] && in_array($this->status, [self::STATUS_ACCEPTED, self::STATUS_IN_PROGRESS], true);
     }
 
     public function headline(): string

@@ -13,7 +13,7 @@
 <div class="ax-stack">
     <x-ui.card>
         <div class="ax-grid ax-grid-3">
-            <label class="ax-stack" style="gap:.25rem">
+            <label class="ax-gap-1 ax-stack">
                 <span class="ax-text-xs ax-faint">Group of similar stores</span>
                 <select class="fi-select-input" wire:model.live="group" aria-label="Group of similar stores">
                     @foreach($groups as $key => $gr)
@@ -21,7 +21,7 @@
                     @endforeach
                 </select>
             </label>
-            <label class="ax-stack" style="gap:.25rem">
+            <label class="ax-gap-1 ax-stack">
                 <span class="ax-text-xs ax-faint">Category</span>
                 <select class="fi-select-input" wire:model.live="category" aria-label="Category">
                     @foreach($categories as $cat)
@@ -29,7 +29,7 @@
                     @endforeach
                 </select>
             </label>
-            <label class="ax-stack" style="gap:.25rem">
+            <label class="ax-gap-1 ax-stack">
                 <span class="ax-text-xs ax-faint">Compare one store (optional)</span>
                 <select class="fi-select-input" wire:model.live="store" aria-label="Compare one store">
                     <option value="">No store</option>
@@ -56,17 +56,17 @@
     <div class="ax-split">
         <x-ui.card title="The expected range">
             <div class="ax-between ax-wrap ax-mb-2">
-                <div class="ax-row ax-wrap" style="gap:.25rem" role="tablist">
+                <div class="ax-gap-1 ax-row ax-wrap" role="tablist">
                     @foreach(['expected' => 'Expected', 'core' => 'Core only', 'niche' => 'Niche', 'all' => 'All'] as $k => $l)
                         <button type="button" @class(['ax-btn', 'ax-btn--on' => $show === $k]) role="tab" aria-selected="{{ $show === $k ? 'true' : 'false' }}" wire:click="$set('show', '{{ $k }}')">{{ $l }}</button>
                     @endforeach
                 </div>
-                <input type="search" class="fi-input" style="max-width:16rem" wire:model.live.debounce.300ms="search" placeholder="Find a product" aria-label="Find a product">
+                <input type="search" class="ax-maxw-16 fi-input" wire:model.live.debounce.300ms="search" placeholder="Find a product" aria-label="Find a product">
             </div>
             <div class="ax-scroll-x">
                 <table class="ax-table">
                     <thead><tr>
-                        <th style="min-width:12rem">Product</th><th class="ax-num">Carried by</th><th class="ax-num">Sales a year per store</th>
+                        <th class="ax-minw-12">Product</th><th class="ax-num">Carried by</th><th class="ax-num">Sales a year per store</th>
                         <th class="ax-num">Share of category</th>@if($store)<th>{{ $storeName }}</th>@endif
                     </tr></thead>
                     <tbody>
@@ -76,7 +76,7 @@
                                     <button type="button" class="ax-ink ax-fw-600" wire:click="focusOn(@js($r->sku))">{{ $r->name ?: $r->sku }}</button>
                                     <div class="ax-faint ax-text-xs"><span class="ax-mono">{{ $r->sku }}</span>{{ $r->subcategory ? ' · ' . $r->subcategory : '' }}</div>
                                 </td>
-                                <td class="ax-num" style="white-space:nowrap"><x-ui.badge :color="$bandColor[$r->band]">{{ $bandLabel[$r->band] }}</x-ui.badge> {{ $r->carrying }} of {{ $r->group_size }}</td>
+                                <td class="ax-nowrap ax-num"><x-ui.badge :color="$bandColor[$r->band]">{{ $bandLabel[$r->band] }}</x-ui.badge> {{ $r->carrying }} of {{ $r->group_size }}</td>
                                 <td class="ax-num">{{ $money($r->sales_a_year) }}</td>
                                 <td class="ax-num">{{ $pct($r->share_index_median) }}</td>
                                 @if($store)

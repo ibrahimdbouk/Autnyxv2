@@ -27,6 +27,20 @@ class MeteringService
         return $meter->refresh();
     }
 
+    /**
+     * Set a counter to an exact value. For an app that rebuilds its usage from
+     * its own records (idempotent: running it twice gives the same count).
+     */
+    public function set(int $tenantId, string $app, string $metric, int $count, ?string $period = null): UsageMeter
+    {
+        $period ??= now()->format('Y-m');
+
+        return UsageMeter::updateOrCreate(
+            ['tenant_id' => $tenantId, 'app' => $app, 'metric' => $metric, 'period' => $period],
+            ['count' => max(0, $count)],
+        );
+    }
+
     /** Total for one metric of one app in a period. */
     public function usage(int $tenantId, string $app, string $metric, ?string $period = null): int
     {
