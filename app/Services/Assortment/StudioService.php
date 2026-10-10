@@ -191,6 +191,12 @@ class StudioService
         uasort($others, fn ($a, $b) => [$b['gross_sales'], $a['sku']] <=> [$a['gross_sales'], $b['sku']]);
         $others = array_slice($others, 0, self::OTHERS, true);
 
+        // Phase 4: the shelf's metres and facings, when the tenant has given them.
+        if (ShelfSpace::any($tenantId)) {
+            $shelf = ShelfSpace::apply($shelf, $category, app(ShelfSpace::class)->forStore($tenantId, $storeId),
+                array_merge(array_keys(array_filter($engine, fn ($c) => $c['kind'] === AssortmentPlan::ADD)), array_keys($others)), $products);
+        }
+
         $skus = array_values(array_unique(array_merge(array_map('strval', array_keys($shelf['skus'])), array_keys($engine), array_keys($others))));
         $plan = AssortmentPlan::where('tenant_id', $tenantId)->where('store_id', $storeId)->where('category', $category)
             ->whereIn('status', [AssortmentPlan::STATUS_DRAFT, AssortmentPlan::STATUS_PROPOSED, AssortmentPlan::STATUS_ACCEPTED, AssortmentPlan::STATUS_IN_PROGRESS])
@@ -223,7 +229,8 @@ class StudioService
     /** The inputs a fresh workspace starts from: today's range, the category's strategy. */
     public static function blank(): array
     {
-        return ['objective' => null, 'room' => null, 'max_size' => null, 'min_size' => null, 'picks' => [], 'protect' => [], 'unprotect' => [], 'skip' => []];
+        return ['objective' => null, 'room' => null, 'max_size' => null, 'min_size' => null, 'picks' => [], 'protect' => [], 'unprotect' => [], 'skip' => [],
+            'facings' => [], 'metres' => null];
     }
 
     public function strategy(array $ctx, array $inputs): array
@@ -258,6 +265,12 @@ class StudioService
                 $shelf['skus'][$sku]['unprotected'] = true;
             }
         }
+        // Trying another shelf length (only where the shelf's metres and widths are known).
+        $m = (float) ($inputs['metres'] ?? 0);
+        if ($m > 0 && ($shelf['space']['basis'] ?? ShelfSpace::BASIS_COUNT) !== ShelfSpace::BASIS_COUNT) {
+            $shelf['space']['metres'] = round(min(10000.0, $m), 2);
+            $shelf['space']['metres_source'] = 'scenario';
+        }
 
         return $shelf;
     }
@@ -276,11 +289,32 @@ class StudioService
         $skip = array_flip(array_map('strval', (array) $inputs['skip']));
         $recovers = array_values(array_filter($ctx['engine'], fn ($c) => $c['kind'] === AssortmentPlan::RECOVER && ! isset($skip[$c['sku']])));
 
-        $result = $this->optimiser->evaluate($shelf, $moves, $recovers, $this->strategy($ctx, $inputs), $this->transferFn($ctx));
+        $result = $this->optimiser->evaluate($shelf, $moves, $recovers, $this->strategy($ctx, $inputs), $this->transferFn($ctx),
+            array_map('intval', (array) $inputs['facings']));
         $result['summary'] = $this->optimiser->summary($result);
         $result['inputs'] = $inputs;
 
         return $result;
+    }
+
+    /**
+     * Phase 4 — "Make room": when the tried range is over the shelf's metres,
+     * one facing fewer on the most over-spaced products until it fits (never
+     * below their fewest). Returns the inputs with those facings, or null when
+     * cutting facings cannot make enough room.
+     */
+    public function makeRoom(array $ctx, array $inputs): ?array
+    {
+        $inputs += self::blank();
+        $r = $this->simulate($ctx, $inputs);
+        if (($r['room_cuts'] ?? null) === null) {
+            return null;
+        }
+        foreach ($r['room_cuts'] as $sku => $n) {
+            $inputs['facings'][$sku] = max(1, (int) ($r['facings_now'][$sku] ?? 1) - (int) $n);
+        }
+
+        return $inputs;
     }
 
     /** The optimiser's plan under a preset objective or limit; loadable into the workspace. */
@@ -305,6 +339,11 @@ class StudioService
                 };
             }
             $inputs['picks'] = $picks;
+            foreach ($result['changes'] as $c) {
+                if ($c['kind'] === AssortmentPlan::FACINGS) {
+                    $inputs['facings'][$c['sku']] = (int) $c['to'];
+                }
+            }
             $result['summary'] = $this->optimiser->summary($result);
             $result['inputs'] = $inputs;
             $result['preset'] = $key;
@@ -384,11 +423,33 @@ class StudioService
                 'tier' => $engine['tier'], 'gap_id' => $engine['gap_id'], 'gross' => $engine['gross_sales'], 'current' => $engine['current_sales']] : null,
             'offered' => $other ? ['gross' => $other['gross_sales']] : null,
             'transfer' => $t,
-            'space' => ['per_slot' => $perSlot, 'average' => $avgPerSlot, 'count' => $n],
+            'space' => ['per_slot' => $perSlot, 'average' => $avgPerSlot, 'count' => $n] + $this->productSpace($ctx, $sku, $perSlot),
             'peers' => $b ? ['carrying' => $b['carrying'], 'size' => $b['group_size'],
                 'sales_a_year' => $b['rev_day'] !== null ? $b['rev_day'] * 365 * ($b['availability'] ?? 1.0) : null] : null,
             'peer_label' => $ctx['peer_label'],
             'past' => ['type' => $type, 'success' => $past['success'] ?? 0, 'partial' => $past['partial'] ?? 0, 'failure' => $past['failure'] ?? 0],
+        ];
+    }
+
+    /** With shelf metres: the metres it takes, its facings, and its margin (or sales) per metre against the shelf's. */
+    private function productSpace(array $ctx, string $sku, float $perSlot): array
+    {
+        $sp = $ctx['shelf']['space'] ?? null;
+        if ($sp === null || ($sp['basis'] ?? ShelfSpace::BASIS_COUNT) === ShelfSpace::BASIS_COUNT || (float) ($sp['used'] ?? 0) <= 0) {
+            return ['basis' => ShelfSpace::BASIS_COUNT];
+        }
+        $row = $ctx['shelf']['skus'][$sku] ?? null;
+        $entry = $sp['entry'][$sku] ?? null;
+        $w = (float) ($row['width'] ?? $entry['width'] ?? 0);
+        $f = (float) ($row['facings'] ?? $entry['facings'] ?? 0);
+        $base = $ctx['shelf']['baseline'];
+        $shelfValue = (float) $base['margin'] > 0 ? (float) $base['margin'] : (float) $base['sales'];
+
+        return [
+            'basis' => $sp['basis'], 'width' => $w, 'facings' => $f, 'metres' => $w * $f,
+            'min_facings' => $row['min_facings'] ?? null, 'width_assumed' => (bool) ($row['width_assumed'] ?? $entry['width_assumed'] ?? false),
+            'facings_assumed' => (bool) ($row['facings_assumed'] ?? $entry === null),
+            'per_metre' => $w * $f > 0 ? $perSlot / ($w * $f) : null, 'shelf_per_metre' => $shelfValue / (float) $sp['used'],
         ];
     }
 

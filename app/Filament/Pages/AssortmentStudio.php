@@ -78,6 +78,12 @@ class AssortmentStudio extends Page
     /** @var array<int,string> stock fixes left out */
     public array $skip = [];
 
+    /** @var array<string,int> Phase 4: facings the person set, sku => facings */
+    public array $facings = [];
+
+    /** Phase 4: another shelf length to try, in metres (empty = the shelf's own) */
+    public ?string $metres = null;
+
     public ?string $focus = null;
 
     public string $search = '';
@@ -147,7 +153,7 @@ class AssortmentStudio extends Page
     public function updated(string $name): void
     {
         $this->resultMemo = null;
-        if (in_array($name, ['objective', 'room', 'maxSize', 'minSize'], true)) {
+        if (in_array($name, ['objective', 'room', 'maxSize', 'minSize', 'metres'], true)) {
             $this->loaded = null;
         }
     }
@@ -156,7 +162,8 @@ class AssortmentStudio extends Page
     {
         $this->objective = $this->room = null;
         $this->maxSize = $this->minSize = null;
-        $this->picks = $this->protect = $this->unprotect = $this->skip = [];
+        $this->picks = $this->protect = $this->unprotect = $this->skip = $this->facings = [];
+        $this->metres = null;
         $this->focus = $this->loaded = null;
         $this->limit = self::ROWS;
         $this->ctxMemo = $this->resultMemo = null;
@@ -212,6 +219,46 @@ class AssortmentStudio extends Page
         $this->changed();
     }
 
+    /** One facing more or fewer (never below the product's fewest, nor above its most). */
+    public function facing(string $sku, int $delta): void
+    {
+        $row = $this->ctx()['shelf']['skus'][$sku] ?? null;
+        if ($row === null || ($this->ctx()['shelf']['space']['basis'] ?? 'count') !== \App\Services\Assortment\ShelfSpace::BASIS_FACINGS) {
+            return;
+        }
+        $now = $this->facings[$sku] ?? (int) round((float) ($this->result()['facings_now'][$sku] ?? $row['facings']));
+        $to = max((int) round((float) ($row['min_facings'] ?? 1)), $now + ($delta >= 0 ? 1 : -1));
+        if (! empty($row['max_facings'])) {
+            $to = min((int) $row['max_facings'], $to);
+        }
+        if ($to === (int) round((float) $row['facings'])) {
+            unset($this->facings[$sku]);
+        } else {
+            $this->facings[$sku] = $to;
+        }
+        $this->changed();
+    }
+
+    public function resetFacings(string $sku): void
+    {
+        unset($this->facings[$sku]);
+        $this->changed();
+    }
+
+    /** Over the shelf's metres: one facing fewer on the most over-spaced products until it fits. */
+    public function makeRoom(): void
+    {
+        $in = app(StudioService::class)->makeRoom($this->ctx(), $this->inputs());
+        if ($in === null) {
+            Notification::make()->title('Cutting facings cannot make enough room')
+                ->body('Take a product off the range, or try a longer shelf.')->warning()->send();
+
+            return;
+        }
+        $this->facings = array_map('intval', $in['facings']);
+        $this->changed();
+    }
+
     public function more(): void
     {
         $this->limit = min(2000, $this->limit + 100);
@@ -261,6 +308,8 @@ class AssortmentStudio extends Page
         $this->protect = array_values((array) $in['protect']);
         $this->unprotect = array_values((array) $in['unprotect']);
         $this->skip = array_values((array) $in['skip']);
+        $this->facings = array_map('intval', (array) ($in['facings'] ?? []));
+        $this->metres = ($in['metres'] ?? null) ? (string) $in['metres'] : null;
         $this->resultMemo = null;
     }
 
@@ -278,6 +327,7 @@ class AssortmentStudio extends Page
             'objective' => $this->objective ?: null, 'room' => ($this->room === null || $this->room === '') ? null : (float) $this->room,
             'max_size' => $this->maxSize ?: null, 'min_size' => $this->minSize ?: null,
             'picks' => $this->picks, 'protect' => $this->protect, 'unprotect' => $this->unprotect, 'skip' => $this->skip,
+            'facings' => $this->facings, 'metres' => is_numeric($this->metres) && (float) $this->metres > 0 ? (float) $this->metres : null,
         ];
     }
 
@@ -368,13 +418,19 @@ class AssortmentStudio extends Page
             $sku = (string) $sku;
             $e = $ctx['engine'][$sku] ?? null;
             $rows[] = ['sku' => $sku, 'name' => $p['name'], 'sales' => $p['sales'], 'margin_rate' => $p['margin_rate'], 'stock' => $p['stock'],
+                'width' => $p['width'] ?? null, 'facings' => $result['facings_now'][$sku] ?? (isset($p['facings']) ? (int) round((float) $p['facings']) : null),
+                'facings_today' => isset($p['facings']) ? (int) round((float) $p['facings']) : null, 'min_facings' => $p['min_facings'] ?? null,
+                'max_facings' => $p['max_facings'] ?? null,
                 'protected' => $this->shelfProtection($ctx, $sku), 'default_protected' => ! empty($p['protected']),
                 'flag' => $e['kind'] ?? null, 'off' => ! isset($shelfNow[$sku]), 'new' => false, 'picked' => $picked->has($sku)];
         }
         foreach ($this->picks as $pk) {
             if ($pk['kind'] === AssortmentPlan::ADD && isset($shelfNow[$pk['sku']]) && ! isset($ctx['shelf']['skus'][$pk['sku']])) {
                 $c = $ctx['engine'][$pk['sku']] ?? $ctx['others'][$pk['sku']] ?? null;
+                $entry = $ctx['shelf']['space']['entry'][$pk['sku']] ?? null;
                 $rows[] = ['sku' => $pk['sku'], 'name' => $c['name'] ?? $pk['sku'], 'sales' => null, 'margin_rate' => $c['margin_rate'] ?? null, 'stock' => null,
+                    'width' => $entry['width'] ?? null, 'facings' => isset($entry['facings']) ? (int) round((float) $entry['facings']) : null,
+                    'facings_today' => null, 'min_facings' => null, 'max_facings' => null,
                     'protected' => null, 'default_protected' => false, 'flag' => null, 'off' => false, 'new' => true, 'picked' => true];
             }
         }
@@ -382,8 +438,9 @@ class AssortmentStudio extends Page
         if ($term !== '') {
             $rows = array_values(array_filter($rows, fn ($r) => str_contains(mb_strtolower($r['name'] . ' ' . $r['sku']), $term)));
         }
-        usort($rows, fn ($a, $b) => [! ($a['picked'] || $a['new']), $a['flag'] === null, -(float) $a['sales'], $a['sku']]
-            <=> [! ($b['picked'] || $b['new']), $b['flag'] === null, -(float) $b['sales'], $b['sku']]);
+        $changedFacings = array_flip(array_map('strval', array_keys($this->facings)));
+        usort($rows, fn ($a, $b) => [! ($a['picked'] || $a['new'] || isset($changedFacings[$a['sku']])), $a['flag'] === null, -(float) $a['sales'], $a['sku']]
+            <=> [! ($b['picked'] || $b['new'] || isset($changedFacings[$b['sku']])), $b['flag'] === null, -(float) $b['sales'], $b['sku']]);
         $total = count($rows);
         if ($term === '') {
             $rows = array_slice($rows, 0, max(self::ROWS, $this->limit));
@@ -427,6 +484,7 @@ class AssortmentStudio extends Page
             'objectives'    => collect(CategoryStrategy::OBJECTIVES)->map(fn ($o) => $o['label'])->all(),
             'rooms'         => CategoryStrategy::ROOM_OPTIONS,
             'canPlan'       => $svc->canMakePlan($tenant, auth()->user()),
+            'space'         => $result['constraints']['space'] ?? ['basis' => 'count'],
             'decisionUrl'   => fn ($id) => $id ? AssortmentDecision::getUrl(['decision' => $id]) : null,
         ];
     }

@@ -69,13 +69,23 @@ class PlanService
             abort_if($firstGap === null && $ticked->isNotEmpty() && $ticked->every(fn ($c) => ! empty($c['gap_id'])), 422,
                 'The decisions behind this plan are no longer open — rebuild it with Run now.');
 
+            // With shelf metres: what is left ticked must still fit the shelf (unticking a facing cut can break it).
+            $space = $plan->constraints['space'] ?? null;
+            if ($space && ($space['basis'] ?? ShelfSpace::BASIS_COUNT) !== ShelfSpace::BASIS_COUNT) {
+                $used = (float) ($space['used_before'] ?? 0) + collect($changes)->where('ticked', true)
+                    ->where('kind', '<>', AssortmentPlan::PROTECT)->sum(fn ($c) => (float) ($c['metres'] ?? 0));
+                abort_if($used > (float) $space['metres'] + 0.0001, 422, sprintf(
+                    'With those changes left out the shelf would use %.2f m of its %.2f m — tick the facing cuts that make room, or untick the add they make room for.',
+                    $used, (float) $space['metres']));
+            }
+
             $base = $plan->impact['baseline'] ?? ['sales' => 0, 'margin' => 0, 'stock' => 0, 'count' => $plan->current_count];
             $count = $plan->current_count + collect($changes)->where('ticked', true)->sum(fn ($c) => match ($c['kind']) {
                 AssortmentPlan::ADD => 1, AssortmentPlan::DELIST => -1, default => 0,
             });
             $plan->forceFill([
                 'changes'        => $changes,
-                'impact'         => array_merge($this->optimiser->impact($changes, $base, $count),
+                'impact'         => array_merge($this->optimiser->impact($changes, $base, $count, $space),
                     ['margin_known' => $plan->impact['margin_known'] ?? false, 'basis' => $plan->impact['basis'] ?? 'estimated']),
                 'proposed_count' => $count,
                 'status'         => AssortmentPlan::STATUS_ACCEPTED,

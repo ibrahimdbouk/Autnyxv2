@@ -34,6 +34,7 @@ class AssortmentPlan extends Model
     public const SWAP    = 'swap';
     public const RECOVER = 'recover';
     public const PROTECT = 'protect';
+    public const FACINGS = 'facings';   // Phase 4: fewer (or more) facings of a product on the shelf
 
     public const CHANGE_LABELS = [
         self::ADD     => 'Add',
@@ -41,6 +42,7 @@ class AssortmentPlan extends Model
         self::SWAP    => 'Swap',
         self::RECOVER => 'Fix stock',
         self::PROTECT => 'Protected',
+        self::FACINGS => 'Facings',
     ];
 
     /** Where a plan came from: the nightly optimiser, or a person in the Decision Studio. */

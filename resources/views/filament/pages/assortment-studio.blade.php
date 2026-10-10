@@ -25,6 +25,10 @@
     $mine = array_values(array_filter($acting, fn ($ch) => $ch['kind'] !== 'recover'));
     $fixes = array_values(array_filter($acting, fn ($ch) => $ch['kind'] === 'recover'));
     $basisLabel = ['observed' => 'Observed', 'assumed' => 'Assumed from product similarity', 'insufficient' => 'Not enough evidence'];
+    $m2 = static fn ($v) => $v === null ? '—' : number_format((float) $v, 2) . ' m';
+    $metresMode = ($space['basis'] ?? 'count') !== 'count';
+    $facingsMode = ($space['basis'] ?? 'count') === 'facings';
+    $sm = $i['space'] ?? null;
 @endphp
 
 <div class="ax-stack">
@@ -92,7 +96,9 @@
                             'Gross margin a year'      => fn ($x) => $range($x['margin'] ?? null),
                             'Sales back on the shelf'  => fn ($x) => ($x['availability'] ?? 0) > 0 ? $money($x['availability']) : '—',
                             'Stock tied up, at cost'   => fn ($x) => $signed($x['stock'] ?? 0),
-                            'Margin per product slot'  => fn ($x) => $pct($x['space_pct'] ?? null),
+                            'Shelf used'               => fn ($x) => ($x['metres'] ?? null) ? $m2($x['used_after']) . ' of ' . $m2($x['metres']) : 'Counted in products',
+                            'Facings changed'          => fn ($x) => ($x['facings'] ?? 0) ? (string) $x['facings'] : '—',
+                            ($metresMode ? 'Margin per metre' : 'Margin per product slot') => fn ($x) => $pct($x['space_pct'] ?? null),
                             'Sales lost by changes'    => fn ($x) => $range($x['lost'] ?? null),
                             'Sales gained by changes'  => fn ($x) => $range($x['gained'] ?? null),
                             'Confidence'               => fn ($x) => ($x['changes'] ?? 0) + ($x['recovers'] ?? 0) ? ucfirst($x['confidence_tier'] ?? '—') : '—',
@@ -132,21 +138,34 @@
         <p class="ax-text-sm ax-muted">Loaded: <strong class="ax-ink">{{ $loaded }}</strong> — change anything; the figures follow.</p>
     @endif
     @foreach($r['violations'] ?? [] as $v)
-        <div class="ax-card ax-card--soft" role="alert" style="border-color:var(--ax-danger-line)"><div class="ax-card-body ax-text-sm" style="color:var(--ax-danger-fg)"><strong>Breaks a limit.</strong> {{ $v['why'] }} It can be explored, but not made the plan.</div></div>
+        <div class="ax-card ax-card--soft" role="alert" style="border-color:var(--ax-danger-line)"><div class="ax-card-body ax-text-sm ax-between ax-wrap" style="color:var(--ax-danger-fg)">
+            <span><strong>Breaks a limit.</strong> {{ $v['why'] }} It can be explored, but not made the plan.</span>
+            @if($v['key'] === 'metres' && ($r['room_cuts'] ?? null) !== null)
+                <button type="button" class="ax-btn" wire:click="makeRoom">Make room: cut over-spaced facings</button>
+            @elseif($v['key'] === 'metres')
+                <span class="ax-text-xs">Cutting over-spaced facings cannot make enough room: take a product off, or try a longer shelf.</span>
+            @endif
+        </div></div>
     @endforeach
     @foreach($r['skipped'] ?? [] as $sk)
         <p class="ax-text-xs ax-muted">Not applied: {{ $ctx['products'][$sk['sku']]['name'] ?? $sk['sku'] }} — {{ $sk['why'] }}</p>
     @endforeach
 
-    <div class="ax-grid ax-grid-5">
-        <x-ui.stat label="Products" :value="$s['current_count'] . ' → ' . $s['count']" :foot="'Limit ' . $c['min_size'] . '–' . $c['max_size'] . ' · ' . count($mine) . ' change(s)'" />
+    <div @class(['ax-grid', 'ax-grid-3' => $metresMode, 'ax-grid-5' => ! $metresMode])>
+        <x-ui.stat label="Products" :value="$s['current_count'] . ' → ' . $s['count']"
+            :foot="($metresMode ? 'At least ' . $c['min_size'] . ($c['max_size'] ? ', at most ' . $c['max_size'] : '') : 'Limit ' . $c['min_size'] . '–' . $c['max_size']) . ' · ' . count($mine) . ' change(s)'" />
+        @if($metresMode && $sm)
+            <x-ui.stat label="Shelf used" :value="$m2($sm['used_before']) . ' → ' . $m2($sm['used_after'])"
+                :color="$sm['used_after'] > $sm['metres'] + 0.0001 ? 'danger' : null"
+                :foot="'of ' . $m2($sm['metres']) . (($space['metres_source'] ?? null) === 'scenario' ? ' (tried here)' : '') . ' · Simulated'" />
+        @endif
         <x-ui.stat label="Category sales a year" :value="$range($i['sales'])" :foot="'Simulated · ' . $pctRange($i['sales_pct']) . ' of ' . $money($i['baseline']['sales'])" />
         <x-ui.stat :label="($r['margin_known'] ?? false) ? 'Gross margin a year' : 'Margin a year (no cost prices: sales)'" :value="$range($i['margin'])"
             :foot="'Simulated' . ($i['margin_pct'] ? ' · ' . $pctRange($i['margin_pct']) : '')" />
         <x-ui.stat label="Sales back on the shelf" :value="$i['availability'] > 0 ? $money($i['availability']) : '—'"
             :foot="count($fixes) . ' stock fix(es) · Estimated, before what buyers take elsewhere'" />
         <x-ui.stat label="Stock tied up, at cost" :value="$signed($i['stock'])"
-            :foot="'Simulated' . ($i['stock_pct'] !== null ? ' · ' . $pct($i['stock_pct']) : ' · no stock file') . ' · margin per product ' . $pct($i['space_margin_pct'] ?? null)" />
+            :foot="'Simulated' . ($i['stock_pct'] !== null ? ' · ' . $pct($i['stock_pct']) : ' · no stock file') . ' · margin per ' . ($metresMode ? 'metre ' : 'product ') . $pct($i['space_margin_pct'] ?? null)" />
     </div>
 
     <x-ui.card title="How the range is judged">
@@ -184,7 +203,18 @@
                 <button type="button" class="ax-btn" wire:click="loadPreset('{{ $k }}')" title="{{ $p['about'] }}">{{ $p['label'] }}</button>
             @endforeach
         </div>
-        <p class="ax-faint ax-text-xs ax-mt-2">Shelf space is counted in products until shelf metres and facings are loaded. The optimiser only uses the engine's decisions; changes you make yourself are valued the same way and labelled as yours.</p>
+        @if($metresMode)
+            <div class="ax-row ax-wrap ax-mt-3" style="gap:.5rem">
+                <label class="ax-row" style="gap:.5rem">
+                    <span class="ax-text-xs ax-faint">Shelf metres</span>
+                    <input type="number" min="0.1" step="0.1" class="fi-input" style="max-width:8rem" wire:model.live.debounce.500ms="metres" placeholder="{{ number_format((float) ($ctx['shelf']['space']['metres'] ?? 0), 2) }}" aria-label="Shelf metres">
+                </label>
+                <span class="ax-text-xs ax-faint">{{ \App\Services\Assortment\ShelfSpace::LABELS[$space['basis']] }}{{ ($ctx['shelf']['space']['metres_source'] ?? null) === 'format' ? ' (the store format\'s metres)' : '' }}.{{ ($space['note'] ?? null) ? ' ' . $space['note'] : '' }}</span>
+            </div>
+            <p class="ax-faint ax-text-xs ax-mt-2">Changes are fitted within the shelf's metres.{{ $facingsMode ? ' Facings can be set per product; the optimiser cuts facings of over-spaced products (more of the shelf than of sales) to make room, never below their fewest. Facings alone are assumed not to change sales.' : '' }} The optimiser only uses the engine's decisions; changes you make yourself are valued the same way and labelled as yours.</p>
+        @else
+            <p class="ax-faint ax-text-xs ax-mt-2">{{ $space['note'] ?? 'No shelf metres for this store and category.' }} Load shelf metres and product widths in Range &amp; Must-Stock to fit changes in metres. The optimiser only uses the engine's decisions; changes you make yourself are valued the same way and labelled as yours.</p>
+        @endif
     </x-ui.card>
 
     <div class="ax-split">
@@ -203,11 +233,15 @@
                                         <td>
                                             <x-ui.badge :color="$kindColor[$ch['kind']] ?? null">{{ $labels[$ch['kind']] ?? $ch['kind'] }}</x-ui.badge>
                                             <div class="ax-fw-600 ax-mt-1"><button type="button" class="ax-ink" wire:click="focusOn(@js($ch['sku']))">{{ $ch['name'] }}</button></div>
-                                            <div class="ax-faint ax-text-xs">{{ ($ch['source'] ?? 'engine') === 'user' ? 'Your change · Simulated' : 'Proposed by the engine · Estimated' }}</div>
+                                            <div class="ax-faint ax-text-xs">{{ $ch['kind'] === 'facings' ? $ch['from'] . ' → ' . $ch['to'] . ' facings · ' : '' }}{{ ($ch['source'] ?? 'engine') === 'user' ? 'Your change · Simulated' : 'Proposed by the engine · Estimated' }}</div>
                                         </td>
                                         <td class="ax-text-sm ax-muted">{{ $ch['why'] }}</td>
                                         <td class="ax-num">{{ $range($ch['sales']) }}</td>
-                                        <td>@if($idx !== false)<button type="button" class="ax-btn" wire:click="undo({{ $idx }})" aria-label="Undo {{ $ch['name'] }}">Undo</button>@endif</td>
+                                        <td>
+                                            @if($ch['kind'] === 'facings')
+                                                <button type="button" class="ax-btn" wire:click="resetFacings(@js($ch['sku']))" aria-label="Undo the facings of {{ $ch['name'] }}">Undo</button>
+                                            @elseif($idx !== false)<button type="button" class="ax-btn" wire:click="undo({{ $idx }})" aria-label="Undo {{ $ch['name'] }}">Undo</button>@endif
+                                        </td>
                                     </tr>
                                 @endforeach
                                 @foreach($fixes as $ch)
@@ -231,7 +265,7 @@
                 </div>
                 <div class="ax-scroll-x">
                     <table class="ax-table">
-                        <thead><tr><th style="min-width:12rem">Product</th><th class="ax-num">Sales a year</th><th class="ax-num">Margin</th><th>Note</th><th></th></tr></thead>
+                        <thead><tr><th style="min-width:12rem">Product</th><th class="ax-num">Sales a year</th><th class="ax-num">Margin</th>@if($metresMode)<th class="ax-num">{{ $facingsMode ? 'Facings' : 'Width' }}</th>@endif<th>Note</th><th></th></tr></thead>
                         <tbody>
                             @forelse($rows as $row)
                                 <tr wire:key="rg-{{ md5($row['sku']) }}" @class(['ax-row-hl' => $focus === $row['sku']])>
@@ -241,6 +275,19 @@
                                     </td>
                                     <td class="ax-num">{{ $row['sales'] === null ? '—' : $money($row['sales']) }}</td>
                                     <td class="ax-num">{{ $row['margin_rate'] === null ? '—' : $share($row['margin_rate']) }}</td>
+                                    @if($metresMode)
+                                        <td class="ax-num" style="white-space:nowrap">
+                                            @if($facingsMode && ! $row['off'] && ! $row['new'] && $row['facings'] !== null)
+                                                <button type="button" class="ax-btn" wire:click="facing(@js($row['sku']), -1)" aria-label="One facing fewer for {{ $row['name'] }}" @disabled($row['facings'] <= (int) round((float) ($row['min_facings'] ?? 1)))>−</button>
+                                                <span @class(['ax-fw-700' => $row['facings'] !== $row['facings_today']])>{{ $row['facings'] }}</span>
+                                                <button type="button" class="ax-btn" wire:click="facing(@js($row['sku']), 1)" aria-label="One facing more for {{ $row['name'] }}" @disabled($row['max_facings'] && $row['facings'] >= $row['max_facings'])>+</button>
+                                            @elseif($facingsMode)
+                                                {{ $row['facings'] ?? '—' }}
+                                            @else
+                                                {{ $row['width'] ? number_format($row['width'] * 100, 0) . ' cm' : '—' }}
+                                            @endif
+                                        </td>
+                                    @endif
                                     <td class="ax-text-xs">
                                         @if($row['new'])<x-ui.badge color="success">Added</x-ui.badge>@endif
                                         @if($row['off'])<x-ui.badge color="warning">Taken off</x-ui.badge>@endif
@@ -261,7 +308,7 @@
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="5" class="ax-muted ax-text-sm">No product matches.</td></tr>
+                                <tr><td colspan="{{ $metresMode ? 6 : 5 }}" class="ax-muted ax-text-sm">No product matches.</td></tr>
                             @endforelse
                         </tbody>
                     </table>
@@ -325,7 +372,12 @@
 
                         <div>
                             <div class="ax-fw-600 ax-ink">Space and similar stores</div>
-                            <p class="ax-m-0 ax-muted">One of {{ number_format($product['space']['count']) }} products on the shelf; it earns {{ $money($product['space']['per_slot']) }} a year against an average of {{ $money($product['space']['average']) }} per product.</p>
+                            @if(($product['space']['basis'] ?? 'count') !== 'count' && ($product['space']['metres'] ?? 0) > 0)
+                                <p class="ax-m-0 ax-muted">Takes {{ $m2($product['space']['metres']) }}: {{ is_int($product['space']['facings']) || floor($product['space']['facings']) == $product['space']['facings'] ? (int) $product['space']['facings'] : number_format($product['space']['facings'], 1) }} facing(s) × {{ number_format($product['space']['width'] * 100, 0) }} cm{{ $product['space']['width_assumed'] ? ' (width assumed from its subcategory)' : '' }}{{ $product['space']['facings_assumed'] ? ' (facings assumed)' : '' }}.
+                                    @if($product['space']['per_metre'] !== null) It earns {{ $money($product['space']['per_metre']) }} a year per metre against the shelf's {{ $money($product['space']['shelf_per_metre']) }}.@endif</p>
+                            @else
+                                <p class="ax-m-0 ax-muted">One of {{ number_format($product['space']['count']) }} products on the shelf; it earns {{ $money($product['space']['per_slot']) }} a year against an average of {{ $money($product['space']['average']) }} per product.</p>
+                            @endif
                             @if($product['peers'])
                                 <p class="ax-m-0 ax-muted">Carried by {{ $product['peers']['carrying'] }} of {{ $product['peers']['size'] }} stores in its peer group{{ $product['peers']['sales_a_year'] ? ', typically ' . $money($product['peers']['sales_a_year']) . ' a year per store' : '' }}.</p>
                             @else

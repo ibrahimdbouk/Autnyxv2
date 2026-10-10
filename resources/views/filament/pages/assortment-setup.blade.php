@@ -41,6 +41,22 @@
         @endif
     </x-ui.card>
 
+    <x-ui.card title="Shelf space">
+        @php $sp = $space; $none = ($sp['store_shelves'] + $sp['format_shelves']) === 0; @endphp
+        <div class="ax-grid ax-grid-3">
+            <x-ui.stat label="Shelf metres" :value="$none ? 'Not loaded' : number_format($sp['store_shelves'] + $sp['format_shelves']) . ' shelf(s)'"
+                :foot="$none ? 'Columns: store (or format), category, metres' : number_format($sp['store_shelves']) . ' for a store · ' . number_format($sp['format_shelves']) . ' for a store format'" />
+            <x-ui.stat label="Product widths" :value="number_format($sp['widths']) . ' product(s)'" foot="Columns: sku, store optional, width (cm of one facing)" />
+            <x-ui.stat label="Facings" :value="number_format($sp['facings']) . ' row(s)'" foot="Columns: sku, store optional, facings, min facings, max facings" />
+        </div>
+        <p class="ax-faint ax-text-xs ax-mt-2">
+            Without shelf metres, range plans count products and say so. With metres and product widths they fit changes within the shelf,
+            each product taken at the shelf's average facings. With facings as well, facings of over-spaced products (a bigger share of the shelf
+            than of sales) can be cut to make room, never below their fewest. A missing width is its subcategory's average, marked as assumed.
+            A store's own metres win over its format's.
+        </p>
+    </x-ui.card>
+
     <x-ui.card title="Must-stock list">
         @if($mustStock->isEmpty())
             <x-ui.empty title="Nothing on the list">Add strategic, private-label, contract or regulatory products so they are never proposed for delisting.</x-ui.empty>

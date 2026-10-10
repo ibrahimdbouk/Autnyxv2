@@ -23,7 +23,10 @@ use Illuminate\Support\Facades\Storage;
  *   • the range file (what each store is authorised to carry),
  *   • the must-stock list (never proposed for delisting),
  *   • four guardrails: delist confidence, the "carried" window, and the most
- *     delists and adds per category per store in one run.
+ *     delists and adds per category per store in one run;
+ *   • v1.5 — each category's strategy (role, objective, limits);
+ *   • v1.5 Phase 4 — shelf space: metres per store (or format) × category, and
+ *     product widths and facings.
  * Everything else is an Autnyx preset, so results stay comparable.
  */
 class AssortmentSetup extends Page
@@ -170,6 +173,25 @@ class AssortmentSetup extends Page
 
                 return ["Range file loaded: {$r['stores']} store(s), {$r['carried']} carried, {$r['not_carried']} not carried — used from the next run", $r['skipped']];
             }),
+            $this->upload('Upload shelf metres', 'shelf', function (string $path) use ($uploads) {
+                $r = $uploads->importShelfSpace($this->tenantId(), $path);
+
+                return ["Shelf metres loaded: {$r['rows']} shelf(s) for {$r['stores']} store(s) and {$r['formats']} format(s) — used from the next run", $r['skipped']];
+            }),
+            $this->upload('Upload facings & widths', 'facings', function (string $path) use ($uploads) {
+                $r = $uploads->importProductSpace($this->tenantId(), $path);
+
+                return ["Product space loaded: {$r['rows']} row(s), {$r['widths']} with a width, {$r['facings']} with facings — used from the next run", $r['skipped']];
+            }),
+            Action::make('clear_space')->label('Clear shelf space')->icon('heroicon-o-trash')->color('danger')
+                ->visible(fn () => DB::table('assortment_shelf_space')->where('tenant_id', $this->tenantId())->exists()
+                    || DB::table('assortment_product_space')->where('tenant_id', $this->tenantId())->exists())
+                ->requiresConfirmation()
+                ->modalDescription('Range plans go back to counting products, from the next run.')
+                ->action(function () use ($uploads) {
+                    $n = $uploads->clearSpace($this->tenantId());
+                    Notification::make()->title("{$n} shelf-space row(s) removed")->success()->send();
+                }),
             Action::make('clear_range')->label('Clear range file')->icon('heroicon-o-trash')->color('danger')
                 ->visible(fn () => AssortmentStoreRange::where('tenant_id', $this->tenantId())->where('source', AssortmentStoreRange::SOURCE_LISTING)->exists())
                 ->requiresConfirmation()
@@ -195,6 +217,12 @@ class AssortmentSetup extends Page
             'names'      => DB::table('products')->where('tenant_id', $tenantId)
                 ->whereIn('sku', AssortmentMustStock::where('tenant_id', $tenantId)->limit(500)->pluck('sku'))->pluck('name', 'sku'),
             'listing'    => $listing,
+            'space'      => [
+                'store_shelves'  => DB::table('assortment_shelf_space')->where('tenant_id', $tenantId)->whereNotNull('store_id')->count(),
+                'format_shelves' => DB::table('assortment_shelf_space')->where('tenant_id', $tenantId)->whereNull('store_id')->count(),
+                'widths'         => DB::table('assortment_product_space')->where('tenant_id', $tenantId)->whereNotNull('width_cm')->distinct()->count('sku'),
+                'facings'        => DB::table('assortment_product_space')->where('tenant_id', $tenantId)->whereNotNull('facings')->count(),
+            ],
             'categories' => collect(DB::select(
                 "SELECT TRIM(p.category) AS cat, COUNT(DISTINCT r.sku) AS skus
                    FROM assortment_store_ranges r JOIN products p ON p.tenant_id = r.tenant_id AND p.sku = r.sku

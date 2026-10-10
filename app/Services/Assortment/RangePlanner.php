@@ -22,6 +22,8 @@ use Illuminate\Support\Facades\DB;
  *     change set keeps its review verdict; a rejected change set is not
  *     proposed again; a shelf with an accepted plan in progress is left alone.
  *   - Decisions already accepted or rejected one by one are not candidates.
+ *   - Phase 4: with shelf metres (and facings) the plan fits the shelf in
+ *     metres, not a product count (ShelfSpace).
  *   - Phase 3: a plan a person made in the Decision Studio is theirs — the
  *     nightly rebuild leaves that shelf alone until it is accepted or rejected.
  */
@@ -31,6 +33,7 @@ class RangePlanner
         private RangeOptimizer $optimiser,
         private DemandTransferService $transfers,
         private TransferEstimator $estimator,
+        private ShelfSpace $space,
     ) {}
 
     /** @return array{plans:int, new:int, infeasible:int, shelves:int} */
@@ -67,17 +70,23 @@ class RangePlanner
         }
 
         $protections = $this->protections($tenantId);
+        $hasSpace = ShelfSpace::any($tenantId);
 
         $out = ['plans' => 0, 'new' => 0, 'infeasible' => 0, 'shelves' => 0];
         $rows = [];
         foreach ($byShelf as $storeId => $categories) {
             $shelves = $this->shelvesFor($tenantId, (int) $storeId, array_keys($categories), $asOf, $products);
+            $storeSpace = $hasSpace ? $this->space->forStore($tenantId, (int) $storeId) : null;
             foreach ($categories as $cat => $list) {
                 $out['shelves']++;
                 $shelf = $shelves[$cat] ?? ['skus' => [], 'baseline' => ['sales' => 0.0, 'margin' => 0.0, 'stock' => 0.0, 'count' => 0]];
                 $shelf = $this->protect($shelf, (int) $storeId, $protections);
                 $pool = (string) ($list[0]->peer_group ?? '');
                 $candidates = array_values(array_filter(array_map(fn ($g) => $this->candidateFrom($g, $products), $list)));
+                if ($storeSpace !== null) {
+                    $shelf = ShelfSpace::apply($shelf, $cat, $storeSpace,
+                        array_column(array_filter($candidates, fn ($c) => $c['kind'] === AssortmentPlan::ADD), 'sku'), $products);
+                }
                 $observed = $this->transfers->observed($tenantId, $pool, array_column($candidates, 'sku'));
                 $transfer = fn (string $sku, array $onShelf) => $this->estimator->estimate($sku, $onShelf, $products, $observed[$sku] ?? []);
 

@@ -40,7 +40,7 @@ class BiExport
             'products'           => ['label' => 'Products', 'description' => 'Product dimension: SKU, name, department, category, brand, cost and price.'],
             'supplier_scorecard' => ['label' => 'Supplier scorecard', 'description' => 'Fill rate, on-time, lead time, cost change, score and grade per supplier (last 90 days).', 'computed' => true],
             'value_by_month'     => ['label' => 'Value by month', 'description' => 'Per month: findings, money found, measured recovery and capital released, actions completed.', 'computed' => true],
-            'range_plans'        => ['label' => 'Range plans', 'description' => 'Assortment: one plan per store and category once plans are open — current and proposed product count, changes, expected sales and margin change (low/mid/high), objective, whether the engine or a person in the Decision Studio made it, decision, reset task and the measured result.'],
+            'range_plans'        => ['label' => 'Range plans', 'description' => 'Assortment: one plan per store and category once plans are open — current and proposed product count, changes, expected sales and margin change (low/mid/high), objective, whether the engine or a person in the Decision Studio made it, shelf metres used before and after (when shelf space is loaded), decision, reset task and the measured result.'],
             'range_decisions'    => ['label' => 'Range decisions', 'description' => 'Assortment: add, delist and stockout-hidden decisions once live — value range, confidence, transferable-demand share, decision, task, and the measured result beside the estimate.'],
         ];
     }
@@ -83,7 +83,8 @@ class BiExport
                 'measured_capital', 'actions_completed'],
             'range_plans' => ['id', 'store_id', 'category', 'status', 'role', 'objective', 'feasible', 'current_count', 'proposed_count', 'changes',
                 'sales_low', 'sales_mid', 'sales_high', 'margin_mid', 'stock_change', 'confidence_tier', 'optimizer_version', 'source', 'as_of_date',
-                'decided_at', 'decided_by', 'assignee_id', 'due_at', 'done_at', 'measured_at', 'measured_sales_change_per_year', 'verdict', 'updated_at'],
+                'decided_at', 'decided_by', 'assignee_id', 'due_at', 'done_at', 'measured_at', 'measured_sales_change_per_year', 'verdict',
+                'space_basis', 'shelf_metres', 'metres_used_before', 'metres_used_after', 'updated_at'],
             'range_decisions' => ['id', 'store_id', 'sku', 'type', 'status', 'confidence_tier', 'value_low', 'value_mid', 'value_high', 'value_basis',
                 'transfer_basis', 'transfer_share_mid', 'lifecycle', 'as_of_date', 'first_detected_at', 'decided_at', 'decided_by', 'task_status',
                 'assignee_id', 'due_at', 'done_at', 'measured_at', 'expected_sales_change_per_year', 'measured_sales_change_per_year',
@@ -119,7 +120,11 @@ class BiExport
                 ->selectRaw("CAST(impact AS jsonb)->'margin'->>1 AS margin_mid")
                 ->selectRaw("CAST(impact AS jsonb)->>'stock' AS stock_change")
                 ->selectRaw("CAST(measurement AS jsonb)->>'uplift_per_year' AS measured_sales_change_per_year")
-                ->selectRaw("CAST(measurement AS jsonb)->>'verdict' AS verdict"),
+                ->selectRaw("CAST(measurement AS jsonb)->>'verdict' AS verdict")
+                ->selectRaw("COALESCE(CAST(constraints AS jsonb)->'space'->>'basis', 'count') AS space_basis")
+                ->selectRaw("CAST(impact AS jsonb)->'space'->>'metres' AS shelf_metres")
+                ->selectRaw("CAST(impact AS jsonb)->'space'->>'used_before' AS metres_used_before")
+                ->selectRaw("CAST(impact AS jsonb)->'space'->>'used_after' AS metres_used_after"),
             // Shadow decisions (before the validation gate) are never exported.
             'range_decisions' => DB::table('assortment_gaps')->where('tenant_id', $tenantId)->where('status', '<>', 'shadow')
                 ->select(['id', 'store_id', 'sku', 'type', 'status', 'confidence_tier', 'value_low', 'value_mid', 'value_high', 'as_of_date',

@@ -12,11 +12,14 @@
     $c = $p->constraints ?? [];
     $m = $p->measurement;
     $canTick = $p->status === \App\Models\AssortmentPlan::STATUS_PROPOSED && $p->feasible;
-    $kindColor = ['add' => 'success', 'delist' => 'warning', 'swap' => 'info', 'recover' => 'danger', 'protect' => null];
+    $kindColor = ['add' => 'success', 'delist' => 'warning', 'swap' => 'info', 'recover' => 'danger', 'protect' => null, 'facings' => null];
     $labels = \App\Models\AssortmentPlan::CHANGE_LABELS;
     $decision = static fn ($id) => $id ? \App\Filament\Pages\AssortmentDecision::getUrl(['decision' => $id]) : null;
     $bound = $c['bound'] ?? [];
     $basis = ($i['basis'] ?? 'estimated') === 'simulated' ? 'Simulated' : 'Estimated';
+    $space = $c['space'] ?? ['basis' => 'count'];
+    $metres = ($space['basis'] ?? 'count') !== 'count' ? ($i['space'] ?? null) : null;
+    $m2 = static fn ($v) => number_format((float) $v, 2) . ' m';
 @endphp
 
 <div class="ax-stack">
@@ -39,9 +42,13 @@
         @endif
     </x-ui.card>
 
-    <div class="ax-grid ax-grid-4">
+    <div @class(['ax-grid', 'ax-grid-5' => $metres, 'ax-grid-4' => ! $metres])>
         <x-ui.stat label="Products" :value="$p->current_count . ' → ' . $p->proposed_count"
-            :foot="'Limit ' . ($c['min_size'] ?? '—') . '–' . ($c['max_size'] ?? '—') . ' · shelf ' . ($pct($i['space_pct'] ?? 0) ?? '0%')" />
+            :foot="$metres ? 'At least ' . ($c['min_size'] ?? '—') . ($c['max_size'] ? ', at most ' . $c['max_size'] : '') : 'Limit ' . ($c['min_size'] ?? '—') . '–' . ($c['max_size'] ?? '—') . ' · shelf ' . ($pct($i['space_pct'] ?? 0) ?? '0%')" />
+        @if($metres)
+            <x-ui.stat label="Shelf used" :value="$m2($metres['used_before']) . ' → ' . $m2($metres['used_after'])"
+                :foot="'of ' . $m2($metres['metres']) . ' · margin per metre ' . $pct($i['space_margin_pct'] ?? null)" />
+        @endif
         <x-ui.stat label="Category sales a year" :value="$range($i['sales'] ?? null)" :foot="$basis . ' · ' . ($pctRange($i['sales_pct'] ?? null) ?? '—') . ' of today'" />
         <x-ui.stat :label="($i['margin_known'] ?? false) ? 'Gross margin a year' : 'Margin a year (no cost prices: sales)'" :value="$range($i['margin'] ?? null)"
             :foot="$basis . (($i['margin_pct'] ?? null) ? ' · ' . $pctRange($i['margin_pct']) . ' of today' : '')" />
@@ -69,12 +76,14 @@
                                     @else
                                         <div class="ax-fw-600 ax-mt-1">@if($decision($ch['gap_id'] ?? null))<a href="{{ $decision($ch['gap_id']) }}" wire:navigate>{{ $ch['name'] }}</a>@else{{ $ch['name'] }}@endif</div>
                                     @endif
+                                    @if($ch['kind'] === 'facings')<div class="ax-faint ax-text-xs">{{ $ch['from'] }} → {{ $ch['to'] }} facings</div>@endif
+                                    @if(isset($ch['metres']) && $ch['kind'] !== 'facings')<div class="ax-faint ax-text-xs">{{ $ch['metres'] >= 0 ? '+' : '−' }}{{ $m2(abs($ch['metres'])) }} of shelf</div>@endif
                                     @if($off)<div class="ax-faint ax-text-xs">Left out of the plan</div>@endif
                                 </td>
                                 <td class="ax-text-sm" style="min-width:16rem">{{ $ch['why'] }}</td>
                                 <td class="ax-num" style="white-space:nowrap">{{ $range($ch['sales'] ?? null) }}</td>
                                 <td class="ax-num" style="white-space:nowrap">{{ $range($ch['margin'] ?? null) }}</td>
-                                <td>{{ ucfirst($ch['tier'] ?? '') }}</td>
+                                <td>{{ $ch['kind'] === 'facings' ? 'Assumed' : ucfirst($ch['tier'] ?? '') }}</td>
                             </tr>
                         @endforeach
                     </tbody>
@@ -103,10 +112,16 @@
     <div class="ax-grid ax-grid-2">
         <x-ui.card title="Limits it respects">
             <ul class="ax-list ax-text-sm">
-                <li>At most {{ $c['max_size'] ?? '—' }} products{{ ($c['set_max'] ?? null) ? ' (set for this category)' : ' — today\'s ' . ($c['current_count'] ?? '') . ' plus ' . (int) round(($c['room'] ?? 0) * 100) . '% room' }} @if(in_array('max_size', $bound, true)) <strong>· reached</strong>@endif</li>
+                @if($metres)
+                    <li>The shelf's {{ $m2($metres['metres']) }}{{ ($space['metres_source'] ?? null) === 'format' ? ' (for its store format)' : '' }} @if(in_array('metres', $bound, true)) <strong>· full</strong>@endif</li>
+                    @if($c['max_size'] ?? null)<li>At most {{ $c['max_size'] }} products (set for this category) @if(in_array('max_size', $bound, true)) <strong>· reached</strong>@endif</li>@endif
+                @else
+                    <li>At most {{ $c['max_size'] ?? '—' }} products{{ ($c['set_max'] ?? null) ? ' (set for this category)' : ' — today\'s ' . ($c['current_count'] ?? '') . ' plus ' . (int) round(($c['room'] ?? 0) * 100) . '% room' }} @if(in_array('max_size', $bound, true)) <strong>· reached</strong>@endif</li>
+                @endif
                 <li>At least {{ $c['min_size'] ?? '—' }} products @if(in_array('min_size', $bound, true)) <strong>· reached</strong>@endif</li>
                 @if(($c['sales_floor'] ?? null) !== null)<li>Category sales no worse than {{ $pct($c['sales_floor']) }} @if(in_array('sales_floor', $bound, true)) <strong>· reached</strong>@endif</li>@endif
                 <li>Must-stock, new, emerging and seasonal products stay; products that keep running out are restocked, never delisted.</li>
+                <li class="ax-faint">Space: {{ \App\Services\Assortment\ShelfSpace::LABELS[$space['basis'] ?? 'count'] ?? 'Counted in products' }}.{{ ($space['note'] ?? null) ? ' ' . $space['note'] : '' }}</li>
             </ul>
         </x-ui.card>
         <x-ui.card title="Protected on this shelf">
