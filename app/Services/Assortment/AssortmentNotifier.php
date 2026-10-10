@@ -60,6 +60,19 @@ class AssortmentNotifier
             $this->plansUrl($tenant), 'heroicon-o-rectangle-stack');
     }
 
+    /** Phase 5: a calibration is waiting for an admin (it changes nothing until approved). */
+    public function calibrationProposed(Tenant $tenant, \App\Models\AssortmentCalibration $cal): void
+    {
+        $admins = \App\Models\User::where('tenant_id', $tenant->id)->where('is_tenant_admin', true)->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $url = null;
+        try {
+            $url = \App\Filament\Pages\AssortmentLearning::getUrl(['tenant' => $tenant], panel: 'admin');
+        } catch (\Throwable) {
+        }
+        $this->send($admins, 'Assortment calibration ' . $cal->label() . ' to review',
+            count($cal->reasons) . ' change(s) proposed from measured results. Nothing changes until you approve it.', $url, 'heroicon-o-academic-cap');
+    }
+
     public function planAssigned(\App\Models\AssortmentPlan $plan): void
     {
         $n = count(array_filter($plan->actionable(), fn ($c) => $c['ticked'] ?? true));

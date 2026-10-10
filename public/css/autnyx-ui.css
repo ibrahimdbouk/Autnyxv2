@@ -230,6 +230,7 @@ a.ax-stat:hover { box-shadow: var(--ax-shadow-md); transform: translateY(-1px); 
 .ax-btn:hover { background: var(--ax-panel); }
 .ax-btn:focus-visible { outline: none; box-shadow: var(--ax-ring); }
 .ax-btn--success { border-color: var(--ax-success-line); color: var(--ax-success-fg); }
+.ax-btn--on { border-color: var(--ax-accent-600); color: var(--ax-accent-700); background: var(--ax-panel); }
 .ax-badge--observed { background: var(--ax-neutral-soft); color: var(--ax-teal); }
 .ax-divider { height: 1px; background: var(--ax-line-2); margin: var(--ax-3) 0; border: 0; }
 .ax-muted { color: var(--ax-muted); }

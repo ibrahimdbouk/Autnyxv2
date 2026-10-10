@@ -50,17 +50,22 @@ class AssortmentStudioTest extends TestCase
     private function estate(): void
     {
         $this->seedEstate();
-        DB::table('products')->insert(['tenant_id' => $this->tenant->id, 'sku' => 'RARE', 'name' => 'Sheep yogurt', 'category' => 'Dairy',
-            'subcategory' => 'Chilled', 'unit_cost' => 6, 'selling_price' => 10, 'created_at' => now(), 'updated_at' => now()]);
+        foreach (['RARE' => 'Sheep yogurt', 'LONE' => 'Camel milk'] as $sku => $name) {
+            DB::table('products')->insert(['tenant_id' => $this->tenant->id, 'sku' => $sku, 'name' => $name, 'category' => 'Dairy',
+                'subcategory' => 'Chilled', 'unit_cost' => 6, 'selling_price' => 10, 'created_at' => now(), 'updated_at' => now()]);
+        }
         $sales = $stock = [];
         $end = Carbon::parse($this->asOf);
-        for ($d = 0; $d < 200; $d++) {
-            foreach ([2, 3] as $n) {
-                $date = $end->copy()->subDays($d)->toDateString();
-                $stock[] = ['tenant_id' => $this->tenant->id, 'store_id' => $this->stores[$n], 'sku' => 'RARE', 'on_hand_qty' => 20,
-                    'as_of_date' => $date, 'created_at' => now(), 'updated_at' => now()];
-                $sales[] = ['tenant_id' => $this->tenant->id, 'store_id' => $this->stores[$n], 'sku' => 'RARE', 'date' => $date,
-                    'units_sold' => 3, 'revenue' => 30, 'transaction_count' => 1, 'created_at' => now(), 'updated_at' => now()];
+        // RARE: two similar stores sell it; LONE: only one does.
+        foreach (['RARE' => [2, 3], 'LONE' => [2]] as $sku => $at) {
+            for ($d = 0; $d < 200; $d++) {
+                foreach ($at as $n) {
+                    $date = $end->copy()->subDays($d)->toDateString();
+                    $stock[] = ['tenant_id' => $this->tenant->id, 'store_id' => $this->stores[$n], 'sku' => $sku, 'on_hand_qty' => 20,
+                        'as_of_date' => $date, 'created_at' => now(), 'updated_at' => now()];
+                    $sales[] = ['tenant_id' => $this->tenant->id, 'store_id' => $this->stores[$n], 'sku' => $sku, 'date' => $date,
+                        'units_sold' => 3, 'revenue' => 30, 'transaction_count' => 1, 'created_at' => now(), 'updated_at' => now()];
+                }
             }
         }
         foreach (array_chunk($sales, 1000) as $c) {
@@ -189,6 +194,7 @@ class AssortmentStudioTest extends TestCase
         $this->estate();
         $ctx = $this->ctx();
         $this->assertArrayHasKey('RARE', $ctx['others'], 'two similar stores carry it; the engine does not propose it');
+        $this->assertArrayNotHasKey('LONE', $ctx['others'], 'one store selling it is an anecdote, not evidence: not offered');
         $this->assertArrayNotHasKey('ADD-ME', $ctx['others']);
 
         $r = $this->sim(['picks' => [['kind' => 'add', 'sku' => 'RARE']]]);

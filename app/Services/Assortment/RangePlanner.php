@@ -70,6 +70,7 @@ class RangePlanner
         }
 
         $protections = $this->protections($tenantId);
+        $calibration = CalibrationService::active($tenantId);
         $hasSpace = ShelfSpace::any($tenantId);
 
         $out = ['plans' => 0, 'new' => 0, 'infeasible' => 0, 'shelves' => 0];
@@ -88,7 +89,8 @@ class RangePlanner
                         array_column(array_filter($candidates, fn ($c) => $c['kind'] === AssortmentPlan::ADD), 'sku'), $products);
                 }
                 $observed = $this->transfers->observed($tenantId, $pool, array_column($candidates, 'sku'));
-                $transfer = fn (string $sku, array $onShelf) => $this->estimator->estimate($sku, $onShelf, $products, $observed[$sku] ?? []);
+                $transfer = fn (string $sku, array $onShelf) => CalibrationService::shiftShare(
+                    $this->estimator->estimate($sku, $onShelf, $products, $observed[$sku] ?? []), $calibration);
 
                 $plan = $this->optimiser->optimise($shelf, $candidates, CategoryStrategy::for($tenant, $cat), $transfer);
                 $acting = array_filter($plan['changes'], fn ($c) => $c['kind'] !== AssortmentPlan::PROTECT);
@@ -111,7 +113,7 @@ class RangePlanner
                     'current_count' => $plan['current_count'], 'proposed_count' => $plan['proposed_count'],
                     'changes' => json_encode($plan['changes'], JSON_UNESCAPED_UNICODE),
                     'impact' => json_encode($plan['impact'] + ['margin_known' => $plan['margin_known'] ?? false], JSON_UNESCAPED_UNICODE),
-                    'constraints' => json_encode($plan['constraints'] + ['left_out' => $plan['left_out']], JSON_UNESCAPED_UNICODE),
+                    'constraints' => json_encode($plan['constraints'] + ['left_out' => $plan['left_out'], 'calibration' => $calibration['version'] ?? null], JSON_UNESCAPED_UNICODE),
                     'value_mid' => round((float) $plan['value_mid'], 2), 'confidence' => round((float) $plan['confidence'], 4),
                     'confidence_tier' => $plan['confidence_tier'], 'fingerprint' => $fingerprint, 'optimizer_version' => $plan['version'],
                     'as_of_date' => $asOf,

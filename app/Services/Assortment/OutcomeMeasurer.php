@@ -121,6 +121,7 @@ class OutcomeMeasurer
             'control_ratio' => round($ratio, 4), 'expected_after' => round($tPre * $ratio, 2), 'uplift' => round($uplift, 2),
             'uplift_per_year' => $year, 'strength' => $strength, 'expected_per_year' => $expected,
             'error_per_year' => $expected === null ? null : round($year - $expected, 2), 'optimizer_version' => $plan->optimizer_version,
+            'calibration_version' => $plan->constraints['calibration'] ?? null,
             'verdict' => $this->verdict($expected !== null && $expected < 0 ? AssortmentGap::TYPE_DELIST : AssortmentGap::TYPE_ADD, $year, $expected, $strength),
         ];
     }
@@ -180,6 +181,7 @@ class OutcomeMeasurer
             'expected_per_year' => $expectedYear,
             'error_per_year'  => $expectedYear === null ? null : round($upliftYear - $expectedYear, 2),
             'transfer_version' => $gap->evidence['transfer']['version'] ?? null,
+            'calibration_version' => $gap->evidence['calibration']['version'] ?? null,
             'verdict'         => $this->verdict($gap->type, $upliftYear, $expectedYear, $strength),
         ];
     }

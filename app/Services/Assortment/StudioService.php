@@ -48,6 +48,9 @@ class StudioService
 
     public const USER_CONFIDENCE = 0.3;
 
+    /** A product similar stores carry is offered only when at least this many of them sell it well enough to judge (one store is an anecdote). */
+    public const MIN_PEERS_OFFERED = 2;
+
     public const PRESETS = [
         'recommended'  => ['label' => 'Recommended',       'objective' => null,              'room' => null, 'about' => "The category's own role and objective"],
         'sales'        => ['label' => 'Sales max',         'objective' => 'sales',           'room' => null, 'about' => 'Most category sales'],
@@ -112,6 +115,7 @@ class StudioService
             CategoryStrategy::for($tenant, $category),
             DB::table('assortment_must_stock')->where('tenant_id', $tenant->id)->selectRaw('COUNT(*) AS n, MAX(updated_at) AS t')->first(),
             AssortmentPlan::where('tenant_id', $tenant->id)->where('store_id', $storeId)->where('category', $category)->max('updated_at'),
+            CalibrationService::active((int) $tenant->id)['version'] ?? 0,
         ]));
 
         return Cache::remember($key, now()->addMinutes(self::CACHE_MINUTES), fn () => $this->build($tenant, $storeId, $category, $run, $key));
@@ -169,11 +173,12 @@ class StudioService
             }
         }
 
-        // Products similar stores carry that this shelf lacks and the engine did not propose — offered, labelled Simulated.
+        // Products similar stores carry that this shelf lacks and the engine did not propose — offered, labelled Simulated,
+        // and only when at least two of those stores sell it well enough to judge.
         $catPerDay = (float) $shelf['baseline']['sales'] / 365;
         $others = [];
         foreach ($bench as $sku => $b) {
-            if (isset($shelf['skus'][$sku]) || isset($engine[$sku]) || $b['carrying'] < 1 || $b['share'] === null || $catPerDay <= 0) {
+            if (isset($shelf['skus'][$sku]) || isset($engine[$sku]) || $b['qualifying'] < self::MIN_PEERS_OFFERED || $b['share'] === null || $catPerDay <= 0) {
                 continue;
             }
             $p = $products[$sku];
@@ -221,6 +226,7 @@ class StudioService
             'observed'   => $pool !== '' ? $this->transfers->observed($tenantId, $pool, $skus) : [],
             'bench'      => $bench,
             'plan'       => $plan ? ['id' => (int) $plan->id, 'status' => $plan->status, 'source' => $plan->source] : null,
+            'calibration' => CalibrationService::active($tenantId),
         ];
     }
 
@@ -380,7 +386,9 @@ class StudioService
         $products = $ctx['products'];
         $observed = $ctx['observed'];
 
-        return fn (string $sku, array $onShelf) => $this->estimator->estimate($sku, $onShelf, $products, $observed[$sku] ?? []);
+        $cal = $ctx['calibration'] ?? null;
+
+        return fn (string $sku, array $onShelf) => CalibrationService::shiftShare($this->estimator->estimate($sku, $onShelf, $products, $observed[$sku] ?? []), $cal);
     }
 
     // ── One product ───────────────────────────────────────────────────────────
@@ -398,7 +406,7 @@ class StudioService
         $engine = $ctx['engine'][$sku] ?? null;
         $other = $ctx['others'][$sku] ?? null;
         $b = $ctx['bench'][$sku] ?? null;
-        $t = $this->estimator->estimate($sku, array_values(array_diff(array_map('strval', $shelfNow), [$sku])), $ctx['products'], $ctx['observed'][$sku] ?? []);
+        $t = CalibrationService::shiftShare($this->estimator->estimate($sku, array_values(array_diff(array_map('strval', $shelfNow), [$sku])), $ctx['products'], $ctx['observed'][$sku] ?? []), $ctx['calibration'] ?? null);
 
         $base = $ctx['shelf']['baseline'];
         $n = max(1, (int) $base['count']);
@@ -518,7 +526,7 @@ class StudioService
                 'current_count' => $result['current_count'], 'proposed_count' => $result['proposed_count'],
                 'changes' => $result['changes'],
                 'impact' => array_merge($result['impact'], ['margin_known' => $result['margin_known'], 'basis' => 'simulated']),
-                'constraints' => $result['constraints'] + ['left_out' => [], 'inputs' => $result['inputs']],
+                'constraints' => $result['constraints'] + ['left_out' => [], 'inputs' => $result['inputs'], 'calibration' => $ctx['calibration']['version'] ?? null],
                 'value_mid' => round((float) $result['value_mid'], 2), 'confidence' => round((float) $result['confidence'], 4),
                 'confidence_tier' => $result['confidence_tier'],
                 'fingerprint' => hash('sha256', $ctx['store_id'] . '|' . $ctx['category'] . '|' . implode(',', $keys) . '|studio'),

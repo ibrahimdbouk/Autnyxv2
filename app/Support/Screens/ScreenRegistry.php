@@ -44,6 +44,7 @@ final class ScreenRegistry
         // Assortment
         'assortment_studio'     => ['label' => 'Decision Studio',       'group' => 'Assortment'],
         'assortment_plans'      => ['label' => 'Range plans',           'group' => 'Assortment'],
+        'assortment_benchmarks' => ['label' => 'Benchmarks',            'group' => 'Assortment'],
         'assortment_decisions'  => ['label' => 'Range decisions',       'group' => 'Assortment'],
         'assortment_categories' => ['label' => 'Category review',       'group' => 'Assortment'],
         'assortment_stores'     => ['label' => 'Store range profiles',  'group' => 'Assortment'],

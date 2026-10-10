@@ -436,7 +436,7 @@
 
                     @if($opportunities['others'])
                         <div class="ax-fw-600 ax-ink ax-mt-2">Also carried by similar stores <x-ui.badge color="accent">Simulated</x-ui.badge></div>
-                        <p class="ax-m-0 ax-faint ax-text-xs">Not proposed by the engine (fewer stores carry them, or they sell below the bar). Adding one is your change, valued at low confidence.</p>
+                        <p class="ax-m-0 ax-faint ax-text-xs">Not proposed by the engine (fewer stores carry them, or they sell below the bar), but sold by at least {{ \App\Services\Assortment\StudioService::MIN_PEERS_OFFERED }} similar stores. Adding one is your change, valued at low confidence.</p>
                         @foreach(array_slice($opportunities['others'], 0, 12) as $o)
                             <div class="ax-between" wire:key="ot-{{ md5($o['sku']) }}">
                                 <div><button type="button" class="ax-ink" wire:click="focusOn(@js($o['sku']))">{{ $o['name'] }}</button>

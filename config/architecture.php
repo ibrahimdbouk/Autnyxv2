@@ -290,6 +290,7 @@ return [
             'app/Models/AssortmentRun.php',
             'app/Models/AssortmentPlan.php',
             'app/Models/AssortmentScenario.php',
+            'app/Models/AssortmentCalibration.php',
         ],
 
         'Apps\\RootCause' => [

@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Tenant;
+use App\Services\Assortment\CalibrationService;
 use App\Services\Assortment\OutcomeMeasurer;
 use Illuminate\Console\Command;
 
@@ -29,6 +30,12 @@ class MeasureAssortmentCommand extends Command
             $r = $measurer->measureDue((int) $tenant->id);
             if ($r['measured'] || $r['waiting']) {
                 $this->info("#{$tenant->id} {$tenant->name}: measured {$r['measured']}, waiting for data {$r['waiting']}");
+            }
+            // Phase 5: new results may call for a calibration — proposed for an admin, never applied here.
+            $proposal = app(CalibrationService::class)->propose($tenant);
+            if ($proposal !== null && $proposal->wasRecentlyCreated) {
+                $this->info("#{$tenant->id} {$tenant->name}: calibration {$proposal->label()} proposed (" . count($proposal->reasons) . ' change(s))');
+                app(\App\Services\Assortment\AssortmentNotifier::class)->calibrationProposed($tenant, $proposal);
             }
         }
 

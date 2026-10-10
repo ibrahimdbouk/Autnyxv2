@@ -96,7 +96,8 @@ class AssortmentEngine
         $hasPromotionData = ! $promos->isEmpty();
         $transferFrom = Carbon::parse($asOf)->subDays(max(28, (int) config('assortment.transfer_window_days', 182)) - 1)->toDateString();
 
-        $engine = (new GapEngine($products))->withContext(
+        $calibration = CalibrationService::active($tenantId);   // Phase 5: an approved calibration, or the rules as built
+        $engine = (new GapEngine($products))->withCalibration($calibration)->withContext(
             mustStock: $this->mustStock($tenantId),
             stockValue: $this->stockValue($tenantId),
             storeNames: DB::table('stores')->where('tenant_id', $tenantId)->pluck('name', 'id')->map(fn ($n) => (string) $n)->all(),

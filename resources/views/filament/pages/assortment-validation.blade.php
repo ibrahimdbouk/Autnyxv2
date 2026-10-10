@@ -87,7 +87,7 @@
                 </tbody>
             </table>
         </div>
-        <p class="ax-faint ax-text-xs ax-mt-2">From decision memory: every accept and reject is recorded with the figures it was made on, and each measured result is written back. "Worked" means sales moved at least half as much as estimated (for a delist: fell no more than estimated). The rules are only changed by a reviewed, versioned update — never silently.</p>
+        <p class="ax-faint ax-text-xs ax-mt-2">From decision memory: every accept and reject is recorded with the figures it was made on, and each measured result is written back. "Worked" means sales moved at least half as much as estimated (for a delist: fell no more than estimated). The rules are only changed by a reviewed, versioned update — never silently.@if(\App\Filament\Pages\AssortmentLearning::canAccess()) <a href="{{ \App\Filament\Pages\AssortmentLearning::getUrl() }}" wire:navigate>Measured results and calibration</a>@endif</p>
     </x-ui.card>
 
     <nav aria-label="Decision type">

@@ -73,8 +73,19 @@ class GapEngine
 
     private ?TransferEstimator $transfers = null;
 
+    /** v1.5 Phase 5: the approved calibration in force (null = the rules as built). */
+    private ?array $calibration = null;
+
     /** @param array<string,array<string,mixed>> $products sku => facts */
     public function __construct(private readonly array $products) {}
+
+    /** Phase 5: apply an approved calibration (CalibrationService::active); null = the rules as built. */
+    public function withCalibration(?array $calibration): self
+    {
+        $this->calibration = $calibration;
+
+        return $this;
+    }
 
     /** @param array<string,true> $mustStock */
     public function withContext(
@@ -310,12 +321,14 @@ class GapEngine
         $expectedRevDay   = $median * $catRate;
         $availability     = Stats::median(array_filter(array_column($peers, 'availability'), fn ($v) => $v !== null)) ?? 1.0;
         $annualRevenue    = $expectedRevDay * 365 * $availability;
+        // Phase 5: an approved calibration scales the estimate by what measured adds delivered.
+        $annualRevenue   *= $this->scale(AssortmentGap::TYPE_ADD);
         [$basis, $annual] = $this->valueBasis($annualRevenue, $product);
         // What it takes from the shelf is not new money: incremental = gross × (1 − taken).
         $transfer = $this->transfer($sku, $shelf);
-        [$low, $mid, $high] = $this->net($annual, $transfer);
+        [$low, $mid, $high] = $this->widen($this->net($annual, $transfer), AssortmentGap::TYPE_ADD);
         $unitsDay = $product['price'] > 0 ? $expectedRevDay / $product['price'] : null;
-        [$tier, $caps] = $this->capTier($tier, $transfer);
+        [$tier, $caps] = $this->capTier($tier, $transfer, AssortmentGap::TYPE_ADD);
         if ($life === Lifecycle::EMERGING) {
             $tier = AssortmentGap::TIER_SPECULATIVE;
             $caps[] = 'Still growing across the chain: a watch, at the lowest confidence.';
@@ -390,7 +403,7 @@ class GapEngine
         $vals = [];
         $revenueMid = 0.0;
         foreach ([0.25, 0.5, 0.75] as $p) {
-            $annualRevenue = $expected(Stats::percentile($shares, $p)) * $oosDays * $annualise;
+            $annualRevenue = $expected(Stats::percentile($shares, $p)) * $oosDays * $annualise * $this->scale(AssortmentGap::TYPE_STOCKOUT_HIDDEN);
             $vals[] = $this->valueBasis($annualRevenue, $product);
             if ($p === 0.5) {
                 $revenueMid = $annualRevenue;
@@ -405,10 +418,11 @@ class GapEngine
         } else {
             [$low, $mid, $high] = [$grossLow * (1 - $transfer['high']), $grossMid * (1 - $transfer['mid']), $grossHigh * (1 - $transfer['low'])];
         }
+        [$low, $mid, $high] = $this->widen([$low, $mid, $high], AssortmentGap::TYPE_STOCKOUT_HIDDEN);
         if ($mid <= 0) {
             return null;
         }
-        [$tier, $caps] = $this->capTier($tier, $transfer);
+        [$tier, $caps] = $this->capTier($tier, $transfer, AssortmentGap::TYPE_STOCKOUT_HIDDEN);
 
         $pctOut = (int) round((1 - $own['availability']) * 100);
         $evidence = [
@@ -489,7 +503,7 @@ class GapEngine
             return null;   // seasonal — judged in season, not v1
         }
         $transfer = $this->transfer($sku, array_values(array_diff($shelf, [$sku])));
-        [$tier, $caps] = $this->capTier($tier, $transfer);
+        [$tier, $caps] = $this->capTier($tier, $transfer, AssortmentGap::TYPE_DELIST);
         if ($this->tierRank($tier) < $this->tierRank($this->delistMinTier)) {
             $counts['skipped_speculative_delist']++;   // delists need more certainty than adds
 
@@ -506,6 +520,7 @@ class GapEngine
         $low  = $capital - $lostHigh;
         $high = $capital - $lostLow;
         $mid  = ($low + $high) / 2;
+        [$low, $mid, $high] = $this->widen([$low, $mid, $high], AssortmentGap::TYPE_DELIST);
         if ($mid <= 0) {
             return null;
         }
@@ -713,6 +728,9 @@ class GapEngine
     private function gap(int $storeId, string $sku, array $product, string $type, array $group, array $values, string $tier, array $evidence, string $headline, array $lines, string $intent, array $caps = []): array
     {
         [$low, $mid, $high] = array_map(fn ($v) => round((float) $v, 2), $values);
+        if ($this->calibration !== null) {
+            $evidence['calibration'] = CalibrationService::stamp($this->calibration, $type);
+        }
         $base       = (float) config("assortment.tiers.{$tier}.confidence", 0.4);
         $confidence = round($base * $this->qualityFactor, 4);
 
@@ -760,7 +778,9 @@ class GapEngine
     /** Where this product's buyers go on the store's shelf (or come from, for an add). */
     private function transfer(string $sku, array $shelf): array
     {
-        return ($this->transfers ??= new TransferEstimator())->estimate($sku, $shelf, $this->products, $this->observed[$sku] ?? []);
+        return CalibrationService::shiftShare(
+            ($this->transfers ??= new TransferEstimator())->estimate($sku, $shelf, $this->products, $this->observed[$sku] ?? []),
+            $this->calibration);
     }
 
     /** Net of what is taken from the shelf; gross as the top of the range when that cannot be estimated. */
@@ -784,9 +804,12 @@ class GapEngine
      *
      * @return array{0:string,1:array<int,string>}
      */
-    private function capTier(string $tier, array $transfer): array
+    private function capTier(string $tier, array $transfer, ?string $type = null): array
     {
         $caps = [];
+        if ($type !== null && (int) ($this->calibration['tier_shift'][$type] ?? 0) < 0) {
+            $caps[] = 'Calibration cal-' . $this->calibration['version'] . ': measured decisions of this kind worked less often than their confidence said.';
+        }
         if (! $this->hasPromotionData) {
             $caps[] = 'No promotion data: promotional sales may be counted as everyday demand.';
         }
@@ -801,6 +824,24 @@ class GapEngine
         }
 
         return [$tier, $caps];
+    }
+
+    /** Phase 5: the approved calibration's factor on this rule's estimate (1 = as built). */
+    private function scale(string $type): float
+    {
+        return (float) ($this->calibration['value_scale'][$type] ?? 1.0);
+    }
+
+    /** Phase 5: the range widened (or narrowed) around its mid, so about 80% of results fall inside. */
+    private function widen(array $v, string $type): array
+    {
+        $w = (float) ($this->calibration['range_widen'][$type] ?? 1.0);
+        if ($w === 1.0) {
+            return $v;
+        }
+        [$low, $mid, $high] = $v;
+
+        return [$mid - ($mid - $low) * $w, $mid, $mid + ($high - $mid) * $w];
     }
 
     /** The transfer figures kept with the decision (the learning record uses them later). */
