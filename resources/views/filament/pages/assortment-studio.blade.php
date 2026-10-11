@@ -65,6 +65,13 @@
         </div>
     </x-ui.card>
 
+    {{-- v2.5 — the strategies side by side: the optimiser's plan for the shelf under each objective. --}}
+    <x-ui.card title="Strategies for this shelf">
+        <x-slot:actions><span class="ax-faint ax-text-xs">Simulated · a year · ranges, not forecasts</span></x-slot:actions>
+        <x-ui.strategy-cards :strategies="$strategies" :currency="$currency" :loaded="$loaded" />
+        <p class="ax-faint ax-text-xs ax-mt-3">Each card is the optimiser's best set of changes under that objective, within the shelf's limits. <strong>Recommended</strong> is the objective the category's role calls for ({{ \App\Services\Assortment\CategoryStrategy::roleLabel($strategy['role']) }}). Risk comes from the least sure change and the low end of the sales range. Load one to adjust it, then make it the plan; every plan is measured against similar stores that did not change.</p>
+    </x-ui.card>
+
     <div class="ax-gap-1 ax-row ax-wrap" role="tablist">
         @foreach(['workspace' => 'Workspace', 'compare' => 'Compare scenarios'] as $k => $l)
             <x-filament::button size="sm" :color="$tab === $k ? 'primary' : 'gray'" :outlined="$tab !== $k" wire:click="$set('tab', '{{ $k }}')" role="tab" aria-selected="{{ $tab === $k ? 'true' : 'false' }}">{{ $l }}</x-filament::button>
@@ -368,6 +375,30 @@
                                     @if($product['on_today'] && $product['sales']) — about {{ $money($product['sales'] * (1 - $pt['mid'])) }} a year lost to the category @endif.
                                     <x-ui.badge :color="$pt['basis'] === 'observed' ? 'observed' : null">{{ $basisLabel[$pt['basis']] ?? $pt['basis'] }}</x-ui.badge>
                                 </p>
+                                @php
+                                    // v2.5 — the same figures drawn: where its buyers go (or where its sales come from).
+                                    $flowMoney = static fn ($sh) => $product['on_today'] && $product['sales'] ? ' · ' . $money($product['sales'] * $sh) . ' a year' : '';
+                                    $flow = [];
+                                    foreach (collect($pt['pairs'] ?? [])->take(4) as $fp) {
+                                        $flow[] = ['label' => $fp['name'], 'share' => (float) $fp['mid'], 'kind' => 'keep',
+                                            'text' => $share($fp['mid']) . $flowMoney((float) $fp['mid']),
+                                            'tip' => ($product['on_today'] ? 'Buy ' : 'Taken from ') . $fp['name'] . ': ' . $share($fp['low']) . '–' . $share($fp['high']) . ' (' . ($basisLabel[$fp['basis']] ?? $fp['basis']) . ')'];
+                                    }
+                                    $restShelf = (float) $pt['mid'] - array_sum(array_column($flow, 'share'));
+                                    if ($restShelf > 0.005) {
+                                        $flow[] = ['label' => 'Other products on the shelf', 'share' => $restShelf, 'kind' => 'keep', 'text' => $share($restShelf) . $flowMoney($restShelf)];
+                                    }
+                                    $out = max(0.0, 1 - (float) $pt['mid']);
+                                    if ($out > 0.005) {
+                                        $flow[] = $product['on_today']
+                                            ? ['label' => 'Lost to the category', 'share' => $out, 'kind' => 'lose', 'text' => $share($out) . $flowMoney($out)]
+                                            : ['label' => 'New to the category', 'share' => $out, 'kind' => 'gain', 'text' => $share($out)];
+                                    }
+                                @endphp
+                                @if(count($flow) > 1)
+                                    <x-ui.viz.flow :source="['label' => $product['name'], 'text' => $product['on_today'] ? 'its buyers today' : 'its sales here']" :targets="$flow"
+                                        :label="$product['on_today'] ? 'Where its buyers would go' : 'Where its sales would come from'" :width="720" />
+                                @endif
                                 @if($pt['pairs'])
                                     <p class="ax-m-0 ax-faint ax-text-xs">Who substitutes it: {{ collect($pt['pairs'])->take(4)->map(fn ($p) => $p['name'] . ' ' . $share($p['mid']))->implode(' · ') }}</p>
                                 @elseif($pt['note'])

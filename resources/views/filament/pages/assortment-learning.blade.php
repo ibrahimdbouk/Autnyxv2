@@ -46,6 +46,25 @@
         </x-ui.card>
     @endforeach
 
+    {{-- v2.5 — every measured result against its estimate. --}}
+    <x-ui.card title="Measured against estimated">
+        @if($points['n'] === 0)
+            <x-ui.empty title="Nothing measured yet">Each accepted decision and plan is measured 8 weeks after it is done; it appears here as one point.</x-ui.empty>
+        @else
+            @php
+                $m = static fn ($v) => ((float) $v < 0 ? '−' : '') . \App\Support\Money::compact(abs((float) $v), $currency);
+                $verdicts = ['success' => 'worked', 'partial' => 'partly worked', 'failure' => 'did not work'];
+                $pts2 = array_map(fn ($p) => $p + ['tip' => $p['what'] . ' — estimated ' . $m($p['x']) . ', measured ' . $m($p['y']) . ' a year'
+                    . (isset($verdicts[$p['verdict']]) ? ' (' . $verdicts[$p['verdict']] . ')' : '') . ($p['hollow'] ? ' · weak measurement' : '')], $points['points']);
+            @endphp
+            <x-ui.viz.scatter :points="$pts2" :series="[1 => 'Adds', 2 => 'Delists', 3 => 'Stockout fixes', 4 => 'Range plans']" :diagonal="true"
+                x-label="Estimated a year" y-label="Measured a year" :x-fmt="$m" :y-fmt="$m" label="Measured results against their estimates" :width="900">
+                <span><svg class="ax-viz-key" viewBox="0 0 10 10"><circle class="ax-viz-s1 ax-viz-dot--hollow" cx="5" cy="5" r="3.5" /></svg>Hollow: weak measurement</span>
+            </x-ui.viz.scatter>
+            <p class="ax-faint ax-text-xs ax-mt-2">{{ number_format($points['n']) }} measured result(s), each against similar stores that did not change, a year. On the dashed line a result came in exactly as estimated; above it, better. Estimates are as made at the time (after any calibration then in force).</p>
+        @endif
+    </x-ui.card>
+
     <x-ui.card title="What the measured results say">
         <div class="ax-scroll-x">
             <table class="ax-table">

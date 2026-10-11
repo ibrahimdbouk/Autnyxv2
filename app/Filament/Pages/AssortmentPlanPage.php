@@ -153,6 +153,8 @@ class AssortmentPlanPage extends Page
             'p'        => $plan,
             'heldBy'   => $plan && $plan->status === AssortmentPlan::STATUS_PROPOSED ? app(PlanService::class)->heldBy($plan) : null,
             'strip'    => $plan ? app(\App\Services\Assortment\ShelfStrip::class)->forPlan($plan, $plan->status === AssortmentPlan::STATUS_PROPOSED ? $this->unticked : null) : null,
+            // v2.5 — the change in category sales, kind by kind.
+            'waterfall' => $plan ? app(PlanService::class)->waterfall($plan, $plan->status === AssortmentPlan::STATUS_PROPOSED ? $this->unticked : null) : null,
             'currency' => $tenant?->currencyCode(),
             'live'     => $tenant ? TenantAssortment::plansLive($tenant) : false,
             'backUrl'  => AssortmentPlans::getUrl(),

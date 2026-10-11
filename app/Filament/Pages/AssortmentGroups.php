@@ -118,9 +118,16 @@ class AssortmentGroups extends Page implements HasTable
 
     protected function getViewData(): array
     {
+        $active = StoreGroupings::active($this->tid());
+        $proposal = $this->proposal();
+        $shown = $proposal ?? $active;
+
         return [
-            'active'   => StoreGroupings::active($this->tid()),
-            'proposal' => $this->proposal(),
+            'active'   => $active,
+            'proposal' => $proposal,
+            // v2.5 — the groups drawn: the proposal when one is waiting, else the groups in force.
+            'shown'    => $shown,
+            'viz'      => $shown ? app(\App\Services\Assortment\GroupVisuals::class)->build($this->tid(), $shown) : null,
             'history'  => AssortmentGrouping::with('decider:id,name')->where('tenant_id', $this->tid())->orderByDesc('version')->limit(12)->get(),
         ];
     }

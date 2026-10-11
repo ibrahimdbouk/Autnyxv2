@@ -473,6 +473,8 @@ class AssortmentStudio extends Page
             'stores'        => $svc->stores($tenant, auth()->user()),
             'categories'    => $svc->categories($tenant, (int) $this->store),
             'strategy'      => $svc->strategy($ctx, $this->inputs()),
+            // v2.5 — the strategies side by side, the rules' choice marked Recommended.
+            'strategies'    => $svc->strategies($ctx),
             'rows'          => $rows,
             'total'         => $total,
             'opportunities' => $opportunities,

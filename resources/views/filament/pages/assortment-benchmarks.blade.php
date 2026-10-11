@@ -53,6 +53,26 @@
         @endif
     </div>
 
+    @if($bars !== [])
+        {{-- v2.5 — how widely the products are carried, and who carries what. --}}
+        <div class="ax-viz-split ax-viz-split--wide">
+            <x-ui.card title="How widely the top products are carried">
+                <x-ui.viz.bars :items="$bars" :max="1.0" label="Share of the group's stores carrying each product"
+                    :markers="[['at' => \App\Filament\Pages\AssortmentBenchmarks::EXPECTED, 'label' => 'expected'], ['at' => \App\Filament\Pages\AssortmentBenchmarks::CORE, 'label' => 'core']]" />
+                <div class="ax-viz-legend" aria-hidden="true">
+                    <span><svg class="ax-viz-key" viewBox="0 0 10 10"><rect class="ax-viz-s3" width="10" height="10" rx="2" /></svg>Core</span>
+                    <span><svg class="ax-viz-key" viewBox="0 0 10 10"><rect class="ax-viz-s2" width="10" height="10" rx="2" /></svg>Expected</span>
+                    <span><svg class="ax-viz-key" viewBox="0 0 10 10"><rect class="ax-viz-s4" width="10" height="10" rx="2" /></svg>Niche</span>
+                </div>
+            </x-ui.card>
+            <x-ui.card title="Who carries what">
+                <x-ui.viz.heatmap :rows="$matrix['rows']" :cols="$matrix['cols']" :cells="$matrix['cells']" mode="good" :cell-w="34" :cell-h="22"
+                    :legend="['items' => [['class' => 'ax-viz-heat-good', 'opacity' => 0.9, 'label' => 'Carried'], ['class' => 'ax-viz-heat-bad', 'opacity' => 0.9, 'label' => 'Core, not carried'], ['class' => 'ax-viz-heat-bad', 'opacity' => 0.42, 'label' => 'Expected, not carried']]]" label="Products carried by each store of the group" />
+                <p class="ax-faint ax-text-xs ax-mt-2">+ add proposed · − delist proposed · ! keeps running out. A niche product a store does not carry is left blank.</p>
+            </x-ui.card>
+        </div>
+    @endif
+
     <div class="ax-split">
         <x-ui.card title="The expected range">
             <div class="ax-between ax-wrap ax-mb-2">

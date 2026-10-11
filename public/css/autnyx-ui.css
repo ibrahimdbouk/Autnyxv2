@@ -72,7 +72,14 @@
   --ax-chart-4: #d97706;
   --ax-chart-5: #db2777;
   --ax-chart-6: #65a30d;
+  --ax-chart-7: #0891b2;
+  --ax-chart-8: #9333ea;
   --ax-chart-grid: var(--ax-line);
+  /* v2.5 heatmaps: one hue each way from "like the chain". */
+  --ax-heat-up:   #7c3aed;
+  --ax-heat-down: #d97706;
+  --ax-heat-good: #16a34a;
+  --ax-heat-bad:  #dc2626;
   --ax-chart-axis: var(--ax-faint);
 }
 
@@ -106,6 +113,18 @@
   --ax-shadow-md: 0 4px 16px rgba(0,0,0,.5);
   --ax-ring:      0 0 0 3px var(--ax-accent-800);
   --ax-chart-grid: var(--ax-line);
+  --ax-chart-1: var(--ax-accent-400);
+  --ax-chart-2: #60a5fa;
+  --ax-chart-3: #2dd4bf;
+  --ax-chart-4: #fbbf24;
+  --ax-chart-5: #f472b6;
+  --ax-chart-6: #a3e635;
+  --ax-chart-7: #22d3ee;
+  --ax-chart-8: #c084fc;
+  --ax-heat-up:   #a78bfa;
+  --ax-heat-down: #fbbf24;
+  --ax-heat-good: #4ade80;
+  --ax-heat-bad:  #f87171;
 }
 
 /* ==========================================================================
@@ -326,6 +345,91 @@ a.ax-stat:hover { box-shadow: var(--ax-shadow-md); transform: translateY(-1px); 
   outline: 2px solid var(--ax-accent);
   outline-offset: -2px;
 }
+
+
+/* ==========================================================================
+   v2.5 — the visual layer (resources/views/components/ui/viz). Every chart is
+   server-drawn SVG: colours are tokens here (light and dark), sizes and
+   positions are SVG attributes, hover text is the SVG <title>.
+   ========================================================================== */
+.ax-viz { display: block; max-width: 100%; height: auto; margin-inline: auto; overflow: visible; }   /* drawn at its own width, shrinks to fit */
+.ax-viz--wide { min-width: 34rem; }          /* scrolls sideways on a phone rather than shrinking */
+.ax-viz--fixed { width: auto; max-width: none; margin-inline: 0; }
+.ax-viz-text { fill: var(--ax-muted); font-size: 11px; font-family: var(--ax-font); }
+.ax-viz-text--ink { fill: var(--ax-ink); font-weight: 600; }
+.ax-viz-text--strong { fill: var(--ax-ink); font-weight: 700; font-size: 13px; }
+.ax-viz-text--big { fill: var(--ax-ink); font-weight: 700; font-size: 22px; }
+.ax-viz-text--faint { fill: var(--ax-faint); font-size: 10px; }
+.ax-viz-text--on { fill: #fff; font-weight: 600; font-size: 10.5px; pointer-events: none; }
+.ax-viz-text--cell { fill: var(--ax-ink); font-size: 10.5px; pointer-events: none; font-variant-numeric: tabular-nums; }
+.ax-viz-grid { stroke: var(--ax-chart-grid); stroke-width: 1; }
+.ax-viz-axis { stroke: var(--ax-chart-axis); stroke-width: 1; }
+.ax-viz-zero { stroke: var(--ax-muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.ax-viz-ideal { stroke: var(--ax-faint); stroke-width: 1.25; stroke-dasharray: 5 4; fill: none; }
+.ax-viz-band { fill: var(--ax-accent-soft); }
+.ax-viz-track { fill: var(--ax-line-2); }
+.ax-viz-whisker { stroke: var(--ax-ink); stroke-width: 1.5; }
+.ax-viz-connector { stroke: var(--ax-faint); stroke-width: 1; stroke-dasharray: 2 2; }
+.ax-viz-dot { stroke: var(--ax-bg); stroke-width: 1.25; }
+.ax-viz-dot--hollow { fill: var(--ax-bg) !important; stroke-width: 2; }
+.ax-viz-hit:hover { opacity: .8; }
+
+.ax-viz-s1 { fill: var(--ax-chart-1); stroke: var(--ax-chart-1); }
+.ax-viz-s2 { fill: var(--ax-chart-2); stroke: var(--ax-chart-2); }
+.ax-viz-s3 { fill: var(--ax-chart-3); stroke: var(--ax-chart-3); }
+.ax-viz-s4 { fill: var(--ax-chart-4); stroke: var(--ax-chart-4); }
+.ax-viz-s5 { fill: var(--ax-chart-5); stroke: var(--ax-chart-5); }
+.ax-viz-s6 { fill: var(--ax-chart-6); stroke: var(--ax-chart-6); }
+.ax-viz-s7 { fill: var(--ax-chart-7); stroke: var(--ax-chart-7); }
+.ax-viz-s8 { fill: var(--ax-chart-8); stroke: var(--ax-chart-8); }
+.ax-viz-up     { fill: var(--ax-success); stroke: var(--ax-success); }
+.ax-viz-down   { fill: var(--ax-danger); stroke: var(--ax-danger); }
+.ax-viz-total  { fill: var(--ax-chart-1); stroke: var(--ax-chart-1); }
+.ax-viz-base   { fill: var(--ax-faint); stroke: var(--ax-faint); }
+.ax-viz-keep   { fill: var(--ax-chart-2); stroke: var(--ax-chart-2); }
+.ax-viz-lose   { fill: var(--ax-danger); stroke: var(--ax-danger); }
+.ax-viz-source { fill: var(--ax-chart-1); stroke: var(--ax-chart-1); }
+.ax-viz-flow   { stroke: none; }
+
+.ax-viz-cell { stroke: var(--ax-bg); stroke-width: 2; }
+.ax-viz-cell--empty { fill: var(--ax-line-2); }
+.ax-viz-heat-up   { fill: var(--ax-heat-up); }
+.ax-viz-heat-down { fill: var(--ax-heat-down); }
+.ax-viz-heat-good { fill: var(--ax-heat-good); }
+.ax-viz-heat-bad  { fill: var(--ax-heat-bad); }
+
+.ax-viz-legend { display: flex; flex-wrap: wrap; gap: var(--ax-1) var(--ax-4); font-size: var(--ax-fs-xs); color: var(--ax-muted); margin-top: var(--ax-2); }
+.ax-viz-legend > span { display: inline-flex; align-items: center; gap: .35rem; }
+.ax-viz-key { width: .7rem; height: .7rem; border-radius: 2px; display: inline-block; flex: none; }
+.ax-viz-key svg { display: block; width: .7rem; height: .7rem; }
+.ax-viz-split { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--ax-4); align-items: stretch; }
+.ax-viz-split > .ax-card { margin: 0; }
+@media (min-width: 900px) { .ax-viz-split { grid-template-columns: 14rem minmax(0, 1fr); } .ax-viz-split--wide { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.ax-viz-donut { width: 12rem; height: 12rem; margin: 0 auto; }
+
+/* Strategy cards (Decision Studio). */
+.ax-strategies { display: grid; gap: var(--ax-3); grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 720px) { .ax-strategies { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1200px) { .ax-strategies { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.ax-strategy { position: relative; display: flex; flex-direction: column; gap: var(--ax-3); padding: var(--ax-4); border: 1px solid var(--ax-line); border-radius: var(--ax-radius-lg); background: var(--ax-bg); box-shadow: var(--ax-shadow-sm); }
+.ax-strategy--recommended { border: 2px solid var(--ax-accent); box-shadow: var(--ax-shadow-md); }
+.ax-strategy--loaded { background: var(--ax-accent-soft); }
+.ax-strategy-ribbon { position: absolute; top: -.7rem; left: var(--ax-4); background: var(--ax-accent); color: var(--ax-accent-fg); font-size: .65rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: .15rem .5rem; border-radius: var(--ax-radius-pill); }
+.ax-strategy-name { font-size: var(--ax-fs-lg); font-weight: 700; color: var(--ax-ink); margin: 0; }
+.ax-strategy-about { font-size: var(--ax-fs-xs); color: var(--ax-muted); margin: .1rem 0 0; }
+.ax-strategy-metrics { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .3rem var(--ax-3); font-size: var(--ax-fs-sm); margin: 0; }
+.ax-strategy-metrics dt { color: var(--ax-muted); white-space: nowrap; }
+.ax-strategy-metrics dd { margin: 0; text-align: right; color: var(--ax-ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.ax-strategy-head { font-size: var(--ax-fs-xs); font-weight: 700; color: var(--ax-muted); text-transform: uppercase; letter-spacing: .05em; margin: 0 0 .25rem; }
+.ax-strategy-actions { margin: 0; padding-left: 1rem; font-size: var(--ax-fs-xs); color: var(--ax-text); display: grid; gap: .2rem; }
+.ax-strategy-foot { margin-top: auto; display: flex; gap: var(--ax-2); align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.ax-risk { display: inline-flex; align-items: center; gap: .3rem; font-size: var(--ax-fs-xs); font-weight: 700; }
+.ax-risk-dot { width: .55rem; height: .55rem; border-radius: 50%; display: inline-block; }
+.ax-risk--low .ax-risk-dot { background: var(--ax-success); }   .ax-risk--low { color: var(--ax-success-fg); }
+.ax-risk--medium .ax-risk-dot { background: var(--ax-warning); } .ax-risk--medium { color: var(--ax-warning-fg); }
+.ax-risk--high .ax-risk-dot { background: var(--ax-danger); }   .ax-risk--high { color: var(--ax-danger-fg); }
+.ax-risk--none .ax-risk-dot { background: var(--ax-faint); }    .ax-risk--none { color: var(--ax-muted); }
+.ax-range-svg { display: block; width: 100%; height: auto; max-height: 2.2rem; }
 
 /* Honour reduced-motion: strip non-essential transitions / animations. */
 @media (prefers-reduced-motion: reduce) {

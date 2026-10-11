@@ -31,6 +31,19 @@ final class AppRegistry
     public const SHARED_GROUPS = ['Data', 'Data Quality', 'Administration', 'Settings'];
 
     /**
+     * The icon each shared group shows. With the menu folded to icons (a click
+     * on the arrow at the top, remembered per browser) every group is one icon
+     * that opens its screens on hover: the screens themselves carry no icon
+     * inside a group, so the open menu reads as a list under each group.
+     */
+    public const SHARED_GROUP_ICONS = [
+        'Data'           => 'heroicon-o-circle-stack',
+        'Data Quality'   => 'heroicon-o-shield-check',
+        'Administration' => 'heroicon-o-building-office-2',
+        'Settings'       => 'heroicon-o-cog-6-tooth',
+    ];
+
+    /**
      * key => label (tab + group), menu group, icon, dashboard view class.
      *
      * @return array<string,array{label:string,group:string,icon:string,dashboard:class-string}>
@@ -95,9 +108,12 @@ final class AppRegistry
      */
     public static function navigationGroups(): array
     {
-        $groups = array_map(fn (string $label) => NavigationGroup::make($label)->collapsible(), self::appGroups());
+        $groups = [];
+        foreach (self::apps() as $app) {
+            $groups[] = NavigationGroup::make($app['group'])->icon($app['icon'])->collapsible();
+        }
         foreach (self::SHARED_GROUPS as $label) {
-            $groups[] = NavigationGroup::make($label)->collapsible()->collapsed();
+            $groups[] = NavigationGroup::make($label)->icon(self::SHARED_GROUP_ICONS[$label])->collapsible()->collapsed();
         }
 
         return $groups;
@@ -203,6 +219,10 @@ final class AppRegistry
     try { localStorage.setItem('collapsedGroups', JSON.stringify(list)); } catch (e) {}
     var store = window.Alpine && window.Alpine.store && window.Alpine.store('sidebar');
     if (store && Array.isArray(store.collapsedGroups)) { store.collapsedGroups = list; }
+    // Menu folded to icons: each group is one icon with its screens on hover, so leave its list hidden.
+    var folded = false;
+    try { folded = window.innerWidth >= 1024 && JSON.parse(localStorage.getItem('isOpen')) === false; } catch (e) {}
+    if (folded) { return; }
     document.querySelectorAll('.fi-sidebar-group').forEach(function (group) {
         var items = group.querySelector('.fi-sidebar-group-items');
         if (!items) { return; }

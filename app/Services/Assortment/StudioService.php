@@ -358,6 +358,129 @@ class StudioService
         });
     }
 
+    /** v2.5 — the strategies shown side by side as cards, the rules' choice first. */
+    public const STRATEGY_CARDS = ['balanced', 'sales', 'margin', 'lean'];
+
+    /**
+     * v2.5 — the strategy cards: the optimiser's plan for the shelf under each
+     * objective, side by side, with the one the category's role calls for marked
+     * Recommended (the rules decide; nothing here is a forecast).
+     *
+     *   sales / margin   the change a year, as a range, and as a share of today's
+     *   kept             today's category sales still on the shelf (what delists take off)
+     *   risk             from the confidence of the changes and the low end of the
+     *                    sales range: low (established, at worst −1%), medium
+     *                    (likely, or at worst −3%), high (speculative, or worse)
+     *   actions          the biggest changes, in words
+     *
+     * @return array{cards: list<array>, scale: array{min: float, max: float}}
+     */
+    public function strategies(array $ctx): array
+    {
+        $own = (string) ($ctx['strategy']['objective'] ?? 'balanced');
+        $rec = 'recommended';
+        foreach (self::PRESETS as $k => $p) {
+            if ($p['objective'] === $own && $p['room'] === null) {
+                $rec = $k;
+                break;
+            }
+        }
+        $keys = array_slice(array_values(array_unique([$rec, ...self::STRATEGY_CARDS])), 0, 4);
+        $base = (float) ($ctx['shelf']['baseline']['sales'] ?? 0);
+        $cards = $seen = [];
+        $lo = $hi = 0.0;
+        foreach ($keys as $k) {
+            $r = $this->preset($ctx, $k);
+            $sig = collect($r['changes'])->filter(fn ($c) => ($c['ticked'] ?? true) && $c['kind'] !== AssortmentPlan::PROTECT)
+                ->map(fn ($c) => $c['kind'] . ':' . $c['sku'] . ':' . ($c['out_sku'] ?? '') . ':' . ($c['to'] ?? ''))->sort()->implode('|');
+            $sum = $r['summary'];
+            $p = self::PRESETS[$k];
+            $pct = (array) ($sum['sales_pct'] ?? [0, 0, 0]);
+            $lo = min($lo, (float) min($pct[0], $pct[2]));
+            $hi = max($hi, (float) max($pct[0], $pct[2]));
+            $cards[] = [
+                'key'         => $k,
+                'label'       => $k === 'recommended' ? CategoryStrategy::objectiveLabel($own) : $p['label'],
+                'about'       => $k === $rec ? 'What the category\'s role calls for: ' . mb_strtolower($p['about']) : $p['about'],
+                'recommended' => $k === $rec,
+                'summary'     => $sum,
+                'kept'        => $this->kept($ctx, $r['changes'], $base),
+                'risk'        => self::risk($sum),
+                'actions'     => $this->actions($r['changes']),
+                // Two objectives can land on the same changes on a small shelf: say so rather than repeat them.
+                'same_as'     => $seen[$sig] ?? null,
+            ];
+            $seen[$sig] ??= $cards[array_key_last($cards)]['label'];
+        }
+        $pad = max(0.005, ($hi - $lo) * 0.1);
+
+        return ['cards' => $cards, 'scale' => ['min' => round($lo - $pad, 4), 'max' => round($hi + $pad, 4)]];
+    }
+
+    /** @return array{level: string, label: string, why: string} */
+    public static function risk(array $summary): array
+    {
+        if ((int) ($summary['changes'] ?? 0) + (int) ($summary['recovers'] ?? 0) === 0) {
+            return ['level' => 'none', 'label' => 'No change', 'why' => 'The shelf stays as it is.'];
+        }
+        $pct = (array) ($summary['sales_pct'] ?? [0, 0, 0]);
+        $worst = (float) min($pct[0], $pct[2]);
+        $tier = (string) ($summary['confidence_tier'] ?? AssortmentGap::TIER_SPECULATIVE);
+        $level = match (true) {
+            $tier === AssortmentGap::TIER_SPECULATIVE || $worst < -0.03 => 'high',
+            $tier === AssortmentGap::TIER_LIKELY || $worst < -0.01      => 'medium',
+            default                                                     => 'low',
+        };
+        $at = ($worst >= 0 ? '+' : '−') . number_format(abs($worst) * 100, 1) . '%';
+
+        return ['level' => $level, 'label' => ucfirst($level) . ' risk',
+            'why' => 'Least sure change: ' . $tier . '. At the low end of the range, category sales ' . $at . '.'];
+    }
+
+    /** Today's category sales still on the shelf after the delists (0–1). */
+    private function kept(array $ctx, array $changes, float $base): ?float
+    {
+        if ($base <= 0) {
+            return null;
+        }
+        $off = 0.0;
+        foreach ($changes as $c) {
+            if (! ($c['ticked'] ?? true)) {
+                continue;
+            }
+            $sku = match ($c['kind']) {
+                AssortmentPlan::DELIST => $c['sku'],
+                AssortmentPlan::SWAP   => $c['out_sku'] ?? null,
+                default                => null,
+            };
+            if ($sku !== null) {
+                $off += (float) ($ctx['shelf']['skus'][$sku]['sales'] ?? 0);
+            }
+        }
+
+        return round(max(0.0, 1 - $off / $base), 4);
+    }
+
+    /** @return list<string> the three biggest changes, in words */
+    private function actions(array $changes): array
+    {
+        $acting = array_values(array_filter($changes, fn ($c) => ($c['ticked'] ?? true)
+            && in_array($c['kind'], [AssortmentPlan::ADD, AssortmentPlan::DELIST, AssortmentPlan::SWAP, AssortmentPlan::RECOVER], true)));
+        usort($acting, fn ($a, $b) => abs((float) ($b['sales'][1] ?? 0)) <=> abs((float) ($a['sales'][1] ?? 0)));
+        $out = [];
+        foreach (array_slice($acting, 0, 3) as $c) {
+            $out[] = match ($c['kind']) {
+                AssortmentPlan::ADD     => 'Add ' . $c['name'],
+                AssortmentPlan::DELIST  => 'Take off ' . $c['name'],
+                AssortmentPlan::SWAP    => 'Swap ' . ($c['out_name'] ?? '') . ' for ' . $c['name'],
+                AssortmentPlan::RECOVER => 'Fix the stock of ' . $c['name'],
+            };
+        }
+        $more = count($acting) - count($out);
+
+        return $more > 0 ? [...$out, '… and ' . $more . ' more'] : $out;
+    }
+
     /** One pick as an optimiser candidate: the engine's figures when it has a decision, else the shelf's (or similar stores'). */
     private function move(array $ctx, array $shelf, string $kind, string $sku): ?array
     {

@@ -339,4 +339,45 @@ class PlanService
             report($e);
         }
     }
+
+    /**
+     * v2.5 — where a plan's change in category sales comes from, kind by kind
+     * (the waterfall on the plan page): the middle of each change's range,
+     * summed per kind, and the net change with its range. Unticked changes
+     * (proposed plans) and protections are left out; facings alone carry no sales.
+     *
+     * @param  array<int,string>|null  $unticked  change keys left out (null = as stored)
+     * @return array{steps: list<array{kind:string,label:string,value:float,count:int}>, total: array{value:float, low:float, high:float}, base: float}|null
+     */
+    public function waterfall(AssortmentPlan $plan, ?array $unticked = null): ?array
+    {
+        $order = [AssortmentPlan::DELIST => 'Delists', AssortmentPlan::SWAP => 'Swaps', AssortmentPlan::ADD => 'Adds', AssortmentPlan::RECOVER => 'Stock fixes'];
+        $sum = array_fill_keys(array_keys($order), 0.0);
+        $n = array_fill_keys(array_keys($order), 0);
+        $lo = $mid = $hi = 0.0;
+        foreach ($plan->actionable() as $c) {
+            $off = $unticked !== null ? in_array($c['key'] ?? '', $unticked, true) : ! ($c['ticked'] ?? true);
+            if ($off || ! isset($order[$c['kind']]) || ! is_array($c['sales'] ?? null)) {
+                continue;
+            }
+            [$a, $m, $b] = array_map('floatval', $c['sales']);
+            $sum[$c['kind']] += $m;
+            $n[$c['kind']]++;
+            $lo += min($a, $b);
+            $mid += $m;
+            $hi += max($a, $b);
+        }
+        if (array_sum($n) === 0) {
+            return null;
+        }
+        $steps = [];
+        foreach ($order as $k => $label) {
+            if ($n[$k] > 0) {
+                $steps[] = ['kind' => $k, 'label' => $label, 'value' => round($sum[$k], 2), 'count' => $n[$k]];
+            }
+        }
+
+        return ['steps' => $steps, 'total' => ['value' => round($mid, 2), 'low' => round($lo, 2), 'high' => round($hi, 2)],
+            'base' => (float) (($plan->impact ?? [])['baseline']['sales'] ?? 0)];
+    }
 }

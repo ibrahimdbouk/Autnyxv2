@@ -63,6 +63,24 @@
             :foot="$basis . (($i['stock_pct'] ?? null) !== null ? ' · ' . $pct($i['stock_pct']) . ' of today' : '') . ' · a minus frees cash'" />
     </div>
 
+    @if($waterfall)
+        @php
+            $wfSteps = array_map(fn ($st) => ['label' => $st['label'], 'value' => $st['value'], 'text' => $signed($st['value']),
+                'sub' => $st['count'] . ' change' . ($st['count'] > 1 ? 's' : ''),
+                'tip' => $st['label'] . ': ' . $signed($st['value']) . ' a year across ' . $st['count'] . ' change(s), the middle of each range'], $waterfall['steps']);
+            $wfTotal = $waterfall['total'];
+        @endphp
+        <x-ui.card title="Where the change in category sales comes from">
+            <x-slot:actions><span class="ax-faint ax-text-xs">{{ $basis }} · a year</span></x-slot:actions>
+            <x-ui.viz.waterfall :steps="$wfSteps" :fmt="fn ($v) => \App\Support\Money::compact((float) $v, $currency)"
+                :total="['label' => 'Net change', 'value' => $wfTotal['value'], 'range' => [$wfTotal['low'], $wfTotal['high']], 'text' => $signed($wfTotal['value']),
+                    'sub' => $range([$wfTotal['low'], $wfTotal['value'], $wfTotal['high']]),
+                    'tip' => 'Net change ' . $range([$wfTotal['low'], $wfTotal['value'], $wfTotal['high']]) . ' a year' . ($waterfall['base'] > 0 ? ', on ' . $money($waterfall['base']) . ' of category sales today' : '')]"
+                label="Change in category sales a year, by kind of change" :width="900" />
+            <p class="ax-faint ax-text-xs ax-mt-2">Each bar is the middle of its changes' ranges, after what buyers take to the rest of the shelf; the line on the net change is its range.{{ $waterfall['base'] > 0 ? ' The category sells ' . $money($waterfall['base']) . ' a year today.' : '' }}{{ $canTick ? ' Unticked changes are left out.' : '' }}</p>
+        </x-ui.card>
+    @endif
+
     @if($strip)
         <x-ui.card title="The shelf, today and with the plan">
             <x-ui.shelf-strip :strip="$strip" />

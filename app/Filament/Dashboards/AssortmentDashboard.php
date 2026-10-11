@@ -120,8 +120,38 @@ class AssortmentDashboard implements AppDashboard
                     'foot' => $measured->count() . ' measured against similar stores', 'url' => AssortmentOutcomes::getUrl(), 'color' => null],
             ],
             'queue'  => (clone $open)->orderByRaw('value_mid * confidence DESC')->limit(10)->get(),
-            'health' => collect($s['health'] ?? [])->sortBy('coverage')->take(12)->values()->all(),
+            'health' => collect($s['health'] ?? [])->sortBy('coverage')->take(5)->values()->all(),
+            // v2.5 — range health as a map: each category in each peer group.
+            'healthMap' => self::healthMap((array) ($s['health'] ?? [])),
             'decisionsUrl' => $list(null),
         ]);
+    }
+
+    /** @return array{rows: list<array>, cols: list<array>, cells: array}|null category × peer group, the core range carried */
+    public static function healthMap(array $health): ?array
+    {
+        if ($health === []) {
+            return null;
+        }
+        $pct = fn ($v) => $v === null ? '—' : (int) round((float) $v * 100) . '%';
+        $cats = $groups = $cells = [];
+        foreach ($health as $h) {
+            $c = (string) $h['category'];
+            $g = (string) $h['group'];
+            $cats[$c] = ($cats[$c] ?? 0.0) + (float) ($h['coverage'] ?? 0);
+            $groups[$g] = true;
+            $cells[$c][$g] = ['v' => $h['coverage'] === null ? null : (float) $h['coverage'], 'text' => $pct($h['coverage']),
+                'tip' => $c . ' · ' . $g . ': core range carried ' . $pct($h['coverage']) . ', slow sellers ' . $pct($h['tail'] ?? null)
+                    . ', keep running out ' . $pct($h['stockout'] ?? null)];
+        }
+        asort($cats); // weakest categories first
+        $groupKeys = array_keys($groups);
+        sort($groupKeys);
+
+        return [
+            'rows'  => array_map(fn ($c) => ['key' => $c, 'label' => $c], array_keys(array_slice($cats, 0, 25, true))),
+            'cols'  => array_map(fn ($g) => ['key' => $g, 'label' => $g], array_slice($groupKeys, 0, 16)),
+            'cells' => $cells,
+        ];
     }
 }

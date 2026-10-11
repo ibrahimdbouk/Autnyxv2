@@ -83,6 +83,9 @@ class AdminPanelProvider extends PanelProvider
                 fn (): string => \App\Support\Apps\AppRegistry::sidebarScript(\App\Support\Apps\AppRegistry::currentApp())
             )
             ->maxContentWidth('full')
+            // The menu folds to a column of icons with one click (and opens with
+            // another), remembered per browser: the screen is nearly all content.
+            ->sidebarCollapsibleOnDesktop()
             ->databaseNotifications()
             ->databaseNotificationsPolling('60s')
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')

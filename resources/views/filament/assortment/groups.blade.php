@@ -35,6 +35,39 @@
             @endif
     </x-ui.card>
 
+    @if($viz)
+        @php
+            $vizTitle = ($shown->status === \App\Models\AssortmentGrouping::PROPOSED ? 'Proposal ' : 'In force ') . $shown->label();
+            $pctFmt = fn ($v) => (int) round($v * 100) . '%';
+        @endphp
+        <div class="ax-viz-split ax-viz-split--wide">
+            <x-ui.card :title="'Stores per group · ' . $vizTitle">
+                <x-ui.viz.donut :segments="$viz['donut']" :center="(string) $viz['stores']" sub="stores" label="Stores per group" />
+            </x-ui.card>
+            <x-ui.card title="Every store: price level against its mix">
+                @if($viz['scatter'] !== [])
+                    <x-ui.viz.scatter :points="$viz['scatter']" :series="$viz['series']" x-label="Price level against the chain" y-label="Sales in a different mix"
+                        :x-fmt="$pctFmt" :y-fmt="$pctFmt" :ref-x="['at' => 1.0, 'label' => 'chain']" :y-from="0" label="Stores by price level and mix" height="300" />
+                @else
+                    <x-ui.empty title="No sales in the last 90 days">Stores are placed once they have sales.</x-ui.empty>
+                @endif
+            </x-ui.card>
+        </div>
+
+        <x-ui.card :title="'What each group sells against the chain · ' . $vizTitle">
+            <x-ui.viz.heatmap :rows="$viz['heat']['rows']" :cols="$viz['heat']['cols']" :cells="$viz['heat']['cells']" mode="diverging" :spread="0.5"
+                :legend="['low' => 'Sells less of it than the chain', 'mid' => 'About the chain (100)', 'high' => 'Sells more of it']" label="Category index by group" />
+            <p class="ax-faint ax-text-xs ax-mt-2">Each cell is the category's share of the group's sales against its share of the chain's (100 = the same). A group's label names its categories at 115 or more. The scatter places each store by its average price per unit against the chain's median store, and by the share of its sales that sits in a different mix of categories than the chain's (0% = exactly the chain's mix). Last 90 days{{ $viz['as_of'] ? ' to ' . \Illuminate\Support\Carbon::parse($viz['as_of'])->format('j M Y') : '' }}.</p>
+        </x-ui.card>
+
+        @if($viz['map'] !== [])
+            <x-ui.card title="Where the stores are">
+                <x-ui.viz.scatter :points="$viz['map']" :series="$viz['series']" :geo="true" label="Stores on a schematic map, coloured by group" height="380" :width="760" />
+                <p class="ax-faint ax-text-xs ax-mt-2">Schematic: each store at its coordinates from the store file, to scale but without a base map. Groups are formed by what stores sell, not where they are.</p>
+            </x-ui.card>
+        @endif
+    @endif
+
     {{ $this->table }}
 
     @if($history->isNotEmpty())

@@ -49,36 +49,12 @@ class RangeMixClustering implements ClusteringStrategy
      */
     public function clusterWith(int $tenantId, array $previous = [], ?string $asOf = null): array
     {
-        $asOf ??= (string) (DB::table('sales_daily')->where('tenant_id', $tenantId)->max('date') ?? now()->toDateString());
-        $from = Carbon::parse($asOf)->subDays(89)->toDateString();
-        $rows = DB::select(
-            "SELECT sd.store_id, TRIM(p.category) AS cat,
-                    SUM(CASE WHEN sd.revenue > 0 THEN sd.revenue ELSE sd.units_sold * COALESCE(p.selling_price, 0) END) AS rev,
-                    SUM(sd.units_sold) AS units
-               FROM sales_daily sd JOIN products p ON p.tenant_id = sd.tenant_id AND p.sku = sd.sku
-              WHERE sd.tenant_id = ? AND sd.date BETWEEN ? AND ? AND p.category IS NOT NULL AND TRIM(p.category) <> ''
-           GROUP BY 1, 2",
-            [$tenantId, $from, $asOf],
-        );
-        $byStore = $chainCat = [];
-        foreach ($rows as $r) {
-            $byStore[(int) $r->store_id]['cats'][(string) $r->cat] = (float) $r->rev;
-            $byStore[(int) $r->store_id]['rev'] = ($byStore[(int) $r->store_id]['rev'] ?? 0.0) + (float) $r->rev;
-            $byStore[(int) $r->store_id]['units'] = ($byStore[(int) $r->store_id]['units'] ?? 0.0) + (float) $r->units;
-            $chainCat[(string) $r->cat] = ($chainCat[(string) $r->cat] ?? 0.0) + (float) $r->rev;
-        }
-        $byStore = array_filter($byStore, fn ($s) => ($s['rev'] ?? 0) > 0);
-        ksort($byStore);
-        $n = count($byStore);
-        if ($n === 0) {
+        $pr = $this->profiles($tenantId, $asOf);
+        if ($pr === null) {
             return [];
         }
-        arsort($chainCat);
-        $top = array_slice(array_keys($chainCat), 0, self::TOP_CATEGORIES);
-        $chainTotal = array_sum($chainCat);
-        $chainShare = array_map(fn ($v) => $v / $chainTotal, array_intersect_key($chainCat, array_flip($top)));
-        $prices = array_map(fn ($s) => $s['units'] > 0 ? $s['rev'] / $s['units'] : null, $byStore);
-        $chainPrice = $this->median(array_values(array_filter($prices, fn ($p) => $p !== null))) ?: 1.0;
+        ['stores' => $byStore, 'top' => $top, 'chain_share' => $chainShare, 'prices' => $prices, 'chain_price' => $chainPrice] = $pr;
+        $n = count($byStore);
 
         // Raw features per store: share of each top category, the rest pooled, and the price index.
         $raw = [];
@@ -165,6 +141,49 @@ class RangeMixClustering implements ClusteringStrategy
         }
 
         return $out;
+    }
+
+    /**
+     * What each store sells over the 90 days to $asOf: its sales by category, its
+     * units, and its average price per unit; with the chain's top categories,
+     * their share of the chain's sales, and the chain's median price. Shared by
+     * the grouping and by the screens that draw it (v2.5).
+     *
+     * @return array{as_of:string, stores: array<int,array{cats:array<string,float>,rev:float,units:float}>, top: list<string>, chain_share: array<string,float>, prices: array<int,?float>, chain_price: float}|null
+     */
+    public function profiles(int $tenantId, ?string $asOf = null): ?array
+    {
+        $asOf ??= (string) (DB::table('sales_daily')->where('tenant_id', $tenantId)->max('date') ?? now()->toDateString());
+        $from = Carbon::parse($asOf)->subDays(89)->toDateString();
+        $rows = DB::select(
+            "SELECT sd.store_id, TRIM(p.category) AS cat,
+                    SUM(CASE WHEN sd.revenue > 0 THEN sd.revenue ELSE sd.units_sold * COALESCE(p.selling_price, 0) END) AS rev,
+                    SUM(sd.units_sold) AS units
+               FROM sales_daily sd JOIN products p ON p.tenant_id = sd.tenant_id AND p.sku = sd.sku
+              WHERE sd.tenant_id = ? AND sd.date BETWEEN ? AND ? AND p.category IS NOT NULL AND TRIM(p.category) <> ''
+           GROUP BY 1, 2",
+            [$tenantId, $from, $asOf],
+        );
+        $byStore = $chainCat = [];
+        foreach ($rows as $r) {
+            $byStore[(int) $r->store_id]['cats'][(string) $r->cat] = (float) $r->rev;
+            $byStore[(int) $r->store_id]['rev'] = ($byStore[(int) $r->store_id]['rev'] ?? 0.0) + (float) $r->rev;
+            $byStore[(int) $r->store_id]['units'] = ($byStore[(int) $r->store_id]['units'] ?? 0.0) + (float) $r->units;
+            $chainCat[(string) $r->cat] = ($chainCat[(string) $r->cat] ?? 0.0) + (float) $r->rev;
+        }
+        $byStore = array_filter($byStore, fn ($s) => ($s['rev'] ?? 0) > 0);
+        ksort($byStore);
+        if ($byStore === []) {
+            return null;
+        }
+        arsort($chainCat);
+        $top = array_slice(array_keys($chainCat), 0, self::TOP_CATEGORIES);
+        $chainTotal = array_sum($chainCat);
+        $chainShare = array_map(fn ($v) => $v / $chainTotal, array_intersect_key($chainCat, array_flip($top)));
+        $prices = array_map(fn ($s) => $s['units'] > 0 ? $s['rev'] / $s['units'] : null, $byStore);
+        $chainPrice = $this->median(array_values(array_filter($prices, fn ($p) => $p !== null))) ?: 1.0;
+
+        return ['as_of' => $asOf, 'stores' => $byStore, 'top' => $top, 'chain_share' => $chainShare, 'prices' => $prices, 'chain_price' => $chainPrice];
     }
 
     private function describe(array $storeIds, array $byStore, array $top, array $chainShare, array $prices, float $chainPrice): array

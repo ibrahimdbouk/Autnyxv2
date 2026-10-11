@@ -373,4 +373,46 @@ class CalibrationService
 
         return $n % 2 ? (float) $v[intdiv($n, 2)] : ((float) $v[$n / 2 - 1] + (float) $v[$n / 2]) / 2;
     }
+
+    /**
+     * v2.5 — every measured result against what was estimated (the Learning
+     * scatter): one point per measured decision or plan, a year, in money.
+     * Weak measurements (too few similar stores, or noisy) are drawn hollow.
+     *
+     * @return array{points: list<array>, n: int}
+     */
+    public function points(int $tenantId, int $limit = 600): array
+    {
+        $series = [AssortmentGap::TYPE_ADD => 1, AssortmentGap::TYPE_DELIST => 2, AssortmentGap::TYPE_STOCKOUT_HIDDEN => 3];
+        $names = [AssortmentGap::TYPE_ADD => 'Add', AssortmentGap::TYPE_DELIST => 'Delist', AssortmentGap::TYPE_STOCKOUT_HIDDEN => 'Stockout fix'];
+        $out = [];
+        $gaps = AssortmentGap::with(['product:id,name', 'store:id,name'])->where('tenant_id', $tenantId)->whereNotNull('measured_at')
+            ->whereIn('type', self::TYPES)->latest('measured_at')->limit($limit)->get(['id', 'tenant_id', 'sku', 'product_id', 'store_id', 'type', 'evidence', 'measurement']);
+        foreach ($gaps as $g) {
+            $m = (array) ($g->measurement ?? []);
+            $e = (array) ($g->evidence ?? []);
+            $actual = $m['uplift_per_year'] ?? null;
+            $expected = $m['expected_per_year'] ?? $e['expected_sales_change_per_year'] ?? null;
+            if ($actual === null || $expected === null) {
+                continue;
+            }
+            $out[] = ['x' => round((float) $expected, 2), 'y' => round((float) $actual, 2), 's' => $series[$g->type],
+                'hollow' => ($m['strength'] ?? 'weak') === 'weak',
+                'what' => $names[$g->type] . ': ' . ($g->product?->name ?? $g->sku) . ($g->store ? ' at ' . $g->store->name : ''),
+                'verdict' => (string) ($m['verdict'] ?? '')];
+        }
+        $plans = \App\Models\AssortmentPlan::with('store:id,name')->where('tenant_id', $tenantId)->whereNotNull('measured_at')
+            ->latest('measured_at')->limit($limit)->get(['id', 'store_id', 'category', 'measurement']);
+        foreach ($plans as $p) {
+            $m = (array) ($p->measurement ?? []);
+            if (! isset($m['uplift_per_year'], $m['expected_per_year'])) {
+                continue;
+            }
+            $out[] = ['x' => round((float) $m['expected_per_year'], 2), 'y' => round((float) $m['uplift_per_year'], 2), 's' => 4,
+                'hollow' => ($m['strength'] ?? 'weak') === 'weak',
+                'what' => 'Range plan: ' . $p->category . ($p->store ? ' at ' . $p->store->name : ''), 'verdict' => (string) ($m['verdict'] ?? '')];
+        }
+
+        return ['points' => $out, 'n' => count($out)];
+    }
 }

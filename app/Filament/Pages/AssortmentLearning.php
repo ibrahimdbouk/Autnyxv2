@@ -117,6 +117,9 @@ class AssortmentLearning extends Page
             'history'   => AssortmentCalibration::with('decider:id,name')->where('tenant_id', $tenantId)
                 ->whereNotIn('status', [AssortmentCalibration::STATUS_PROPOSED])->orderByDesc('version')->limit(20)->get(),
             'min'       => CalibrationService::MIN_MEASURED,
+            // v2.5 — measured against estimated, one point per result.
+            'points'    => app(CalibrationService::class)->points($tenantId),
+            'currency'  => $this->tenant()->currencyCode(),
         ];
     }
 }

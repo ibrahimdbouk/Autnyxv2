@@ -243,7 +243,36 @@ class AssortmentBenchmarks extends Page
             $stores = array_intersect_key($stores, array_flip($scope));
         }
 
+        // v2.5 — who carries what: the 20 most widely carried products of the list shown, across the group's stores.
+        $topRows = $list->take(20);
+        $carried = DB::table('assortment_store_ranges')->where('tenant_id', $tenantId)->whereIn('store_id', array_keys($stores))->where('carried', true)
+            ->whereIn('sku', $topRows->pluck('sku'))->get(['store_id', 'sku'])
+            ->groupBy('sku')->map(fn ($c) => $c->pluck('store_id')->map(fn ($v) => (int) $v)->flip()->all())->all();
+        $marks = ['add' => '+', 'delist' => '−', 'stockout_hidden' => '!'];
+        $typeWords = ['add' => 'add proposed', 'delist' => 'delist proposed', 'stockout_hidden' => 'keeps running out'];
+        $byCell = $decisions->groupBy(fn ($d) => $d->sku . '|' . $d->store_id)->map(fn ($ds) => $ds->first()->type)->all();
+        $matrix = ['rows' => [], 'cols' => [], 'cells' => []];
+        foreach ($stores as $sid => $sname) {
+            $matrix['cols'][] = ['key' => (int) $sid, 'label' => (string) $sname];
+        }
+        foreach ($topRows as $r) {
+            $matrix['rows'][] = ['key' => $r->sku, 'label' => (string) ($r->name ?: $r->sku), 'sub' => $r->carrying . ' of ' . $r->group_size . ' stores'];
+            foreach ($stores as $sid => $sname) {
+                $has = isset($carried[$r->sku][(int) $sid]);
+                $type = $byCell[$r->sku . '|' . $sid] ?? null;
+                $v = $has ? 1.0 : match ($r->band) { 'core' => 0.0, 'expected' => 0.3, default => null };
+                $matrix['cells'][$r->sku][(int) $sid] = ['v' => $v, 'text' => $type ? $marks[$type] ?? '' : '',
+                    'tip' => $sname . ' · ' . ($r->name ?: $r->sku) . ': ' . ($has ? 'carried' : 'not carried')
+                        . ' (' . ['core' => 'core range', 'expected' => 'expected range', 'niche' => 'niche'][$r->band] . ')' . ($type ? ' · ' . ($typeWords[$type] ?? $type) : '')];
+            }
+        }
+        $bars = $topRows->map(fn ($r) => ['label' => (string) ($r->name ?: $r->sku), 'value' => (float) $r->carried_share,
+            'class' => ['core' => 'ax-viz-s3', 'expected' => 'ax-viz-s2', 'niche' => 'ax-viz-s4'][$r->band],
+            'text' => $r->carrying . ' of ' . $r->group_size, 'tip' => ($r->name ?: $r->sku) . ': carried by ' . $r->carrying . ' of ' . $r->group_size . ' stores (' . (int) round((float) $r->carried_share * 100) . '%)'])->values()->all();
+
         return [
+            'matrix'      => $matrix,
+            'bars'        => $bars,
             'g'           => $g,
             'groups'      => $groups,
             'categories'  => $this->categories(),

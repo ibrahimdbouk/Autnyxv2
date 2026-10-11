@@ -33,25 +33,15 @@
         @endif
     </x-ui.card>
 
-    @if($health !== [])
-        <x-ui.card title="Range health — weakest first">
-            <div class="ax-scroll-x">
-                <table class="ax-table">
-                    <thead><tr><th>Stores</th><th>Category</th><th class="ax-num">Core range carried</th><th class="ax-num">Slow sellers</th><th class="ax-num">Keep running out</th></tr></thead>
-                    <tbody>
-                        @foreach($health as $h)
-                            <tr>
-                                <td>{{ $h['group'] }}</td>
-                                <td class="ax-fw-600">{{ $h['category'] }}</td>
-                                <td class="ax-num">{{ $pct($h['coverage']) }}</td>
-                                <td class="ax-num">{{ $pct($h['tail']) }}</td>
-                                <td class="ax-num">{{ $pct($h['stockout']) }}</td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            </div>
-            <p class="ax-faint ax-text-xs ax-mt-2">Core range = products at least half the similar stores carry. Slow sellers = carried but selling under 0.3× similar stores.</p>
+    @if($healthMap)
+        <x-ui.card title="Range health by category and peer group">
+            <x-ui.viz.heatmap :rows="$healthMap['rows']" :cols="$healthMap['cols']" :cells="$healthMap['cells']" mode="good"
+                :legend="['low' => 'Little of the core range carried', 'mid' => 'About half', 'high' => 'All of it']" label="Core range carried, by category and peer group" />
+            @if($health !== [])
+                <p class="ax-text-sm ax-mt-3 ax-m-0"><span class="ax-fw-600 ax-ink">Weakest:</span>
+                    @foreach($health as $h){{ $h['category'] }} in {{ $h['group'] }} {{ $pct($h['coverage']) }}@if(! $loop->last) · @endif @endforeach</p>
+            @endif
+            <p class="ax-faint ax-text-xs ax-mt-2">Each cell is the share of the core range (products at least half the similar stores carry) that the group's stores carry; hover for slow sellers (carried but selling under 0.3× similar stores) and products that keep running out. Weakest categories first.</p>
         </x-ui.card>
     @endif
 @else
