@@ -119,50 +119,62 @@ class DemandClustering implements ClusteringStrategy
 
     /**
      * v2.5 — no two groups share a label. The tier profile can be the same for
-     * two groups (or missing, "Behavioural group"): each then names the
-     * dimension where it stands furthest from the average store, and a number
-     * if that still repeats.
+     * two groups (or missing: "Behavioural group"). Among the groups that share
+     * a label, the dimension where they differ most (relative to the average
+     * store) tells them apart: the group lowest on it reads "· lower prices",
+     * the highest "· higher prices", any between them "· in between".
      */
     private function distinct(array $out, Collection $byStore): array
     {
-        $counts = array_count_values(array_column($out, 'label'));
-        if (max($counts ?: [1]) < 2) {
-            return $out;
+        $byLabel = [];
+        foreach ($out as $i => $g) {
+            $byLabel[$g['label']][] = $i;
         }
         $mean = [];
         foreach (array_keys(self::LEANS) as $d) {
             $vals = $byStore->pluck($d)->filter(fn ($v) => $v !== null)->map(fn ($v) => (float) $v);
             $mean[$d] = $vals->isEmpty() ? null : $vals->avg();
         }
-        foreach ($out as $i => $g) {
-            if ($counts[$g['label']] < 2) {
+        foreach ($byLabel as $label => $idx) {
+            if (count($idx) < 2) {
                 continue;
             }
+            // Each group's average on each dimension.
+            $avg = [];
+            foreach ($idx as $i) {
+                foreach (array_keys(self::LEANS) as $d) {
+                    $vals = collect($out[$i]['store_ids'])->map(fn ($id) => $byStore[$id]->{$d} ?? null)->filter(fn ($v) => $v !== null);
+                    $avg[$i][$d] = $vals->isEmpty() ? null : (float) $vals->avg();
+                }
+            }
             $best = null;
-            $bestGap = 0.0;
-            foreach (self::LEANS as $d => $words) {
-                if (! $mean[$d]) {
+            $bestSpread = 0.0;
+            foreach (array_keys(self::LEANS) as $d) {
+                $vals = array_filter(array_map(fn ($i) => $avg[$i][$d], $idx), fn ($v) => $v !== null);
+                if (count($vals) !== count($idx) || ! $mean[$d]) {
                     continue;
                 }
-                $vals = collect($g['store_ids'])->map(fn ($id) => $byStore[$id]->{$d} ?? null)->filter(fn ($v) => $v !== null);
-                if ($vals->isEmpty()) {
-                    continue;
-                }
-                $gap = $vals->avg() / $mean[$d] - 1;
-                if (abs($gap) > abs($bestGap)) {
-                    [$best, $bestGap] = [$d, $gap];
+                $spread = (max($vals) - min($vals)) / abs($mean[$d]);
+                if ($spread > $bestSpread) {
+                    [$best, $bestSpread] = [$d, $spread];
                 }
             }
-            if ($best !== null && abs($bestGap) >= 0.05) {
-                $out[$i]['label'] = $g['label'] . ' · ' . self::LEANS[$best][$bestGap >= 0 ? 0 : 1];
+            if ($best === null || $bestSpread < 0.05) {
+                $n = 0;
+                foreach ($idx as $i) {
+                    $out[$i]['label'] = $label . ' ' . ++$n;
+                }
+
+                continue;
             }
-        }
-        $seen = [];
-        $counts = array_count_values(array_column($out, 'label'));
-        foreach ($out as $i => $g) {
-            if ($counts[$g['label']] > 1) {
-                $seen[$g['label']] = ($seen[$g['label']] ?? 0) + 1;
-                $out[$i]['label'] = $g['label'] . ' ' . $seen[$g['label']];
+            usort($idx, fn ($x, $y) => $avg[$x][$best] <=> $avg[$y][$best]);
+            $last = count($idx) - 1;
+            foreach ($idx as $rank => $i) {
+                $out[$i]['label'] = $label . ' · ' . match (true) {
+                    $rank === 0     => self::LEANS[$best][1],
+                    $rank === $last => self::LEANS[$best][0],
+                    default         => 'in between' . ($last > 2 ? ' ' . $rank : ''),
+                };
             }
         }
 
