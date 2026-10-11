@@ -178,6 +178,47 @@ class AssortmentV25Test extends TestCase
         $this->assertSame('none', StudioService::risk(['changes' => 0] + $base)['level']);
     }
 
+    public function test_risk_is_weighted_by_the_money_each_change_carries(): void
+    {
+        $sum = ['changes' => 2, 'recovers' => 1, 'sales_pct' => [0.01, 0.02, 0.03], 'confidence_tier' => AssortmentGap::TIER_SPECULATIVE];
+        $changes = [
+            ['kind' => AssortmentPlan::ADD, 'tier' => AssortmentGap::TIER_ESTABLISHED, 'sales' => [800, 990, 1200]],
+            ['kind' => AssortmentPlan::RECOVER, 'tier' => AssortmentGap::TIER_SPECULATIVE, 'sales' => [5, 10, 20]],
+        ];
+        $this->assertSame('low', StudioService::risk($sum, $changes)['level'], 'one small unsure stock fix does not make the strategy risky');
+        $changes[1]['sales'] = [500, 1500, 3000];
+        $this->assertSame('high', StudioService::risk($sum, $changes)['level'], 'most of the money on speculative evidence');
+        $changes[1]['ticked'] = false;
+        $this->assertSame('low', StudioService::risk($sum, $changes)['level'], 'a change left out does not count');
+    }
+
+    public function test_store_groups_never_share_a_label(): void
+    {
+        $t = $this->tenant->id;
+        foreach (['D1' => 'Dairy', 'B1' => 'Bakery', 'F1' => 'Frozen'] as $sku => $cat) {
+            DB::table('products')->insert(['tenant_id' => $t, 'sku' => $sku, 'name' => $cat . ' item', 'category' => $cat, 'unit_cost' => 6, 'selling_price' => 10,
+                'created_at' => now(), 'updated_at' => now()]);
+        }
+        $rows = [];
+        // Twenty stores that sell almost alike: no group leans 15% to any category, so all would be "Balanced range".
+        for ($i = 1; $i <= 20; $i++) {
+            $store = DB::table('stores')->insertGetId(['tenant_id' => $t, 'name' => "Store {$i}", 'code' => "S{$i}", 'format' => 'Supermarket', 'created_at' => now(), 'updated_at' => now()]);
+            $mix = [['D1' => 11, 'B1' => 10, 'F1' => 10], ['D1' => 10, 'B1' => 11, 'F1' => 10], ['D1' => 10, 'B1' => 10, 'F1' => 11], ['D1' => 10, 'B1' => 10, 'F1' => 10]][$i % 4];
+            foreach ($mix as $sku => $u) {
+                for ($day = 0; $day < 20; $day++) {
+                    $rows[] = ['tenant_id' => $t, 'store_id' => $store, 'sku' => $sku, 'date' => Carbon::parse($this->asOf)->subDays($day)->toDateString(),
+                        'units_sold' => $u + ($i % 3), 'revenue' => ($u + ($i % 3)) * 10, 'transaction_count' => 1, 'created_at' => now(), 'updated_at' => now()];
+                }
+            }
+        }
+        DB::table('sales_daily')->insert($rows);
+        $groups = app(\App\Platform\Intelligence\Clustering\Strategies\RangeMixClustering::class)->clusterWith($t, [], $this->asOf);
+        $this->assertGreaterThan(1, count($groups));
+        $labels = array_column($groups, 'label');
+        $this->assertSame(count($labels), count(array_unique($labels)), 'every group reads apart: ' . implode(' / ', $labels));
+        $this->assertGreaterThan(1, count(array_filter($labels, fn ($l) => str_starts_with($l, 'Balanced range'))), 'the case this guards: several balanced groups');
+    }
+
     // ── Charts on the screens ─────────────────────────────────────────────────
 
     public function test_the_plan_page_draws_where_the_change_comes_from(): void

@@ -42,6 +42,22 @@ class InvestigationsByStore extends Page
         return 'Investigations by Store';
     }
 
+    /** v2.5 — the stores drawn: most at risk, and the kinds of problem each holds. */
+    public function getVisuals(): array
+    {
+        $tenant = Filament::getTenant();
+        if (! $tenant) {
+            return ['top' => [], 'problems' => null];
+        }
+        $map = app(\App\Services\Metrics\RiskMap::class);
+        $currency = Money::normalize($tenant->currency);
+
+        return [
+            'top'      => $map->topStores((int) $tenant->id, auth()->user(), $currency),
+            'problems' => $map->byProblem((int) $tenant->id, auth()->user()),
+        ];
+    }
+
     /**
      * Per-store investigation groups, most open work first. Accurate aggregates
      * from a grouped query; the drill-down list is capped per store for the page.

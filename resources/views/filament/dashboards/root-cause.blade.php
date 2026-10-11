@@ -472,6 +472,16 @@ a.db-kpi:hover::after { opacity:1; }
 
 </div>
 
+{{-- v2.5 — where the money at risk sits: store × department (open investigations). --}}
+@if($riskMap)
+    <x-ui.card title="Where the money at risk sits">
+        <x-slot:actions>@if($byStoreUrl)<a href="{{ $byStoreUrl }}" class="ax-text-sm" wire:navigate>By store →</a>@endif</x-slot:actions>
+        <x-ui.viz.heatmap :rows="$riskMap['rows']" :cols="$riskMap['cols']" :cells="$riskMap['cells']" mode="bad" :cell-w="78"
+            :legend="['low' => 'Little at risk', 'high' => 'Most at risk here']" label="Revenue at risk by store and department" />
+        <p class="ax-faint ax-text-xs ax-mt-2">Revenue at risk on open and in-progress investigations, by the store and the department of each one's main product. The {{ count($riskMap['rows']) }} stores with the most at risk ({{ \App\Support\Money::compact($riskMap['shown'], $currency) }} of {{ \App\Support\Money::compact($riskMap['total'], $currency) }}); the darker the cell, the more is at risk. Hover a cell for how many investigations it holds.</p>
+    </x-ui.card>
+@endif
+
 {{-- ════════════════════════════════════════════════════════════════════════
      BOTTOM: Recent High Priority + Action Center
      ════════════════════════════════════════════════════════════════════════ --}}

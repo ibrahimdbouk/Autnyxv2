@@ -140,7 +140,7 @@ class RangeMixClustering implements ClusteringStrategy
             $out[] = ['key' => 'range-' . $n, 'label' => $label, 'store_ids' => $storeIds, 'params' => $params];
         }
 
-        return $out;
+        return $this->distinct($out);
     }
 
     /**
@@ -184,6 +184,34 @@ class RangeMixClustering implements ClusteringStrategy
         $chainPrice = $this->median(array_values(array_filter($prices, fn ($p) => $p !== null))) ?: 1.0;
 
         return ['as_of' => $asOf, 'stores' => $byStore, 'top' => $top, 'chain_share' => $chainShare, 'prices' => $prices, 'chain_price' => $chainPrice];
+    }
+
+    /**
+     * v2.5 — no two groups share a label. Where stores sell alike (no category
+     * at 115%+), several groups would all read "Balanced range": each then
+     * names the category it leans to most, and a number if that still repeats.
+     */
+    private function distinct(array $out): array
+    {
+        $counts = array_count_values(array_column($out, 'label'));
+        foreach ($out as $i => $o) {
+            if ($counts[$o['label']] > 1) {
+                $lean = array_key_first((array) ($o['params']['category_index'] ?? []));
+                if ($lean !== null) {
+                    $out[$i]['label'] = $o['label'] . ' · leans ' . $lean;
+                }
+            }
+        }
+        $seen = [];
+        $counts = array_count_values(array_column($out, 'label'));
+        foreach ($out as $i => $o) {
+            if ($counts[$o['label']] > 1) {
+                $seen[$o['label']] = ($seen[$o['label']] ?? 0) + 1;
+                $out[$i]['label'] = $o['label'] . ' ' . $seen[$o['label']];
+            }
+        }
+
+        return $out;
     }
 
     private function describe(array $storeIds, array $byStore, array $top, array $chainShare, array $prices, float $chainPrice): array

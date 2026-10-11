@@ -72,12 +72,19 @@ final class Viz
      *   good        a share 0–1 where more is better (fades from red at 0 to green at 1)
      *   bad         a share 0–1 where more is worse
      *
+     * With a domain [low, high] (good/bad), the shade spans that range instead
+     * of 0–1, so close figures (83%–92%) still read apart; the cell's own
+     * number stays the real figure.
+     *
      * @return array{class:string, opacity:float}
      */
-    public static function heat(?float $v, string $mode = 'diverging', float $spread = 0.6): array
+    public static function heat(?float $v, string $mode = 'diverging', float $spread = 0.6, ?array $domain = null): array
     {
         if ($v === null || ! is_finite($v)) {
             return ['class' => 'ax-viz-cell--empty', 'opacity' => 1.0];
+        }
+        if ($mode !== 'diverging' && $domain !== null && count($domain) === 2 && (float) $domain[1] - (float) $domain[0] > 1e-9) {
+            $v = ($v - (float) $domain[0]) / ((float) $domain[1] - (float) $domain[0]);
         }
         if ($mode === 'diverging') {
             $d = $v - 1.0;

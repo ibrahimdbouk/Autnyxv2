@@ -353,7 +353,7 @@ a.ax-stat:hover { box-shadow: var(--ax-shadow-md); transform: translateY(-1px); 
    positions are SVG attributes, hover text is the SVG <title>.
    ========================================================================== */
 .ax-viz { display: block; max-width: 100%; height: auto; margin-inline: auto; overflow: visible; }   /* drawn at its own width, shrinks to fit */
-.ax-viz--wide { min-width: 34rem; }          /* scrolls sideways on a phone rather than shrinking */
+.ax-viz--wide { min-width: 22rem; }          /* scrolls sideways on a phone rather than shrinking past legibility */
 .ax-viz--fixed { width: auto; max-width: none; margin-inline: 0; }
 .ax-viz-text { fill: var(--ax-muted); font-size: 11px; font-family: var(--ax-font); }
 .ax-viz-text--ink { fill: var(--ax-ink); font-weight: 600; }

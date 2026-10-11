@@ -71,7 +71,12 @@ class RootCauseDashboard implements AppDashboard
             })
             : [];
 
+        // v2.5 — where the money at risk sits: store × department, open work only.
+        $riskMap = $tenantId ? app(\App\Services\Metrics\RiskMap::class)->byDepartment($tenantId, auth()->user(), \App\Support\Money::normalize($tenant?->currency)) : null;
+
         return [
+            'riskMap'            => $riskMap,
+            'byStoreUrl'         => \App\Filament\Pages\InvestigationsByStore::canAccess() ? \App\Filament\Pages\InvestigationsByStore::getUrl() : null,
             'customKpis'         => $customKpis,
             'customKpisUrl'      => \App\Filament\Resources\CustomMetricResource::canAccess() ? \App\Filament\Resources\CustomMetricResource::getUrl('index') : null,
             'm'                  => $m,

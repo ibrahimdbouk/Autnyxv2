@@ -464,6 +464,7 @@ class FinancialBreakdown extends Page
                 'sku'      => $inv->primary_sku ?: '—',
                 'meta'     => ucfirst(str_replace('_', ' ', (string) $inv->status)),
                 'amount'   => $this->tableMoney((float) ($inv->{$amountField} ?? 0)),
+                'value'   => (float) ($inv->{$amountField} ?? 0),
             ];
         })->all();
     }
@@ -493,6 +494,7 @@ class FinancialBreakdown extends Page
                 'sku'    => $inv?->primary_sku ?: '—',
                 'meta'   => $meta,
                 'amount' => $this->tableMoney((float) ($o->{$amountField} ?? 0)),
+                'value' => (float) ($o->{$amountField} ?? 0),
             ];
         })->all();
     }
@@ -521,6 +523,7 @@ class FinancialBreakdown extends Page
                 'sku'    => $scope,
                 'meta'   => $a->resolved_at ? \App\Support\Tenancy\TenantClock::display($a->resolved_at)->format('M j, Y') : '—',
                 'amount' => $this->tableMoney((float) ($a->value_at_open ?? 0)),
+                'value' => (float) ($a->value_at_open ?? 0),
             ];
         })->all();
     }

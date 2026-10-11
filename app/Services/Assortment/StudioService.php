@@ -405,7 +405,7 @@ class StudioService
                 'recommended' => $k === $rec,
                 'summary'     => $sum,
                 'kept'        => $this->kept($ctx, $r['changes'], $base),
-                'risk'        => self::risk($sum),
+                'risk'        => self::risk($sum, $r['changes']),
                 'actions'     => $this->actions($r['changes']),
                 // Two objectives can land on the same changes on a small shelf: say so rather than repeat them.
                 'same_as'     => $seen[$sig] ?? null,
@@ -417,24 +417,50 @@ class StudioService
         return ['cards' => $cards, 'scale' => ['min' => round($lo - $pad, 4), 'max' => round($hi + $pad, 4)]];
     }
 
-    /** @return array{level: string, label: string, why: string} */
-    public static function risk(array $summary): array
+    /**
+     * How much could go wrong: weighted by money, so one unsure stock fix does
+     * not make a whole strategy risky.
+     *
+     *   high     at the low end category sales fall over 3%, or over half the
+     *            change (by its middle value) rests on speculative evidence
+     *   medium   at worst −1%, or over a fifth speculative, or over half likely
+     *            or speculative
+     *   low      otherwise
+     *
+     * Without the changes, the least sure tier stands in for the weights.
+     *
+     * @return array{level: string, label: string, why: string}
+     */
+    public static function risk(array $summary, array $changes = []): array
     {
         if ((int) ($summary['changes'] ?? 0) + (int) ($summary['recovers'] ?? 0) === 0) {
             return ['level' => 'none', 'label' => 'No change', 'why' => 'The shelf stays as it is.'];
         }
         $pct = (array) ($summary['sales_pct'] ?? [0, 0, 0]);
         $worst = (float) min($pct[0], $pct[2]);
-        $tier = (string) ($summary['confidence_tier'] ?? AssortmentGap::TIER_SPECULATIVE);
+        $w = [];
+        foreach ($changes as $c) {
+            if (! ($c['ticked'] ?? true) || in_array($c['kind'] ?? '', [AssortmentPlan::PROTECT, AssortmentPlan::FACINGS], true) || ($c['tier'] ?? null) === null) {
+                continue;
+            }
+            $w[(string) $c['tier']] = ($w[(string) $c['tier']] ?? 0.0) + abs((float) ($c['sales'][1] ?? 0)) + 1e-6;
+        }
+        if ($w === []) {
+            $w[(string) ($summary['confidence_tier'] ?? AssortmentGap::TIER_SPECULATIVE)] = 1.0;
+        }
+        $total = array_sum($w);
+        $spec = ($w[AssortmentGap::TIER_SPECULATIVE] ?? 0.0) / $total;
+        $unsure = $spec + ($w[AssortmentGap::TIER_LIKELY] ?? 0.0) / $total;
         $level = match (true) {
-            $tier === AssortmentGap::TIER_SPECULATIVE || $worst < -0.03 => 'high',
-            $tier === AssortmentGap::TIER_LIKELY || $worst < -0.01      => 'medium',
-            default                                                     => 'low',
+            $worst < -0.03 || $spec > 0.5                    => 'high',
+            $worst < -0.01 || $spec > 0.2 || $unsure > 0.5   => 'medium',
+            default                                          => 'low',
         };
         $at = ($worst >= 0 ? '+' : '−') . number_format(abs($worst) * 100, 1) . '%';
 
         return ['level' => $level, 'label' => ucfirst($level) . ' risk',
-            'why' => 'Least sure change: ' . $tier . '. At the low end of the range, category sales ' . $at . '.'];
+            'why' => (int) round($spec * 100) . '% of the change rests on speculative evidence, ' . (int) round(($unsure - $spec) * 100)
+                . '% on likely. At the low end of the range, category sales ' . $at . '.'];
     }
 
     /** Today's category sales still on the shelf after the delists (0–1). */

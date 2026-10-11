@@ -57,7 +57,7 @@
         {{-- v2.5 — how widely the products are carried, and who carries what. --}}
         <div class="ax-viz-split ax-viz-split--wide">
             <x-ui.card title="How widely the top products are carried">
-                <x-ui.viz.bars :items="$bars" :max="1.0" label="Share of the group's stores carrying each product"
+                <x-ui.viz.bars :items="$bars" :max="1.0" :width="520" label="Share of the group's stores carrying each product"
                     :markers="[['at' => \App\Filament\Pages\AssortmentBenchmarks::EXPECTED, 'label' => 'expected'], ['at' => \App\Filament\Pages\AssortmentBenchmarks::CORE, 'label' => 'core']]" />
                 <div class="ax-viz-legend" aria-hidden="true">
                     <span><svg class="ax-viz-key" viewBox="0 0 10 10"><rect class="ax-viz-s3" width="10" height="10" rx="2" /></svg>Core</span>

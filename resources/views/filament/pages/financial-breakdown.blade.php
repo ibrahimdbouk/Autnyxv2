@@ -85,6 +85,20 @@
 @endif
 
 {{-- Contributing rows --}}
+{{-- v2.5 — what makes up the figure: the biggest contributors drawn. --}}
+@php
+    $fbBars = collect($fb['rows'] ?? [])->filter(fn ($r) => (float) ($r['value'] ?? 0) > 0)->sortByDesc('value')->take(12)
+        ->map(fn ($r) => ['label' => '#' . $r['id'] . ' ' . \Illuminate\Support\Str::limit((string) $r['title'], 34), 'value' => (float) $r['value'], 'text' => $r['amount'],
+            'tip' => '#' . $r['id'] . ' ' . $r['title'] . ': ' . $r['amount'] . ' (' . $r['meta'] . ')', 's' => 1])->values()->all();
+    $fbTotal = collect($fb['rows'] ?? [])->sum(fn ($r) => (float) ($r['value'] ?? 0));
+@endphp
+@if(count($fbBars) >= 2)
+    <x-ui.card title="What makes up the figure" class="ax-mb-3">
+        <x-ui.viz.bars :items="$fbBars" label="The biggest contributors to the figure" :width="900" />
+        <p class="ax-faint ax-text-xs ax-mt-2">The {{ count($fbBars) }} biggest of {{ count($fb['rows']) }} contributors listed below{{ $fbTotal > 0 ? ': ' . (int) round(collect($fbBars)->sum('value') / $fbTotal * 100) . '% of their total' : '' }}.</p>
+    </x-ui.card>
+@endif
+
 <div class="fb-card">
     <div class="fb-card-head">Contributing Investigations &amp; Outcomes</div>
     @if(!empty($fb['rows']))

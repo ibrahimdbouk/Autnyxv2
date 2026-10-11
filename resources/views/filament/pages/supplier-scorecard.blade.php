@@ -39,6 +39,26 @@
             </div>
         </div>
 
+        {{-- v2.5 — every graded supplier on one picture: fill rate against on-time delivery. --}}
+        @if($graded->count() >= 2)
+            @php
+                $gradeSeries = ['A' => 3, 'B' => 2, 'C' => 4, 'D' => 5];
+                $maxOrdered = max(1.0, (float) $graded->max('ordered_value'));
+                $supplierPoints = $graded->map(fn ($r) => ['x' => (float) $r['fill_rate'], 'y' => (float) $r['on_time'], 's' => $gradeSeries[$r['grade']] ?? 1,
+                    'r' => round(4 + 8 * sqrt(max(0.0, (float) $r['ordered_value']) / $maxOrdered), 1),
+                    'tip' => $r['name'] . ' · grade ' . $r['grade'] . ' (' . $r['score'] . '): fill ' . $r['fill_rate'] . '%, on time ' . $r['on_time'] . '%, ordered ' . $this->tableMoney((float) $r['ordered_value'])
+                        . ($r['lost_revenue'] > 0 ? ', ' . $this->tableMoney((float) $r['lost_revenue']) . ' sales lost to its stockouts' : '')])->values()->all();
+            @endphp
+            <x-ui.card title="Fill rate against on-time delivery">
+                <x-ui.viz.scatter :points="$supplierPoints" :series="[3 => 'A', 2 => 'B', 4 => 'C', 5 => 'D']" x-label="Fill rate" y-label="On time"
+                    :x-fmt="fn ($v) => (int) round($v) . '%'" :y-fmt="fn ($v) => (int) round($v) . '%'" :ref-x="['at' => 95, 'label' => '95% filled']" :ref-y="['at' => 95, 'label' => '95% on time']"
+                    label="Suppliers by fill rate and on-time delivery" :width="900" height="320">
+                    <span>Bigger dot: more ordered</span>
+                </x-ui.viz.scatter>
+                <p class="ax-faint ax-text-xs ax-mt-2">Each graded supplier in the last {{ (int) $this->days }} days. Top right is where a supplier should be; bottom left, both short and late. Hover a dot for its figures.</p>
+            </x-ui.card>
+        @endif
+
         @if(! empty($detail))
         <div class="sc-card">
             <div style="display:flex;justify-content:space-between;align-items:baseline;gap:1rem;flex-wrap:wrap">

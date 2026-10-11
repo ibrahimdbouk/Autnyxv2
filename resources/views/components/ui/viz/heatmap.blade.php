@@ -4,6 +4,7 @@
     'cells'  => [],          // [rowKey][colKey] => ['v' => ?float, 'text' => string, 'tip' => string]
     'mode'   => 'diverging', // diverging (around 1.0) | good | bad (shares 0–1)
     'spread' => 0.6,         // diverging: how far from 1.0 is full colour
+    'domain' => null,        // good/bad: [low, high] the shades span (default 0–1)
     'cellW'  => 72,
     'cellH'  => 30,
     'label'  => 'Heatmap',
@@ -14,7 +15,7 @@
     $labelW = (int) min(230, max(90, $maxRow * 7.2 + 16));
     $maxCol = max(1, ...array_map(fn ($c) => mb_strlen((string) $c['label']), $cols ?: [['label' => '']]));
     $rotate = $maxCol * 6.4 > $cellW - 6;
-    $colChars = 26;
+    $colChars = 32;
     $headH = $rotate ? (int) min(150, min($maxCol, $colChars) * 6.4 * 0.62 + 18) : 24;
     $extra = $rotate ? (int) min(170, min($maxCol, $colChars) * 6.4 * 0.8) : 8;
     $w = $labelW + count($cols) * $cellW + $extra;
@@ -36,7 +37,7 @@
         @foreach($cols as $j => $c)
             @php
                 $cell = $cells[$r['key']][$c['key']] ?? null;
-                $heat = \App\Support\Viz::heat($cell['v'] ?? null, $mode, (float) $spread);
+                $heat = \App\Support\Viz::heat($cell['v'] ?? null, $mode, (float) $spread, $domain);
                 $x = $labelW + $j * $cellW;
             @endphp
             <g class="ax-viz-hit">

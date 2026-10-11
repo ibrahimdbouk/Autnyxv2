@@ -35,13 +35,13 @@
 
     @if($healthMap)
         <x-ui.card title="Range health by category and peer group">
-            <x-ui.viz.heatmap :rows="$healthMap['rows']" :cols="$healthMap['cols']" :cells="$healthMap['cells']" mode="good"
-                :legend="['low' => 'Little of the core range carried', 'mid' => 'About half', 'high' => 'All of it']" label="Core range carried, by category and peer group" />
+            <x-ui.viz.heatmap :rows="$healthMap['rows']" :cols="$healthMap['cols']" :cells="$healthMap['cells']" mode="good" :domain="$healthMap['domain']"
+                :legend="$healthMap['domain'] ? ['low' => 'Weakest here (' . $pct($healthMap['domain'][0]) . ')', 'mid' => 'Middle', 'high' => 'Strongest here (' . $pct($healthMap['domain'][1]) . ')'] : ['low' => 'Little of the core range carried', 'mid' => 'About half', 'high' => 'All of it']" label="Core range carried, by category and peer group" />
             @if($health !== [])
                 <p class="ax-text-sm ax-mt-3 ax-m-0"><span class="ax-fw-600 ax-ink">Weakest:</span>
                     @foreach($health as $h){{ $h['category'] }} in {{ $h['group'] }} {{ $pct($h['coverage']) }}@if(! $loop->last) · @endif @endforeach</p>
             @endif
-            <p class="ax-faint ax-text-xs ax-mt-2">Each cell is the share of the core range (products at least half the similar stores carry) that the group's stores carry; hover for slow sellers (carried but selling under 0.3× similar stores) and products that keep running out. Weakest categories first.</p>
+            <p class="ax-faint ax-text-xs ax-mt-2">Each cell is the share of the core range (products at least half the similar stores carry) that the group's stores carry; hover for slow sellers (carried but selling under 0.3× similar stores) and products that keep running out. Weakest categories first.@if($healthMap['domain']) Shades run from the weakest to the strongest figure here, so small gaps show; the numbers are the real shares.@endif</p>
         </x-ui.card>
     @endif
 @else

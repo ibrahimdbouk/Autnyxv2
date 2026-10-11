@@ -127,7 +127,7 @@ class AssortmentDashboard implements AppDashboard
         ]);
     }
 
-    /** @return array{rows: list<array>, cols: list<array>, cells: array}|null category × peer group, the core range carried */
+    /** @return array{domain: ?array, rows: list<array>, cols: list<array>, cells: array}|null category × peer group, the core range carried */
     public static function healthMap(array $health): ?array
     {
         if ($health === []) {
@@ -147,8 +147,11 @@ class AssortmentDashboard implements AppDashboard
         asort($cats); // weakest categories first
         $groupKeys = array_keys($groups);
         sort($groupKeys);
+        $vals = array_values(array_filter(array_map(fn ($h) => $h['coverage'] === null ? null : (float) $h['coverage'], $health), fn ($v) => $v !== null));
 
         return [
+            // Shades span the estate's own spread (weakest to strongest here), so close figures still read apart.
+            'domain' => $vals !== [] && max($vals) - min($vals) >= 0.02 ? [min($vals), max($vals)] : null,
             'rows'  => array_map(fn ($c) => ['key' => $c, 'label' => $c], array_keys(array_slice($cats, 0, 25, true))),
             'cols'  => array_map(fn ($g) => ['key' => $g, 'label' => $g], array_slice($groupKeys, 0, 16)),
             'cells' => $cells,

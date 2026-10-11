@@ -38,6 +38,28 @@
 
 <div class="ibs-sub">Every store with its investigation load — total, still open, urgent (critical/high open), and value at risk — ordered by where the open work is. Open a store to see and jump into its investigations.</div>
 
+@php($viz = $this->getVisuals())
+@if($viz['top'] !== [] || $viz['problems'])
+    <div class="ax-viz-split ax-viz-split--wide ax-mb-3">
+        @if($viz['top'] !== [])
+            <x-ui.card title="Most at risk">
+                <x-ui.viz.bars :items="$viz['top']" :width="500" label="Revenue at risk on open investigations, by store" />
+                <div class="ax-viz-legend" aria-hidden="true">
+                    <span><svg class="ax-viz-key" viewBox="0 0 10 10"><rect class="ax-viz-s1" width="10" height="10" rx="2" /></svg>Revenue at risk, open work</span>
+                    <span><svg class="ax-viz-key" viewBox="0 0 10 10"><rect class="ax-viz-down" width="10" height="10" rx="2" /></svg>Most of it high or critical</span>
+                </div>
+            </x-ui.card>
+        @endif
+        @if($viz['problems'])
+            <x-ui.card title="What kind of problem, where">
+                <x-ui.viz.heatmap :rows="$viz['problems']['rows']" :cols="$viz['problems']['cols']" :cells="$viz['problems']['cells']" mode="bad" :cell-w="46" :cell-h="24"
+                    :legend="['low' => 'A few', 'high' => 'Most findings']" label="Open findings by store and kind of problem" />
+                <p class="ax-faint ax-text-xs ax-mt-2">Open findings on open investigations, by store and rule. A column that lights up across many stores points to a chain-wide cause; a row that lights up, to the store.</p>
+            </x-ui.card>
+        @endif
+    </div>
+@endif
+
 @if(empty($groups))
     <div class="ibs-empty"><p>No investigations to group yet. Once signals are investigated, each store's load appears here.</p></div>
 @else
