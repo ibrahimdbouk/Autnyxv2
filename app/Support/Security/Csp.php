@@ -47,7 +47,7 @@ final class Csp
             "script-src 'self'" . ($nonce ? " 'nonce-{$nonce}'" : '') . " 'unsafe-eval'",
             "script-src-attr 'none'",
             "style-src 'self' 'unsafe-inline'",
-            trim("img-src 'self' data: blob: " . implode(' ', $storage)),
+            trim("img-src 'self' data: blob: " . implode(' ', [...$storage, ...self::mapOrigins()])),
             "font-src 'self' data:",
             trim("connect-src 'self' " . implode(' ', $storage)),
             "frame-ancestors 'none'",
@@ -60,6 +60,27 @@ final class Csp
         }
 
         return implode('; ', $directives);
+    }
+
+    /**
+     * v2.5 — the street-map tile host (config autnyx.maps.tiles), so map tiles
+     * may load as images; a "{s}" subdomain becomes a wildcard on that host.
+     *
+     * @return array<int,string>
+     */
+    public static function mapOrigins(): array
+    {
+        if (! config('autnyx.maps.enabled', false)) {
+            return [];
+        }
+        $url = (string) config('autnyx.maps.tiles', '');
+        $parts = parse_url(str_replace(['{s}', '{z}', '{x}', '{y}', '{r}'], ['__s__', '0', '0', '0', ''], $url));
+        if (! isset($parts['scheme'], $parts['host']) || $parts['scheme'] !== 'https') {
+            return [];
+        }
+        $host = str_starts_with($parts['host'], '__s__.') ? '*.' . substr($parts['host'], 6) : $parts['host'];
+
+        return ['https://' . $host];
     }
 
     /**

@@ -115,6 +115,22 @@
         </div>
     </div>
 
+    {{-- v2.5 — the regrouping drawn, and the behavioural groups on the map. --}}
+    @if ($viz = $this->visuals())
+        <x-ui.card title="How the stores regroup">
+            <x-ui.viz.sankey :left="$viz['left']" :right="$viz['right']" :links="$viz['links']" left-title="Structural · format and region" right-title="Behavioural · how they trade"
+                label="Structural groups and the behavioural groups their stores fall into" />
+            <p class="ax-faint ax-text-xs ax-mt-2">Each band is the stores a structural group shares with a behavioural one, to scale. A structural group that fans out holds stores that look alike on paper but trade differently.</p>
+        </x-ui.card>
+        @if ($viz['map']['map']['points'] !== [])
+            <x-ui.card title="The behavioural groups on the map">
+                <x-ui.viz.map :points="$viz['map']['map']['points']" :landmarks="$viz['map']['map']['landmarks']" :series="$viz['map']['series']" :width="820" :height="420"
+                    label="Stores on a schematic map, coloured by behavioural group"><span>Bigger dot: more daily sales</span></x-ui.viz.map>
+                <p class="ax-faint ax-text-xs ax-mt-2">Schematic, to scale, without a base map. Stores without coordinates are placed at their city.</p>
+            </x-ui.card>
+        @endif
+    @endif
+
     {{-- Regrouping --}}
     @if (! empty($cmp['demand']))
         <div class="clm-card">

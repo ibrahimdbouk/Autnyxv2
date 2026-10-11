@@ -60,10 +60,13 @@
             <p class="ax-faint ax-text-xs ax-mt-2">Each cell is the category's share of the group's sales against its share of the chain's (100 = the same). A group's label names its categories at 115 or more. The scatter places each store by its average price per unit against the chain's median store, and by the share of its sales that sits in a different mix of categories than the chain's (0% = exactly the chain's mix). Last 90 days{{ $viz['as_of'] ? ' to ' . \Illuminate\Support\Carbon::parse($viz['as_of'])->format('j M Y') : '' }}.</p>
         </x-ui.card>
 
-        @if($viz['map'] !== [])
+        @if($viz['map']['points'] !== [])
             <x-ui.card title="Where the stores are">
-                <x-ui.viz.scatter :points="$viz['map']" :series="$viz['series']" :geo="true" label="Stores on a schematic map, coloured by group" height="380" :width="760" />
-                <p class="ax-faint ax-text-xs ax-mt-2">Schematic: each store at its coordinates from the store file, to scale but without a base map. Groups are formed by what stores sell, not where they are.</p>
+                <x-ui.viz.map :points="$viz['map']['points']" :landmarks="$viz['map']['landmarks']" :series="$viz['series']" label="Stores on a schematic map, coloured by group" :height="400" :width="820">
+                    <span>Bigger dot: more daily sales</span>
+                </x-ui.viz.map>
+                @php $placed = $viz['map']['placed']; @endphp
+                <p class="ax-faint ax-text-xs ax-mt-2">Schematic: to scale, without a base map. {{ $placed['exact'] }} store(s) at their coordinates{{ $placed['city'] ? ', ' . $placed['city'] . ' placed at their city' : '' }}{{ $placed['none'] ? ', ' . $placed['none'] . ' not shown (no coordinates or known city)' : '' }}. Groups are formed by what stores sell, not where they are.</p>
             </x-ui.card>
         @endif
     @endif

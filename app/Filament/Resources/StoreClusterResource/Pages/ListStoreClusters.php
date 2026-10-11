@@ -61,6 +61,22 @@ class ListStoreClusters extends ListRecords
             : $base;
     }
 
+    /** v2.5 — the clusters drawn: where the stores are, how many per cluster, and how each trades. */
+    protected function getHeaderWidgets(): array
+    {
+        return [
+            \App\Filament\Widgets\Clustering\ClusterMap::class,
+            \App\Filament\Widgets\Clustering\ClusterMix::class,
+            \App\Filament\Widgets\Clustering\ClusterProfile::class,
+            \App\Filament\Widgets\Clustering\ClusterScatter::class,
+        ];
+    }
+
+    public function getHeaderWidgetsColumns(): int|array
+    {
+        return ['default' => 1, 'lg' => 3];
+    }
+
     protected function getHeaderActions(): array
     {
         return [

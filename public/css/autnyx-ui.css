@@ -373,6 +373,23 @@ a.ax-stat:hover { box-shadow: var(--ax-shadow-md); transform: translateY(-1px); 
 .ax-viz-dot { stroke: var(--ax-bg); stroke-width: 1.25; }
 .ax-viz-dot--hollow { fill: var(--ax-bg) !important; stroke-width: 2; }
 .ax-viz-hit:hover { opacity: .8; }
+.ax-viz-map { fill: var(--ax-panel); stroke: var(--ax-line); stroke-width: 1; }
+.ax-viz-graticule { stroke: var(--ax-line); stroke-width: 1; stroke-dasharray: 2 4; }
+.ax-viz-landmark { fill: var(--ax-faint); }
+.ax-viz-text--landmark { fill: var(--ax-faint); font-size: 10.5px; font-style: italic; pointer-events: none; }
+.ax-viz-dot--approx { stroke-dasharray: 2 2; stroke-width: 1.5; }
+/* v2.5 street map (self-hosted Leaflet). Marker colours are the series classes above. */
+.ax-leaflet { height: 26rem; width: 100%; border-radius: var(--ax-radius); border: 1px solid var(--ax-line); overflow: hidden; background: var(--ax-panel); z-index: 0; }
+.ax-leaflet--failed::after { content: "The street map could not load. Use the schematic view."; display: block; padding: 1rem; color: var(--ax-muted); font-size: var(--ax-fs-sm); }
+.dark .ax-leaflet .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9); }
+.ax-leaflet .leaflet-container, .ax-leaflet.leaflet-container { font-family: var(--ax-font); }
+.ax-leaflet .leaflet-tooltip { white-space: normal; width: max-content; max-width: 16rem; font-size: var(--ax-fs-xs); }
+.dark .ax-leaflet .leaflet-tooltip, .dark .ax-leaflet .leaflet-popup-content-wrapper, .dark .ax-leaflet .leaflet-popup-tip { background: var(--ax-panel); color: var(--ax-ink); border-color: var(--ax-line); }
+.dark .ax-leaflet .leaflet-bar a { background: var(--ax-panel); color: var(--ax-ink); border-color: var(--ax-line); }
+.dark .ax-leaflet .leaflet-control-attribution { background: rgba(17, 24, 39, .8); color: var(--ax-muted); }
+.ax-map-popup { font-size: var(--ax-fs-sm); color: var(--ax-ink); max-width: 16rem; }
+.ax-map-popup-links { display: flex; gap: var(--ax-3); margin-top: var(--ax-2); }
+.ax-map-popup-links a { color: var(--ax-accent-strong); font-weight: 600; text-decoration: none; }
 
 .ax-viz-s1 { fill: var(--ax-chart-1); stroke: var(--ax-chart-1); }
 .ax-viz-s2 { fill: var(--ax-chart-2); stroke: var(--ax-chart-2); }

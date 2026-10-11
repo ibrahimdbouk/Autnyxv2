@@ -114,6 +114,18 @@ final class Viz
         return mb_strlen($s) > $chars ? rtrim(mb_substr($s, 0, max(1, $chars - 1))) . '…' : $s;
     }
 
+    /** Cut in the middle, keeping both ends ("Medium-format…high-basket"): where labels differ only at the end. */
+    public static function cutMiddle(string $s, int $chars): string
+    {
+        if (mb_strlen($s) <= $chars) {
+            return $s;
+        }
+        $head = (int) ceil(($chars - 1) * 0.45);
+        $tail = max(1, $chars - 1 - $head);
+
+        return rtrim(mb_substr($s, 0, $head)) . '…' . ltrim(mb_substr($s, -$tail));
+    }
+
     /** One end-to-end SVG path for an arc of a donut ring, from angle a0 to a1 (radians, 0 = top). */
     public static function arc(float $cx, float $cy, float $r, float $r0, float $a0, float $a1): string
     {

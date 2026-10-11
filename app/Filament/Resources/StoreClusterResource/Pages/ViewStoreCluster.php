@@ -67,6 +67,21 @@ class ViewStoreCluster extends Page
         return Filament::getTenant()?->money((float) $amount) ?? number_format((float) $amount, 2);
     }
 
+    /** v2.5 — this cluster on the map among the others, and its profile against the average store. */
+    protected function getHeaderWidgets(): array
+    {
+        return [
+            \App\Filament\Widgets\Clustering\ClusterMap::make(['focus' => $this->record->id]),
+            \App\Filament\Widgets\Clustering\ClusterScatter::make(['focus' => $this->record->id]),
+            \App\Filament\Widgets\Clustering\ClusterProfile::make(['focus' => $this->record->id]),
+        ];
+    }
+
+    public function getHeaderWidgetsColumns(): int|array
+    {
+        return ['default' => 1, 'lg' => 3];
+    }
+
     protected function getHeaderActions(): array
     {
         return [

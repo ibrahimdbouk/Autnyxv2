@@ -7,11 +7,12 @@
     'domain' => null,        // good/bad: [low, high] the shades span (default 0–1)
     'cellW'  => 72,
     'cellH'  => 30,
+    'rowChars' => 34,        // row labels cut at this many characters (full text on hover)
     'label'  => 'Heatmap',
     'legend' => [],          // ['low' => , 'mid' => , 'high' => ] or ['items' => [['class' => , 'opacity' => , 'label' => ], …]]
 ])
 @php
-    $maxRow = max(4, ...array_map(fn ($r) => mb_strlen((string) $r['label']), $rows ?: [['label' => '']]));
+    $maxRow = min((int) $rowChars, max(4, ...array_map(fn ($r) => mb_strlen((string) $r['label']), $rows ?: [['label' => '']])));
     $labelW = (int) min(230, max(90, $maxRow * 7.2 + 16));
     $maxCol = max(1, ...array_map(fn ($c) => mb_strlen((string) $c['label']), $cols ?: [['label' => '']]));
     $rotate = $maxCol * 6.4 > $cellW - 6;
@@ -33,7 +34,7 @@
     @endforeach
     @foreach($rows as $i => $r)
         @php $y = $headH + $i * $cellH; @endphp
-        <text class="ax-viz-text ax-viz-text--ink" x="{{ $labelW - 10 }}" y="{{ $y + $cellH / 2 + 4 }}" text-anchor="end"><title>{{ $r['label'] }}{{ ! empty($r['sub']) ? ' · ' . $r['sub'] : '' }}</title>{{ \App\Support\Viz::cut((string) $r['label'], 34) }}</text>
+        <text class="ax-viz-text ax-viz-text--ink" x="{{ $labelW - 10 }}" y="{{ $y + $cellH / 2 + 4 }}" text-anchor="end"><title>{{ $r['label'] }}{{ ! empty($r['sub']) ? ' · ' . $r['sub'] : '' }}</title>{{ \App\Support\Viz::cutMiddle((string) $r['label'], (int) $rowChars) }}</text>
         @foreach($cols as $j => $c)
             @php
                 $cell = $cells[$r['key']][$c['key']] ?? null;

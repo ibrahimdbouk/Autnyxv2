@@ -103,6 +103,69 @@ class DemandClustering implements ClusteringStrategy
             ];
         }
 
+        return $this->distinct($out, $byStore);
+    }
+
+    /** How a group stands apart on each dimension, in words: [above, below]. */
+    private const LEANS = [
+        'avg_daily_revenue' => ['higher sales', 'lower sales'],
+        'avg_basket_value'  => ['bigger baskets', 'smaller baskets'],
+        'avg_selling_price' => ['higher prices', 'lower prices'],
+        'sku_productivity'  => ['more sales per product', 'less sales per product'],
+        'promo_share'       => ['more on promotion', 'less on promotion'],
+        'active_skus'       => ['wider range', 'narrower range'],
+        'growth_ratio'      => ['growing', 'slowing'],
+    ];
+
+    /**
+     * v2.5 — no two groups share a label. The tier profile can be the same for
+     * two groups (or missing, "Behavioural group"): each then names the
+     * dimension where it stands furthest from the average store, and a number
+     * if that still repeats.
+     */
+    private function distinct(array $out, Collection $byStore): array
+    {
+        $counts = array_count_values(array_column($out, 'label'));
+        if (max($counts ?: [1]) < 2) {
+            return $out;
+        }
+        $mean = [];
+        foreach (array_keys(self::LEANS) as $d) {
+            $vals = $byStore->pluck($d)->filter(fn ($v) => $v !== null)->map(fn ($v) => (float) $v);
+            $mean[$d] = $vals->isEmpty() ? null : $vals->avg();
+        }
+        foreach ($out as $i => $g) {
+            if ($counts[$g['label']] < 2) {
+                continue;
+            }
+            $best = null;
+            $bestGap = 0.0;
+            foreach (self::LEANS as $d => $words) {
+                if (! $mean[$d]) {
+                    continue;
+                }
+                $vals = collect($g['store_ids'])->map(fn ($id) => $byStore[$id]->{$d} ?? null)->filter(fn ($v) => $v !== null);
+                if ($vals->isEmpty()) {
+                    continue;
+                }
+                $gap = $vals->avg() / $mean[$d] - 1;
+                if (abs($gap) > abs($bestGap)) {
+                    [$best, $bestGap] = [$d, $gap];
+                }
+            }
+            if ($best !== null && abs($bestGap) >= 0.05) {
+                $out[$i]['label'] = $g['label'] . ' · ' . self::LEANS[$best][$bestGap >= 0 ? 0 : 1];
+            }
+        }
+        $seen = [];
+        $counts = array_count_values(array_column($out, 'label'));
+        foreach ($out as $i => $g) {
+            if ($counts[$g['label']] > 1) {
+                $seen[$g['label']] = ($seen[$g['label']] ?? 0) + 1;
+                $out[$i]['label'] = $g['label'] . ' ' . $seen[$g['label']];
+            }
+        }
+
         return $out;
     }
 

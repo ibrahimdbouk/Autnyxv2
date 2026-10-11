@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Cache;
  *                    chain's: the share of its sales that sits in different
  *                    categories (0% = sells exactly the chain's mix)
  *   price level      its average price per unit against the chain's median store
+ *   map              ClusterVisuals' schematic map: coordinates, else the store's city
  *
  * Read-only; worked out from the last 90 days of sales, cached an hour.
  */
@@ -44,7 +45,7 @@ class GroupVisuals
         $pr = $this->mix->profiles($tenantId) ?? ['as_of' => null, 'stores' => [], 'top' => [], 'chain_share' => [], 'prices' => [], 'chain_price' => 1.0];
         $stores = Store::where('tenant_id', $tenantId)->get(['id', 'name', 'format', 'latitude', 'longitude'])->keyBy('id');
 
-        $series = $donut = $rows = $points = $geo = [];
+        $series = $donut = $rows = $points = [];
         foreach ($groups as $i => $grp) {
             $s = $i + 1;
             $series[$s] = (string) $grp['label'];
@@ -110,11 +111,6 @@ class GroupVisuals
                                 . (int) round($gap / 2 * 100) . '% of its sales in a different mix than the chain'];
                     }
                 }
-                $lat = $stores[$id]->latitude ?? null;
-                $lng = $stores[$id]->longitude ?? null;
-                if ($lat !== null && $lng !== null && ((float) $lat !== 0.0 || (float) $lng !== 0.0)) {
-                    $geo[] = ['x' => (float) $lng, 'y' => (float) $lat, 's' => $i + 1, 'r' => 6, 'tip' => $name . ' · ' . $grp['label']];
-                }
             }
         }
 
@@ -125,7 +121,10 @@ class GroupVisuals
             'heat'    => ['rows' => $rows, 'cols' => array_map(fn ($c) => ['key' => $c, 'label' => $c], $cats), 'cells' => $cells],
             'scatter' => $points,
             // A map only when most stores have coordinates (and at least three do).
-            'map'     => count($geo) >= 3 && count($geo) >= 0.5 * max(1, array_sum(array_column($donut, 'value'))) ? $geo : [],
+            // v2.5 — the same schematic map as Store Clustering: coordinates, else the store's city (drawn as approximate).
+            'map'     => app(\App\Services\Clustering\ClusterVisuals::class)->draw($tenantId,
+                array_map(fn ($g) => ['label' => (string) $g['label'], 'store_ids' => array_map('intval', (array) $g['members'])], $groups),
+                \App\Support\Money::normalize(\App\Models\Tenant::find($tenantId)?->currency))['map'],
             'stores'  => (int) array_sum(array_column($donut, 'value')),
         ];
     }

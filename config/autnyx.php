@@ -60,6 +60,32 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Street maps (v2.5)
+    |--------------------------------------------------------------------------
+    |
+    | The store maps (Store Clustering, Clustering method, Assortment → Store
+    | groups) can show a street map under the stores, drawn with the
+    | self-hosted Leaflet (public/vendor/leaflet). The browser fetches the map
+    | tiles from the provider below, so that provider sees which area is being
+    | looked at (never a store's name or figures). The schematic map stays one
+    | click away and needs no outside service.
+    |
+    | OpenStreetMap's own tile servers are for light use only (their tile usage
+    | policy): for a customer rollout set a commercial provider here
+    | (MapTiler, Stadia Maps, CARTO, Mapbox…) with its key in the URL, and its
+    | attribution. MAP_TILES_ENABLED=false turns street maps off everywhere.
+    | The tile host is added to the CSP's img-src.
+    |
+    */
+    'maps' => [
+        'enabled'     => (bool) env('MAP_TILES_ENABLED', true),
+        'tiles'       => env('MAP_TILES_URL', 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
+        'attribution' => env('MAP_TILES_ATTRIBUTION', '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'),
+        'max_zoom'    => (int) env('MAP_TILES_MAX_ZOOM', 19),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Mandatory MFA for super admins (3b)
     |--------------------------------------------------------------------------
     |

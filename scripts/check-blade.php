@@ -128,6 +128,7 @@ $classOnly = array_merge(
     glob($root . '/resources/views/filament/dashboards/assortment*.blade.php') ?: [],
     rglob($root . '/resources/views/filament/assortment', '.blade.php'),
     rglob($root . '/resources/views/filament/ops/usage', '.blade.php'),
+    rglob($root . '/resources/views/filament/clustering', '.blade.php'),
     rglob($root . '/resources/views/components/ui', '.blade.php'),
 );
 foreach ($classOnly as $file) {

@@ -50,6 +50,40 @@ class ClusteringMethod extends Page
         return $this->comparisonCache ??= app(ClusterService::class)->compare(Filament::getTenant()->id);
     }
 
+    /**
+     * v2.5 — the comparison drawn: how the structural groups regroup by
+     * behaviour (a band per pair, to scale), and the behavioural groups on the map.
+     */
+    public function visuals(): ?array
+    {
+        $cmp = $this->comparison();
+        if (empty($cmp['demand'])) {
+            return null;
+        }
+        $right = [];
+        foreach (array_values($cmp['demand']) as $i => $g) {
+            $right[(string) $g['label']] ??= ['key' => (string) $g['label'], 'label' => (string) $g['label'], 's' => $i + 1];
+        }
+        $links = [];
+        foreach ($cmp['crosstab'] as $row) {
+            foreach ($row['split'] as $label => $n) {
+                $right[(string) $label] ??= ['key' => (string) $label, 'label' => (string) $label, 's' => count($right) + 1];
+                $links[] = ['from' => (string) $row['label'], 'to' => (string) $label, 'n' => (int) $n,
+                    'tip' => $row['label'] . ' → ' . $label . ': ' . $n . ' store' . ($n > 1 ? 's' : '')];
+            }
+        }
+        $tenant = Filament::getTenant();
+
+        return [
+            'left'  => array_map(fn ($r) => ['key' => (string) $r['label'], 'label' => (string) $r['label']], $cmp['crosstab']),
+            'right' => array_values($right),
+            'links' => $links,
+            'map'   => app(\App\Services\Clustering\ClusterVisuals::class)->draw((int) $tenant->id,
+                array_map(fn ($g) => ['label' => (string) $g['label'], 'store_ids' => array_map('intval', $g['store_ids'])], array_values($cmp['demand'])),
+                \App\Support\Money::normalize($tenant->currency)),
+        ];
+    }
+
     public function money(float|int|null $amount): string
     {
         if ($amount === null) {

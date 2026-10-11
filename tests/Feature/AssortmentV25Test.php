@@ -267,7 +267,8 @@ class AssortmentV25Test extends TestCase
         $this->assertSame(10, $v['stores']);
         $this->assertSame([5, 5], array_column($v['donut'], 'value'));
         $this->assertCount(10, $v['scatter']);
-        $this->assertCount(10, $v['map']);
+        $this->assertCount(10, $v['map']['points']);
+        $this->assertSame(10, $v['map']['placed']['exact']);
         $dairyLed = collect($g->groups)->firstWhere('label', 'Dairy-led');
         $cell = $v['heat']['cells'][$dairyLed['key']]['Dairy'];
         $this->assertGreaterThan(1.0, $cell['v'], 'the Dairy-led group sells more dairy than the chain');
