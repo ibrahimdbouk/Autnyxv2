@@ -313,6 +313,7 @@ WRITING RULES — follow every one:
 7. Be honest about size. If the money at stake is small, say so plainly.
 8. Group repetition — "7 other stores show the same pattern", not seven near-identical lines.
 9. Interpret; do not dump the raw evidence table back.
+10. A "Sales drivers" line in the evidence is computed from the data (what moved the sales and why). Use it for why sales moved and how much each part was; never add a driver it does not list.
 
 Respond with ONLY this JSON object (no markdown, no code fences):
 {

@@ -115,6 +115,40 @@ final class RetailCalendar
         return $out;
     }
 
+    /**
+     * Drivers: the events covering [from, to] for a product group (its
+     * department / category names) at a store or chain-wide, with the share of
+     * the window each covers.
+     *
+     * @param  array<int,string>  $groupKeys  department and/or category names
+     * @return array<string,array> event key => event + share
+     */
+    public function groupShares(array $groupKeys, ?int $storeId, string $from, string $to): array
+    {
+        $keys = array_values(array_filter(array_map(fn ($v) => mb_strtolower(trim((string) $v)), $groupKeys)));
+        $days = max(1, Carbon::parse($from)->diffInDays(Carbon::parse($to)) + 1);
+        $out = [];
+        foreach ($this->events as $e) {
+            if ($e['categories'] !== null && array_intersect($e['categories'], $keys) === []) {
+                continue;
+            }
+            if (! $this->appliesTo(['categories' => null] + $e, null, $storeId)) {
+                continue;
+            }
+            $lo = max($from, $e['from']);
+            $hi = min($to, $e['to']);
+            if ($lo > $hi) {
+                continue;
+            }
+            $share = (Carbon::parse($lo)->diffInDays(Carbon::parse($hi)) + 1) / $days;
+            if ($share > ($out[$e['key']]['share'] ?? 0)) {
+                $out[$e['key']] = $e + ['share' => $share];
+            }
+        }
+
+        return $out;
+    }
+
     private function appliesTo(array $e, ?string $sku, ?int $storeId): bool
     {
         if ($e['categories'] !== null && $sku !== null) {

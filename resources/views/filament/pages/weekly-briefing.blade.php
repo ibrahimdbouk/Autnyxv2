@@ -2,6 +2,11 @@
 
 @php($b = $this->getBriefing())
 
+{{-- Root Cause drivers: the week's sales movement, computed (shown whether or not the AI briefing ran) --}}
+@if($b['ready'] ?? false)
+    @livewire(\App\Filament\Widgets\Drivers\WeeklyDrivers::class, [], key('weekly-drivers'))
+@endif
+
 <style>
 .wb-hero{background:var(--ax-bg); border:1px solid var(--ax-line); border-radius:1rem; box-shadow:var(--ax-shadow); padding:1.4rem 1.6rem; margin-bottom:1.2rem;}
 .wb-kick{font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--ax-accent-strong); display:flex; align-items:center; gap:.5rem; flex-wrap:wrap;}

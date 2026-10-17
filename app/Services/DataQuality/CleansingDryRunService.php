@@ -20,6 +20,7 @@ class CleansingDryRunService
         'returns'            => 'sales_returns',
         'promotions'         => 'promotions',
         'waste'              => 'waste_events',
+        'store_traffic'      => 'store_traffic',
         'stores'             => 'stores',
         'suppliers'          => 'suppliers',
         'users'              => 'users',

@@ -47,6 +47,7 @@ class CanonicalSchema
             'returns'             => self::returns(),
             'promotions'          => self::promotions(),
             'waste'               => self::waste(),
+            'store_traffic'       => self::storeTraffic(),
             default               => [],
         };
     }
@@ -219,6 +220,16 @@ class CanonicalSchema
             'value'     => ['label' => 'Value', 'description' => 'Value written off, at cost (else quantity × unit cost)', 'required' => false],
             'reason'    => ['label' => 'Reason', 'description' => 'Why: expired, damaged, spoiled, recalled, …', 'required' => false],
             'waste_ref' => ['label' => 'Document', 'description' => 'Write-off document or reference number', 'required' => false],
+        ];
+    }
+
+    /** Root Cause drivers — door-counter visitors: one row per store and day (several counters of one store add up). */
+    private static function storeTraffic(): array
+    {
+        return [
+            'date'     => ['label' => 'Date', 'description' => 'Day of the count', 'required' => true],
+            'location' => ['label' => 'Store', 'description' => 'Store counted (name or code)', 'required' => true],
+            'visitors' => ['label' => 'Visitors', 'description' => 'People who came in that day (door counter / footfall)', 'required' => true],
         ];
     }
 

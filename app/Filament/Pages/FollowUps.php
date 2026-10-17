@@ -18,6 +18,12 @@ use Filament\Pages\Page;
  */
 class FollowUps extends Page
 {
+    // v2.5 — one entry in the shortened Root Cause menu (App\Support\Apps\MenuSets).
+    use \App\Filament\Concerns\InMenuSet;
+    use \App\Filament\Concerns\ShowsMenuSetTabs;
+
+    public const MENU_SET = 'actions';
+
     use GatesPageByScreen;
 
     const SCREEN_KEY = 'follow_ups';

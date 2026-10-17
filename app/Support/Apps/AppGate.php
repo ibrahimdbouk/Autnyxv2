@@ -36,6 +36,7 @@ final class AppGate
         Pages\CountLists::class,          // W11
         Pages\FreshExpiry::class,         // W11
         Pages\SupplierScorecard::class,   // W11
+        Pages\PerformanceDrivers::class,  // drivers
         Pages\WatchedInvestigations::class,
         Pages\InvestigationsByStore::class,
         Pages\FinancialBreakdown::class,

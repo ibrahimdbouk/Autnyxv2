@@ -116,6 +116,7 @@ class OnboardingService
         $promos = $this->exists('promotions', $tenantId) || $this->exists('sales_transactions', $tenantId, fn ($q) => $q->whereNotNull('promotion_ref'));
         $returns = $this->exists('sales_returns', $tenantId);
         $waste = $this->exists('waste_events', $tenantId);
+        $traffic = $this->exists('store_traffic', $tenantId);
         $anomalies = $this->exists('anomalies', $tenantId);
         $investigations = $this->exists('investigations', $tenantId);
         $worked = $this->exists('investigations', $tenantId, fn ($q) => $q->where(fn ($w) => $w->whereIn('status', ['in_progress', 'resolved', 'closed'])->orWhereNotNull('assigned_user_id')));
@@ -140,6 +141,9 @@ class OnboardingService
             ['key' => 'waste', 'type' => Import::TYPE_WASTE, 'level' => 'optional', 'done' => $waste,
                 'title' => 'Add waste and write-offs', 'why' => 'For fresh and short-life ranges: waste rates by store and item, and what is about to expire.',
                 'detail' => $waste ? 'Waste loaded' : 'Optional — needed for the Fresh & Expiry view.'],
+            ['key' => 'traffic', 'type' => Import::TYPE_STORE_TRAFFIC, 'level' => 'optional', 'done' => $traffic,
+                'title' => 'Add store traffic (footfall)', 'why' => 'Door-counter visitors split a sales change into fewer shoppers and fewer of them buying.',
+                'detail' => $traffic ? 'Store traffic loaded' : 'Optional — receipts stand in for traffic without it.'],
             ['key' => 'detection', 'type' => null, 'level' => 'required', 'done' => $anomalies,
                 'title' => 'Run the first detection', 'why' => 'Runs every night on its own; run it now to see results today.',
                 'detail' => $anomalies ? 'Detection has run' : 'Not run yet.'],

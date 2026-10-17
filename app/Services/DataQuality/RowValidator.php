@@ -28,6 +28,7 @@ class RowValidator
         'returns'            => 'sku',
         'promotions'         => 'sku',
         'waste'              => 'sku',
+        'store_traffic'      => 'location',
         'purchase_orders'    => 'po_number',
         'stores'             => 'name',
         'suppliers'          => 'name',

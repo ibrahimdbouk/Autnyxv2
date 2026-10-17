@@ -474,6 +474,9 @@ $resolvedByName = $record->assignedUser?->name ?? $record->assignedTeam?->name ?
     </x-ui.card>
 @endif
 
+{{-- Root Cause drivers: what moved the sales of each sales finding, and why --}}
+@livewire(\App\Filament\Widgets\Drivers\FindingDrivers::class, ['investigation' => $record->id], key('finding-drivers-' . $record->id))
+
 {{-- ════════════════════════════════════════════════════════════════════════
      MAIN GRID: AI Investigation (left) + Detection Data (right)
      ════════════════════════════════════════════════════════════════════════ --}}

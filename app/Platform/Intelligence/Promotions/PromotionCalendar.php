@@ -70,6 +70,12 @@ final class PromotionCalendar
         return $this->bySku === [];
     }
 
+    /** @return array<int,string> the SKUs with a promotion in the loaded window */
+    public function skus(): array
+    {
+        return array_map('strval', array_keys($this->bySku));
+    }
+
     /**
      * Promotion periods for these SKUs and stores, clipped to [from, to], as a
      * compact JSON list for a set-based SQL join:

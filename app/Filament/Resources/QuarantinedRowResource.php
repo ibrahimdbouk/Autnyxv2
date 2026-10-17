@@ -153,6 +153,7 @@ class QuarantinedRowResource extends Resource
                         'returns'            => 'Returns / Refunds',
                         'promotions'         => 'Promotions (calendar)',
                         'waste'              => 'Waste / write-offs',
+                        'store_traffic'      => 'Store traffic (footfall)',
                     ]),
                 Filter::make('created_at')
                     ->label('Date')

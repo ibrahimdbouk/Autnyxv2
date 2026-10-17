@@ -47,12 +47,34 @@ class EvidenceCollectorService
     {
         $anomalies = $investigation->anomalies()->get();
 
+        $explained = [];
         foreach ($anomalies as $anomaly) {
             try {
                 $this->collectForAnomaly($investigation, $anomaly);
             } catch (\Throwable $e) {
                 Log::error("[M17/evidence] investigation={$investigation->id} anomaly={$anomaly->id}: {$e->getMessage()}");
             }
+            try {
+                if (in_array($anomaly->rule_type, \App\Services\Drivers\DriverReports::SALES_RULES, true) && $anomaly->dismissed_at === null && $anomaly->lifecycle_state !== Anomaly::LIFECYCLE_RESOLVED) {
+                    $explained[] = $this->collectDriverEvidence($investigation, $anomaly);
+                }
+            } catch (\Throwable $e) {
+                Log::error("[drivers/evidence] investigation={$investigation->id} anomaly={$anomaly->id}: {$e->getMessage()}");
+            }
+        }
+
+        // Root Cause drivers: an investigation whose every live sales finding the
+        // calendar explains (promotions / events) is labelled — and ranked after
+        // the rest — never hidden. Stock-explained ones are labelled too.
+        $explained = array_values(array_filter($explained, fn ($e) => $e !== false));
+        $label = null;
+        if ($explained !== [] && count(array_filter($explained, fn ($e) => $e === 'calendar')) === count($explained)) {
+            $label = 'calendar';
+        } elseif (in_array('availability', $explained, true)) {
+            $label = 'availability';
+        }
+        if ($investigation->drivers_explained !== $label) {
+            $investigation->forceFill(['drivers_explained' => $label])->saveQuietly();
         }
 
         Log::info("[M17] Evidence collected for investigation #{$investigation->id} ({$anomalies->count()} anomalies)");
@@ -624,6 +646,48 @@ class EvidenceCollectorService
                 'observed_at'   => now(),
             ]);
         }
+    }
+
+    // =========================================================================
+    // SALES DRIVERS (what moved the sales of a finding, and why)
+    // =========================================================================
+
+    public const DRIVER_LABEL = 'Sales drivers';
+
+    /** @return string|null|false how the finding is explained (availability | calendar | null), false when no breakdown */
+    private function collectDriverEvidence(Investigation $investigation, Anomaly $anomaly): string|null|false
+    {
+        $r = app(\App\Services\Drivers\DriverReports::class)->forFinding($anomaly);
+        if ($r === null) {
+            return false;
+        }
+        $currency = $investigation->tenant?->currencyCode();
+        $parts = [];
+        foreach (array_merge($r['why'], array_filter($r['what'], fn ($i) => $i['key'] === 'price')) as $i) {
+            if (abs((float) $i['value']) >= 0.5) {
+                $parts[] = mb_strtolower($i['label']) . ' ' . ($i['value'] > 0 ? '+' : '−') . \App\Support\Money::compact(abs((float) $i['value']), $currency);
+            }
+        }
+        $chg = (float) $r['totals']['change'];
+        $text = 'Sales ' . ($chg >= 0 ? 'up ' : 'down ') . \App\Support\Money::compact(abs($chg), $currency)
+            . ($r['totals']['change_pct'] !== null ? ' (' . abs($r['totals']['change_pct']) . '%)' : '')
+            . " {$r['period']['from']}–{$r['period']['to']} vs " . ($r['comparison']['kind'] === 'yoy' ? 'the same days last year' : 'the 4 weeks before')
+            . ($parts ? ': ' . implode(', ', $parts) : '') . '.';
+
+        $this->record($investigation, $anomaly, [
+            'evidence_type' => InvestigationEvidence::TYPE_CALCULATION,
+            'source'        => 'drivers',
+            'label'         => self::DRIVER_LABEL,
+            'value_text'    => mb_substr($text, 0, 1000),
+            'value_json'    => ['totals' => $r['totals'], 'what' => $r['what'], 'why' => $r['why'], 'period' => $r['period'],
+                'comparison' => $r['comparison'], 'detail' => $r['detail'], 'explained' => $r['explained'], 'headline' => $r['headline'],
+                'version' => $r['version']],
+            'direction'     => $r['explained']['by'] === 'calendar' ? InvestigationEvidence::DIRECTION_CONTRADICTS : InvestigationEvidence::DIRECTION_SUPPORTS,
+            'strength'      => InvestigationEvidence::STRENGTH_STRONG,
+            'observed_at'   => now(),
+        ]);
+
+        return $r['explained']['by'];
     }
 
     /**

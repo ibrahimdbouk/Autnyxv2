@@ -36,6 +36,8 @@ class BiExport
             'cycle_counts'       => ['label' => 'Cycle counts', 'description' => 'Count lists and results: system vs counted quantity, variance and value.'],
             'sales_weekly'       => ['label' => 'Sales by week', 'description' => 'Units, revenue and transactions per store, SKU and week (Monday), in the tenant currency.'],
             'sales_monthly'      => ['label' => 'Sales by month', 'description' => 'Units, revenue and transactions per store, SKU and month, in the tenant currency.'],
+            'store_daily'        => ['label' => 'Store traffic by day', 'description' => 'Per store and day: receipts (traffic), sales lines, units, revenue and products sold, in the tenant currency. Receipts are empty where the sales lines carry no receipt number.'],
+            'drivers_weekly'     => ['label' => 'Sales drivers by week', 'description' => 'Per week, for the business, each store and each department: the sales change against the comparison week(s), split into what moved (traffic, basket, mix, price) and why (shoppers, out of stock, promotions, calendar events, range changes, unexplained). The parts add up to the change.'],
             'stores'             => ['label' => 'Stores', 'description' => 'Store dimension: code, name, region, city, country, format.'],
             'products'           => ['label' => 'Products', 'description' => 'Product dimension: SKU, name, department, category, brand, cost and price.'],
             'supplier_scorecard' => ['label' => 'Supplier scorecard', 'description' => 'Fill rate, on-time, lead time, cost change, score and grade per supplier (last 90 days).', 'computed' => true],
@@ -74,6 +76,10 @@ class BiExport
                 'variance_value', 'value_at_risk', 'count_source', 'counted_by', 'counted_at', 'anomaly_id', 'investigation_id', 'created_at', 'updated_at'],
             'sales_weekly' => ['id', 'store_id', 'sku', 'week_start', 'units_sold', 'revenue', 'transaction_count', 'days_sold', 'updated_at'],
             'sales_monthly' => ['id', 'store_id', 'sku', 'month_start', 'units_sold', 'revenue', 'transaction_count', 'days_sold', 'updated_at'],
+            'store_daily' => ['id', 'store_id', 'date', 'receipts', 'lines', 'lines_with_receipt', 'units', 'revenue', 'skus_sold', 'updated_at'],
+            'drivers_weekly' => ['id', 'scope', 'store_id', 'department', 'period_from', 'period_to', 'comparison_from', 'comparison_to', 'comparison_kind',
+                'revenue', 'revenue_comparison', 'change', 'change_pct', 'traffic_basis', 'visitors', 'conversion', 'traffic', 'basket', 'volume', 'mix', 'price',
+                'store_traffic', 'availability', 'promotions', 'events', 'range', 'unexplained', 'updated_at'],
             'stores' => ['id', 'code', 'name', 'region', 'city', 'country', 'format', 'banner', 'status', 'currency', 'opened_on', 'sales_area_sqm', 'updated_at'],
             'products' => ['id', 'sku', 'name', 'department', 'category', 'subcategory', 'brand', 'supplier', 'unit_cost', 'selling_price',
                 'units_per_case', 'status', 'updated_at'],
@@ -107,6 +113,9 @@ class BiExport
             'cycle_counts' => DB::table('cycle_counts')->where('tenant_id', $tenantId)->select($cols),
             'sales_weekly' => DB::table('sales_weekly')->where('tenant_id', $tenantId)->select($cols),
             'sales_monthly' => DB::table('sales_monthly')->where('tenant_id', $tenantId)->select($cols),
+            'store_daily' => DB::table('store_daily')->where('tenant_id', $tenantId)->select($cols),
+            'drivers_weekly' => DB::table('driver_analyses')->where('tenant_id', $tenantId)->where('kind', 'weekly')
+                ->select(['id', 'scope_key', 'period_from', 'period_to', 'comparison_from', 'comparison_to', 'comparison_kind', 'result', 'updated_at']),
             'stores' => DB::table('stores')->where('tenant_id', $tenantId)->select($cols),
             'products' => DB::table('products')->where('tenant_id', $tenantId)->select($cols),
             // Plans in review (draft) are never exported.
@@ -151,6 +160,21 @@ class BiExport
             $r['rule_label'] = AnomalySetting::RULES[$r['rule_type']]['label'] ?? $r['rule_type'];
             $r['value'] = round(ValueModel::amount($ctx), 2);
             $r['value_type'] ??= ValueModel::type((string) $r['rule_type'], $ctx);
+        }
+        if ($dataset === 'drivers_weekly') {
+            $res = is_string($r['result'] ?? null) ? (array) json_decode($r['result'], true) : (array) ($r['result'] ?? []);
+            $parts = \App\Services\Drivers\DriverAnalysis::map(array_merge((array) ($res['what'] ?? []), (array) ($res['why'] ?? [])));
+            $scope = (array) ($res['scope'] ?? []);
+            $r += $parts + [
+                'scope'              => isset($scope['store_id']) ? 'store' : (isset($scope['department']) ? 'department' : 'business'),
+                'store_id'           => $scope['store_id'] ?? null,
+                'department'         => $scope['department'] ?? null,
+                'revenue'            => $res['totals']['revenue_p'] ?? null,
+                'revenue_comparison' => $res['totals']['revenue_c'] ?? null,
+                'change'             => $res['totals']['change'] ?? null,
+                'change_pct'         => $res['totals']['change_pct'] ?? null,
+                'traffic_basis'      => $res['totals']['traffic_basis'] ?? null,
+            ];
         }
         $out = [];
         foreach ($this->columns($dataset) as $c) {

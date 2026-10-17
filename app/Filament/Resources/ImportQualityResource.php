@@ -102,6 +102,7 @@ class ImportQualityResource extends Resource
                         'returns'            => 'Returns / Refunds',
                         'promotions'         => 'Promotions (calendar)',
                         'waste'              => 'Waste / write-offs',
+                        'store_traffic'      => 'Store traffic (footfall)',
                     ]),
 
                 TernaryFilter::make('is_duplicate_file')

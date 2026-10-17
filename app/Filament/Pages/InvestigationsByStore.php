@@ -21,6 +21,12 @@ use Filament\Pages\Page;
  */
 class InvestigationsByStore extends Page
 {
+    // v2.5 — one entry in the shortened Root Cause menu (App\Support\Apps\MenuSets).
+    use \App\Filament\Concerns\InMenuSet;
+    use \App\Filament\Concerns\ShowsMenuSetTabs;
+
+    public const MENU_SET = 'investigations';
+
     use GatesPageByScreen;
 
     const SCREEN_KEY = 'investigations';

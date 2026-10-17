@@ -17,6 +17,9 @@ use Livewire\Attributes\Url;
 
 class ListInvestigations extends ListRecords
 {
+    // v2.5 — the resource's menu set as tabs along the top.
+    use \App\Filament\Concerns\ShowsMenuSetTabs;
+
     use \App\Filament\Concerns\SanitizesUrlState;   // WP7.2
 
     protected function urlRules(): array

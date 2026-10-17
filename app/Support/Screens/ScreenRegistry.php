@@ -37,6 +37,7 @@ final class ScreenRegistry
         'count_lists'        => ['label' => 'Count Lists',        'group' => 'Root Cause'],
         'fresh_expiry'       => ['label' => 'Fresh & Expiry',     'group' => 'Root Cause'],
         'supplier_scorecard' => ['label' => 'Supplier Scorecard', 'group' => 'Root Cause'],
+        'performance_drivers' => ['label' => 'Performance drivers', 'group' => 'Root Cause'],
         'data_quality'    => ['label' => 'AI data-quality check (on Data Health)', 'group' => 'Data'],
         'watched'         => ['label' => 'Watched',          'group' => 'Root Cause'],
         'replenishment'   => ['label' => 'Replenishment',    'group' => 'Root Cause'],

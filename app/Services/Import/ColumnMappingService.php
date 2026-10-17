@@ -397,6 +397,8 @@ PROMPT;
             'promo_price'    => ['promo_price', 'promotion_price', 'deal_price', 'offer_price', 'sale_price'],
             // W12 — store managers (users import).
             'stores'         => ['stores', 'store', 'store_codes', 'store_code', 'branch', 'branches', 'outlet', 'outlets', 'store_name'],
+            // Root Cause drivers — store traffic (door counters).
+            'visitors'       => ['visitors', 'footfall', 'foot_traffic', 'traffic', 'visitor_count', 'people_count', 'door_count', 'entries', 'store_traffic', 'counter_in', 'ins'],
             // W11 — waste / write-offs.
             'waste_ref'      => ['waste_ref', 'write_off_ref', 'writeoff_no', 'write_off_no', 'waste_document', 'adjustment_no', 'document_no'],
             'original_transaction_ref' => ['original_transaction_ref', 'original_receipt', 'original_receipt_no', 'original_transaction_id', 'original_order_id'],

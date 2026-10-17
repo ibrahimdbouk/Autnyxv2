@@ -33,7 +33,7 @@ class FieldTypes
         'discount' => self::NUMBER, 'on_hand_qty' => self::NUMBER, 'reorder_point' => self::NUMBER,
         'on_order_qty' => self::NUMBER, 'inventory_value' => self::NUMBER, 'unit_cost' => self::NUMBER,
         'selling_price' => self::NUMBER, 'qty_ordered' => self::NUMBER, 'qty_received' => self::NUMBER,
-        'open_qty' => self::NUMBER, 'fill_rate' => self::NUMBER, 'value' => self::NUMBER,
+        'open_qty' => self::NUMBER, 'visitors' => self::NUMBER, 'fill_rate' => self::NUMBER, 'value' => self::NUMBER,
         'late_days' => self::INT, 'lead_time_days' => self::INT, 'line_no' => self::INT,
         // WP3.4 — hardening fields
         'cost_amount' => self::NUMBER, 'safety_stock' => self::NUMBER, 'allocated_qty' => self::NUMBER,

@@ -135,9 +135,9 @@ class RootCauseReadinessTest extends TestCase
     {
         $t = $this->createTenant();
         $svc = app(\App\Services\Onboarding\OnboardingService::class);
-        // Platform core: organisation (5 steps) + Root Cause (8). Required: stores, people, products, sales, stock, detection, investigation.
+        // Platform core: organisation (5 steps) + Root Cause (9, with store traffic). Required: stores, people, products, sales, stock, detection, investigation.
         $p0 = $svc->progress($t->id);
-        $this->assertSame([13, 7], [$p0['total'], $p0['required_left']]);
+        $this->assertSame([14, 7], [$p0['total'], $p0['required_left']]);
 
         $store = DB::table('stores')->insertGetId(['tenant_id' => $t->id, 'name' => 'S', 'code' => 'S', 'created_at' => now(), 'updated_at' => now()]);
         Product::create(['tenant_id' => $t->id, 'sku' => 'A', 'name' => 'A', 'unit_cost' => 1, 'selling_price' => 2]);

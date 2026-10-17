@@ -9,6 +9,9 @@ use Illuminate\Support\Facades\DB;
 /**
  * Maintains the sales_daily aggregate incrementally from raw sales_transactions.
  *
+ * Revenue is the line's net amount; a line sent without one is worth
+ * quantity × unit price − discount (the import derives it the same way).
+ *
  * The aggregation runs entirely inside PostgreSQL (INSERT … SELECT … GROUP BY …
  * ON CONFLICT DO UPDATE), so it is memory-safe regardless of table size and is
  * idempotent — re-running for the same date range recomputes those days' totals
@@ -45,6 +48,9 @@ class SalesDailyAggregator
             return $this->insertRange($tenantId, $from, $to, $now);
         });
 
+        // Root Cause drivers: the store and category rollups of those days.
+        app(SalesRollupAggregator::class)->rebuild($tenantId, $from, $to);
+
         // W13: the weeks and months those days belong to.
         app(SalesPeriodAggregator::class)->rebuild($tenantId, $from, $to);
 
@@ -67,7 +73,7 @@ class SalesDailyAggregator
                 (tenant_id, store_id, sku, date, units_sold, revenue, transaction_count, created_at, updated_at)
              SELECT tenant_id, store_id, sku, date,
                     SUM(quantity)                AS units_sold,
-                    SUM(COALESCE(total_amount, 0)) AS revenue,
+                    SUM(COALESCE(total_amount, quantity * unit_price - COALESCE(discount, 0), 0)) AS revenue,
                     -- WP3.1: rows are receipt LINES; count receipts (lines without a receipt id count alone).
                     COUNT(DISTINCT transaction_id) + COUNT(*) FILTER (WHERE transaction_id IS NULL) AS transaction_count,
                     ?, ?
@@ -104,7 +110,7 @@ class SalesDailyAggregator
                 (tenant_id, store_id, sku, date, units_sold, revenue, transaction_count, created_at, updated_at)
              SELECT st.tenant_id, st.store_id, st.sku, st.date,
                     SUM(st.quantity),
-                    SUM(COALESCE(st.total_amount, 0) * COALESCE(r.rate, 1)),
+                    SUM(COALESCE(st.total_amount, st.quantity * st.unit_price - COALESCE(st.discount, 0), 0) * COALESCE(r.rate, 1)),
                     COUNT(DISTINCT st.transaction_id) + COUNT(*) FILTER (WHERE st.transaction_id IS NULL),
                     ?, ?
                FROM sales_transactions st

@@ -23,6 +23,11 @@ use Illuminate\Database\Eloquent\Builder;
 
 class AnomalySettingResource extends Resource
 {
+    // v2.5 — one entry in the shortened Root Cause menu (App\Support\Apps\MenuSets).
+    use \App\Filament\Concerns\InMenuSet;
+
+    public const MENU_SET = 'rules';
+
     protected static ?string $model = AnomalySetting::class;
 
     protected static \BackedEnum|string|null $navigationIcon = 'heroicon-o-adjustments-horizontal';

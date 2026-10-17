@@ -21,6 +21,12 @@ use Livewire\Attributes\Url;
  */
 class SupplierPrep extends Page
 {
+    // v2.5 — one entry in the shortened Root Cause menu (App\Support\Apps\MenuSets).
+    use \App\Filament\Concerns\InMenuSet;
+    use \App\Filament\Concerns\ShowsMenuSetTabs;
+
+    public const MENU_SET = 'suppliers';
+
     use \App\Filament\Concerns\SanitizesUrlState;   // WP7.2
 
     protected function urlRules(): array

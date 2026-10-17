@@ -31,6 +31,12 @@ use Livewire\Attributes\Url;
  */
 class ActionQueue extends Page
 {
+    // v2.5 — one entry in the shortened Root Cause menu (App\Support\Apps\MenuSets).
+    use \App\Filament\Concerns\InMenuSet;
+    use \App\Filament\Concerns\ShowsMenuSetTabs;
+
+    public const MENU_SET = 'actions';
+
     use \App\Filament\Concerns\SanitizesUrlState;   // WP7.2
 
     protected function urlRules(): array
@@ -312,7 +318,7 @@ class ActionQueue extends Page
             if (isset($seen[$k])) continue;
             $seen[$k] = true;
             $uniq[] = [
-                'title'   => self::CAMPAIGNS[$r['campaign']]['rules'] ? $this->incidentTitle($r) : $r['campaign'],
+                'title'   => (self::CAMPAIGNS[$r['campaign']]['rules'] ?? []) ? $this->incidentTitle($r) : $r['campaign'],
                 'sub'     => $r['campaign'],
                 'sev'     => $r['sev'],
                 'val_fmt' => Money::displayCompact($r['val'], $currency),
@@ -434,6 +440,8 @@ class ActionQueue extends Page
                 $q->where('opened_at', '>=', $since)
                     ->orWhereHas('escalationEvents', fn ($e) => $e->where('created_at', '>=', $since));
             })
+            // Root Cause drivers: what the calendar explains comes after the rest.
+            ->orderByRaw("CASE WHEN drivers_explained = 'calendar' THEN 1 ELSE 0 END")
             ->orderByDesc('revenue_at_risk')
             ->limit(60)
             ->get(['id', 'title', 'primary_sku', 'primary_store_id', 'revenue_at_risk', 'priority', 'opened_at']);

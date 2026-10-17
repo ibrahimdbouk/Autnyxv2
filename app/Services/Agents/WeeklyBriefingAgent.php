@@ -140,9 +140,37 @@ class WeeklyBriefingAgent extends AgentService
             $topCampaigns[] = ['name' => $name, 'value_fmt' => Money::compact($val, $currency)];
         }
 
+        // Root Cause drivers: last week's sales movement and why (computed).
+        $drivers = null;
+        $w = app(\App\Services\Drivers\DriverReports::class)->latestWeekly($tenantId)?->result;
+        if ($w) {
+            $why = [];
+            foreach (array_merge($w['why'], array_filter($w['what'], fn ($i) => $i['key'] === 'price')) as $i) {
+                if (abs((float) $i['value']) >= 0.5) {
+                    $why[] = $i['label'] . ' ' . ($i['value'] > 0 ? '+' : '-') . Money::compact(abs((float) $i['value']), $currency);
+                }
+            }
+            $movers = [];
+            foreach (['stores' => 'store', 'skus' => 'product'] as $k => $kind) {
+                foreach (array_slice((array) ($w['contributors'][$k] ?? []), 0, 6) as $c) {
+                    $movers[] = "{$kind} {$c['name']}: " . ($c['change'] > 0 ? '+' : '-') . Money::compact(abs((float) $c['change']), $currency) . " (mostly {$c['main_label']})";
+                }
+            }
+            $drivers = [
+                'headline' => $w['headline'],
+                'period'   => $w['period']['from'] . ' to ' . $w['period']['to'],
+                'versus'   => $w['comparison']['kind'] === 'yoy' ? 'the same week last year' : 'the 4 weeks before',
+                'change'   => ($w['totals']['change'] >= 0 ? '+' : '-') . Money::compact(abs((float) $w['totals']['change']), $currency)
+                    . ($w['totals']['change_pct'] !== null ? ' (' . $w['totals']['change_pct'] . '%)' : ''),
+                'why'      => $why,
+                'movers'   => $movers,
+            ];
+        }
+
         return [
             'currency'          => $currency,
             'window_days'       => 7,
+            'sales_drivers'     => $drivers,
             'opened'            => $opened,
             'opened_value_fmt'  => Money::compact($openedValue, $currency),
             'resolved'          => $resolved,
@@ -162,6 +190,12 @@ class WeeklyBriefingAgent extends AgentService
             $campaigns .= "  - {$c['name']}: {$c['value_fmt']} at risk\n";
         }
         $campaigns = $campaigns ?: "  (no active campaigns)\n";
+        $sales = "  (no full week of sales to compare yet)\n";
+        if (! empty($s['sales_drivers'])) {
+            $d = $s['sales_drivers'];
+            $sales = "  Week {$d['period']} vs {$d['versus']}: {$d['change']}\n  Why (computed): " . implode('; ', $d['why']) . "\n"
+                . ($d['movers'] ? '  Biggest movers: ' . implode('; ', $d['movers']) . "\n" : '');
+        }
 
         return <<<PROMPT
 You are writing the Monday-morning business briefing for a retail category or operations lead. It should read like a sharp colleague's summary they can absorb in under a minute — plain, honest, specific. Do not inflate; if the week was quiet, say so.
@@ -175,12 +209,15 @@ STANDING PICTURE (open now):
   - Open investigations: {$s['open_now']} ({$s['critical']} critical, {$s['high']} high) — {$s['open_value_fmt']} total value at risk
 TOP CAMPAIGNS BY VALUE:
 {$campaigns}
+SALES THIS WEEK (computed from the data — fixed facts, restate, never change):
+{$sales}
 
 WRITING RULES:
 1. Money in {$s['currency']}, sensibly rounded. No dollar sign unless the currency is USD.
 2. Be honest about size and about a quiet week. Never manufacture drama.
 3. Concrete and plain. No jargon, no filler, no blanks or dashes as values.
 4. Base every claim on the numbers above — do not invent products, stores, or figures.
+5. For why sales moved, use only the SALES THIS WEEK figures; never add a driver they do not list.
 
 Respond with ONLY this JSON object (no markdown, no code fences):
 {

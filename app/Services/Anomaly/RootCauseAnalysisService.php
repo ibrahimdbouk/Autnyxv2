@@ -185,6 +185,13 @@ class RootCauseAnalysisService
             $confidence = min($tier === self::TIER_CORROBORATED ? 95 : 70, $confidence + 5);
         }
         $explanation = $this->explain($chain, $tier) . $this->timingText($chain, $allInOrder, $reversed);
+        // Root Cause drivers: the sales data's own breakdown confirms (or
+        // qualifies) a stock → sales link.
+        [$driversText, $driversConfirmed] = $this->driversText($investigation, $chain);
+        $explanation .= $driversText;
+        if ($driversConfirmed) {
+            $confidence = min($tier === self::TIER_CORROBORATED ? 95 : 75, $confidence + 5);
+        }
         // Other independent chain heads (alternative root causes worth noting).
         $alternatives = max(0, count($roots) - 1);
 
@@ -203,8 +210,46 @@ class RootCauseAnalysisService
                 'reversed'   => count($reversed),
             ],
             'reversed'        => $reversed,
+            'drivers_confirmed' => $driversConfirmed,
             'explanation'     => $explanation,
         ];
+    }
+
+    private const STOCK_RULES = ['stockout_risk', 'safety_stock_breach', 'negative_inventory', 'phantom_inventory'];
+
+    /**
+     * What the sales findings' driver breakdowns say about the chain: "the
+     * sales data confirms it — 64% of the drop is out-of-stock days" when a
+     * stock signal leads to a sales node and most of that node's change is
+     * out-of-stock days; otherwise the share stock or the calendar explains.
+     *
+     * @return array{0:string, 1:bool}
+     */
+    private function driversText(Investigation $investigation, array $chain): array
+    {
+        $salesIds = array_column(array_filter($chain, fn ($n) => in_array($n['rule'], \App\Services\Drivers\DriverReports::SALES_RULES, true)), 'anomaly_id');
+        if ($salesIds === []) {
+            return ['', false];
+        }
+        $ev = \App\Models\InvestigationEvidence::where('investigation_id', $investigation->id)->whereIn('anomaly_id', $salesIds)
+            ->where('label', \App\Services\Anomaly\EvidenceCollectorService::DRIVER_LABEL)->get()->keyBy('anomaly_id');
+        $hasStock = (bool) array_filter($chain, fn ($n) => in_array($n['rule'], self::STOCK_RULES, true));
+        foreach ($salesIds as $id) {
+            $x = (array) ($ev[$id]->value_json['explained'] ?? []);
+            $avail = (float) ($x['availability_share'] ?? 0);
+            $cal = (float) ($x['calendar_share'] ?? 0);
+            $dir = (float) ($ev[$id]->value_json['totals']['change'] ?? 0) < 0 ? 'drop' : 'rise';
+            if ($avail >= 0.5) {
+                return [$hasStock
+                    ? ' The sales data confirms it: ' . round(100 * $avail) . "% of the sales {$dir} is out-of-stock days."
+                    : ' ' . round(100 * $avail) . "% of the sales {$dir} is out-of-stock days, though no stock finding is open on it.", $hasStock];
+            }
+            if ($cal >= 0.7) {
+                return [' Most of the sales ' . $dir . ' (' . round(100 * $cal) . '%) is promotions or calendar events.', false];
+            }
+        }
+
+        return ['', false];
     }
 
     /**

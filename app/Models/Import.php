@@ -98,6 +98,7 @@ class Import extends Model
         self::TYPE_PURCHASE_ORDERS,
         self::TYPE_PROMOTIONS,
         self::TYPE_WASTE,
+        self::TYPE_STORE_TRAFFIC,
     ];
 
     // Data type constants
@@ -112,6 +113,7 @@ class Import extends Model
     const TYPE_RETURNS      = 'returns';
     const TYPE_PROMOTIONS   = 'promotions'; // W10: the promotion calendar
     const TYPE_WASTE        = 'waste';      // W11: waste and write-offs
+    const TYPE_STORE_TRAFFIC = 'store_traffic';   // Root Cause drivers: door-counter visitors
 
     public static function dataTypeLabels(): array
     {
@@ -126,6 +128,7 @@ class Import extends Model
             self::TYPE_RETURNS         => 'Returns / Refunds',
             self::TYPE_PROMOTIONS      => 'Promotions (calendar)',
             self::TYPE_WASTE           => 'Waste / write-offs',
+            self::TYPE_STORE_TRAFFIC   => 'Store traffic (footfall)',
         ];
     }
 

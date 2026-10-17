@@ -237,6 +237,7 @@ class ImportProcessorService
             Import::TYPE_PURCHASE_ORDERS => \App\Models\PurchaseOrder::class,
             Import::TYPE_PROMOTIONS      => \App\Models\Promotion::class,
             Import::TYPE_WASTE           => \App\Models\WasteEvent::class,
+            Import::TYPE_STORE_TRAFFIC   => \App\Models\StoreTraffic::class,
             default                      => null,
         };
 
@@ -997,6 +998,10 @@ class ImportProcessorService
             if (in_array($import->data_type, [Import::TYPE_PRODUCTS, Import::TYPE_STORES, Import::TYPE_SUPPLIERS], true)) {
                 app(\App\Services\Platform\HierarchySync::class)->syncTenant((int) $import->tenant_id);
             }
+            // Root Cause drivers: a product file can move SKUs between categories.
+            if ($import->data_type === Import::TYPE_PRODUCTS) {
+                \App\Jobs\Sales\RebuildSalesRollupsJob::dispatch((int) $import->tenant_id)->afterCommit();
+            }
             // WP6.4: that dataset's health, recomputed off the request.
             if ($dataset = self::HEALTH_DATASET[$import->data_type] ?? null) {
                 \App\Jobs\DataHealth\ComputeDataHealthJob::dispatch($import->tenant_id, $dataset)->afterCommit();
@@ -1049,6 +1054,7 @@ class ImportProcessorService
             Import::TYPE_RETURNS         => $this->writeReturn($import, $data, $rowNumber),
             Import::TYPE_PROMOTIONS      => $this->writePromotion($import, $data, $rowNumber),
             Import::TYPE_WASTE           => $this->writeWaste($import, $data, $rowNumber),
+            Import::TYPE_STORE_TRAFFIC   => $this->writeStoreTraffic($import, $data, $rowNumber),
             default                      => throw new \InvalidArgumentException("Unknown data type: {$import->data_type}"),
         };
     }
@@ -1065,6 +1071,7 @@ class ImportProcessorService
         'purchase_orders'  => ['tenant_id', 'po_number', 'sku', 'store_id'],
         'promotions'       => ['tenant_id', 'promotion_ref', 'sku', 'store_id'],   // W10: a re-sent calendar updates
         'waste_events'     => ['tenant_id', 'date', 'sku', 'store_id', 'reason', 'waste_ref'],   // W11
+        'store_traffic'    => ['tenant_id', 'store_id', 'date'],   // drivers: a re-sent count replaces
     ];
     private const NATURAL_KEY_INDEXES = [
         'sales_transactions' => 'sales_tx_receipt_line_unique',
@@ -1073,6 +1080,7 @@ class ImportProcessorService
         'purchase_orders'    => 'purchase_orders_natural_key',
         'promotions'         => 'promotions_natural_key',
         'waste_events'       => 'waste_events_natural_key',
+        'store_traffic'      => 'store_traffic_natural_key',
     ];
 
     /** @var array<string,bool> */
@@ -1163,6 +1171,8 @@ class ImportProcessorService
         'inventory_levels' => ['on_hand_qty', 'on_order_qty', 'inventory_value', 'allocated_qty', 'in_transit_qty'],
         // W11: lines of one file that share a key (same SKU, store, day, reason) add up.
         'waste_events'     => ['quantity', 'value'],
+        // Several door counters of one store on one day add up.
+        'store_traffic'    => ['visitors'],
     ];
 
     private function mergePosition(array $a, array $b, array $additive): array
@@ -1194,6 +1204,7 @@ class ImportProcessorService
             Import::TYPE_RETURNS         => 'sales_returns',
             Import::TYPE_PROMOTIONS      => 'promotions',
             Import::TYPE_WASTE           => 'waste_events',
+            Import::TYPE_STORE_TRAFFIC   => 'store_traffic',
             default                      => null,
         };
     }
@@ -1242,6 +1253,9 @@ class ImportProcessorService
                 'date' => null, 'sku' => null, 'location' => null, 'quantity' => null, 'value' => null,
                 'reason' => null, 'waste_ref' => null,
             ],
+            'store_traffic' => [
+                'tenant_id' => null, 'import_id' => null, 'store_id' => null, 'location' => null, 'date' => null, 'visitors' => null,
+            ],
             'promotions' => [
                 'tenant_id' => null, 'import_id' => null, 'store_id' => null, 'product_id' => null,
                 'promotion_ref' => null, 'name' => null, 'sku' => null, 'location' => null,
@@ -1266,6 +1280,7 @@ class ImportProcessorService
             Import::TYPE_RETURNS         => $this->buildReturnAttrs($import, $data, $row),
             Import::TYPE_PROMOTIONS      => $this->buildPromotionAttrs($import, $data, $row),
             Import::TYPE_WASTE           => $this->buildWasteAttrs($import, $data, $row),
+            Import::TYPE_STORE_TRAFFIC   => $this->buildStoreTrafficAttrs($import, $data, $row),
             default                      => throw new \InvalidArgumentException("Not a batch-insert type: {$import->data_type}"),
         };
     }
@@ -1385,6 +1400,12 @@ class ImportProcessorService
             $attrs['tenant_id'], $attrs['date'], mb_strtolower($attrs['sku']), mb_strtolower(trim((string) $attrs['location'])),
             $attrs['quantity'], $attrs['unit_price'], $attrs['total_amount'], $attrs['transaction_id'],
         ]));
+
+        // A file without a net amount: the line is worth quantity × unit price −
+        // discount (revenue was 0 everywhere downstream before this).
+        if ($attrs['total_amount'] === null && $attrs['unit_price'] !== null && $attrs['quantity'] !== null) {
+            $attrs['total_amount'] = round((float) $attrs['quantity'] * (float) $attrs['unit_price'] - (float) ($attrs['discount'] ?? 0), 4);
+        }
 
         if ($location) {
             $attrs['store_id'] = $this->resolveStore($import->tenant_id, $location);
@@ -1621,6 +1642,33 @@ class ImportProcessorService
         $now = now();
         $attrs = array_merge($this->insertTemplate('sales_returns'), $this->buildReturnAttrs($import, $data, $row), ['created_at' => $now, 'updated_at' => $now]);
         $this->lastWriteWasDuplicate = $this->writeBatch('sales_returns', [$attrs]) > 0;
+    }
+
+    /** Root Cause drivers: a store's visitors on a day (natural key: store, day). */
+    private function writeStoreTraffic(Import $import, array $data, int $row): void
+    {
+        $now = now();
+        $attrs = array_merge($this->insertTemplate('store_traffic'), $this->buildStoreTrafficAttrs($import, $data, $row), ['created_at' => $now, 'updated_at' => $now]);
+        $this->lastWriteWasDuplicate = $this->writeBatch('store_traffic', [$attrs]) > 0;
+    }
+
+    private function buildStoreTrafficAttrs(Import $import, array $data, int $row): array
+    {
+        $this->requireFields($data, ['date', 'location', 'visitors'], $row);
+        $visitors = (float) $this->numeric($data['visitors'], 'visitors', $row);
+        if ($visitors < 0) {
+            throw new \InvalidArgumentException("Row {$row}: visitors cannot be negative.");
+        }
+        $location = trim((string) $data['location']);
+
+        return [
+            'tenant_id' => $import->tenant_id,
+            'import_id' => $import->id,
+            'date'      => $this->parseDate($data['date'], $row),
+            'location'  => $location,
+            'store_id'  => $this->resolveStore($import->tenant_id, $location),
+            'visitors'  => $visitors,
+        ];
     }
 
     /** W11: a waste / write-off line (natural key: day, SKU, store, reason, document). */
