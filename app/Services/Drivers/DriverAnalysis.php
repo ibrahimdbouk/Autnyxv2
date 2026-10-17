@@ -38,7 +38,10 @@ use Illuminate\Support\Facades\DB;
  *   events        the retail calendar: an event covering one period more than
  *                 the other, × the department's lift the last time it ran
  *   range         positions sold in only one of the two periods (not because
- *                 they were out of stock)
+ *                 they were out of stock), when their selling rate makes the
+ *                 gap more than chance: at the rate of the period they sold
+ *                 in, at least MIN_RANGE_UNITS expected in the other (so a
+ *                 slow seller's quiet week is not taken for a delisting)
  *   unexplained   the rest — what is worth an investigation
  *
  *   store traffic  fewer or more shoppers (door counts when they cover the
@@ -52,11 +55,18 @@ use Illuminate\Support\Facades\DB;
  */
 class DriverAnalysis
 {
-    public const VERSION = 'drivers-1.0';
+    public const VERSION = 'drivers-1.1';
 
     public const MIN_RECEIPT_COVERAGE = 0.9;
     public const MIN_TRAFFIC_COVERAGE = 0.9;
     public const MIN_NORMAL_DAYS = 7;
+
+    /**
+     * A position counts as a range change when, at its selling rate, at least
+     * this many units were to be expected in the period it did not sell in
+     * (Poisson: a gap that long happens by chance under 5% of the time).
+     */
+    public const MIN_RANGE_UNITS = 3.0;
     public const LIFT_MIN = -0.8;
     public const LIFT_MAX = 2.0;
     public const EVENT_PRE_DAYS = 28;
@@ -238,6 +248,11 @@ class DriverAnalysis
         $hi = max($pt, $ct);
         $spans = $promos->json($promos->skus(), $lo, $hi);
         $inP = 'BETWEEN ? AND ?';
+        // Units a position must have sold in one period for no sales in the other to be a range change.
+        $newMin = sprintf('%.6F', self::MIN_RANGE_UNITS * $dP / max(1, $dC));
+        $goneMin = sprintf('%.6F', self::MIN_RANGE_UNITS * $dC / max(1, $dP));
+        $isNew = "u_c <= 0 AND u_p >= {$newMin} AND r_p > 0 AND NOT out_c";
+        $isGone = "u_p <= 0 AND u_c >= {$goneMin} AND r_c > 0 AND NOT out_p";
 
         $sql = "WITH pos AS (
                 SELECT sd.store_id, sd.sku, LEFT(COALESCE(TRIM(p.department), ''), 120) AS department,
@@ -296,11 +311,11 @@ class DriverAnalysis
                 SELECT k.*,
                        ?::float * (r_p / ?::float - r_c / ?::float) AS d_rev,
                        CASE WHEN u_p > 0 AND u_c > 0 AND r_p > 0 AND r_c > 0 THEN u_p * (r_p / u_p - r_c / u_c) ELSE 0 END AS price,
-                       CASE WHEN u_c <= 0 AND u_p > 0 AND NOT out_c THEN r_p
-                            WHEN u_p <= 0 AND u_c > 0 AND NOT out_p THEN -?::float * r_c / ?::float
+                       CASE WHEN {$isNew} THEN r_p
+                            WHEN {$isGone} THEN -?::float * r_c / ?::float
                             ELSE 0 END AS range_eff,
-                       CASE WHEN u_c <= 0 AND u_p > 0 AND NOT out_c THEN 1 ELSE 0 END AS is_new,
-                       CASE WHEN u_p <= 0 AND u_c > 0 AND NOT out_p THEN 1 ELSE 0 END AS is_gone
+                       CASE WHEN {$isNew} THEN 1 ELSE 0 END AS is_new,
+                       CASE WHEN {$isGone} THEN 1 ELSE 0 END AS is_gone
                   FROM k
             ),
             f AS (

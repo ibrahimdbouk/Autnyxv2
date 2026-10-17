@@ -135,6 +135,28 @@ class SalesDriversTest extends TestCase
         $this->assertNotSame('', $r['headline']);
     }
 
+    public function test_a_slow_sellers_quiet_week_is_not_a_range_change_but_a_delisting_is(): void
+    {
+        foreach (['SLOW' => 30, 'GONE' => 6] as $sku => $price) {
+            DB::table('products')->insert(['tenant_id' => $this->tenant->id, 'sku' => $sku, 'name' => $sku, 'department' => 'Grocery',
+                'category' => 'Other', 'selling_price' => $price, 'unit_cost' => $price / 2, 'created_at' => now(), 'updated_at' => now()]);
+        }
+        // SLOW: one unit on two days of the four comparison weeks (0.5 expected in a week), none this week.
+        $this->receipt($this->a, '2026-08-06', [['SLOW', 1, 30]]);
+        $this->receipt($this->a, '2026-08-21', [['SLOW', 1, 30]]);
+        // GONE: 2 a day through the comparison, never this week, not out of stock.
+        for ($d = Carbon::parse(self::C_FROM); $d->lte(Carbon::parse(self::C_TO)); $d->addDay()) {
+            $this->receipt($this->a, $d->toDateString(), [['GONE', 2, 6]]);
+        }
+        $this->plant();
+
+        $r = app(DriverAnalysis::class)->analyze($this->tenant->id, self::P_FROM, self::P_TO, self::C_FROM, self::C_TO);
+        $why = DriverAnalysis::map($r['why']);
+        // NEW launched +168, GONE delisted −(2 × 6 × 7) = −84; SLOW's quiet week is not a range change.
+        $this->assertEqualsWithDelta(168.0 - 84.0, $why['range'], 0.01);
+        $this->assertSame(['new' => 1, 'gone' => 1], $r['detail']['range']);
+    }
+
     public function test_without_receipt_numbers_traffic_and_basket_are_volume(): void
     {
         $this->plant();
