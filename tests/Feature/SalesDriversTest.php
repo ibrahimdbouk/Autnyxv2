@@ -159,6 +159,20 @@ class SalesDriversTest extends TestCase
         $this->assertSame(['new' => 1, 'gone' => 1], $r['detail']['range']);
     }
 
+    public function test_the_headline_names_drivers_by_the_way_they_moved_sales(): void
+    {
+        $item = fn ($key, $value) => ['key' => $key, 'label' => DriverAnalysis::LABELS[$key], 'value' => $value];
+        $rise = ['totals' => ['change' => 100.0, 'change_pct' => 1.2],
+            'what' => [$item('traffic', 30.0), $item('basket', 5.0), $item('mix', 65.0), $item('price', 0.0)],
+            'why' => [$item('store_traffic', 30.0), $item('availability', 60.0), $item('unexplained', 10.0)]];
+        $this->assertSame('Sales rose 1.2%, mostly fewer out-of-stock days and more shoppers.', DriverAnalysis::headline($rise));
+
+        $fall = ['totals' => ['change' => -100.0, 'change_pct' => -3.0],
+            'what' => [$item('traffic', -70.0), $item('basket', -30.0)],
+            'why' => [$item('store_traffic', -70.0), $item('availability', -20.0), $item('unexplained', -10.0)]];
+        $this->assertSame('Sales fell 3%, mostly fewer shoppers and smaller baskets.', DriverAnalysis::headline($fall));
+    }
+
     public function test_without_receipt_numbers_traffic_and_basket_are_volume(): void
     {
         $this->plant();

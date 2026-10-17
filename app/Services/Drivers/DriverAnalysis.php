@@ -56,7 +56,7 @@ use Illuminate\Support\Facades\DB;
  */
 class DriverAnalysis
 {
-    public const VERSION = 'drivers-1.2';
+    public const VERSION = 'drivers-1.3';
 
     public const MIN_RECEIPT_COVERAGE = 0.9;
     public const MIN_TRAFFIC_COVERAGE = 0.9;
@@ -692,6 +692,17 @@ class DriverAnalysis
         return $out;
     }
 
+    /** How a driver reads in the headline, by the direction it moved sales: [up, down]. */
+    private const PHRASES = [
+        'traffic' => ['more shoppers', 'fewer shoppers'], 'store_traffic' => ['more shoppers', 'fewer shoppers'],
+        'visitors' => ['more visitors', 'fewer visitors'], 'conversion' => ['better conversion', 'weaker conversion'],
+        'penetration' => ['more shoppers buying the category', 'fewer shoppers buying the category'],
+        'basket' => ['bigger baskets', 'smaller baskets'], 'price' => ['higher prices', 'lower prices'],
+        'availability' => ['fewer out-of-stock days', 'out-of-stock days'], 'promotions' => ['promotions', 'fewer promotions'],
+        'events' => ['calendar events', 'calendar events'], 'range' => ['range changes', 'range changes'],
+        'department' => ["the department's trend", "the department's trend"],
+    ];
+
     /** One sentence: the change and its two largest drivers. */
     public static function headline(array $r): string
     {
@@ -702,13 +713,16 @@ class DriverAnalysis
         $parts = array_filter(array_merge($r['what'], $r['why']), fn ($i) => ! in_array($i['key'], ['unexplained', 'mix', 'volume'], true)
             && abs($i['value']) >= 0.005 && ($i['value'] > 0) === ($chg > 0));
         usort($parts, fn ($a, $b) => abs($b['value']) <=> abs($a['value']));
-        $top = array_slice($parts, 0, 2);
+        // Shoppers show up twice (what: traffic, why: store traffic): name them once.
+        $phrases = array_values(array_unique(array_map(
+            fn ($i) => self::PHRASES[$i['key']][$chg > 0 ? 0 : 1] ?? mb_strtolower($i['label']), $parts)));
+        $top = array_slice($phrases, 0, 2);
         $pct = $r['totals']['change_pct'];
         $lead = 'Sales ' . ($chg > 0 ? 'rose' : 'fell') . ($pct !== null ? ' ' . abs($pct) . '%' : '');
         if ($top === []) {
             return $lead . ', with no single measured driver behind it.';
         }
 
-        return $lead . ', mostly ' . implode(' and ', array_map(fn ($i) => mb_strtolower($i['label']), $top)) . '.';
+        return $lead . ', mostly ' . implode(' and ', $top) . '.';
     }
 }
