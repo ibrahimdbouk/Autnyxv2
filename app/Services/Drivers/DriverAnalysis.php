@@ -38,10 +38,11 @@ use Illuminate\Support\Facades\DB;
  *   events        the retail calendar: an event covering one period more than
  *                 the other, × the department's lift the last time it ran
  *   range         positions sold in only one of the two periods (not because
- *                 they were out of stock), when their selling rate makes the
- *                 gap more than chance: at the rate of the period they sold
- *                 in, at least MIN_RANGE_UNITS expected in the other (so a
- *                 slow seller's quiet week is not taken for a delisting)
+ *                 they were out of stock), when how often they sold makes the
+ *                 gap more than chance: at least MIN_RANGE_DAYS selling days
+ *                 in the period they sold in, and at that pace at least
+ *                 MIN_RANGE_DAYS expected in the other (so an occasional
+ *                 seller's quiet week is not taken for a delisting or launch)
  *   unexplained   the rest — what is worth an investigation
  *
  *   store traffic  fewer or more shoppers (door counts when they cover the
@@ -55,18 +56,19 @@ use Illuminate\Support\Facades\DB;
  */
 class DriverAnalysis
 {
-    public const VERSION = 'drivers-1.1';
+    public const VERSION = 'drivers-1.2';
 
     public const MIN_RECEIPT_COVERAGE = 0.9;
     public const MIN_TRAFFIC_COVERAGE = 0.9;
     public const MIN_NORMAL_DAYS = 7;
 
     /**
-     * A position counts as a range change when, at its selling rate, at least
-     * this many units were to be expected in the period it did not sell in
-     * (Poisson: a gap that long happens by chance under 5% of the time).
+     * A position counts as a range change when it sold on at least this many
+     * days in the period it sold in and, at that pace, this many selling days
+     * were to be expected in the other (Poisson: a gap that long happens by
+     * chance under 5% of the time). Days, not units: sales come in lumps.
      */
-    public const MIN_RANGE_UNITS = 3.0;
+    public const MIN_RANGE_DAYS = 3;
     public const LIFT_MIN = -0.8;
     public const LIFT_MAX = 2.0;
     public const EVENT_PRE_DAYS = 28;
@@ -248,16 +250,19 @@ class DriverAnalysis
         $hi = max($pt, $ct);
         $spans = $promos->json($promos->skus(), $lo, $hi);
         $inP = 'BETWEEN ? AND ?';
-        // Units a position must have sold in one period for no sales in the other to be a range change.
-        $newMin = sprintf('%.6F', self::MIN_RANGE_UNITS * $dP / max(1, $dC));
-        $goneMin = sprintf('%.6F', self::MIN_RANGE_UNITS * $dC / max(1, $dP));
-        $isNew = "u_c <= 0 AND u_p >= {$newMin} AND r_p > 0 AND NOT out_c";
-        $isGone = "u_p <= 0 AND u_c >= {$goneMin} AND r_c > 0 AND NOT out_p";
+        // Selling days a position needs in one period for no sales in the other to be a range change.
+        $min = self::MIN_RANGE_DAYS;
+        $newMin = (int) max($min, ceil($min * $dP / max(1, $dC)));
+        $goneMin = (int) max($min, ceil($min * $dC / max(1, $dP)));
+        $isNew = "u_c <= 0 AND u_p > 0 AND r_p > 0 AND n_p >= {$newMin} AND NOT out_c";
+        $isGone = "u_p <= 0 AND u_c > 0 AND r_c > 0 AND n_c >= {$goneMin} AND NOT out_p";
 
         $sql = "WITH pos AS (
                 SELECT sd.store_id, sd.sku, LEFT(COALESCE(TRIM(p.department), ''), 120) AS department,
                        SUM(sd.units_sold) FILTER (WHERE sd.date {$inP}) AS u_p, SUM(sd.revenue) FILTER (WHERE sd.date {$inP}) AS r_p,
-                       SUM(sd.units_sold) FILTER (WHERE sd.date {$inP}) AS u_c, SUM(sd.revenue) FILTER (WHERE sd.date {$inP}) AS r_c
+                       SUM(sd.units_sold) FILTER (WHERE sd.date {$inP}) AS u_c, SUM(sd.revenue) FILTER (WHERE sd.date {$inP}) AS r_c,
+                       COUNT(DISTINCT sd.date) FILTER (WHERE sd.date {$inP} AND sd.units_sold > 0) AS n_p,
+                       COUNT(DISTINCT sd.date) FILTER (WHERE sd.date {$inP} AND sd.units_sold > 0) AS n_c
                   FROM sales_daily sd
                   LEFT JOIN products p ON p.tenant_id = sd.tenant_id AND p.sku = sd.sku
                  WHERE sd.tenant_id = ? AND sd.store_id IS NOT NULL AND (sd.date {$inP} OR sd.date {$inP}){$scopeSql}
@@ -296,7 +301,7 @@ class DriverAnalysis
             b AS (
                 SELECT pos.store_id, pos.sku, pos.department,
                        COALESCE(pos.u_p, 0)::float AS u_p, COALESCE(pos.r_p, 0)::float AS r_p,
-                       COALESCE(pos.u_c, 0)::float AS u_c, COALESCE(pos.r_c, 0)::float AS r_c,
+                       COALESCE(pos.u_c, 0)::float AS u_c, COALESCE(pos.r_c, 0)::float AS r_c, pos.n_p, pos.n_c,
                        COALESCE(av.obs_p, 0) AS obs_p, COALESCE(av.oos_p, 0) AS oos_p, COALESCE(av.obs_c, 0) AS obs_c, COALESCE(av.oos_c, 0) AS oos_c,
                        COALESCE(pr.pd_p, 0) AS pd_p, COALESCE(pr.pd_c, 0) AS pd_c, COALESCE(pr.pu_p, 0)::float AS pu_p, COALESCE(pr.pu_c, 0)::float AS pu_c
                   FROM pos LEFT JOIN av USING (store_id, sku) LEFT JOIN pr USING (store_id, sku)
@@ -343,7 +348,7 @@ class DriverAnalysis
              GROUP BY GROUPING SETS ((), (store_id), (sku), (department))";
 
         $params = array_merge(
-            [$pf, $pt, $pf, $pt, $cf, $ct, $cf, $ct],          // pos filters
+            [$pf, $pt, $pf, $pt, $cf, $ct, $cf, $ct, $pf, $pt, $cf, $ct],   // pos filters
             [$t, $pf, $pt, $cf, $ct], $bind,                     // pos where
             [$t, $pf, $pt, $cf, $ct],                            // inv
             [$pf, $pt, $pf, $pt, $cf, $ct, $cf, $ct],            // av
